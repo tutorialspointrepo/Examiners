@@ -1,0 +1,214 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.markdown-content {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.6;
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  color: #1f2937;
+}
+
+.markdown-content * {
+  max-width: 100%;
+}
+
+.markdown-content p {
+  margin-bottom: 0.75rem;
+  line-height: 1.6;
+  font-size: 0.875rem;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  font-weight: bold;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  border-left: 4px solid #3b82f6;
+}
+
+.markdown-content h1:first-child,
+.markdown-content h2:first-child,
+.markdown-content h3:first-child {
+  margin-top: 0;
+}
+
+.markdown-content h1 {
+  font-size: 1rem;
+}
+
+.markdown-content h2 {
+  font-size: 0.95rem;
+}
+
+.markdown-content h3 {
+  font-size: 0.875rem;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin-bottom: 0.75rem;
+  margin-left: 1.5rem;
+  padding-left: 0;
+}
+
+.markdown-content ul {
+  list-style-type: disc;
+}
+
+.markdown-content ol {
+  list-style-type: decimal;
+}
+
+.markdown-content li {
+  margin-bottom: 0.5rem;
+  line-height: 1.7;
+  font-size: 0.875rem;
+}
+
+.markdown-content li > ul,
+.markdown-content li > ol,
+.markdown-content ul ul,
+.markdown-content ol ol,
+.markdown-content ul ol,
+.markdown-content ol ul {
+  margin-top: 0.5rem;
+  margin-left: 0.5rem;
+  padding-left: 0;
+}
+
+.markdown-content strong {
+  font-weight: bold;
+  font-size: inherit;
+}
+
+.markdown-content em {
+  font-style: italic;
+  font-size: inherit;
+}
+
+.markdown-content code {
+  background-color: #e5e7eb;
+  color: #1f2937;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-family: 'Monaco', 'Courier New', monospace;
+}
+
+.markdown-content pre {
+  background-color: #e5e7eb;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  overflow-x: auto;
+  margin: 0.5rem 0;
+}
+
+.markdown-content pre code {
+  background: none;
+  padding: 0;
+}
+
+.markdown-content a {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.markdown-content a:hover {
+  color: #1d4ed8;
+}
+
+.markdown-content .katex {
+  font-size: 1em !important;
+  vertical-align: baseline !important;
+  display: inline !important;
+}
+
+.katex-display {
+  display: block !important;
+  text-align: center;
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.katex .base {
+  vertical-align: baseline !important;
+}
+
+.katex-html {
+  min-height: 1em;
+}
+
+/* Better font consistency - make KaTeX blend with body text */
+.katex * {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+}
+
+/* Keep variables in italic for mathematical convention */
+.katex .mord.mathnormal {
+  font-style: italic !important;
+}
+
+/* Numbers and operators in normal style */
+.katex .mord:not(.mathnormal),
+.katex .mop,
+.katex .mbin,
+.katex .mrel,
+.katex .mpunct {
+  font-style: normal !important;
+  font-weight: 400 !important;
+}
+
+/* Fractions and other structures */
+.katex .mfrac {
+  font-size: 1em !important;
+}
+
+/* Ensure consistent text rendering */
+.katex .mord.text {
+  font-family: inherit !important;
+  font-style: normal !important;
+}
+
+.markdown-content img,
+.markdown-content svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-content.prose {
+  max-width: none !important;
+}

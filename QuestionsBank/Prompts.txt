@@ -1,0 +1,169 @@
+MCQ Questions:
+
+I would like to generate very quality question for a Java  assessment. We will go Unitwise and for every unit first we will generate 100  MCQ Question along with different scenarios, Examples, Test Cases, Complexities.
+Attached is a very simple template where you have to fill 100 new uniq question based on Java JDK-17, Attached is the Unit detail of associated concepts in that unit. 
+
+Take your time but I need a qaulity output. Let's create smaller, practical, exam-friendly descriptive questions with simple day-to-day examples and concise code!
+
+Let's improve the program description more nicely and professional. First line we will give a heading about the problem (You can put it inside <h2>....</h2> )
+
+Starting from second line let's give it in the form of paragram inside <p>...</p>. Let's put  any input/output or executable code inside <code>..</code> which will span end to end on the screen. Make sure you don't put anything inside a code  which is innline code within sentences/paragraphs (like variable names, small keywords)
+
+Also while putting the code in solution, just put it inside <code>...</code> instead of <pre>..</pre> and if yiou have some text with solution then put it simple HTML formatting.
+
+You can make use of other HTML tags to format the content nicely.
+
+let's keep adding some good questions which are based on cocepts as well....so it will be a mix of both coding (approx 60-70%) and concpets (approx 30-40%).
+
+First let's go with 10 Questions and once they are baselined then we can proceed.
+
+Let's assign Chapter Name from the followings:
+
+Java Loops, 
+Java Arrays
+Java Enumerations
+Java OOPs Concepts
+Java String Class
+
+For more detail check the attached Template.
+
+
+
+Jumbled Questions:
+
+I would like to generate very quality question for a Java  assessment. We will go Unitwise and for every unit first we will generate 25  Jumbled Question along with different scenarios, Examples, Test Cases, Complexities.
+
+Attached is a very simple template where you have to fill 25 new uniq question based on Java JDK-17, Attached is the Unit detail of associated concepts in that unit.  we should have some logic behind the sequence for example in software development life cycle we should have sequence Analysis, Desig, Developmet, Testing, Implementation, Maintenance. If you can develop such questions based on the given concepts then its fine, otherwise let's give a problem based smaller code chunk of 10-12 lines broken into 4-5 sequences.
+
+Your priority should be creating a sequence based on concepts if possible, otherwise you can have a working code divided into few sequences.
+
+You may have two code statements which can be put either of the first and still program will work, for example two variable assignments....so make sure you chunk the code in a way which does not create any ambiguity
+
+Also while putting the code in solution, just put it inside <code>...</code> instead of pre
+
+Take your time but I need a qaulity output. Let's create smaller, practical, exam-friendly descriptive questions with simple day-to-day examples and concise code!
+
+
+Let's improve the program description more nicely and professional. First line we will give a heading about the problem (You can put it inside <h2>....</h2> )
+
+Starting from second line let's give it in the form of paragram inside <p>...</p>. Let's put  any input/output or executable code inside <code>..</code> which will span end to end on the screen. Make sure you don't put anything inside a code  which is innline code within sentences/paragraphs (like variable names, small keywords)
+
+Also while putting the code in solution, just put it inside <code>...</code> instead of <pre>..</pre> and if yiou have some text with solution then put it simple HTML formatting.
+
+You can make use of other HTML tags to format the content nicely.
+
+First let's go with 10 Questions and once they are baselined then we can proceed.
+
+Let's assign Chapter Name from the followings:
+
+Java Loops, 
+Java Arrays
+Java Enumerations
+Java OOPs Concepts
+Java String Class
+
+For more detail check the attached Template.
+
+
+Fill in the Blank Questions:
+
+I would like to generate very quality question for a Java  assessment. We will go Unitwise and for every unit first we will generate 25  Fill In the Blank Question along with different scenarios, Examples, Test Cases, Complexities.
+
+Attached is a very simple template where you have to fill 25 new uniq question based on Java JDK-17, Attached is the Unit detail of associated concepts in that unit. 
+
+While creating these questions we can leave as many blank as we like and their answer will be given in correct_answers column where we will mention all the fill for the blanks separated by pipe.
+
+Also while putting the code in solution, just put it inside <code>...</code> instead of pre and mkae use of otehr HTML tags in case you mix solution code and other details.
+
+Take your time but I need a qaulity output. Let's create smaller, practical, exam-friendly descriptive questions with simple day-to-day examples and concise code!
+
+
+Let's improve the program description more nicely and professional. First line we will give a heading about the problem (You can put it inside <h2>....</h2> )
+
+Starting from second line let's give it in the form of paragram inside <p>...</p>. Let's put  any input/output or executable code inside <code>..</code> which will span end to end on the screen. Make sure you don't put anything inside a code  which is innline code within sentences/paragraphs (like variable names, small keywords)
+
+Also while putting the code in solution, just put it inside <code>...</code> instead of <pre>..</pre> and if yiou have some text with solution then put it simple HTML formatting.
+
+You can make use of other HTML tags to format the content nicely. Its recommended to use class <span class="bg-yellow-400 text-gray-900 px-1 rounded"> to highlight the filled value.
+
+First let's go with 10 Questions and once they are baselined then we can proceed.
+
+Let's assign Chapter Name from the followings:
+
+Java Loops, 
+Java Arrays
+Java Enumerations
+Java OOPs Concepts
+Java String Class
+
+For more detail check the attached Template.
+
+
+Descriptive Questions:
+
+I would like to generate very quality question for a Java  assessment. We will go Unitwise and for every unit first we will generate 25 Descriove Question along with different scenarios, Examples, Test Cases, Complexities.
+
+Attached is a very simple template where you have to fill 25 new uniq question based on Java JDK-17, Attached is the Unit detail of associated concepts in that unit. 
+
+You can ask to write a code or you can ask to explain a concept or list down the features etc...anything which will be explained by the student.
+
+Also while putting the code in solution, just put it inside <code>...</code> instead of pre and mkae use of otehr HTML tags in case you mix solution code and other details.
+
+Take your time but I need a qaulity output. Let's create smaller, practical, exam-friendly descriptive questions with simple day-to-day examples and concise code!
+
+Let's improve the program description more nicely and professional. First line we will give a heading about the problem (You can put it inside <h2>....</h2> )
+
+Starting from second line let's give it in the form of paragram inside <p>...</p>. Let's put  any input/output or executable code inside <code>..</code> which will span end to end on the screen. Make sure you don't put anything inside a code  which is innline code within sentences/paragraphs (like variable names, small keywords)
+
+Also while putting the code in solution, just put it inside <code>...</code> instead of <pre>..</pre> and if yiou have some text with solution then put it simple HTML formatting.
+
+You can make use of other HTML tags to format the content nicely. Its recommended to use class <span class="bg-yellow-400 text-gray-900 px-1 rounded"> to highlight the filled value.
+
+First let's go with 10 Questions and once they are baselined then we can proceed.
+
+Let's assign Chapter Name from the followings:
+
+Java Loops, 
+Java Arrays
+Java Enumerations
+Java OOPs Concepts
+Java String Class
+
+For more detail check the attached Template.
+
+
+Coding Questions
+I would like to generate very quality question for a Java  assessment. We will go Unitwise and for every unit first we will generate 100  Coding Question along with different scenarios, Examples, Test Cases, Complexities like Hacker Rank. Every question will have starting stub where we do not need to explain any solution like its given in the attached template but yes  solution code  and other information will be provided nicely.
+
+Attached is the template where you have to fill 100 new uniq question based on Java JDK-17, Attached is the Unit detail of associated concept in that unit. 
+
+Take your time, if want to schedule this task in batch then let's do it, but I need a qaulity output.
+
+Let's improve the program description more nicely and professional. First line we will give a heading about the problem (You can put it inside <h2>....</h2> )
+
+Starting from second line let's give it in the form of paragram inside <p>...</p>. Let's put  any input/output or executable code inside <code>..</code> which will span end to end on the screen. Make sure you don't put anything inside a code  which is innline code within sentences/paragraphs (like variable names, small keywords)
+
+Add the following two lines in Code Stub
+
+// Your Code Starts Here
+....
+// Your Code Ends Here
+
+Also while putting the code in solution, just put it inside <code>...</code> instead of <pre>..</pre> and if yiou have some text with solution then put it simple HTML formatting.
+
+You can make use of other HTML tags to format the content nicely. Its recommended to use class <span class="bg-yellow-400 text-gray-900 px-1 rounded"> to highlight the filled value.
+
+Chapter Name will be bold Heading given from the Unit Infomration for Example: Java Loops, Java Arrays and Enums, Java OOPs Concepts, or Java String Class
+
+Let's assign Chapter Name from the followings:
+
+Java Loops, 
+Java Arrays
+Java Enumerations
+Java OOPs Concepts
+Java String Class
+
+For more detail check the attached Template.
+
+
+
