@@ -334,9 +334,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [imageCarouselOpen, setImageCarouselOpen] = useState(false);
   const [carouselImages, setCarouselImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [examMode, setExamMode] = useState<ExamMode>(EXAM_MODES.OFFLINE);
+  const [examMode, setExamMode] = useState<ExamMode>(EXAM_MODES.ONLINE);
   const [securityLevel, setSecurityLevel] = useState<SecurityLevel>(SECURITY_LEVELS.NORMAL);
   const [attendance, setAttendance] = useState<boolean>(false);
+  const [avProctoring, setAvProctoring] = useState<boolean>(false);
   const [completionPolicy, setCompletionPolicy] = useState<'strict' | 'flexible'>('strict');
   const [academicYear, setAcademicYear] = useState('2025-26');
   const [examType, setExamType] = useState('');
@@ -765,6 +766,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         setExamMode(existingExam.mode);
         setSecurityLevel(existingExam.securityLevel || SECURITY_LEVELS.NORMAL);
         setAttendance(existingExam.attendance || false);
+        setAvProctoring((existingExam as any).avProctoring || false);
         setCompletionPolicy((existingExam as any).completionPolicy || 'strict');
         setAcademicYear(existingExam.year);
         setExamType(existingExam.type);
@@ -808,9 +810,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           }
         }
       } else {
-        setExamMode(EXAM_MODES.OFFLINE);
+        setExamMode(EXAM_MODES.ONLINE);
         setSecurityLevel(SECURITY_LEVELS.NORMAL);
         setAttendance(false);
+        setAvProctoring(false);
         setCompletionPolicy('strict');
         setAcademicYear(getCurrentAcademicYear());
         setMaximumMarks(100);
@@ -1117,6 +1120,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       if (examMode === EXAM_MODES.ONLINE) {
         examData.securityLevel = securityLevel;
         examData.attendance = attendance;
+        examData.avProctoring = avProctoring;
         examData.completionPolicy = completionPolicy; // 'strict' or 'flexible'
         // Keep field names consistent - no transformation needed
         examData.questionsList = questions.map((q, index) => {
@@ -2223,8 +2227,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     return { label: type.toUpperCase(), color: 'bg-gray-100 text-gray-700' };
   };
 
-  if (!isOpen) return null;
-
   return (
     <>
       <style>{`
@@ -2236,6 +2238,15 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           to {
             opacity: 1;
             transform: scale(1) translateY(0);
+          }
+        }
+        
+        @keyframes slideInFromLeft {
+          from {
+            transform: translateX(-100%);
+          }
+          to {
+            transform: translateX(0);
           }
         }
         
@@ -2293,13 +2304,18 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         }
       `}</style>
       
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+    <div className={`fixed inset-0 z-[9999] flex items-start justify-start transition-opacity duration-300 ${
+      isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+    }`}>
       <div 
-        className="absolute inset-0 bg-black/30 backdrop-blur-sm z-0"
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm z-0"
+        onClick={onClose}
       />
       
       <div 
-        className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden z-10"
+        className={`relative bg-white shadow-2xl w-full max-w-4xl h-full flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out ${
+          isOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div 
@@ -2359,21 +2375,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 <div className="p-4">
                   <div className="grid grid-cols-2 gap-3">
                     <button
-                      onClick={() => setExamMode(EXAM_MODES.OFFLINE)}
-                      className={`p-3 rounded-lg border-2 transition-all flex items-center space-x-2.5 ${
-                        examMode === EXAM_MODES.OFFLINE 
-                          ? 'border-gray-400 bg-white' 
-                          : 'border-gray-300 bg-white hover:border-gray-400'
-                      }`}
-                    >
-                      <FontAwesomeIcon icon={faFileArrowUp} className={examMode === EXAM_MODES.OFFLINE ? 'text-gray-600' : 'text-gray-400'} />
-                      <div className="text-left">
-                        <h4 className={`font-bold text-sm mb-0.5 ${examMode === EXAM_MODES.OFFLINE ? 'text-gray-900' : 'text-gray-700'}`}>Offline</h4>
-                        <p className={`text-xs ${examMode === EXAM_MODES.OFFLINE ? 'text-gray-600' : 'text-gray-500'}`}>Upload question paper images</p>
-                      </div>
-                    </button>
-
-                    <button
                       onClick={() => setExamMode(EXAM_MODES.ONLINE)}
                       className={`p-3 rounded-lg border-2 transition-all flex items-center space-x-2.5 ${
                         examMode === EXAM_MODES.ONLINE 
@@ -2387,39 +2388,89 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         <p className={`text-xs ${examMode === EXAM_MODES.ONLINE ? 'text-purple-600' : 'text-gray-500'}`}>Create questions digitally</p>
                       </div>
                     </button>
+
+                    <button
+                      onClick={() => setExamMode(EXAM_MODES.OFFLINE)}
+                      className={`p-3 rounded-lg border-2 transition-all flex items-center space-x-2.5 ${
+                        examMode === EXAM_MODES.OFFLINE 
+                          ? 'border-gray-400 bg-white' 
+                          : 'border-gray-300 bg-white hover:border-gray-400'
+                      }`}
+                    >
+                      <FontAwesomeIcon icon={faFileArrowUp} className={examMode === EXAM_MODES.OFFLINE ? 'text-gray-600' : 'text-gray-400'} />
+                      <div className="text-left">
+                        <h4 className={`font-bold text-sm mb-0.5 ${examMode === EXAM_MODES.OFFLINE ? 'text-gray-900' : 'text-gray-700'}`}>Offline</h4>
+                        <p className={`text-xs ${examMode === EXAM_MODES.OFFLINE ? 'text-gray-600' : 'text-gray-500'}`}>Upload question paper images</p>
+                      </div>
+                    </button>
                   </div>
 
                   {examMode === EXAM_MODES.ONLINE && (
                     <div className="mt-4 pt-4 border-t-2 border-gray-200">
-                      <div className="flex items-center justify-center space-x-6">
+                      <div className="flex items-center justify-center space-x-2.5">
                         <button
                           onClick={() => setSecurityLevel(SECURITY_LEVELS.NORMAL)}
-                          className="flex items-center space-x-2 transition-all"
+                          className={`px-5 py-2 rounded-full border-2 transition-all ${
+                            securityLevel === SECURITY_LEVELS.NORMAL 
+                              ? 'border-green-500 bg-white' 
+                              : 'border-gray-300 bg-white hover:border-gray-400'
+                          }`}
                         >
-                          <FontAwesomeIcon icon={faShieldSlash} className={securityLevel === SECURITY_LEVELS.NORMAL ? 'text-green-600' : 'text-gray-400'} />
-                          <span className={`font-bold ${securityLevel === SECURITY_LEVELS.NORMAL ? 'text-green-900' : 'text-gray-500'}`}>Normal</span>
+                          <span className={`font-semibold text-sm ${securityLevel === SECURITY_LEVELS.NORMAL ? 'text-green-600' : 'text-gray-600'}`}>Normal</span>
                         </button>
                         
                         <button
                           onClick={() => setSecurityLevel(SECURITY_LEVELS.SECURE)}
-                          className="flex items-center space-x-2 transition-all"
+                          className={`px-5 py-2 rounded-full border-2 transition-all flex items-center space-x-2 ${
+                            securityLevel === SECURITY_LEVELS.SECURE
+                              ? 'border-gray-500 bg-white'
+                              : 'border-gray-300 bg-white hover:border-gray-400'
+                          }`}
                         >
-                          <FontAwesomeIcon icon={faShield} className={securityLevel === SECURITY_LEVELS.SECURE ? 'text-orange-600' : 'text-gray-400'} />
-                          <span className={`font-bold ${securityLevel === SECURITY_LEVELS.SECURE ? 'text-orange-600' : 'text-gray-500'}`}>Secure</span>
+                          <div className={`w-4 h-4 rounded flex items-center justify-center ${
+                            securityLevel === SECURITY_LEVELS.SECURE 
+                              ? 'border-2 border-gray-600 bg-gray-600' 
+                              : 'border-2 border-gray-400'
+                          }`}>
+                            {securityLevel === SECURITY_LEVELS.SECURE && <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />}
+                          </div>
+                          <span className="font-semibold text-sm text-gray-600">Secure</span>
                         </button>
 
                         <button
                           onClick={() => setAttendance(!attendance)}
-                          className="flex items-center space-x-2 transition-all"
-                        >
-                          <div className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
+                          className={`px-5 py-2 rounded-full border-2 transition-all flex items-center space-x-2 ${
                             attendance 
-                              ? 'bg-blue-600 border-blue-600' 
-                              : 'border-gray-400 hover:border-blue-400'
+                              ? 'border-blue-500 bg-white' 
+                              : 'border-gray-300 bg-white hover:border-gray-400'
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded flex items-center justify-center ${
+                            attendance 
+                              ? 'border-2 border-blue-500 bg-blue-500' 
+                              : 'border-2 border-gray-400'
                           }`}>
-                            {attendance && <FontAwesomeIcon icon={faCheck} className="text-white" strokeWidth={3} />}
+                            {attendance && <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />}
                           </div>
-                          <span className={`font-bold ${attendance ? 'text-blue-600' : 'text-gray-500'}`}>Attendance</span>
+                          <span className={`font-semibold text-sm ${attendance ? 'text-blue-600' : 'text-gray-600'}`}>Attendance</span>
+                        </button>
+
+                        <button
+                          onClick={() => setAvProctoring(!avProctoring)}
+                          className={`px-5 py-2 rounded-full border-2 transition-all flex items-center space-x-2 ${
+                            avProctoring
+                              ? 'border-gray-500 bg-white'
+                              : 'border-gray-300 bg-white hover:border-gray-400'
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded flex items-center justify-center ${
+                            avProctoring 
+                              ? 'border-2 border-gray-600 bg-gray-600' 
+                              : 'border-2 border-gray-400'
+                          }`}>
+                            {avProctoring && <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />}
+                          </div>
+                          <span className="font-semibold text-sm text-gray-600">A/V Proctoring</span>
                         </button>
                       </div>
 
@@ -3145,7 +3196,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           setIsAddingToPool(false);
                           openCustomQuestionModal();
                         }}
-                        className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2"
+                        className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 text-sm"
                       >
                         <FontAwesomeIcon icon={faPen} />
                         <span>Custom Question</span>
@@ -3156,7 +3207,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           addQuestion();
                         }}
                         disabled={!className || !subject || !board}
-                        className="px-5 py-2.5 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="px-4 py-2 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                         style={{ background: brand.gradients.header }}
                         title={!className || !subject || !board ? 'Please select class, subject, and board first' : ''}
                       >
@@ -3345,7 +3396,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             setIsAddingToPool(true);
                             openCustomQuestionModal();
                           }}
-                          className="px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2"
+                          className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 text-sm"
                         >
                           <FontAwesomeIcon icon={faPen} />
                           <span>Custom Question</span>
@@ -3356,7 +3407,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             addQuestion();
                           }}
                           disabled={!className || !subject || !board}
-                          className="px-5 py-2.5 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="px-4 py-2 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                           style={{ background: brand.gradients.header }}
                           title={!className || !subject || !board ? 'Please select class, subject, and board first' : ''}
                         >

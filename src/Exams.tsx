@@ -12,7 +12,8 @@ import {
   faTelescope,
   faBuilding,
   faCheckSquare,
-  faClock
+  faClock,
+  faVideo
 } from '@fortawesome/sharp-light-svg-icons';
 import { firebaseService } from './services/firebase_service';
 import type { DocumentSnapshot } from 'firebase/firestore';
@@ -61,6 +62,7 @@ export interface Exam {
   mode: ExamMode;               // ⚠️ YOU NEED TO CHANGE THIS
   securityLevel?: SecurityLevel; // ⚠️ YOU NEED TO CHANGE THIS
   attendance?: boolean;
+  avProctoring?: boolean;
   examDate: string;
   examTime?: string;
   duration: string;
@@ -270,6 +272,7 @@ function Exams({
         mode: exam.mode,
         securityLevel: exam.securityLevel,
         attendance: exam.attendance,
+        avProctoring: exam.avProctoring,
         examDate: exam.examDate,
         examTime: exam.examTime,
         duration: exam.duration,
@@ -407,6 +410,7 @@ function Exams({
         mode: exam.mode,
         securityLevel: exam.securityLevel,
         attendance: exam.attendance,
+        avProctoring: exam.avProctoring,
         examDate: exam.examDate,
         examTime: exam.examTime,
         duration: exam.duration,
@@ -1135,45 +1139,73 @@ function Exams({
                       </div>
 
                       <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-[11px] font-medium text-indigo-700 bg-indigo-100 px-3 py-1 rounded-full">
+                        <div className="flex items-center gap-2">
+                          {/* Board Badge */}
+                          <span className="inline-flex items-center text-[11px] font-semibold text-indigo-700 bg-gradient-to-r from-indigo-50 to-indigo-100 px-3 py-1.5 rounded-lg shadow-sm">
                             {exam.board}
                           </span>
-                          <span className="text-[11px] font-medium text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
+                          
+                          {/* Year Badge */}
+                          <span className="inline-flex items-center text-[11px] font-semibold text-blue-700 bg-gradient-to-r from-blue-50 to-blue-100 px-3 py-1.5 rounded-lg shadow-sm">
                             {exam.year}
                           </span>
-                          <span className="text-[11px] font-medium text-green-700 bg-green-100 px-3 py-1 rounded-full">
+                          
+                          {/* Mode Badge */}
+                          <span className="inline-flex items-center text-[11px] font-semibold text-green-700 bg-gradient-to-r from-green-50 to-green-100 px-3 py-1.5 rounded-lg shadow-sm">
                             {exam.mode.charAt(0).toUpperCase() + exam.mode.slice(1)}
                           </span>
+                          
+                          {/* Security Level Badge */}
                           {exam.mode === EXAM_MODES.ONLINE && exam.securityLevel === SECURITY_LEVELS.SECURE && (
-                            <div className="w-7 h-7 bg-red-100 rounded-full flex items-center justify-center" title="Secure Exam">
+                            <div 
+                              className="inline-flex items-center justify-center w-8 h-8 bg-gradient-to-br from-red-50 to-red-100 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-help" 
+                              title="Secure Exam - Enhanced Security Measures Enabled"
+                            >
                               <FontAwesomeIcon icon={faShield} style={{ fontSize: '14px' }} className="text-red-600" />
                             </div>
                           )}
+                          
+                          {/* Attendance Badge */}
                           {exam.mode === EXAM_MODES.ONLINE && exam.attendance && (
-                            <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center" title="Attendance Required">
+                            <div 
+                              className="inline-flex items-center justify-center w-8 h-8 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-help" 
+                              title="Attendance Required - Students must mark attendance"
+                            >
                               <FontAwesomeIcon icon={faCheckSquare} style={{ fontSize: '14px' }} className="text-blue-600" />
                             </div>
                           )}
+                          
+                          {/* A/V Proctoring Badge */}
+                          {exam.mode === EXAM_MODES.ONLINE && exam.avProctoring && (
+                            <div 
+                              className="inline-flex items-center justify-center w-8 h-8 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-help" 
+                              title="A/V Proctoring Enabled - Audio & Video Monitoring Active"
+                            >
+                              <FontAwesomeIcon icon={faVideo} style={{ fontSize: '14px' }} className="text-purple-600" />
+                            </div>
+                          )}
                         </div>
-                        <div className="flex space-x-2">
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onExamSelect(exam);
-                            }}
-                            className="text-xs font-medium px-3 py-1.5 rounded-md transition-colors"
-                            style={{ color: brandTheme.colors.primary }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.backgroundColor = `${brandTheme.colors.primary}10`;
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.backgroundColor = 'transparent';
-                            }}
-                          >
-                            View Details
-                          </button>
-                        </div>
+                        
+                        {/* View Details Button */}
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onExamSelect(exam);
+                          }}
+                          className="inline-flex items-center text-xs font-semibold px-4 py-2 rounded-full transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5"
+                          style={{ 
+                            color: brandTheme.colors.primary,
+                            backgroundColor: `${brandTheme.colors.primary}15`
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = `${brandTheme.colors.primary}25`;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = `${brandTheme.colors.primary}15`;
+                          }}
+                        >
+                          View Details
+                        </button>
                       </div>
                     </div>
                   );

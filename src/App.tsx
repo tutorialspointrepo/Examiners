@@ -64,6 +64,7 @@ import Calendar from './Calendar';
 import LeaderBoard from './LeaderBoard';
 import AuditUserList from './AuditUserList';
 import UserAudit from './UserAudit';
+import PreExamVerification from './PreExamVerification';
 
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -312,14 +313,79 @@ function formatExamDate(dateString: string): string {
 }
 
 // Function to handle exam start with attendance check
-async function handleExamStartClick(exam: any, user: UserModel | null, onProceed: () => void, onAttendanceWarning: (exam: any) => void) {
+async function handleExamStartClick(
+  exam: any, 
+  user: UserModel | null, 
+  onProceed: () => void, 
+  onAttendanceWarning: (exam: any) => void,
+  onProctoringSetup?: (exam: any, cameraGranted: boolean, audioGranted: boolean) => void
+) {
   // Safety check - if no user, don't proceed
   if (!user) {
     console.error('Cannot start exam: User is null or undefined');
     return;
   }
   
-  console.log(`🔍 Checking attendance for exam: ${exam.id}, student: ${user.userId}`);
+  console.log(`🔍 Checking requirements for exam: ${exam.id}, student: ${user.userId}`);
+  console.log(`🎥 Exam mode: ${exam.mode}, A/V Proctoring: ${exam.avProctoring}`);
+  
+  // 🎥 CHECK 1: A/V Proctoring Requirements (if enabled)
+  if (exam.mode === EXAM_MODES.ONLINE && exam.avProctoring === true) {
+    console.log('🎥 A/V Proctoring is enabled for this exam - checking requirements...');
+    
+    // Check if proctoring photos exist
+    const hasProctoringPhotos = 
+      user.proctoringPhotos?.front && 
+      user.proctoringPhotos?.left && 
+      user.proctoringPhotos?.right;
+    
+    console.log('📸 Proctoring photos status:', {
+      front: !!user.proctoringPhotos?.front,
+      left: !!user.proctoringPhotos?.left,
+      right: !!user.proctoringPhotos?.right,
+      allComplete: hasProctoringPhotos
+    });
+    
+    // Check camera/microphone permissions
+    let hasCameraPermission = false;
+    let hasMicPermission = false;
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: true 
+      });
+      
+      // Permissions granted
+      hasCameraPermission = true;
+      hasMicPermission = true;
+      
+      // Stop the stream immediately - we're just checking permissions
+      stream.getTracks().forEach(track => track.stop());
+      
+      console.log('✅ Camera and microphone permissions granted');
+    } catch (error: any) {
+      console.log('❌ Camera/microphone permission error:', error.name);
+      hasCameraPermission = false;
+      hasMicPermission = false;
+    }
+    
+    // If ANYTHING is missing, show the setup dialog
+    if (!hasProctoringPhotos || !hasCameraPermission || !hasMicPermission) {
+      console.log('⚠️ Some requirements missing - showing setup dialog');
+      if (onProctoringSetup) {
+        onProctoringSetup(exam, hasCameraPermission, hasMicPermission);
+      } else {
+        console.error('⚠️ onProctoringSetup callback is not provided!');
+      }
+      return;
+    }
+    
+    console.log('✅ All proctoring requirements met - proceeding to exam');
+  }
+  
+  // CHECK 2: Attendance Requirements
+  console.log(`📋 Checking attendance for exam: ${exam.id}, student: ${user.userId}`);
   
   // Check if student is already marked present
   const isPresent = await checkStudentAttendance(exam.id, user.userId);
@@ -361,6 +427,29 @@ async function handleExamStartClick(exam: any, user: UserModel | null, onProceed
   // Proceed to exam
   console.log('🎯 Proceeding to exam interface...');
   onProceed();
+}
+
+// Function to handle pre-exam face verification
+function triggerPreExamVerification(
+  exam: any,
+  user: UserModel | null,
+  onVerificationSuccess: () => void,
+  onVerificationCancel: () => void,
+  setShowPreExamVerification: (show: boolean) => void,
+  setPendingExam: (exam: any) => void,
+  setActiveExam: (exam: any) => void,
+  setShowExamInterface: (show: boolean) => void
+) {
+  // Check if user has proctoring photos
+  if (!user?.proctoringPhotos?.front || !user?.proctoringPhotos?.left || !user?.proctoringPhotos?.right) {
+    console.error('❌ Proctoring photos missing - cannot verify identity');
+    alert('Please complete ID verification in your profile before taking the exam.');
+    return;
+  }
+
+  // Set pending exam and show verification
+  setPendingExam(exam);
+  setShowPreExamVerification(true);
 }
 
 // Helper function to format time in 12-hour format with AM/PM IST
@@ -585,6 +674,616 @@ function useRemainingTime(examDate: string, examTime: string | undefined, durati
   return remaining;
 }
 
+// Proctoring Setup Dialog Component
+function ProctoringSetupDialog({
+  exam,
+  user,
+  brandTheme,
+  onClose,
+  onProceed,
+  cameraStatus,
+  audioStatus,
+  onCameraStatusChange,
+  onAudioStatusChange,
+  mediaStream,
+  onMediaStreamChange
+}: {
+  exam: any;
+  user: UserModel | null;
+  brandTheme: any;
+  onClose: () => void;
+  onProceed: () => void;
+  onNavigateToProfile?: () => void;
+  onRefreshUser?: () => Promise<void>;
+  cameraStatus: 'checking' | 'granted' | 'denied' | 'error';
+  audioStatus: 'checking' | 'granted' | 'denied' | 'error';
+  onCameraStatusChange: (status: 'checking' | 'granted' | 'denied' | 'error') => void;
+  onAudioStatusChange: (status: 'checking' | 'granted' | 'denied' | 'error') => void;
+  mediaStream: MediaStream | null;
+  onMediaStreamChange: (stream: MediaStream | null) => void;
+}) {
+  const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
+  const [proctoringPhotosStatus, setProctoringPhotosStatus] = useState<'checking' | 'complete' | 'incomplete'>('checking');
+  const [missingPhotos, setMissingPhotos] = useState<string[]>([]);
+  const [showPermissionHelp, setShowPermissionHelp] = useState(false);
+  const [permissionHelpMessage, setPermissionHelpMessage] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    // Just set photo status immediately - no checking needed
+    if (user) {
+      const missing: string[] = [];
+      if (!user.proctoringPhotos?.front) missing.push('Front Face');
+      if (!user.proctoringPhotos?.left) missing.push('Left Side');
+      if (!user.proctoringPhotos?.right) missing.push('Right Side');
+      
+      setMissingPhotos(missing);
+      setProctoringPhotosStatus(missing.length === 0 ? 'complete' : 'incomplete');
+    }
+    setIsCheckingPermissions(false);
+  }, [user]);
+
+  useEffect(() => {
+    if (mediaStream && videoRef.current) {
+      videoRef.current.srcObject = mediaStream;
+    }
+  }, [mediaStream]);
+
+  const checkPermissionsAndPhotos = async () => {
+    setIsCheckingPermissions(true);
+    
+    // Check proctoring photos
+    if (user) {
+      console.log('🔍 Checking proctoring photos for user:', user.userId);
+      console.log('📸 Proctoring photos data:', user.proctoringPhotos);
+      console.log('📸 Front photo URL:', user.proctoringPhotos?.front);
+      console.log('📸 Left photo URL:', user.proctoringPhotos?.left);
+      console.log('📸 Right photo URL:', user.proctoringPhotos?.right);
+      
+      const missing: string[] = [];
+      
+      // Simple check - just verify URLs exist
+      if (!user.proctoringPhotos?.front) missing.push('Front Face');
+      if (!user.proctoringPhotos?.left) missing.push('Left Side');
+      if (!user.proctoringPhotos?.right) missing.push('Right Side');
+      
+      console.log('📋 Missing photos:', missing);
+      
+      setMissingPhotos(missing);
+      setProctoringPhotosStatus(missing.length === 0 ? 'complete' : 'incomplete');
+      
+      console.log('✅ Photo status set to:', missing.length === 0 ? 'complete' : 'incomplete');
+    } else {
+      console.warn('⚠️ No user provided for photo check');
+    }
+    
+    // Only check camera/audio permissions if status is still 'checking'
+    // If already granted/denied, skip the permission request
+    if (cameraStatus === 'checking' && audioStatus === 'checking') {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: true 
+        });
+        
+        onMediaStreamChange(stream);
+        onCameraStatusChange('granted');
+        onAudioStatusChange('granted');
+      } catch (error: any) {
+        console.error('Media permission error:', error);
+        
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          onCameraStatusChange('denied');
+          onAudioStatusChange('denied');
+        } else {
+          onCameraStatusChange('error');
+          onAudioStatusChange('error');
+        }
+      }
+    } else {
+      console.log('✅ Using existing permission status - camera:', cameraStatus, 'audio:', audioStatus);
+    }
+    
+    setIsCheckingPermissions(false);
+  };
+
+  const requestPermissions = async () => {
+    try {
+      // Stop any existing streams first
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        onMediaStreamChange(null);
+      }
+      
+      onCameraStatusChange('checking');
+      onAudioStatusChange('checking');
+      setShowPermissionHelp(false); // Hide help when retrying
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: true 
+      });
+      
+      onMediaStreamChange(stream);
+      onCameraStatusChange('granted');
+      onAudioStatusChange('granted');
+    } catch (error: any) {
+      console.error('Failed to get media permissions:', error);
+      
+      // If it's NotAllowedError, permissions are blocked in browser settings
+      if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+        onCameraStatusChange('denied');
+        onAudioStatusChange('denied');
+        setPermissionHelpMessage('blocked');
+        setShowPermissionHelp(true);
+      } else if (error.name === 'NotFoundError') {
+        // No camera/microphone found
+        onCameraStatusChange('error');
+        onAudioStatusChange('error');
+        setPermissionHelpMessage('notfound');
+        setShowPermissionHelp(true);
+      } else {
+        // Other errors (device in use, etc.)
+        onCameraStatusChange('error');
+        onAudioStatusChange('error');
+        setPermissionHelpMessage('inuse');
+        setShowPermissionHelp(true);
+      }
+    }
+  };
+
+  const canProceed = 
+    cameraStatus === 'granted' && 
+    audioStatus === 'granted' && 
+    proctoringPhotosStatus === 'complete';
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[10000] p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl mx-auto overflow-hidden animate-scale-in max-h-[90vh] overflow-y-auto relative">
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors group"
+          title="Close"
+        >
+          <svg className="w-5 h-5 text-gray-600 group-hover:text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+        
+        <div className="p-6 pt-12">
+          {/* Show Permission Help Screen OR Main Setup Screen */}
+          {showPermissionHelp ? (
+            /* Permission Help Screen */
+            <>
+              {/* Title Section */}
+              <div className="text-center mb-6">
+                <div 
+                  className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"
+                  style={{ 
+                    background: permissionHelpMessage === 'blocked' 
+                      ? 'linear-gradient(135deg, #FCA5A5 0%, #EF4444 100%)'
+                      : 'linear-gradient(135deg, #FCD34D 0%, #F59E0B 100%)',
+                    boxShadow: permissionHelpMessage === 'blocked'
+                      ? '0 8px 32px rgba(239, 68, 68, 0.3)'
+                      : '0 8px 32px rgba(245, 158, 11, 0.3)'
+                  }}
+                >
+                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {permissionHelpMessage === 'blocked' ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    )}
+                  </svg>
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  {permissionHelpMessage === 'blocked' && '🔒 Camera/Microphone Blocked'}
+                  {permissionHelpMessage === 'notfound' && '❌ Device Not Found'}
+                  {permissionHelpMessage === 'inuse' && '⚠️ Device In Use'}
+                  {permissionHelpMessage === 'uploadphotos' && '📸 Upload Proctoring Photos'}
+                </h2>
+                <p className="text-gray-600 text-sm">
+                  {permissionHelpMessage === 'blocked' && 'Permissions are blocked in your browser'}
+                  {permissionHelpMessage === 'notfound' && 'No camera or microphone detected'}
+                  {permissionHelpMessage === 'inuse' && 'Device may be in use by another application'}
+                  {permissionHelpMessage === 'uploadphotos' && 'Please upload your proctoring photos first'}
+                </p>
+              </div>
+
+              {/* Help Content */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-5 mb-6 border border-blue-200">
+                {permissionHelpMessage === 'blocked' && (
+                  <div className="space-y-4">
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm">1</div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900 mb-1">Click the lock or camera icon</p>
+                        <p className="text-sm text-gray-700">Look for the 🔒 or 🎥 icon in your browser's address bar (top left)</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm">2</div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900 mb-1">Change permissions to "Allow"</p>
+                        <p className="text-sm text-gray-700">Select "Allow" for both Camera and Microphone</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center font-bold text-sm">3</div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900 mb-1">Reload the page</p>
+                        <p className="text-sm text-gray-700">Click the "Reload Page" button below to apply changes</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {permissionHelpMessage === 'notfound' && (
+                  <div className="space-y-3">
+                    <p className="text-gray-800 font-semibold">No camera or microphone was detected on your device.</p>
+                    <div className="text-sm text-gray-700 space-y-2">
+                      <p>• Make sure your camera and microphone are properly connected</p>
+                      <p>• Check if your device has a built-in camera and microphone</p>
+                      <p>• Try unplugging and reconnecting external devices</p>
+                      <p>• Restart your browser after connecting devices</p>
+                    </div>
+                  </div>
+                )}
+
+                {permissionHelpMessage === 'inuse' && (
+                  <div className="space-y-3">
+                    <p className="text-gray-800 font-semibold">Your camera or microphone is currently in use by another application.</p>
+                    <div className="text-sm text-gray-700 space-y-2">
+                      <p>• Close other video conferencing apps (Zoom, Teams, etc.)</p>
+                      <p>• Close other browser tabs that might be using the camera</p>
+                      <p>• Restart your browser if the issue persists</p>
+                    </div>
+                  </div>
+                )}
+                
+                {permissionHelpMessage === 'uploadphotos' && (
+                  <div className="space-y-4">
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-3">
+                      <p className="text-sm text-amber-900 font-semibold mb-2">⚠️ Required Photos Missing:</p>
+                      <ul className="text-sm text-amber-800 space-y-1 ml-4">
+                        {missingPhotos.map((photo, index) => (
+                          <li key={index} className="list-disc">{photo}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">1</div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900 mb-1">Click your profile icon</p>
+                        <p className="text-sm text-gray-700">Located in the top-right corner of the page</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">2</div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900 mb-1">Go to "Profile Settings"</p>
+                        <p className="text-sm text-gray-700">Select Profile Settings from the dropdown menu</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">3</div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900 mb-1">Upload Proctoring Photos</p>
+                        <p className="text-sm text-gray-700">Find the "Proctoring Photos" section and upload all 3 photos (Front Face, Left Side, Right Side)</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 w-8 h-8 bg-purple-600 text-white rounded-full flex items-center justify-center font-bold text-sm">4</div>
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900 mb-1">Return and try again</p>
+                        <p className="text-sm text-gray-700">Come back to this exam and click "Start Exam" again</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => setShowPermissionHelp(false)}
+                  className="flex-1 py-3 text-gray-700 font-semibold rounded-xl border-2 border-gray-300 hover:bg-gray-50 transition"
+                >
+                  ← Back
+                </button>
+                {permissionHelpMessage === 'blocked' ? (
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="flex-1 py-3 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition transform hover:scale-[1.02] active:scale-[0.98]"
+                    style={{ background: brandTheme.gradients.primary }}
+                  >
+                    🔄 Reload Page
+                  </button>
+                ) : permissionHelpMessage === 'uploadphotos' ? (
+                  <button
+                    onClick={async () => {
+                      console.log('🔄 Check Again button clicked');
+                      setIsRefreshing(true);
+                      
+                      try {
+                        // Refresh user data first
+                        console.log('📥 Refreshing user data...');
+                        if (onRefreshUser) {
+                          await onRefreshUser();
+                          console.log('✅ User data refreshed');
+                        }
+                        
+                        // Then recheck photos
+                        console.log('🔍 Rechecking photos...');
+                        setShowPermissionHelp(false);
+                        await checkPermissionsAndPhotos();
+                        console.log('✅ Photos rechecked');
+                      } catch (error) {
+                        console.error('❌ Error during refresh:', error);
+                      } finally {
+                        setIsRefreshing(false);
+                      }
+                    }}
+                    disabled={isRefreshing}
+                    className="flex-1 py-3 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ background: brandTheme.gradients.primary }}
+                  >
+                    {isRefreshing ? '🔄 Checking...' : '✓ I\'ve Uploaded - Check Again'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setShowPermissionHelp(false);
+                      requestPermissions();
+                    }}
+                    className="flex-1 py-3 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition transform hover:scale-[1.02] active:scale-[0.98]"
+                    style={{ background: brandTheme.gradients.primary }}
+                  >
+                    Try Again
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            /* Main Setup Screen */
+            <>
+          <div className="text-center mb-6">
+            <div 
+              className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"
+              style={{ 
+                background: 'linear-gradient(135deg, #A78BFA 0%, #8B5CF6 100%)',
+                boxShadow: '0 8px 32px rgba(139, 92, 246, 0.3)'
+              }}
+            >
+              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">
+              A/V Proctoring Setup Required
+            </h2>
+            <p className="text-gray-600 text-sm">
+              This exam requires audio & video monitoring. Please complete the setup below.
+            </p>
+          </div>
+
+          {/* Exam Details */}
+          <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-4 mb-6 border border-purple-200">
+            <div className="flex items-center space-x-3">
+              <div 
+                className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: brandTheme.gradients.primary }}
+              >
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-bold text-gray-900">{exam.title}</p>
+                <p className="text-xs text-gray-600">{exam.class} • {exam.subject}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Requirements Checklist */}
+          <div className="space-y-4 mb-6">
+            {/* Camera Permission */}
+            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    cameraStatus === 'granted' ? 'bg-green-100' :
+                    cameraStatus === 'denied' || cameraStatus === 'error' ? 'bg-red-100' : 'bg-gray-100'
+                  }`}>
+                    <svg className={`w-5 h-5 ${
+                      cameraStatus === 'granted' ? 'text-green-600' :
+                      cameraStatus === 'denied' || cameraStatus === 'error' ? 'text-red-600' : 'text-gray-400'
+                    }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">Camera Access</p>
+                    <p className="text-xs text-gray-600">
+                      {cameraStatus === 'checking' && 'Checking permission...'}
+                      {cameraStatus === 'granted' && 'Permission granted'}
+                      {cameraStatus === 'denied' && 'Permission denied - Click "Grant Access" or check browser settings'}
+                      {cameraStatus === 'error' && 'Error accessing camera - May be in use by another app'}
+                    </p>
+                  </div>
+                </div>
+                {cameraStatus === 'granted' ? (
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : cameraStatus === 'denied' || cameraStatus === 'error' ? (
+                  <button
+                    onClick={requestPermissions}
+                    className="px-3 py-1.5 bg-purple-600 text-white text-xs font-semibold rounded-lg hover:bg-purple-700 transition"
+                  >
+                    Grant Access
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Audio Permission */}
+            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    audioStatus === 'granted' ? 'bg-green-100' :
+                    audioStatus === 'denied' || audioStatus === 'error' ? 'bg-red-100' : 'bg-gray-100'
+                  }`}>
+                    <svg className={`w-5 h-5 ${
+                      audioStatus === 'granted' ? 'text-green-600' :
+                      audioStatus === 'denied' || audioStatus === 'error' ? 'text-red-600' : 'text-gray-400'
+                    }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">Microphone Access</p>
+                    <p className="text-xs text-gray-600">
+                      {audioStatus === 'checking' && 'Checking permission...'}
+                      {audioStatus === 'granted' && 'Permission granted'}
+                      {audioStatus === 'denied' && 'Permission denied - Click "Grant Access" or check browser settings'}
+                      {audioStatus === 'error' && 'Error accessing microphone - May be in use by another app'}
+                    </p>
+                  </div>
+                </div>
+                {audioStatus === 'granted' ? (
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : audioStatus === 'denied' || audioStatus === 'error' ? (
+                  <button
+                    onClick={requestPermissions}
+                    className="px-3 py-1.5 bg-purple-600 text-white text-xs font-semibold rounded-lg hover:bg-purple-700 transition"
+                  >
+                    Grant Access
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Proctoring Photos */}
+            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    proctoringPhotosStatus === 'complete' ? 'bg-green-100' :
+                    proctoringPhotosStatus === 'incomplete' ? 'bg-red-100' : 'bg-gray-100'
+                  }`}>
+                    <svg className={`w-5 h-5 ${
+                      proctoringPhotosStatus === 'complete' ? 'text-green-600' :
+                      proctoringPhotosStatus === 'incomplete' ? 'text-red-600' : 'text-gray-400'
+                    }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900 text-sm">Proctoring Photos</p>
+                    <p className="text-xs text-gray-600">
+                      {proctoringPhotosStatus === 'checking' && 'Checking photos...'}
+                      {proctoringPhotosStatus === 'complete' && 'All photos uploaded'}
+                      {proctoringPhotosStatus === 'incomplete' && `Missing: ${missingPhotos.join(', ')}`}
+                    </p>
+                  </div>
+                </div>
+                {proctoringPhotosStatus === 'complete' ? (
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : proctoringPhotosStatus === 'incomplete' ? (
+                  <button
+                    onClick={() => {
+                      // Show help about uploading photos
+                      setPermissionHelpMessage('uploadphotos');
+                      setShowPermissionHelp(true);
+                    }}
+                    className="px-3 py-1.5 bg-purple-600 text-white text-xs font-semibold rounded-lg hover:bg-purple-700 transition whitespace-nowrap"
+                  >
+                    Upload Photos
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          {/* Camera Preview */}
+          {mediaStream && cameraStatus === 'granted' && (
+            <div className="mb-6">
+              <p className="text-sm font-semibold text-gray-900 mb-2">Camera Preview</p>
+              <div className="relative rounded-xl overflow-hidden bg-gray-900">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-64 object-cover"
+                />
+                <div className="absolute top-3 left-3 bg-red-600 text-white text-xs px-2 py-1 rounded-full flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                  <span>LIVE</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Warning Message if requirements not met */}
+          {!canProceed && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+              <div className="flex items-start space-x-3">
+                <svg className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-red-900 mb-1">
+                    Cannot Start Exam Yet
+                  </p>
+                  <p className="text-xs text-red-800 leading-relaxed">
+                    This exam requires A/V proctoring. Please complete all requirements above before you can proceed.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex space-x-3">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3 text-gray-700 font-semibold rounded-xl border-2 border-gray-300 hover:bg-gray-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onProceed}
+              disabled={!canProceed}
+              className={`flex-1 py-3 text-white font-semibold rounded-xl shadow-lg transition ${
+                canProceed
+                  ? 'hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98]'
+                  : 'opacity-50 cursor-not-allowed'
+              }`}
+              style={{ 
+                background: canProceed ? brandTheme.gradients.primary : '#9CA3AF'
+              }}
+            >
+              {canProceed ? 'Continue to Exam' : 'Complete Setup First'}
+            </button>
+          </div>
+          </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Live Exam Interface Component
 function LiveExamInterface({ 
   selectedExam, 
@@ -597,9 +1296,28 @@ function LiveExamInterface({
   brandTheme: any;
   onEnterExam: () => void;
 }) {
+  const [isLoading, setIsLoading] = useState(true);
   const userRole = currentUser?.userType || 'student';
   const isTeacher = ['admin', 'principal', 'dean', 'teacher', 'system_admin'].includes(userRole);
   const remaining = useRemainingTime(selectedExam.examDate, selectedExam.examTime, selectedExam.duration);
+
+  // Simulate brief loading to prevent flash
+  useEffect(() => {
+    setIsLoading(true);
+    const timer = setTimeout(() => setIsLoading(false), 150);
+    return () => clearTimeout(timer);
+  }, [selectedExam?.id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-50 to-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading exam details...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 to-white">
@@ -698,77 +1416,77 @@ function LiveExamInterface({
         </div>
 
         {/* Instructions Section */}
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-6 border-2 border-amber-200 mb-8">
-          <div className="flex items-start space-x-4">
+        <div className="bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 rounded-2xl p-5 border border-amber-200 shadow-sm mb-8">
+          <div className="flex items-start space-x-3">
             <div className="flex-shrink-0">
-              <div className="w-10 h-10 bg-amber-500 rounded-full flex items-center justify-center">
+              <div className="w-9 h-9 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center shadow-md">
                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-bold text-amber-900 mb-3">
+              <h3 className="text-base font-bold text-amber-900 mb-3">
                 {isTeacher ? 'Teacher Instructions' : 'Important Instructions'}
               </h3>
-              <ul className="space-y-2.5">
+              <ul className="space-y-2">
                 {isTeacher ? (
                   <>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900">Monitor student attendance and submissions in real-time via Live Stats</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed">Monitor student attendance and submissions in real-time via Live Stats</span>
                     </li>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900">You can enter the exam to preview questions and verify content</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed">You can enter the exam to preview questions and verify content</span>
                     </li>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900">Student progress and scores will be visible after exam completion</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed">Student progress and scores will be visible after exam completion</span>
                     </li>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900">Use Attendance tab to mark present students manually if needed</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed">Use Attendance tab to mark present students manually if needed</span>
                     </li>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900">Your entry won't affect student access or exam results</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed">Your entry won't affect student access or exam results</span>
                     </li>
                   </>
                 ) : (
                   <>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900"><strong>Mark Attendance:</strong> Your attendance will be recorded when you enter the exam</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Mark Attendance:</strong> Your attendance will be recorded when you enter the exam</span>
                     </li>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900"><strong>Read Carefully:</strong> Review all questions before starting to answer</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Read Carefully:</strong> Review all questions before starting to answer</span>
                     </li>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-red-600 font-bold text-lg mt-0.5">⚠</span>
-                      <span className="text-red-900"><strong>Negative Marking:</strong> MCQ questions have negative marking - wrong answers will deduct marks</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-red-500 font-bold text-base mt-0.5 flex-shrink-0">⚠</span>
+                      <span className="text-red-800 text-sm leading-relaxed"><strong className="font-semibold">Negative Marking:</strong> MCQ questions have negative marking - wrong answers will deduct marks</span>
                     </li>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900"><strong>Save Progress:</strong> Your answers are auto-saved, but submit manually to be safe</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Save Progress:</strong> Your answers are auto-saved, but submit manually to be safe</span>
                     </li>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900"><strong>Stable Connection:</strong> {selectedExam.mode === EXAM_MODES.ONLINE ? 'Keep a strong internet connection throughout the exam' : 'Ensure internet connectivity for submitting answers'}</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Stable Connection:</strong> {selectedExam.mode === EXAM_MODES.ONLINE ? 'Keep a strong internet connection throughout the exam' : 'Ensure internet connectivity for submitting answers'}</span>
                     </li>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900"><strong>Time Management:</strong> Monitor the countdown timer and submit before time expires</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Time Management:</strong> Monitor the countdown timer and submit before time expires</span>
                     </li>
-                    <li className="flex items-start space-x-3">
-                      <span className="text-amber-600 font-bold text-lg mt-0.5">•</span>
-                      <span className="text-amber-900"><strong>Academic Integrity:</strong> Complete the exam independently without external assistance</span>
+                    <li className="flex items-start space-x-2">
+                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
+                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Academic Integrity:</strong> Complete the exam independently without external assistance</span>
                     </li>
                     {selectedExam.securityLevel === SECURITY_LEVELS.SECURE && (
-                      <li className="flex items-start space-x-3">
-                        <span className="text-red-600 font-bold text-lg mt-0.5">⚠</span>
-                        <span className="text-red-900 font-semibold"><strong>Secure Mode:</strong> Tab switching and external tools may be monitored</span>
+                      <li className="flex items-start space-x-2">
+                        <span className="text-red-500 font-bold text-base mt-0.5 flex-shrink-0">⚠</span>
+                        <span className="text-red-800 text-sm leading-relaxed font-medium"><strong className="font-semibold">Secure Mode:</strong> Tab switching and external tools may be monitored</span>
                       </li>
                     )}
                   </>
@@ -1019,6 +1737,11 @@ function App() {
   const [loginIPInfo, setLoginIPInfo] = useState<LoginIPInfo | null>(null);
   const [showAttendanceWarningDialog, setShowAttendanceWarningDialog] = useState(false);
   const [pendingExamStart, setPendingExamStart] = useState<any>(null);
+  const [showProctoringSetupDialog, setShowProctoringSetupDialog] = useState(false);
+  const [pendingProctoringExam, setPendingProctoringExam] = useState<any>(null);
+  const [cameraPermissionStatus, setCameraPermissionStatus] = useState<'checking' | 'granted' | 'denied' | 'error'>('checking');
+  const [audioPermissionStatus, setAudioPermissionStatus] = useState<'checking' | 'granted' | 'denied' | 'error'>('checking');
+  const [mediaStream, setMediaStream] = useState<MediaStream | null>(null);
   
 
 const [isCreateRoomModalOpen, setIsCreateRoomModalOpen] = useState(false);
@@ -1114,6 +1837,9 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   // Exam Interface States
   const [showExamInterface, setShowExamInterface] = useState(false);
   const [activeExam, setActiveExam] = useState<any>(null);
+  const [showPreExamVerification, setShowPreExamVerification] = useState(false);
+  const [pendingExam, setPendingExam] = useState<any>(null);
+  const [verifiedAudioDeviceId, setVerifiedAudioDeviceId] = useState<string>('');
   
   // Colleges state (for system admin)
   const [colleges, setColleges] = useState<Array<{id: string; name: string}>>([]);
@@ -2361,10 +3087,34 @@ const fetchCounts = async () => {
       setIsSubmittingNotice(false);
     }
   };
-  console.log('🔥 APP - completionPolicy:', activeExam?.completionPolicy);
 
   return (
     <BrandProvider theme={brandTheme}>
+      {/* PRE-EXAM VERIFICATION MODAL */}
+      {showPreExamVerification && pendingExam && currentUser && (
+        <PreExamVerification
+          userId={currentUser.userId}
+          examTitle={pendingExam.title}
+          proctoringPhotos={currentUser.proctoringPhotos || { front: null, left: null, right: null }}
+          
+          // ✅ UPDATE THIS FUNCTION
+          onSuccess={(deviceId: string) => { 
+            console.log('🎤 Microphone Verified & Captured:', deviceId);
+            setVerifiedAudioDeviceId(deviceId); // <--- STORE THE ID
+            
+            setShowPreExamVerification(false);
+            setActiveExam(pendingExam);
+            setShowExamInterface(true);
+            setPendingExam(null);
+          }}
+          
+          onCancel={() => {
+            setShowPreExamVerification(false);
+            setPendingExam(null);
+          }}
+        />
+      )}
+
       {showExamInterface && activeExam ? (
         // FULL SCREEN EXAM INTERFACE - No header, footer, or sidebars
       <>
@@ -2377,6 +3127,7 @@ const fetchCounts = async () => {
         userStudentRoll={currentUser?.studentRoll || ''}
         userStudentClass={currentUser?.studentClass || ''} 
         userType={currentUser?.userType || 'student'}
+        proctoringPhotos={currentUser?.proctoringPhotos}
         examTitle={activeExam.title}
         examSubject={activeExam.subject || 'General'}
         examType={activeExam.type || 'Online'}
@@ -2389,6 +3140,7 @@ const fetchCounts = async () => {
         completionPolicy={activeExam?.completionPolicy || 'strict'} 
         collegeId={currentUser?.collegeId || 'default'}
         collegeName={selectedCollege?.name || brandTheme.collegeName}
+        selectedAudioDeviceId={verifiedAudioDeviceId}
         onSubmitExam={() => {
           setShowExamInterface(false);
           setActiveExam(null);
@@ -3820,12 +4572,33 @@ const fetchCounts = async () => {
                             selectedExam,
                             currentUser,
                             () => {
-                              setActiveExam(selectedExam);
-                              setShowExamInterface(true);
+                              // Trigger pre-exam verification instead of directly showing exam
+                              triggerPreExamVerification(
+                                selectedExam,
+                                currentUser,
+                                () => {
+                                  setActiveExam(selectedExam);
+                                  setShowExamInterface(true);
+                                },
+                                () => {
+                                  console.log('Verification cancelled');
+                                },
+                                setShowPreExamVerification,
+                                setPendingExam,
+                                setActiveExam,
+                                setShowExamInterface
+                              );
                             },
                             (exam) => {
                               setPendingExamStart(exam);
                               setShowAttendanceWarningDialog(true);
+                            },
+                            (exam, cameraGranted, audioGranted) => {
+                              setPendingProctoringExam(exam);
+                              // Set permission status based on pre-check
+                              setCameraPermissionStatus(cameraGranted ? 'granted' : 'denied');
+                              setAudioPermissionStatus(audioGranted ? 'granted' : 'denied');
+                              setShowProctoringSetupDialog(true);
                             }
                           );
                         }}
@@ -4360,12 +5133,33 @@ const fetchCounts = async () => {
                               selectedExam,
                               currentUser,
                               () => {
-                                setActiveExam(selectedExam);
-                                setShowExamInterface(true);
+                                // Trigger pre-exam verification instead of directly showing exam
+                                triggerPreExamVerification(
+                                  selectedExam,
+                                  currentUser,
+                                  () => {
+                                    setActiveExam(selectedExam);
+                                    setShowExamInterface(true);
+                                  },
+                                  () => {
+                                    console.log('Verification cancelled');
+                                  },
+                                  setShowPreExamVerification,
+                                  setPendingExam,
+                                  setActiveExam,
+                                  setShowExamInterface
+                                );
                               },
                               (exam) => {
                                 setPendingExamStart(exam);
                                 setShowAttendanceWarningDialog(true);
+                              },
+                              (exam, cameraGranted, audioGranted) => {
+                                setPendingProctoringExam(exam);
+                                // Set permission status based on pre-check
+                                setCameraPermissionStatus(cameraGranted ? 'granted' : 'denied');
+                                setAudioPermissionStatus(audioGranted ? 'granted' : 'denied');
+                                setShowProctoringSetupDialog(true);
                               }
                             );
                           } else if (isTeacherRole && selectedExam) {
@@ -7561,12 +8355,23 @@ const fetchCounts = async () => {
     {/* Attendance Warning Dialog */}
     {showAttendanceWarningDialog && (
       <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[10000] p-4 backdrop-blur-sm">
-        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-auto overflow-hidden animate-scale-in">
-          {/* Decorative Top Bar */}
-          <div className="h-2" style={{ background: brandTheme.gradients.primary }}></div>
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md mx-auto overflow-hidden animate-scale-in relative">
+          {/* Close Button */}
+          <button
+            onClick={() => {
+              setShowAttendanceWarningDialog(false);
+              setPendingExamStart(null);
+            }}
+            className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition-colors group"
+            title="Close"
+          >
+            <svg className="w-5 h-5 text-gray-600 group-hover:text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
           
           {/* Icon Section */}
-          <div className="flex flex-col items-center pt-8 pb-6 px-6">
+          <div className="flex flex-col items-center pt-12 pb-6 px-6">
             <div 
               className="w-24 h-24 rounded-full flex items-center justify-center mb-6 animate-bounce-slow"
               style={{ 
@@ -7635,6 +8440,103 @@ const fetchCounts = async () => {
           </div>
         </div>
       </div>
+    )}
+
+    {/* Proctoring Setup Dialog */}
+    {showProctoringSetupDialog && pendingProctoringExam && (
+      <ProctoringSetupDialog
+        exam={pendingProctoringExam}
+        user={currentUser}
+        brandTheme={brandTheme}
+        onClose={() => {
+          setShowProctoringSetupDialog(false);
+          setPendingProctoringExam(null);
+          // Reset permission states
+          setCameraPermissionStatus('checking');
+          setAudioPermissionStatus('checking');
+          // Stop any media streams
+          if (mediaStream) {
+            mediaStream.getTracks().forEach(track => track.stop());
+            setMediaStream(null);
+          }
+        }}
+        onProceed={async () => {
+          // Re-run the exam start check after setup is complete
+          await handleExamStartClick(
+            pendingProctoringExam,
+            currentUser,
+            () => {
+              setShowProctoringSetupDialog(false);
+              setPendingProctoringExam(null);
+              setActiveExam(pendingProctoringExam);
+              setShowExamInterface(true);
+              // Stop any media streams from the setup dialog
+              if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                setMediaStream(null);
+              }
+            },
+            (exam) => {
+              setShowProctoringSetupDialog(false);
+              setPendingProctoringExam(null);
+              setPendingExamStart(exam);
+              setShowAttendanceWarningDialog(true);
+            },
+            (exam) => {
+              // Keep the dialog open if still missing proctoring photos
+              setPendingProctoringExam(exam);
+            }
+          );
+        }}
+        onNavigateToProfile={() => {
+          console.log('🔄 Navigating to profile settings...');
+          
+          // Close the proctoring dialog
+          setShowProctoringSetupDialog(false);
+          setPendingProctoringExam(null);
+          
+          // Stop any media streams
+          if (mediaStream) {
+            mediaStream.getTracks().forEach(track => track.stop());
+            setMediaStream(null);
+          }
+          
+          // Reset permission states
+          setCameraPermissionStatus('checking');
+          setAudioPermissionStatus('checking');
+          
+          // Close any exam interfaces
+          setShowExamInterface(false);
+          setActiveExam(null);
+          setSelectedExam(null);
+          
+          // Navigate to profile settings
+          console.log('📍 Setting activeItem to: profile');
+          setActiveItem('profile');
+          
+          console.log('✅ Navigation complete');
+        }}
+        onRefreshUser={async () => {
+          // Reload current user from Firestore
+          if (currentUser?.userId) {
+            try {
+              const refreshedUser = await firebaseService.getUserById(currentUser.userId);
+              if (refreshedUser) {
+                setCurrentUser(refreshedUser);
+                console.log('✅ User data refreshed');
+              }
+            } catch (error) {
+              console.error('❌ Failed to refresh user:', error);
+            }
+          }
+        }}
+        cameraStatus={cameraPermissionStatus}
+        audioStatus={audioPermissionStatus}
+        onCameraStatusChange={setCameraPermissionStatus}
+        onAudioStatusChange={setAudioPermissionStatus}
+        mediaStream={mediaStream}
+        onMediaStreamChange={setMediaStream}
+      />
     )}
 
     {/* Login Details Dialog */}

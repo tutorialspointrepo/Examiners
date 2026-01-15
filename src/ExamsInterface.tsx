@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import RichTextEditor from './RichTextEditor';
 import Editor from '@monaco-editor/react';
@@ -39,6 +39,7 @@ import {
 import { firebaseService } from './services/firebase_service'; // Added Firebase import
 import { useExamAttempt } from './useExamAttempt';
 import { offlineQueueService, type SyncStatus } from './services/offline_queue_service';
+import { violationQueueService } from './services/violation_queue_service';
 import { 
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
@@ -59,6 +60,8 @@ import TestCasesPanel from './TestCasesPanel';
 import { judge0Service } from './services/judge0_service';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import ExamMonitor from './ExamMonitor';
+import * as faceapi from 'face-api.js';
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -87,7 +90,7 @@ const normalizeComplexity = (complexity: string): ComplexityLevel => {
 
 interface Violation {
   type: ViolationType;
-  timestamp: Date;
+  timestamp: string;
   details?: string;
   severity: SeverityLevel;
   questionNo: number;     // ✅ ADD: Current question number
@@ -136,6 +139,11 @@ interface ExamsInterfaceProps {
   userStudentRoll: string;     // Changed from 'userStudentRoll'
   userStudentClass: string;    // Changed from 'userStudentClass'
   userType: string;            // ✅ Already correct
+  proctoringPhotos?: {
+    front: string | null;
+    left: string | null;
+    right: string | null;
+  };
   
   // Exam fields
   examTitle: string;
@@ -150,6 +158,7 @@ interface ExamsInterfaceProps {
   completionPolicy?: 'strict' | 'flexible';
   collegeId: string;
   collegeName: string;
+  selectedAudioDeviceId?: string;
   
   // Callbacks
   onSubmitExam: (attempt: any) => void;
@@ -459,6 +468,7 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
   userStudentRoll,
   userStudentClass,
   userType,
+  proctoringPhotos,
   examTitle,
   examSubject,
   examType,
@@ -471,12 +481,10 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
   completionPolicy = 'strict',
   collegeId,
   collegeName,
+  selectedAudioDeviceId,
   onSubmitExam,
   onExitExam
 }) => {
-
-  console.log('🔥 INTERFACE - completionPolicy:', completionPolicy);
-  console.log('🔥 INTERFACE - will show?', completionPolicy === 'flexible');
 
   // ==================== TIME EXPIRED OVERLAY STATE ====================
   const [showTimeExpiredOverlay, setShowTimeExpiredOverlay] = useState(false);
@@ -1004,6 +1012,38 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
     console.log('✅ State reset complete');
   }, [examId]);
   
+  // 1. Memoize User Object (Stable Reference)
+  const userObj = useMemo(() => ({
+    userId,
+    fullName: userFullName,
+    email: userEmail,
+    rollNumber: userStudentRoll,
+    class: userStudentClass,
+  }), [userId, userFullName, userEmail, userStudentRoll, userStudentClass]);
+
+  // 2. Memoize Exam Data Object (Stable Reference)
+  // This prevents the infinite loop caused by questions.map() creating a new array every render
+  const examObj = useMemo(() => ({
+    id: examId,
+    title: examTitle || 'Exam',
+    subject: examSubject || 'General',
+    type: examType || 'Online',
+    board: board || 'CBSE',
+    year: academicYear || new Date().getFullYear().toString(),
+    duration: (duration || 60).toString(),
+    maxMarks: (totalMarks || 100).toString(),
+    mode: EXAM_MODES.ONLINE,
+    collegeId: collegeId || 'default',
+    collegeName: collegeName || 'School',
+    totalQuestions: questions.length,
+    questionsList: questions.map(q => ({
+      ...q,
+      type: normalizeQuestionType(q.type),
+      complexity: normalizeComplexity(q.complexity),
+    })),
+  }), [examId, examTitle, examSubject, examType, board, academicYear, duration, totalMarks, collegeId, collegeName, questions]);
+
+  // 3. Pass Stable Objects to Hook
   const {
     attempt,
     loading: attemptLoading,
@@ -1012,35 +1052,11 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
     refreshAttempt,   
     addViolation: addViolationToAttempt,
     submitExam: submitExamToFirebase,
-} = useExamAttempt(
-  examId,
-  {
-    userId,
-    fullName: userFullName,
-    email: userEmail,
-    rollNumber: userStudentRoll,  // ✅ Pass as-is, firebase_service will fetch if needed
-    class: userStudentClass,
-  },
-  {
-    id: examId,
-    title: examTitle || 'Exam',
-    subject: examSubject || 'General',
-    type: examType || 'Online',
-    board: board || 'CBSE',
-    year: academicYear || new Date().getFullYear().toString(),
-    duration: (duration || 60).toString(),       // ✅ SAFE - defaults to 60
-    maxMarks: (totalMarks || 100).toString(),    // ✅ SAFE - defaults to 100
-   mode: EXAM_MODES.ONLINE,
-    collegeId: collegeId || 'default',
-    collegeName: collegeName || 'School',
-    totalQuestions: questions.length,            // ✅ ADD THIS LINE
-    questionsList: questions.map(q => ({
-      ...q,
-      type: normalizeQuestionType(q.type),
-      complexity: normalizeComplexity(q.complexity),
-    })),
-  } as any
-);
+  } = useExamAttempt(
+    examId,
+    userObj,   // ✅ Now Stable
+    examObj    // ✅ Now Stable
+  );
 
 // ==================== DEBUG: Track isAlreadySubmitted from hook ====================
 useEffect(() => {
@@ -1053,6 +1069,49 @@ useEffect(() => {
   console.log('  - Attempt status:', attempt?.status || 'none');
   console.log('🎯'.repeat(40) + '\n');
 }, [isAlreadySubmitted, attempt?.attemptId, attempt?.status]);
+
+// ==================== REGISTER VIOLATION QUEUE SYNC CALLBACK ====================
+useEffect(() => {
+  // Register callback to sync violations from queue to Firebase
+  violationQueueService.setSyncCallback(async (queuedViolation) => {
+    try {
+      console.log(`🔄 Syncing queued violation from offline storage: ${queuedViolation.type}`);
+      
+      // Upload proof if exists
+      let proofUrl: string | undefined = undefined;
+      if (queuedViolation.proofBlob) {
+        try {
+          const uploadResult = await firebaseService.uploadViolationProof(
+            queuedViolation.attemptId,
+            queuedViolation.proofBlob
+          );
+          proofUrl = uploadResult.url;
+        } catch (uploadError) {
+          console.error('❌ Failed to upload queued violation proof:', uploadError);
+        }
+      }
+
+      // Create violation object
+      const violation: Violation = {
+        type: queuedViolation.type as ViolationType,
+        timestamp: new Date(queuedViolation.timestamp).toISOString(),
+        details: queuedViolation.details,
+        severity: VIOLATION_SEVERITY_MAP[queuedViolation.type as ViolationType] || 'medium',
+        questionNo: 0, // Unknown for offline violations
+        questionId: '', // Unknown for offline violations
+      };
+
+      // Add to Firebase
+      await addViolationToAttempt(violation);
+      console.log(`✅ Successfully synced queued violation: ${queuedViolation.type}`);
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to sync queued violation:', error);
+      return false;
+    }
+  });
+}, [addViolationToAttempt]);
+
 
 // ==================== REMOVED: Roll number now handled in firebase_service.startExamAttempt ====================
   
@@ -1122,8 +1181,12 @@ useEffect(() => {
   const [pendingViolationsSync, setPendingViolationsSync] = useState<Violation[]>([]);
   
   const [isMonitoringActive, setIsMonitoringActive] = useState(false);
+  const [fullscreenRequested, setFullscreenRequested] = useState(false);
+  const [baselineDescriptors, setBaselineDescriptors] = useState<Float32Array[]>([]);
+  const [faceMonitoringEnabled, setFaceMonitoringEnabled] = useState(false);
   const [currentIpAddress, setCurrentIpAddress] = useState<string>('');
   const violationTimeouts = useRef<Map<ViolationType, number>>(new Map());
+  const violationLimitReached = useRef<boolean>(false);
   const entryTimeRef = useRef<Date>(new Date());
   const tabId = useRef<string>(`exam_tab_${Date.now()}`);
   const currentQuestionRef = useRef<{ index: number; id: string; no: number }>({ 
@@ -1894,40 +1957,141 @@ useEffect(() => {
         entryTimeRef.current = new Date();
         monitoringStartTime.current = Date.now(); // ✅ Record when monitoring started
         
-        // 🔥 REQUEST FULLSCREEN: Enter fullscreen mode for exam (with browser compatibility)
-        try {
-          console.log('🎬 Attempting to enter fullscreen...');
-          const elem = document.documentElement;
-          
-          if (elem.requestFullscreen) {
-            await elem.requestFullscreen();
-            console.log('✅ Entered fullscreen mode (standard API)');
-          } else if ((elem as any).webkitRequestFullscreen) {
-            await (elem as any).webkitRequestFullscreen();
-            console.log('✅ Entered fullscreen mode (webkit)');
-          } else if ((elem as any).mozRequestFullScreen) {
-            await (elem as any).mozRequestFullScreen();
-            console.log('✅ Entered fullscreen mode (moz)');
-          } else if ((elem as any).msRequestFullscreen) {
-            await (elem as any).msRequestFullscreen();
-            console.log('✅ Entered fullscreen mode (ms)');
-          } else {
-            console.warn('⚠️ Fullscreen API not supported by this browser');
+        // 🎥 Initialize face-api and load baseline descriptors if proctoring photos exist
+        console.log('🔍 Checking proctoring photos:', {
+          hasFront: !!proctoringPhotos?.front,
+          hasLeft: !!proctoringPhotos?.left,
+          hasRight: !!proctoringPhotos?.right,
+          proctoringPhotos
+        });
+        
+        if (proctoringPhotos?.front && proctoringPhotos?.left && proctoringPhotos?.right) {
+          console.log('🎥 Initializing face-api for proctoring...');
+          try {
+            // Check if face-api models are already loaded from PreExamVerification
+            console.log('📦 Checking face-api models...');
+            console.log('  - SsdMobilenetv1:', faceapi.nets.ssdMobilenetv1.isLoaded ? '✅ Loaded' : '❌ Not loaded');
+            console.log('  - TinyFaceDetector:', faceapi.nets.tinyFaceDetector.isLoaded ? '✅ Loaded' : '❌ Not loaded');
+            console.log('  - FaceLandmark68Net:', faceapi.nets.faceLandmark68Net.isLoaded ? '✅ Loaded' : '❌ Not loaded');
+            console.log('  - FaceRecognitionNet:', faceapi.nets.faceRecognitionNet.isLoaded ? '✅ Loaded' : '❌ Not loaded');
+            
+            // Warn if SsdMobilenetv1 not loaded (should be loaded by PreExamVerification)
+            if (!faceapi.nets.ssdMobilenetv1.isLoaded) {
+              console.warn('⚠️ SsdMobilenetv1 not loaded - using TinyFaceDetector (less accurate)');
+              console.warn('   This may cause false NO_FACE violations. Ensure SsdMobilenetv1 loads in PreExamVerification.');
+            }
+            
+            // All models MUST be loaded by PreExamVerification before starting exam
+            if (!faceapi.nets.faceLandmark68Net.isLoaded || !faceapi.nets.faceRecognitionNet.isLoaded) {
+              throw new Error('Face-api models not loaded. Please complete PreExamVerification first.');
+            }
+            
+            if (!faceapi.nets.ssdMobilenetv1.isLoaded && !faceapi.nets.tinyFaceDetector.isLoaded) {
+              throw new Error('No face detector loaded. Please complete PreExamVerification first.');
+            }
+            
+            console.log('✅ All required face-api models are loaded from PreExamVerification');
+            
+            // Load baseline descriptors
+            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            const photos = [proctoringPhotos.front, proctoringPhotos.left, proctoringPhotos.right];
+            const descriptors: Float32Array[] = [];
+            
+            for (const photoUrl of photos) {
+              try {
+                let detection;
+                
+                if (isLocalhost) {
+                  // Use blob method for localhost
+                  const response = await fetch(photoUrl);
+                  const blob = await response.blob();
+                  const img = await createImageBitmap(blob);
+                  const canvas = document.createElement('canvas');
+                  canvas.width = img.width;
+                  canvas.height = img.height;
+                  const ctx = canvas.getContext('2d');
+                  if (ctx) {
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Prefer SsdMobilenetv1 (more accurate) if loaded
+                    if (faceapi.nets.ssdMobilenetv1.isLoaded) {
+                      console.log('    - Using SsdMobilenetv1 for baseline detection');
+                      detection = await faceapi
+                        .detectSingleFace(canvas, new faceapi.SsdMobilenetv1Options({
+                          minConfidence: 0.3
+                        }))
+                        .withFaceLandmarks()
+                        .withFaceDescriptor();
+                    } else if (faceapi.nets.tinyFaceDetector.isLoaded) {
+                      console.log('    - Using TinyFaceDetector for baseline detection');
+                      detection = await faceapi
+                        .detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions({
+                          inputSize: 416,
+                          scoreThreshold: 0.2  // Lower = more sensitive
+                        }))
+                        .withFaceLandmarks()
+                        .withFaceDescriptor();
+                    } else {
+                      throw new Error('No face detector model loaded');
+                    }
+                  }
+                } else {
+                  // Production: use standard method
+                  const img = await faceapi.fetchImage(photoUrl);
+                  
+                  // Prefer SsdMobilenetv1 (more accurate) if loaded
+                  if (faceapi.nets.ssdMobilenetv1.isLoaded) {
+                    console.log('    - Using SsdMobilenetv1 for baseline detection');
+                    detection = await faceapi
+                      .detectSingleFace(img, new faceapi.SsdMobilenetv1Options({
+                        minConfidence: 0.3
+                      }))
+                      .withFaceLandmarks()
+                      .withFaceDescriptor();
+                  } else if (faceapi.nets.tinyFaceDetector.isLoaded) {
+                    console.log('    - Using TinyFaceDetector for baseline detection');
+                    detection = await faceapi
+                      .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({
+                        inputSize: 416,
+                        scoreThreshold: 0.2  // Lower = more sensitive
+                      }))
+                      .withFaceLandmarks()
+                      .withFaceDescriptor();
+                  } else {
+                    throw new Error('No face detector model loaded');
+                  }
+                }
+                
+                if (detection) {
+                  descriptors.push(detection.descriptor);
+                }
+              } catch (err) {
+                console.error('❌ Error loading baseline photo:', err);
+              }
+            }
+            
+            if (descriptors.length > 0) {
+              setBaselineDescriptors(descriptors);
+              setFaceMonitoringEnabled(true);
+              console.log(`✅ Loaded ${descriptors.length} baseline descriptors, face monitoring enabled`);
+              console.log('🎥 ExamMonitor should now be active with monitoring:', {
+                descriptorsCount: descriptors.length,
+                monitoringEnabled: true,
+                isMonitoringActive
+              });
+            } else {
+              console.warn('⚠️ No baseline descriptors loaded, face monitoring disabled');
+            }
+          } catch (error) {
+            console.error('❌ Failed to initialize face monitoring:', error);
           }
-          
-          // Check if actually in fullscreen after request
-          setTimeout(() => {
-            const isNowFullscreen = !!(
-              document.fullscreenElement ||
-              (document as any).webkitFullscreenElement ||
-              (document as any).mozFullScreenElement
-            );
-            console.log('🔍 Fullscreen status after request:', isNowFullscreen);
-          }, 100);
-          
-        } catch (error) {
-          console.warn('⚠️ Could not enter fullscreen:', error);
+        } else {
+          console.log('⏭️ Proctoring disabled - skipping face-api model checks and face monitoring');
         }
+        
+        // 🔥 Note: Fullscreen will be requested on first user interaction
+        // Browser security prevents automatic fullscreen in useEffect
+        console.log('ℹ️ Fullscreen will be activated on first user interaction');
         
         console.log('🔒 Exam monitoring enabled');
         
@@ -1954,6 +2118,58 @@ useEffect(() => {
     const cleanup = setupMonitoring();
     return cleanup;
   }, [isMonitoringActive]);
+
+  // ==================== REQUEST FULLSCREEN ON FIRST USER INTERACTION ====================
+  useEffect(() => {
+    // Wait until monitoring is active and we haven't successfully entered fullscreen yet
+    if (!isMonitoringActive || fullscreenRequested) return;
+    
+    const requestFullscreenOnce = async () => {
+      try {
+        console.log('🎬 Requesting fullscreen...');
+        const elem = document.documentElement;
+        
+        if (elem.requestFullscreen) {
+          await elem.requestFullscreen();
+        } else if ((elem as any).webkitRequestFullscreen) {
+          await (elem as any).webkitRequestFullscreen(); // Safari/Chrome
+        } else if ((elem as any).mozRequestFullScreen) {
+          await (elem as any).mozRequestFullScreen(); // Firefox
+        } else if ((elem as any).msRequestFullscreen) {
+          await (elem as any).msRequestFullscreen(); // IE/Edge
+        }
+        
+        // ✅ SUCCESS: Only set this to true if the promise actually resolves
+        setFullscreenRequested(true);
+        console.log('✅ Fullscreen activated successfully');
+        
+      } catch (error) {
+        // ❌ FAIL: Do NOT set fullscreenRequested(true) here. 
+        // Let the listener stay attached so it retries on the next click.
+        console.warn('⚠️ Fullscreen request failed (will retry on next interaction):', error);
+      }
+    };
+    
+    // Try immediately when monitoring becomes active
+    requestFullscreenOnce();
+    
+    // Also listen for interactions in case immediate request fails
+    const handleInteraction = () => {
+      requestFullscreenOnce();
+    };
+    
+    // ✅ USE CAPTURE: Pass { capture: true } or true as the 3rd argument
+    // This ensures we catch the click even if a child component calls e.stopPropagation()
+    document.addEventListener('click', handleInteraction, true);
+    document.addEventListener('keydown', handleInteraction, true);
+    document.addEventListener('touchstart', handleInteraction, true); // Add touch for mobile
+    
+    return () => {
+      document.removeEventListener('click', handleInteraction, true);
+      document.removeEventListener('keydown', handleInteraction, true);
+      document.removeEventListener('touchstart', handleInteraction, true);
+    };
+  }, [isMonitoringActive, fullscreenRequested]);
 
   useEffect(() => {
     if (!imageCarouselOpen) return;
@@ -3547,45 +3763,96 @@ const formatTime = (seconds: number) => {
   /**
    * Log a violation with debouncing to avoid duplicate entries
    */
+  /**
+   * Log a violation with debouncing and optional evidence upload
+   * Supports overloaded signatures:
+   * 1. logViolation(type, details, debounceMs) - Legacy/Internal calls
+   * 2. logViolation(type, details, proofBlob, debounceMs) - New ExamMonitor calls
+   */
   const logViolation = useCallback(async (
     type: ViolationType,
     details?: string,
-    debounceMs: number = 1000
+    arg3?: Blob | number, // Can be proof blob OR debounce time
+    arg4?: number         // Optional debounce time if blob is present
   ) => {
+    // 1. Parse Overloaded Arguments
+    let proofBlob: Blob | undefined = undefined;
+    let debounceMs = 1000;
+
+    if (typeof arg3 === 'number') {
+      debounceMs = arg3; // Legacy call: logViolation('WINDOW_BLUR', 'msg', 5000)
+    } else if (arg3 instanceof Blob) {
+      proofBlob = arg3;  // New call: logViolation('NO_FACE', 'msg', blob)
+      if (typeof arg4 === 'number') {
+        debounceMs = arg4;
+      }
+    }
+
     if (!isMonitoringActive) return;
     
-    // 🔥 GRACE PERIOD: Reduced to 2 seconds
+    // Grace period check (reduced to 2s)
     const timeSinceMonitoringStart = Date.now() - monitoringStartTime.current;
-    if (timeSinceMonitoringStart < 2000) {  // CHANGED FROM 5000 to 2000
-      console.log(`⏭️ Skipping ${type} violation - within grace period (${Math.floor(timeSinceMonitoringStart/1000)}s)`);
+    if (timeSinceMonitoringStart < 2000) { 
+      console.log(`⏭️ Skipping ${type} violation - within grace period`);
       return;
     }
 
+    // Violation limit check (Stop at 100 to prevent database spam)
+    const totalViolations = Object.values(questionViolations).reduce((sum, arr) => sum + arr.length, 0);
+    if (totalViolations >= 100) {
+      if (!violationLimitReached.current) {
+        console.warn('🚫 VIOLATION LIMIT REACHED: 100 violations logged. No more violations will be recorded.');
+        violationLimitReached.current = true;
+      }
+      return;
+    }
+
+    // Debounce logic (Clear existing timeout for this specific violation type)
     const existingTimeout = violationTimeouts.current.get(type);
     if (existingTimeout) {
       clearTimeout(existingTimeout);
     }
 
     const timeout = setTimeout(async () => {
-      // 🔥 FIX: Get current question info from REF (always fresh, not closure)
+      // 🔥 FIX: Get current question info from REF (always fresh)
       const currentQuestionId = currentQuestionRef.current.id;
       const currentQuestionNo = currentQuestionRef.current.no;
       
-      console.log(`🚨 Logging violation on Q${currentQuestionNo} (ID: ${currentQuestionId})`);
+      console.log(`🚨 Processing violation: ${type} on Q${currentQuestionNo}`);
       
+      // ✅ 2. UPLOAD EVIDENCE VIA SERVICE (If provided)
+      let proofUrl: string | undefined = undefined;
+      
+      if (proofBlob) {
+        try {
+          // Use the centralized service method we created
+          // This handles the file extension logic (.webm vs .jpg) internally
+          const url = await firebaseService.uploadProctoringEvidence(
+            examId,
+            userId,
+            type,
+            proofBlob
+          );
+          if (url) proofUrl = url;
+        } catch (error) {
+          console.error('❌ Failed to upload evidence:', error);
+        }
+      }
+
+      // 3. Create Violation Object (Using Constants)
       const violation: Violation = {
         type,
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
         details: details || VIOLATION_DESCRIPTIONS[type],
         severity: VIOLATION_SEVERITY_MAP[type],
-        questionNo: currentQuestionNo,      // ✅ ADD: Track which question
-        questionId: currentQuestionId       // ✅ ADD: Track question ID
+        questionNo: currentQuestionNo,
+        questionId: currentQuestionId,
+        ...(proofUrl && { proofUrl }) // ✅ Attached to record
       };
 
-      // Add to global violations list (for backward compatibility)
+      // 4. Update State & Local Storage
       setViolations(prev => [...prev, violation]);
       
-      // ✅ ADD: Add to per-question violations
       if (currentQuestionId && currentQuestionId !== 'unknown') {
         setQuestionViolations(prev => {
           const updated = {
@@ -3593,10 +3860,10 @@ const formatTime = (seconds: number) => {
             [currentQuestionId]: [...(prev[currentQuestionId] || []), violation]
           };
           
-          // Save to localStorage immediately
           try {
             localStorage.setItem(VIOLATIONS_TRACKING_KEY, JSON.stringify(updated));
-            console.log(`🚨 Q${currentQuestionNo}: Violation tracked - ${type} (${violation.severity})`);
+            const newTotal = Object.values(updated).reduce((sum, arr) => sum + arr.length, 0);
+            console.log(`🚨 Q${currentQuestionNo}: Violation tracked - ${type} [Total: ${newTotal}/100]`);
           } catch (error) {
             console.error('❌ Error saving violations to storage:', error);
           }
@@ -3605,17 +3872,15 @@ const formatTime = (seconds: number) => {
         });
       }
 
-      // ✅ NEW: Add to pending sync queue instead of immediate Firebase write
+      // 5. Queue for Batched Firebase Sync
       setPendingViolationsSync(prev => [...prev, violation]);
-      console.log(`📦 Violation queued for batch sync: ${type} (Q${currentQuestionNo})`);
-
-      console.warn(`⚠️ VIOLATION TRACKED: ${type} (${violation.severity})`, violation.details);
+      console.log(`📦 Violation queued for sync: ${type} (Proof: ${proofUrl ? 'Yes' : 'No'})`);
 
       violationTimeouts.current.delete(type);
     }, debounceMs);
 
     violationTimeouts.current.set(type, timeout);
-  }, [isMonitoringActive, questions, currentQuestionIndex, attempt]);
+  }, [isMonitoringActive, questions, currentQuestionIndex, attempt, questionViolations, examId, userId]);
   
   // ✅ NEW: Batch sync violations every 30 seconds to reduce Firebase writes
   useEffect(() => {
@@ -3637,6 +3902,15 @@ const formatTime = (seconds: number) => {
           await addViolationToAttempt(violation);
         }
         console.log(`✅ Successfully synced ${toSync.length} violations to Firebase`);
+        
+        // Check total violations and warn if approaching limit
+        setQuestionViolations(currentViolations => {
+          const totalViolations = Object.values(currentViolations).reduce((sum, arr) => sum + arr.length, 0);
+          if (totalViolations >= 90 && totalViolations < 100) {
+            console.warn(`⚠️ WARNING: ${totalViolations}/100 violations logged. Approaching limit!`);
+          }
+          return currentViolations; // No change, just reading
+        });
       } catch (error) {
         console.error('❌ Failed to sync batched violations:', error);
         // Re-add failed violations to queue for retry
@@ -3679,7 +3953,7 @@ const formatTime = (seconds: number) => {
     const handleBlur = () => {
       setTimeout(() => {
         if (!isHandlingVisibilityChange) {
-          logViolation('WINDOW_BLUR');
+          logViolation('WINDOW_BLUR', undefined, 5000); // 5 second grace period
         }
       }, 50);
     };
@@ -3702,10 +3976,10 @@ const formatTime = (seconds: number) => {
         
         if (isLikelyMinimized) {
           console.log('🚨 WINDOW MINIMIZED - Logging violation!');
-          logViolation('WINDOW_MINIMIZE', 'Window minimized');
+          logViolation('WINDOW_MINIMIZE', 'Window minimized', 10000); // 10 second grace period
         } else {
           console.log('🚨 TAB SWITCHED - Logging violation!');
-          logViolation('TAB_SWITCH');
+          logViolation('TAB_SWITCH', undefined, 5000); // 5 second grace period
         }
       } else {
         // When page becomes visible again, check clipboard for potential screenshot
@@ -3729,22 +4003,22 @@ const formatTime = (seconds: number) => {
 
     const handleCopy = (e: ClipboardEvent) => {
       e.preventDefault();
-      logViolation('COPY_ATTEMPT');
+      logViolation('COPY_ATTEMPT', undefined, 3000); // 3 second grace period
     };
 
     const handleCut = (e: ClipboardEvent) => {
       e.preventDefault();
-      logViolation('CUT_ATTEMPT');
+      logViolation('CUT_ATTEMPT', undefined, 3000); // 3 second grace period
     };
 
     const handlePaste = (e: ClipboardEvent) => {
       e.preventDefault();
-      logViolation('PASTE_ATTEMPT');
+      logViolation('PASTE_ATTEMPT', undefined, 3000); // 3 second grace period
     };
 
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
-      logViolation('RIGHT_CLICK');
+      logViolation('RIGHT_CLICK', undefined, 2000); // 2 second grace period
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -3851,7 +4125,7 @@ const formatTime = (seconds: number) => {
       
       if (!isFullscreen) {
         console.log('🚨 FULLSCREEN EXITED - Logging violation!');
-        logViolation(VIOLATION_TYPES.FULLSCREEN_EXIT);
+        logViolation(VIOLATION_TYPES.FULLSCREEN_EXIT, undefined, 10000); // 10 second grace period
       }
     };
 let previousSize = { width: window.innerWidth, height: window.innerHeight };
@@ -4169,7 +4443,12 @@ const calculateStudentEndTime = (
     notViewed: questions.filter(q => !viewedQuestions.has(q.id)).length,
     answered: questions.filter(q => answers[q.id]).length,
     bookmarked: bookmarkedQuestions.size,
-    skipped: questions.filter(q => viewedQuestions.has(q.id) && !answers[q.id] && !bookmarkedQuestions.has(q.id)).length
+    skipped: questions.filter(q => 
+      viewedQuestions.has(q.id) && 
+      !answers[q.id] && 
+      !bookmarkedQuestions.has(q.id) &&
+      q.id !== questions[currentQuestionIndex]?.id // Exclude current question
+    ).length
   };
 
   const getStatusColor = (questionId: string, index: number) => {
@@ -5076,6 +5355,19 @@ const calculateStudentEndTime = (
 
   return (
     <div className={`h-screen w-screen flex ${darkMode ? 'bg-gray-900' : 'bg-white'}`}>
+      {/* Proctoring Monitor - Hidden component */}
+      {faceMonitoringEnabled && baselineDescriptors.length > 0 && attempt?.attemptId && (
+        <ExamMonitor
+          baselineDescriptors={baselineDescriptors}
+          onViolation={logViolation}
+          monitoringEnabled={isMonitoringActive}
+          selectedAudioDeviceId={selectedAudioDeviceId}
+          examId={examId}
+          studentId={userId}
+          attemptId={attempt.attemptId}
+        />
+      )}
+
       {/* Left Sidebar - Question Numbers */}
       <div className={`w-14 flex flex-col ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'} border-r`}>
         {/* Up Arrow */}
@@ -6111,11 +6403,24 @@ const calculateStudentEndTime = (
                     <span className={`inline-block w-2 h-2 rounded-full ${violations.length > 0 ? 'bg-red-500' : 'bg-green-500'}`}></span>
                     <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Violations:</span>
                   </div>
-                  <span className={`text-sm font-semibold ${violations.length > 0 ? (darkMode ? 'text-red-400' : 'text-red-600') : (darkMode ? 'text-green-400' : 'text-green-600')}`}>
-                    {violations.length}
+                  <span className={`text-sm font-semibold ${
+                    violations.length >= 100 
+                      ? 'text-red-600 dark:text-red-400'
+                      : violations.length >= 90
+                      ? 'text-orange-600 dark:text-orange-400'
+                      : violations.length > 0 
+                      ? (darkMode ? 'text-red-400' : 'text-red-600') 
+                      : (darkMode ? 'text-green-400' : 'text-green-600')
+                  }`}>
+                    {violations.length}/100
                     {violations.filter(v => v.severity === 'critical').length > 0 && (
                       <span className="ml-2 text-xs">
                         ({violations.filter(v => v.severity === 'critical').length} critical)
+                      </span>
+                    )}
+                    {violations.length >= 100 && (
+                      <span className="ml-2 text-xs font-normal">
+                        (LIMIT REACHED)
                       </span>
                     )}
                   </span>

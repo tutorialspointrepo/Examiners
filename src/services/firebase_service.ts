@@ -73,6 +73,7 @@ import {
   ACTIVITY_TYPES,
   ATTENDANCE_STATUS,
   CONNECTION_STATUS,
+  VIOLATION_TYPES,
   type QuestionType,
   type UserType,
   type UserStatus,
@@ -578,6 +579,11 @@ export interface UserModel {
   phone: string;
   phoneRaw: string;
   profilePicture?: string;
+  proctoringPhotos?: {
+    front: string | null;
+    left: string | null;
+    right: string | null;
+  };
   userType: UserType;
   permissions: UserPermissions;
   status: UserStatus;
@@ -774,6 +780,7 @@ export interface ExamViolation {
   severity?: SeverityLevel;
   questionNo: number;     // ✅ ADD: Track which question
   questionId: string;     // ✅ ADD: Track question ID
+  proofUrl?: string;
 }
 
 export interface ExamActivityLog {
@@ -882,6 +889,7 @@ export interface ExamModel {
   mode: ExamMode;
   securityLevel?: SecurityLevel;
   attendance?: boolean;
+  avProctoring?: boolean;
   examDate: string;
   examTime?: string;
   duration: string;
@@ -1093,6 +1101,63 @@ class FirebaseService {
 // 3. Copy ALL methods from this file
 // 4. Paste them INSIDE the FirebaseService class (before the closing brace)
 // 
+
+/**
+   * Upload proctoring evidence (snapshot or video clip)
+   * Returns the download URL
+   */
+  /**
+   * Upload proctoring evidence (snapshot or video/audio clip)
+   * Automatically handles file extensions based on violation type.
+   */
+  async uploadProctoringEvidence(
+    examId: string,
+    userId: string,
+    violationType: string,
+    file: Blob
+  ): Promise<string | null> {
+    try {
+      if (!this.storage) throw new Error('Firebase Storage not initialized');
+
+      console.log(`📤 Uploading proctoring evidence for ${violationType}...`);
+
+      const timestamp = Date.now();
+      
+      // ✅ LOGIC: ALL violations get 10-second video clips for solid proof
+      // Video format: .webm (works for all violation types)
+      const fileExtension = 'webm';
+      const contentType = 'video/webm';
+      
+      // Path: proctoring_evidence/{examId}/{userId}/{timestamp}_{violation}.{ext}
+      const storagePath = `proctoring_evidence/${examId}/${userId}/${timestamp}_${violationType}.${fileExtension}`;
+      const storageRef = ref(this.storage, storagePath);
+
+      // Add metadata for easier tracking/lifecycle management
+      const metadata = {
+        contentType: contentType,
+        customMetadata: {
+          examId,
+          userId,
+          violationType,
+          uploadedAt: new Date().toISOString(),
+          evidenceType: 'video_clip' // All violations now use video clips
+        }
+      };
+
+      // Upload
+      await uploadBytes(storageRef, file, metadata);
+      
+      // Get URL
+      const downloadURL = await getDownloadURL(storageRef);
+      console.log(`✅ Evidence uploaded (${fileExtension}):`, downloadURL);
+      
+      return downloadURL;
+
+    } catch (error) {
+      console.error('❌ Error uploading evidence:', error);
+      return null;
+    }
+  }
 /**
  * Start a new exam attempt for a student
  * 🔥 RACE CONDITION FIX: Uses in-memory lock to prevent duplicate creation
@@ -4434,9 +4499,10 @@ private calculateStatistics(numbers: number[]): {
 
       console.log('📤 Starting profile picture upload...');
 
-      // Create path in profile_pictures folder (same as mobile app)
-      const timestamp = Date.now();
-      const path = `profile_pictures/${targetUserId}/profile_${timestamp}.jpg`;
+      // Use the actual filename passed from the component
+      // This allows for standardized names like 'profile_picture.jpg', 'proctoring_front.jpg', etc.
+      const fileName = file.name;
+      const path = `profile_pictures/${targetUserId}/${fileName}`;
 
       console.log('📍 Upload path:', path);
 
@@ -8176,6 +8242,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       fullName: (data.fullName && data.fullName !== 'Current User') ? data.fullName : data.email?.split('@')[0] || '',
       title: data.title || '',  // ✅ ADDED: Read title from Firestore
       profilePicture: data.profilePicture || '',  // ✅ ADDED: Read profilePicture from Firestore
+      proctoringPhotos: data.proctoringPhotos || { front: null, left: null, right: null },  // ✅ ADDED: Read proctoring photos
       //questionText: data.questionText || '',
       email: data.email || '',
       phone: data.phone || '',
@@ -8487,6 +8554,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       mode: data.mode || 'offline',
       securityLevel: data.securityLevel,
       attendance: data.attendance,
+      avProctoring: data.avProctoring,
       examDate: data.examDate || '',
       examTime: data.examTime || '',
       duration: data.duration || '',
@@ -8551,6 +8619,8 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       id: parsedExam.id,
       title: parsedExam.title,
       totalStudents: parsedExam.totalStudents,  // ✅ Show what was parsed
+      avProctoring: (parsedExam as any).avProctoring,  // ✅ Show avProctoring value
+      attendance: parsedExam.attendance,  // ✅ Show attendance for comparison
       collegeId: parsedExam.collegeId,  // ✅ Show what was parsed
       collegeName: parsedExam.collegeName,
       hasQuestionsList: !!parsedExam.questionsList,
