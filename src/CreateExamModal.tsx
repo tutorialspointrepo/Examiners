@@ -90,7 +90,10 @@ import {
   faPalette,
   faClock,
   faHourglass,
-  faCheckCircle
+  faCheckCircle,
+  faCamera,
+  faVideo,
+  faFileAlt
 } from '@fortawesome/sharp-light-svg-icons';
 
 interface Question {
@@ -392,6 +395,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const questionsPerPage = 10;
   
+  // Pagination for Questions and Question Pool lists
+  const [questionsListPage, setQuestionsListPage] = useState(1);
+  const [questionPoolPage, setQuestionPoolPage] = useState(1);
+  const questionsListPerPage = 25;
+  
   // New filter states
   const [questionTypeFilter, setQuestionTypeFilter] = useState<string>(FILTER_VALUES.ALL);
   const [complexityFilter, setComplexityFilter] = useState<string>(FILTER_VALUES.ALL);
@@ -405,6 +413,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [hoveredExamOption, setHoveredExamOption] = useState<string | null>(null);
 
   const [examTypes, setExamTypes] = useState<string[]>([]);
   const [classes, setClasses] = useState<string[]>([]);
@@ -445,22 +454,25 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     type: 'error' | 'success' | 'info';
     title: string;
     message: string;
+    shouldCloseModal?: boolean;
   }>({
     show: false,
     type: 'info',
     title: '',
-    message: ''
+    message: '',
+    shouldCloseModal: false
   });
 
   // Editing state - added at the end to preserve hooks order
   const [editingQuestionIndex, setEditingQuestionIndex] = useState<number | null>(null);
 
-  const showAlert = (type: 'error' | 'success' | 'info', title: string, message: string) => {
+  const showAlert = (type: 'error' | 'success' | 'info', title: string, message: string, shouldCloseModal: boolean = false) => {
     setAlertConfig({
       show: true,
       type,
       title,
-      message
+      message,
+      shouldCloseModal
     });
   };
 
@@ -1259,7 +1271,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         if (savedExam) {
           onSave(savedExam);
         }
-        showAlert('success', 'Success!', existingExam ? 'Exam updated successfully!' : 'Exam created successfully!');
+        showAlert('success', 'Success!', existingExam ? 'Exam updated successfully!' : 'Exam created successfully!', true);
       } else {
         throw new Error('Failed to save exam');
       }
@@ -2374,78 +2386,122 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
                 <div className="p-4">
                   {/* Security Options */}
-                  <div className="flex items-center justify-center space-x-2.5">
-                    <button
-                      onClick={() => setSecurityLevel(SECURITY_LEVELS.NORMAL)}
-                      className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
-                        securityLevel === SECURITY_LEVELS.NORMAL 
-                          ? 'border-green-500 bg-white' 
-                          : 'border-gray-300 bg-white hover:border-gray-400'
-                      }`}
-                    >
-                      <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
-                        securityLevel === SECURITY_LEVELS.NORMAL 
-                          ? 'border border-green-500 bg-green-500' 
-                          : 'border border-gray-400'
-                      }`}>
-                        {securityLevel === SECURITY_LEVELS.NORMAL && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
-                      </div>
-                      <span className={`font-semibold text-xs ${securityLevel === SECURITY_LEVELS.NORMAL ? 'text-green-600' : 'text-gray-600'}`}>Normal</span>
-                    </button>
+                  <div className="flex flex-col items-center">
+                    <div className="flex items-center justify-center space-x-2.5">
+                      <button
+                        onClick={() => setSecurityLevel(SECURITY_LEVELS.NORMAL)}
+                        onMouseEnter={() => setHoveredExamOption('normal')}
+                        onMouseLeave={() => setHoveredExamOption(null)}
+                        className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
+                          securityLevel === SECURITY_LEVELS.NORMAL 
+                            ? 'border-green-500 bg-white' 
+                            : 'border-gray-300 bg-white hover:border-gray-400'
+                        }`}
+                      >
+                        <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
+                          securityLevel === SECURITY_LEVELS.NORMAL 
+                            ? 'border border-green-500 bg-green-500' 
+                            : 'border border-gray-400'
+                        }`}>
+                          {securityLevel === SECURITY_LEVELS.NORMAL && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
+                        </div>
+                        <span className={`font-semibold text-xs ${securityLevel === SECURITY_LEVELS.NORMAL ? 'text-green-600' : 'text-gray-600'}`}>Normal</span>
+                      </button>
+                      
+                      <button
+                        onClick={() => setSecurityLevel(SECURITY_LEVELS.SECURE)}
+                        onMouseEnter={() => setHoveredExamOption('secure')}
+                        onMouseLeave={() => setHoveredExamOption(null)}
+                        className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
+                          securityLevel === SECURITY_LEVELS.SECURE
+                            ? 'border-gray-500 bg-white'
+                            : 'border-gray-300 bg-white hover:border-gray-400'
+                        }`}
+                      >
+                        <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
+                          securityLevel === SECURITY_LEVELS.SECURE 
+                            ? 'border border-gray-600 bg-gray-600' 
+                            : 'border border-gray-400'
+                        }`}>
+                          {securityLevel === SECURITY_LEVELS.SECURE && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
+                        </div>
+                        <span className="font-semibold text-xs text-gray-600">Secure</span>
+                      </button>
+
+                      <button
+                        onClick={() => setAttendance(!attendance)}
+                        onMouseEnter={() => setHoveredExamOption('attendance')}
+                        onMouseLeave={() => setHoveredExamOption(null)}
+                        className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
+                          attendance 
+                            ? 'border-blue-500 bg-white' 
+                            : 'border-gray-300 bg-white hover:border-gray-400'
+                        }`}
+                      >
+                        <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
+                          attendance 
+                            ? 'border border-blue-500 bg-blue-500' 
+                            : 'border border-gray-400'
+                        }`}>
+                          {attendance && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
+                        </div>
+                        <span className={`font-semibold text-xs ${attendance ? 'text-blue-600' : 'text-gray-600'}`}>Attendance</span>
+                      </button>
+
+                      <button
+                        onClick={() => setAvProctoring(!avProctoring)}
+                        onMouseEnter={() => setHoveredExamOption('avproctoring')}
+                        onMouseLeave={() => setHoveredExamOption(null)}
+                        className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
+                          avProctoring
+                            ? 'border-gray-500 bg-white'
+                            : 'border-gray-300 bg-white hover:border-gray-400'
+                        }`}
+                      >
+                        <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
+                          avProctoring 
+                            ? 'border border-gray-600 bg-gray-600' 
+                            : 'border border-gray-400'
+                        }`}>
+                          {avProctoring && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
+                        </div>
+                        <span className="font-semibold text-xs text-gray-600">A/V Proctoring</span>
+                      </button>
+                    </div>
                     
-                    <button
-                      onClick={() => setSecurityLevel(SECURITY_LEVELS.SECURE)}
-                      className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
-                        securityLevel === SECURITY_LEVELS.SECURE
-                          ? 'border-gray-500 bg-white'
-                          : 'border-gray-300 bg-white hover:border-gray-400'
-                      }`}
-                    >
-                      <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
-                        securityLevel === SECURITY_LEVELS.SECURE 
-                          ? 'border border-gray-600 bg-gray-600' 
-                          : 'border border-gray-400'
-                      }`}>
-                        {securityLevel === SECURITY_LEVELS.SECURE && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
-                      </div>
-                      <span className="font-semibold text-xs text-gray-600">Secure</span>
-                    </button>
-
-                    <button
-                      onClick={() => setAttendance(!attendance)}
-                      className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
-                        attendance 
-                          ? 'border-blue-500 bg-white' 
-                          : 'border-gray-300 bg-white hover:border-gray-400'
-                      }`}
-                    >
-                      <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
-                        attendance 
-                          ? 'border border-blue-500 bg-blue-500' 
-                          : 'border border-gray-400'
-                      }`}>
-                        {attendance && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
-                      </div>
-                      <span className={`font-semibold text-xs ${attendance ? 'text-blue-600' : 'text-gray-600'}`}>Attendance</span>
-                    </button>
-
-                    <button
-                      onClick={() => setAvProctoring(!avProctoring)}
-                      className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
-                        avProctoring
-                          ? 'border-gray-500 bg-white'
-                          : 'border-gray-300 bg-white hover:border-gray-400'
-                      }`}
-                    >
-                      <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
-                        avProctoring 
-                          ? 'border border-gray-600 bg-gray-600' 
-                          : 'border border-gray-400'
-                      }`}>
-                        {avProctoring && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
-                      </div>
-                      <span className="font-semibold text-xs text-gray-600">A/V Proctoring</span>
-                    </button>
+                    {/* Tooltip display below the options */}
+                    <div className="h-8 flex items-center justify-center mt-2">
+                      {hoveredExamOption === 'normal' && (
+                        <p className="text-xs text-gray-500 text-center animate-fadeIn flex items-center space-x-1.5">
+                          <FontAwesomeIcon icon={faFileAlt} className="text-green-500" />
+                          <span>Standard exam mode - students can take the exam in any browser</span>
+                        </p>
+                      )}
+                      {hoveredExamOption === 'secure' && (
+                        <p className="text-xs text-gray-500 text-center animate-fadeIn flex items-center space-x-1.5">
+                          <FontAwesomeIcon icon={faLock} className="text-gray-600" />
+                          <span>Requires Examiners Secure Browser - prevents tab switching & copy/paste</span>
+                        </p>
+                      )}
+                      {hoveredExamOption === 'attendance' && (
+                        <p className="text-xs text-gray-500 text-center animate-fadeIn flex items-center space-x-1.5">
+                          <FontAwesomeIcon icon={faCamera} className="text-blue-500" />
+                          <span>Student must mark attendance before attempting the exam</span>
+                        </p>
+                      )}
+                      {hoveredExamOption === 'avproctoring' && (
+                        <p className="text-xs text-gray-500 text-center animate-fadeIn flex items-center space-x-1.5">
+                          <FontAwesomeIcon icon={faVideo} className="text-purple-500" />
+                          <span>Exam conducted under webcam supervision with third-person audio detection</span>
+                        </p>
+                      )}
+                      {!hoveredExamOption && (
+                        <p className="text-xs text-gray-400 text-center flex items-center space-x-1.5">
+                          <FontAwesomeIcon icon={faCircleQuestion} className="text-gray-400" />
+                          <span>Hover over an option to see its description</span>
+                        </p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Completion Policy Section */}
@@ -3145,7 +3201,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       </div>
                       <div>
                         <h3 className="text-base font-semibold text-gray-900 flex items-center">
-                          Questions
+                          Questions List
                           <span className="text-red-500 ml-1">*</span>
                         </h3>
                         <p className="text-sm" style={{ color: brand.colors.secondary, opacity: 0.9 }}>
@@ -3190,107 +3246,172 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   </div>
 
                   {questions.length > 0 ? (
-                    <div className="space-y-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '280px' }}>
-                      {questions.map((question, index) => (
-                        <div key={question.id} className="bg-white border rounded-xl p-4 transition-all shadow-sm"
-                          style={{ 
-                            borderColor: brand.colors.secondary + '33'
-                          }}>
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center space-x-2 mb-2">
-                                <span className="text-base font-semibold text-gray-900 w-8 h-8 rounded-lg flex items-center justify-center"
-                                  style={{ backgroundColor: brand.colors.secondary + '20' }}>
-                                  {index + 1}
-                                </span>
-                                <span className={`text-xs font-semibold px-3 py-1 rounded-lg ${
-                                  question.type === QUESTION_TYPES.MCQ ? 'bg-blue-100 text-blue-700' :
-                                  question.type === QUESTION_TYPES.FITB ? 'bg-green-100 text-green-700' :
-                                  question.type === QUESTION_TYPES.JUMBLED ? 'bg-purple-100 text-purple-700' :
-                                  question.type === QUESTION_TYPES.CODE ? 'bg-indigo-100 text-indigo-700' :
-                                  'bg-orange-100 text-orange-700'
-                                }`}>
-                                  {question.type === QUESTION_TYPES.MCQ ? 'MCQ' :
-                                   question.type === QUESTION_TYPES.FITB ? 'Fill Blank' :
-                                   question.type === QUESTION_TYPES.JUMBLED ? 'Jumbled' :
-                                   question.type === QUESTION_TYPES.CODE ? 'Code' :
-                                   'Descriptive'}
-                                </span>
-                                {question.complexity && (
-                                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg ${
-                                    question.complexity === COMPLEXITY_LEVELS.EASY ? 'bg-green-100 text-green-700' :
-                                    question.complexity === COMPLEXITY_LEVELS.MEDIUM ? 'bg-yellow-100 text-yellow-700' :
-                                    'bg-red-100 text-red-700'
-                                  }`}>
-                                    {question.complexity.charAt(0).toUpperCase() + question.complexity.slice(1)}
-                                  </span>
-                                )}
-                                <span className="ml-auto text-xs font-bold px-3 py-1 rounded-lg"
-                                  style={{ 
-                                    color: brand.colors.secondary,
-                                    backgroundColor: brand.colors.secondary + '20'
-                                  }}>
-                                  {question.maximumMarks} marks
-                                </span>
+                    <>
+                      <div className="space-y-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '320px' }}>
+                        {questions
+                          .slice((questionsListPage - 1) * questionsListPerPage, questionsListPage * questionsListPerPage)
+                          .map((question, index) => {
+                            const actualIndex = (questionsListPage - 1) * questionsListPerPage + index;
+                            return (
+                            <div key={question.id} className="bg-white border rounded-xl p-4 transition-all shadow-sm"
+                              style={{ 
+                                borderColor: brand.colors.secondary + '33'
+                              }}>
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center space-x-2 mb-2">
+                                    <span className="text-base font-semibold text-gray-900 w-8 h-8 rounded-lg flex items-center justify-center"
+                                      style={{ backgroundColor: brand.colors.secondary + '20' }}>
+                                      {actualIndex + 1}
+                                    </span>
+                                    <span className={`text-xs font-semibold px-3 py-1 rounded-lg ${
+                                      question.type === QUESTION_TYPES.MCQ ? 'bg-blue-100 text-blue-700' :
+                                      question.type === QUESTION_TYPES.FITB ? 'bg-green-100 text-green-700' :
+                                      question.type === QUESTION_TYPES.JUMBLED ? 'bg-purple-100 text-purple-700' :
+                                      question.type === QUESTION_TYPES.CODE ? 'bg-indigo-100 text-indigo-700' :
+                                      'bg-orange-100 text-orange-700'
+                                    }`}>
+                                      {question.type === QUESTION_TYPES.MCQ ? 'MCQ' :
+                                       question.type === QUESTION_TYPES.FITB ? 'Fill Blank' :
+                                       question.type === QUESTION_TYPES.JUMBLED ? 'Jumbled' :
+                                       question.type === QUESTION_TYPES.CODE ? 'Code' :
+                                       'Descriptive'}
+                                    </span>
+                                    {question.complexity && (
+                                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg ${
+                                        question.complexity === COMPLEXITY_LEVELS.EASY ? 'bg-green-100 text-green-700' :
+                                        question.complexity === COMPLEXITY_LEVELS.MEDIUM ? 'bg-yellow-100 text-yellow-700' :
+                                        'bg-red-100 text-red-700'
+                                      }`}>
+                                        {question.complexity.charAt(0).toUpperCase() + question.complexity.slice(1)}
+                                      </span>
+                                    )}
+                                    <span className="ml-auto text-xs font-bold px-3 py-1 rounded-lg"
+                                      style={{ 
+                                        color: brand.colors.secondary,
+                                        backgroundColor: brand.colors.secondary + '20'
+                                      }}>
+                                      {question.maximumMarks} marks
+                                    </span>
+                                  </div>
+                                  <div 
+                                    className="text-sm text-gray-700 font-medium prose prose-sm max-w-none
+                                      [&>h1]:text-base [&>h1]:font-bold [&>h1]:text-gray-900 [&>h1]:mb-1 [&>h1]:mt-0
+                                      [&>h2]:text-sm [&>h2]:font-bold [&>h2]:text-gray-900 [&>h2]:mb-1 [&>h2]:mt-0
+                                      [&>h3]:text-sm [&>h3]:font-semibold [&>h3]:text-gray-800 [&>h3]:mb-0.5 [&>h3]:mt-0
+                                      [&>p]:text-sm [&>p]:text-gray-700 [&>p]:mb-0.5 [&>p]:leading-snug [&>p]:mt-0
+                                      [&_strong]:font-bold [&_strong]:text-gray-900
+                                      [&>ul]:list-disc [&>ul]:ml-4 [&>ul]:mb-1 [&>ul]:text-sm
+                                      [&>ol]:list-decimal [&>ol]:ml-4 [&>ol]:mb-1 [&>ol]:text-sm
+                                      [&_li]:mb-0.5 [&_li]:text-xs
+                                      [&_code]:hidden
+                                      [&>pre:empty]:hidden [&>pre:empty]:opacity-0 [&>pre:empty]:h-0 [&>pre:empty]:m-0 [&>pre:empty]:p-0
+                                      [&_.katex]:text-sm [&_.katex]:inline-block
+                                      line-clamp-3"
+                                    dangerouslySetInnerHTML={{ 
+                                      __html: (() => {
+                                        let html = (question.questionText || 'Question text...');
+                                        // Render math formulas - look for data-latex attribute
+                                        html = html.replace(
+                                          /<span[^>]*data-latex=["']([^"']*)["'][^>]*>.*?<\/span>/g,
+                                          (match, latex) => {
+                                            try {
+                                              const decodedLatex = latex.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+                                              return katex.renderToString(decodedLatex, {
+                                                throwOnError: false,
+                                                displayMode: false
+                                              });
+                                            } catch (e) {
+                                              return match;
+                                            }
+                                          }
+                                        );
+                                        // Remove code blocks
+                                        return html.replace(/<code>.*?<\/code>/gs, '');
+                                      })()
+                                    }}
+                                  />
+                                </div>
+                                <div className="flex items-center space-x-2 ml-4">
+                                  <button
+                                    onClick={() => handleEditQuestion(actualIndex)}
+                                    className="w-9 h-9 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center transition-all"
+                                    title="Edit question"
+                                  >
+                                    <FontAwesomeIcon icon={faPenToSquare} />
+                                  </button>
+                                  <button
+                                    onClick={() => removeQuestion(actualIndex)}
+                                    className="w-9 h-9 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg flex items-center justify-center transition-all"
+                                    title="Delete question"
+                                  >
+                                    <FontAwesomeIcon icon={faTrash} />
+                                  </button>
+                                </div>
                               </div>
-                              <div 
-                                className="text-sm text-gray-700 font-medium prose prose-sm max-w-none
-                                  [&>h1]:text-base [&>h1]:font-bold [&>h1]:text-gray-900 [&>h1]:mb-1 [&>h1]:mt-0
-                                  [&>h2]:text-sm [&>h2]:font-bold [&>h2]:text-gray-900 [&>h2]:mb-1 [&>h2]:mt-0
-                                  [&>h3]:text-sm [&>h3]:font-semibold [&>h3]:text-gray-800 [&>h3]:mb-0.5 [&>h3]:mt-0
-                                  [&>p]:text-sm [&>p]:text-gray-700 [&>p]:mb-0.5 [&>p]:leading-snug [&>p]:mt-0
-                                  [&_strong]:font-bold [&_strong]:text-gray-900
-                                  [&>ul]:list-disc [&>ul]:ml-4 [&>ul]:mb-1 [&>ul]:text-sm
-                                  [&>ol]:list-decimal [&>ol]:ml-4 [&>ol]:mb-1 [&>ol]:text-sm
-                                  [&_li]:mb-0.5 [&_li]:text-xs
-                                  [&_code]:hidden
-                                  [&>pre:empty]:hidden [&>pre:empty]:opacity-0 [&>pre:empty]:h-0 [&>pre:empty]:m-0 [&>pre:empty]:p-0
-                                  [&_.katex]:text-sm [&_.katex]:inline-block
-                                  line-clamp-3"
-                                dangerouslySetInnerHTML={{ 
-                                  __html: (() => {
-                                    let html = (question.questionText || 'Question text...');
-                                    // Render math formulas - look for data-latex attribute
-                                    html = html.replace(
-                                      /<span[^>]*data-latex=["']([^"']*)["'][^>]*>.*?<\/span>/g,
-                                      (match, latex) => {
-                                        try {
-                                          const decodedLatex = latex.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-                                          return katex.renderToString(decodedLatex, {
-                                            throwOnError: false,
-                                            displayMode: false
-                                          });
-                                        } catch (e) {
-                                          return match;
-                                        }
-                                      }
-                                    );
-                                    // Remove code blocks
-                                    return html.replace(/<code>.*?<\/code>/gs, '');
-                                  })()
-                                }}
-                              />
                             </div>
-                            <div className="flex items-center space-x-2 ml-4">
-                              <button
-                                onClick={() => handleEditQuestion(index)}
-                                className="w-9 h-9 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center transition-all"
-                                title="Edit question"
-                              >
-                                <FontAwesomeIcon icon={faPenToSquare} />
-                              </button>
-                              <button
-                                onClick={() => removeQuestion(index)}
-                                className="w-9 h-9 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg flex items-center justify-center transition-all"
-                                title="Delete question"
-                              >
-                                <FontAwesomeIcon icon={faTrash} />
-                              </button>
-                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      {/* Pagination for Questions List */}
+                      {questions.length > questionsListPerPage && (
+                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
+                          <div className="text-xs text-gray-500">
+                            Showing <span className="font-semibold text-gray-700">{((questionsListPage - 1) * questionsListPerPage) + 1}-{Math.min(questionsListPage * questionsListPerPage, questions.length)}</span> of <span className="font-semibold text-gray-700">{questions.length}</span>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <button
+                              onClick={() => setQuestionsListPage(Math.max(1, questionsListPage - 1))}
+                              disabled={questionsListPage === 1}
+                              className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center ${
+                                questionsListPage === 1
+                                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                  : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+                              }`}
+                            >
+                              <FontAwesomeIcon icon={faChevronLeft} className="text-xs" />
+                            </button>
+                            {Array.from({ length: Math.ceil(questions.length / questionsListPerPage) }, (_, i) => i + 1)
+                              .filter(page => {
+                                const totalPages = Math.ceil(questions.length / questionsListPerPage);
+                                return page === 1 || page === totalPages || (page >= questionsListPage - 1 && page <= questionsListPage + 1);
+                              })
+                              .map((page, idx, arr) => {
+                                const prevPage = arr[idx - 1];
+                                const showEllipsis = prevPage && page - prevPage > 1;
+                                return (
+                                  <div key={page} className="flex items-center">
+                                    {showEllipsis && <span className="px-1 text-gray-400 text-xs">...</span>}
+                                    <button
+                                      onClick={() => setQuestionsListPage(page)}
+                                      className={`min-w-[32px] h-8 rounded-lg text-sm font-semibold transition-all ${
+                                        questionsListPage === page
+                                          ? 'text-white shadow-sm'
+                                          : 'text-gray-600 bg-white border border-gray-300 hover:bg-gray-50'
+                                      }`}
+                                      style={questionsListPage === page ? { background: brand.gradients.primary } : {}}
+                                    >
+                                      {page}
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            <button
+                              onClick={() => setQuestionsListPage(Math.min(Math.ceil(questions.length / questionsListPerPage), questionsListPage + 1))}
+                              disabled={questionsListPage >= Math.ceil(questions.length / questionsListPerPage)}
+                              className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center ${
+                                questionsListPage >= Math.ceil(questions.length / questionsListPerPage)
+                                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                  : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+                              }`}
+                            >
+                              <FontAwesomeIcon icon={faChevronRight} className="text-xs" />
+                            </button>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      )}
+                    </>
                   ) : (
                     <div 
                       className="text-center py-12 bg-white/50 rounded-xl border border-dashed"
@@ -3475,95 +3596,160 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       </div>
 
                       {questionPool.length > 0 ? (
-                        <div className="space-y-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '280px' }}>
-                          {questionPool.map((question, index) => (
-                            <div key={question.id} className="bg-white border rounded-xl p-4 transition-all shadow-sm"
-                              style={{ 
-                                borderColor: brand.colors.secondary + '33'
-                              }}>
-                              <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center space-x-2 mb-2">
-                                    <span className="text-base font-semibold text-gray-900 w-8 h-8 rounded-lg flex items-center justify-center"
-                                      style={{ backgroundColor: brand.colors.secondary + '20' }}>
-                                      {index + 1}
-                                    </span>
-                                    <span className={`text-xs font-semibold px-3 py-1 rounded-lg ${
-                                      question.type === QUESTION_TYPES.MCQ ? 'bg-blue-100 text-blue-700' :
-                                      question.type === QUESTION_TYPES.FITB ? 'bg-green-100 text-green-700' :
-                                      question.type === QUESTION_TYPES.JUMBLED ? 'bg-purple-100 text-purple-700' :
-                                      question.type === QUESTION_TYPES.CODE ? 'bg-indigo-100 text-indigo-700' :
-                                      'bg-orange-100 text-orange-700'
-                                    }`}>
-                                      {question.type === QUESTION_TYPES.MCQ ? 'MCQ' :
-                                       question.type === QUESTION_TYPES.FITB ? 'Fill Blank' :
-                                       question.type === QUESTION_TYPES.JUMBLED ? 'Jumbled' :
-                                       question.type === QUESTION_TYPES.CODE ? 'Code' :
-                                       'Descriptive'}
-                                    </span>
-                                    {question.complexity && (
-                                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg ${
-                                        question.complexity === COMPLEXITY_LEVELS.EASY ? 'bg-green-100 text-green-700' :
-                                        question.complexity === COMPLEXITY_LEVELS.MEDIUM ? 'bg-yellow-100 text-yellow-700' :
-                                        'bg-red-100 text-red-700'
-                                      }`}>
-                                        {question.complexity.charAt(0).toUpperCase() + question.complexity.slice(1)}
-                                      </span>
-                                    )}
-                                    <span className="ml-auto text-xs font-bold px-3 py-1 rounded-lg"
-                                      style={{ 
-                                        color: brand.colors.secondary,
-                                        backgroundColor: brand.colors.secondary + '20'
-                                      }}>
-                                      {poolQuestionMarks > 0 ? poolQuestionMarks : question.maximumMarks} marks
-                                    </span>
+                        <>
+                          <div className="space-y-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '320px' }}>
+                            {questionPool
+                              .slice((questionPoolPage - 1) * questionsListPerPage, questionPoolPage * questionsListPerPage)
+                              .map((question, index) => {
+                                const actualIndex = (questionPoolPage - 1) * questionsListPerPage + index;
+                                return (
+                                <div key={question.id} className="bg-white border rounded-xl p-4 transition-all shadow-sm"
+                                  style={{ 
+                                    borderColor: brand.colors.secondary + '33'
+                                  }}>
+                                  <div className="flex items-start justify-between">
+                                    <div className="flex-1">
+                                      <div className="flex items-center space-x-2 mb-2">
+                                        <span className="text-base font-semibold text-gray-900 w-8 h-8 rounded-lg flex items-center justify-center"
+                                          style={{ backgroundColor: brand.colors.secondary + '20' }}>
+                                          {actualIndex + 1}
+                                        </span>
+                                        <span className={`text-xs font-semibold px-3 py-1 rounded-lg ${
+                                          question.type === QUESTION_TYPES.MCQ ? 'bg-blue-100 text-blue-700' :
+                                          question.type === QUESTION_TYPES.FITB ? 'bg-green-100 text-green-700' :
+                                          question.type === QUESTION_TYPES.JUMBLED ? 'bg-purple-100 text-purple-700' :
+                                          question.type === QUESTION_TYPES.CODE ? 'bg-indigo-100 text-indigo-700' :
+                                          'bg-orange-100 text-orange-700'
+                                        }`}>
+                                          {question.type === QUESTION_TYPES.MCQ ? 'MCQ' :
+                                           question.type === QUESTION_TYPES.FITB ? 'Fill Blank' :
+                                           question.type === QUESTION_TYPES.JUMBLED ? 'Jumbled' :
+                                           question.type === QUESTION_TYPES.CODE ? 'Code' :
+                                           'Descriptive'}
+                                        </span>
+                                        {question.complexity && (
+                                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg ${
+                                            question.complexity === COMPLEXITY_LEVELS.EASY ? 'bg-green-100 text-green-700' :
+                                            question.complexity === COMPLEXITY_LEVELS.MEDIUM ? 'bg-yellow-100 text-yellow-700' :
+                                            'bg-red-100 text-red-700'
+                                          }`}>
+                                            {question.complexity.charAt(0).toUpperCase() + question.complexity.slice(1)}
+                                          </span>
+                                        )}
+                                        <span className="ml-auto text-xs font-bold px-3 py-1 rounded-lg"
+                                          style={{ 
+                                            color: brand.colors.secondary,
+                                            backgroundColor: brand.colors.secondary + '20'
+                                          }}>
+                                          {poolQuestionMarks > 0 ? poolQuestionMarks : question.maximumMarks} marks
+                                        </span>
+                                      </div>
+                                      <div 
+                                        className="text-sm text-gray-700 font-medium prose prose-sm max-w-none line-clamp-3"
+                                        dangerouslySetInnerHTML={{ 
+                                          __html: (() => {
+                                            let html = (question.questionText || 'Question text...');
+                                            html = html.replace(
+                                              /<span[^>]*data-latex=["']([^"']*)["'][^>]*>.*?<\/span>/g,
+                                              (match, latex) => {
+                                                try {
+                                                  const decodedLatex = latex.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+                                                  return katex.renderToString(decodedLatex, {
+                                                    throwOnError: false,
+                                                    displayMode: false
+                                                  });
+                                                } catch (e) {
+                                                  return match;
+                                                }
+                                              }
+                                            );
+                                            return html.replace(/<code>.*?<\/code>/gs, '');
+                                          })()
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="flex items-center space-x-2 ml-4">
+                                      <button
+                                        onClick={() => handleEditPoolQuestion(actualIndex)}
+                                        className="w-9 h-9 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center transition-all"
+                                        title="Edit question"
+                                      >
+                                        <FontAwesomeIcon icon={faPenToSquare} />
+                                      </button>
+                                      <button
+                                        onClick={() => {
+                                          setQuestionPool(prev => prev.filter((_, i) => i !== actualIndex));
+                                        }}
+                                        className="w-9 h-9 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg flex items-center justify-center transition-all"
+                                        title="Remove from pool"
+                                      >
+                                        <FontAwesomeIcon icon={faTrash} />
+                                      </button>
+                                    </div>
                                   </div>
-                                  <div 
-                                    className="text-sm text-gray-700 font-medium prose prose-sm max-w-none line-clamp-3"
-                                    dangerouslySetInnerHTML={{ 
-                                      __html: (() => {
-                                        let html = (question.questionText || 'Question text...');
-                                        html = html.replace(
-                                          /<span[^>]*data-latex=["']([^"']*)["'][^>]*>.*?<\/span>/g,
-                                          (match, latex) => {
-                                            try {
-                                              const decodedLatex = latex.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-                                              return katex.renderToString(decodedLatex, {
-                                                throwOnError: false,
-                                                displayMode: false
-                                              });
-                                            } catch (e) {
-                                              return match;
-                                            }
-                                          }
-                                        );
-                                        return html.replace(/<code>.*?<\/code>/gs, '');
-                                      })()
-                                    }}
-                                  />
                                 </div>
-                                <div className="flex items-center space-x-2 ml-4">
-                                  <button
-                                    onClick={() => handleEditPoolQuestion(index)}
-                                    className="w-9 h-9 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center transition-all"
-                                    title="Edit question"
-                                  >
-                                    <FontAwesomeIcon icon={faPenToSquare} />
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      setQuestionPool(prev => prev.filter((_, i) => i !== index));
-                                    }}
-                                    className="w-9 h-9 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg flex items-center justify-center transition-all"
-                                    title="Remove from pool"
-                                  >
-                                    <FontAwesomeIcon icon={faTrash} />
-                                  </button>
-                                </div>
+                              );
+                            })}
+                          </div>
+                          
+                          {/* Pagination for Question Pool */}
+                          {questionPool.length > questionsListPerPage && (
+                            <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200">
+                              <div className="text-xs text-gray-500">
+                                Showing <span className="font-semibold text-gray-700">{((questionPoolPage - 1) * questionsListPerPage) + 1}-{Math.min(questionPoolPage * questionsListPerPage, questionPool.length)}</span> of <span className="font-semibold text-gray-700">{questionPool.length}</span>
+                              </div>
+                              <div className="flex items-center space-x-1">
+                                <button
+                                  onClick={() => setQuestionPoolPage(Math.max(1, questionPoolPage - 1))}
+                                  disabled={questionPoolPage === 1}
+                                  className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center ${
+                                    questionPoolPage === 1
+                                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                      : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  <FontAwesomeIcon icon={faChevronLeft} className="text-xs" />
+                                </button>
+                                {Array.from({ length: Math.ceil(questionPool.length / questionsListPerPage) }, (_, i) => i + 1)
+                                  .filter(page => {
+                                    const totalPages = Math.ceil(questionPool.length / questionsListPerPage);
+                                    return page === 1 || page === totalPages || (page >= questionPoolPage - 1 && page <= questionPoolPage + 1);
+                                  })
+                                  .map((page, idx, arr) => {
+                                    const prevPage = arr[idx - 1];
+                                    const showEllipsis = prevPage && page - prevPage > 1;
+                                    return (
+                                      <div key={page} className="flex items-center">
+                                        {showEllipsis && <span className="px-1 text-gray-400 text-xs">...</span>}
+                                        <button
+                                          onClick={() => setQuestionPoolPage(page)}
+                                          className={`min-w-[32px] h-8 rounded-lg text-sm font-semibold transition-all ${
+                                            questionPoolPage === page
+                                              ? 'text-white shadow-sm'
+                                              : 'text-gray-600 bg-white border border-gray-300 hover:bg-gray-50'
+                                          }`}
+                                          style={questionPoolPage === page ? { background: brand.gradients.primary } : {}}
+                                        >
+                                          {page}
+                                        </button>
+                                      </div>
+                                    );
+                                  })}
+                                <button
+                                  onClick={() => setQuestionPoolPage(Math.min(Math.ceil(questionPool.length / questionsListPerPage), questionPoolPage + 1))}
+                                  disabled={questionPoolPage >= Math.ceil(questionPool.length / questionsListPerPage)}
+                                  className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center ${
+                                    questionPoolPage >= Math.ceil(questionPool.length / questionsListPerPage)
+                                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                      : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  <FontAwesomeIcon icon={faChevronRight} className="text-xs" />
+                                </button>
                               </div>
                             </div>
-                          ))}
-                        </div>
+                          )}
+                        </>
                       ) : (
                         <div 
                           className="text-center py-12 bg-white/50 rounded-xl border border-dashed"
@@ -3618,9 +3804,13 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
       {/* Custom Alert Modal */}
       {alertConfig.show && (
-        <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div 
+          className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div 
             className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden transform transition-all"
+            onClick={(e) => e.stopPropagation()}
             style={{
               animation: 'slideIn 0.3s ease-out'
             }}
@@ -3670,10 +3860,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
             {/* Action Button */}
             <div className="px-6 py-4 bg-white flex justify-center">
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   closeAlert();
-                  // Only close the modal if this is the exam creation success alert
-                  if (alertConfig.type === 'success' && alertConfig.title === 'Success!') {
+                  // Only close the modal if shouldCloseModal flag is true
+                  if (alertConfig.shouldCloseModal) {
                     onClose();
                   }
                 }}
@@ -3690,26 +3881,38 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         </div>
       )}
 
-      {/* Custom Question Creation Modal */}
+      {/* Custom Question Creation Modal - Slides in from left */}
       {showCustomQuestionModal && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm rounded-2xl">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[50rem] max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="px-6 py-5 border-b-2 flex-shrink-0"
+        <div 
+          className="fixed inset-0 z-[10000]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div 
+            className="absolute bg-white rounded-2xl flex flex-col overflow-hidden shadow-2xl w-[calc(100%-16px)] max-w-[50rem]"
+            style={{
+              animation: 'slideInFromLeft 0.3s ease-out',
+              top: '8px',
+              left: '8px',
+              height: 'calc(100% - 16px)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-3 border-b-2 flex-shrink-0 rounded-t-2xl"
               style={{ 
                 background: brand.gradients.primary,
                 borderColor: brand.colors.secondary
               }}>
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg"
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
                     style={{ background: 'rgba(255,255,255,0.2)' }}>
-                    <FontAwesomeIcon icon={faPen} className="text-white" />
+                    <FontAwesomeIcon icon={faPen} className="text-white text-sm" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold text-white">
+                    <h2 className="text-lg font-bold text-white">
                       {editingQuestionIndex !== null ? 'Edit Question' : 'Create Custom Question'}
                     </h2>
-                    <p className="text-sm text-white/80">
+                    <p className="text-xs text-white/80">
                       {editingQuestionIndex !== null ? 'Modify the question details' : 'Design your own question for the exam'}
                     </p>
                   </div>
@@ -3721,9 +3924,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     setIsAddingToPool(false);
                     setIsEditingFromPool(false);
                   }}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:bg-white/20"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
                 >
-                  <FontAwesomeIcon icon={faXmark} className="text-white" />
+                  <FontAwesomeIcon icon={faXmark} className="text-white text-sm" />
                 </button>
               </div>
             </div>
@@ -4502,7 +4705,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <label className="block text-sm font-semibold text-gray-900 mb-2">
                         Difficulty Level <span className="text-red-500">*</span>
                       </label>
-                      <div className="grid grid-cols-3 gap-3">
+                      <div className="grid grid-cols-3 gap-2">
                         {[
                           { value: 'easy', emoji: '😊', label: 'Easy', selectedBg: '#10b981', unselectedBg: '#d1fae5', selectedText: '#ffffff', unselectedText: '#065f46' },
                           { value: 'medium', emoji: '🤔', label: 'Medium', selectedBg: '#f59e0b', unselectedBg: '#fef3c7', selectedText: '#ffffff', unselectedText: '#92400e' },
@@ -4513,8 +4716,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             <button
                               key={level.value}
                               onClick={() => setCustomQuestionComplexity(level.value as any)}
-                              className={`relative flex items-center justify-center space-x-2 h-[52px] rounded-xl border transition-all ${
-                                isSelected ? 'shadow-md' : 'border-gray-200 hover:border-gray-300'
+                              className={`relative flex items-center justify-center space-x-1.5 h-10 rounded-lg border transition-all text-sm ${
+                                isSelected ? 'shadow-sm' : 'border-gray-200 hover:border-gray-300'
                               }`}
                               style={isSelected ? {
                                 backgroundColor: level.selectedBg,
@@ -4526,11 +4729,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                 borderColor: 'transparent'
                               }}
                             >
-                              <span className="text-xl">{level.emoji}</span>
-                              <span className="text-base font-bold capitalize">{level.label}</span>
+                              <span className="text-sm">{level.emoji}</span>
+                              <span className="font-semibold capitalize">{level.label}</span>
                               {isSelected && (
-                                <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-white rounded-full flex items-center justify-center">
-                                  <FontAwesomeIcon icon={faCheck} style={{ color: level.selectedBg }} strokeWidth={3} />
+                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow-sm">
+                                  <FontAwesomeIcon icon={faCheck} className="text-[10px]" style={{ color: level.selectedBg }} />
                                 </div>
                               )}
                             </button>
@@ -4630,7 +4833,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
               </div>
             </div>
 
-            <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-4 flex items-center justify-end space-x-3 border-t-2 border-gray-200 flex-shrink-0">
+            <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-5 py-3 flex items-center justify-end space-x-3 border-t border-gray-200 flex-shrink-0">
               <button
                 onClick={() => {
                   setShowCustomQuestionModal(false);
@@ -4638,15 +4841,16 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   setIsAddingToPool(false);
                   setIsEditingFromPool(false);
                 }}
-                className="px-5 py-2.5 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
+                className="px-4 py-2 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold text-sm rounded-lg transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleCreateCustomQuestion}
-                className="px-6 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-xl flex items-center space-x-2"
+                className="px-5 py-2 text-white font-semibold text-sm rounded-lg transition-all shadow-md hover:shadow-lg flex items-center space-x-2"
+                style={{ background: 'linear-gradient(to right, #22c55e, #10b981)' }}
               >
-                <FontAwesomeIcon icon={faCheck} />
+                <FontAwesomeIcon icon={faCheck} className="text-xs" />
                 <span>{editingQuestionIndex !== null ? 'Update Question' : 'Add Question'}</span>
               </button>
             </div>
@@ -4654,47 +4858,57 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         </div>
       )}
 
-      {/* Question Bank Modal */}
+      {/* Question Bank Modal - Slides in from left */}
       {showQuestionBankModal && (
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div 
+          className="fixed inset-0 z-[10000]"
+          onClick={(e) => e.stopPropagation()}
+        >
           <div 
-            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[50rem] h-[90vh] flex flex-col overflow-hidden z-10"
+            className="absolute bg-white rounded-2xl flex flex-col overflow-hidden shadow-2xl w-[calc(100%-16px)] max-w-[50rem]"
+            style={{
+              animation: 'slideInFromLeft 0.3s ease-out',
+              top: '8px',
+              left: '8px',
+              height: 'calc(100% - 16px)'
+            }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="px-6 py-5 border-b-2 flex-shrink-0"
+            <div className="px-5 py-3 border-b-2 flex-shrink-0"
               style={{ 
                 background: brand.gradients.primary,
                 borderColor: brand.colors.secondary
               }}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center space-x-4">
-                  <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg"
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
                     style={{ background: 'rgba(255,255,255,0.2)' }}>
-                    <FontAwesomeIcon icon={faBookAtlas} className="text-white" />
+                    <FontAwesomeIcon icon={faBookAtlas} className="text-white text-sm" />
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold text-white">
-                      Question Bank <span className="text-white/90">For {className}, {subject}</span>
+                    <h2 className="text-lg font-bold text-white">
+                      Question Bank <span className="text-white/90 text-sm">• {className}, {subject}</span>
                     </h2>
-                    <p className="text-sm text-white/80">Select questions to add to your exam</p>
+                    <p className="text-xs text-white/80">Select questions to add to your exam</p>
                   </div>
                 </div>
                 <button
                   onClick={() => setShowQuestionBankModal(false)}
-                  className="w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:bg-white/20"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
                 >
-                  <FontAwesomeIcon icon={faXmark} className="text-white" />
+                  <FontAwesomeIcon icon={faXmark} className="text-white text-sm" />
                 </button>
               </div>
+            </div>
               
-              {/* Filters Row */}
-              <div className="flex items-center space-x-2 flex-wrap">
-                <span className="text-xs font-semibold text-white/80">Filters:</span>
-                <div className="flex items-center space-x-2 flex-wrap">
+            {/* Filters Row */}
+            <div className="px-5 py-3 border-b bg-gray-50 flex items-center space-x-2 flex-wrap gap-y-2">
+              <span className="text-xs font-semibold text-gray-500">Filters:</span>
+                <div className="flex items-center space-x-2 flex-wrap gap-y-2">
                   {boards.length > 1 && (
-                    <div className="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-lg flex items-center space-x-1.5">
-                      <FontAwesomeIcon icon={faBuilding} className="text-white" />
-                      <span className="text-xs font-bold text-white">{board}</span>
+                    <div className="px-3 py-1.5 bg-gray-200 rounded-lg flex items-center space-x-1.5">
+                      <FontAwesomeIcon icon={faBuilding} className="text-gray-600 text-xs" />
+                      <span className="text-xs font-bold text-gray-700">{board}</span>
                     </div>
                   )}
                   
@@ -4707,10 +4921,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         setShowChapterDropdown(false);
                         setShowTagDropdown(false);
                       }}
-                      className="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-lg flex items-center space-x-1.5 hover:bg-white/30 transition-colors"
+                      className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg flex items-center space-x-1.5 hover:bg-gray-100 transition-colors"
                     >
-                      <FontAwesomeIcon icon={faFilter} className="text-white" />
-                      <span className="text-xs font-bold text-white">
+                      <FontAwesomeIcon icon={faFilter} className="text-gray-500 text-xs" />
+                      <span className="text-xs font-semibold text-gray-700">
                         {questionTypeFilter === FILTER_VALUES.ALL ? 'All Types' : 
                          questionTypeFilter === QUESTION_TYPES.MCQ ? 'MCQ' :
                          questionTypeFilter === QUESTION_TYPES.FITB ? 'Fill Blank' :
@@ -4718,11 +4932,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                          questionTypeFilter === QUESTION_TYPES.CODE ? 'Code' :
                          'Descriptive'}
                       </span>
-                      <FontAwesomeIcon icon={faChevronDown} className="text-white" />
+                      <FontAwesomeIcon icon={faChevronDown} className="text-gray-400 text-xs" />
                     </button>
                     
                     {showQuestionTypeDropdown && (
-                      <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl z-30 min-w-[150px] py-1">
+                      <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl z-30 min-w-[150px] py-1 border">
                         {[
                           { value: 'all', label: 'All Types' },
                           { value: QUESTION_TYPES.MCQ, label: 'MCQ' },
@@ -4757,18 +4971,18 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         setShowChapterDropdown(false);
                         setShowTagDropdown(false);
                       }}
-                      className="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-lg flex items-center space-x-1.5 hover:bg-white/30 transition-colors"
+                      className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg flex items-center space-x-1.5 hover:bg-gray-100 transition-colors"
                     >
-                      <FontAwesomeIcon icon={faAward} className="text-white" />
-                      <span className="text-xs font-bold text-white">
+                      <FontAwesomeIcon icon={faAward} className="text-gray-500 text-xs" />
+                      <span className="text-xs font-semibold text-gray-700">
                         {complexityFilter === FILTER_VALUES.ALL ? 'All Levels' :
                          complexityFilter.charAt(0).toUpperCase() + complexityFilter.slice(1)}
                       </span>
-                      <FontAwesomeIcon icon={faChevronDown} className="text-white" />
+                      <FontAwesomeIcon icon={faChevronDown} className="text-gray-400 text-xs" />
                     </button>
                     
                     {showComplexityDropdown && (
-                      <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl z-30 min-w-[130px] py-1">
+                      <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl z-30 min-w-[130px] py-1 border">
                         {[
                           { value: 'all', label: 'All Levels' },
                           { value: 'easy', label: 'Easy' },
@@ -4802,18 +5016,18 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           setShowComplexityDropdown(false);
                           setShowTagDropdown(false);
                         }}
-                        className="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-lg flex items-center space-x-1.5 hover:bg-white/30 transition-colors"
+                        className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg flex items-center space-x-1.5 hover:bg-gray-100 transition-colors"
                       >
-                        <FontAwesomeIcon icon={faBookBookmark} className="text-white" />
-                        <span className="text-xs font-bold text-white">
+                        <FontAwesomeIcon icon={faBookBookmark} className="text-gray-500 text-xs" />
+                        <span className="text-xs font-semibold text-gray-700">
                           {chapterFilter === FILTER_VALUES.ALL ? 'All Chapters' : 
                            chapterFilter.length > 20 ? chapterFilter.substring(0, 20) + '...' : chapterFilter}
                         </span>
-                        <FontAwesomeIcon icon={faChevronDown} className="text-white" />
+                        <FontAwesomeIcon icon={faChevronDown} className="text-gray-400 text-xs" />
                       </button>
                       
                       {showChapterDropdown && (
-                        <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl z-30 min-w-[200px] max-w-[300px] py-1 max-h-[300px] overflow-y-auto custom-scrollbar">
+                        <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl z-30 min-w-[200px] max-w-[300px] py-1 max-h-[300px] overflow-y-auto custom-scrollbar border">
                           <button
                             onClick={() => {
                               setChapterFilter(FILTER_VALUES.ALL);
@@ -4855,20 +5069,20 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           setShowComplexityDropdown(false);
                           setShowChapterDropdown(false);
                         }}
-                        className="px-3 py-1.5 bg-white/20 backdrop-blur-sm rounded-lg flex items-center space-x-1.5 hover:bg-white/30 transition-colors"
+                        className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg flex items-center space-x-1.5 hover:bg-gray-100 transition-colors"
                       >
-                        <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <svg className="w-3.5 h-3.5 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
                         </svg>
-                        <span className="text-xs font-bold text-white">
+                        <span className="text-xs font-semibold text-gray-700">
                           {tagFilter === FILTER_VALUES.ALL ? 'All Tags' : 
                            tagFilter.length > 15 ? tagFilter.substring(0, 15) + '...' : tagFilter}
                         </span>
-                        <FontAwesomeIcon icon={faChevronDown} className="text-white" />
+                        <FontAwesomeIcon icon={faChevronDown} className="text-gray-400 text-xs" />
                       </button>
                       
                       {showTagDropdown && (
-                        <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl z-30 min-w-[180px] max-w-[280px] py-1 max-h-[300px] overflow-y-auto custom-scrollbar">
+                        <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl z-30 min-w-[180px] max-w-[280px] py-1 max-h-[300px] overflow-y-auto custom-scrollbar border">
                           <button
                             onClick={() => {
                               setTagFilter(FILTER_VALUES.ALL);
@@ -4900,7 +5114,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     </div>
                   )}
                 </div>
-              </div>
             </div>
 
             <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
@@ -6099,34 +6312,31 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   })}
                 </div>
               )}
+            </div>
 
-              {totalQuestionBankItems > questionsPerPage && (
-                <div className="mt-6 pt-4 flex items-center justify-between border-t border-gray-200">
-                  <div className="text-sm text-gray-600">
-                    Showing <span className="font-semibold">{((currentPage - 1) * questionsPerPage) + 1}</span> to{' '}
-                    <span className="font-semibold">
-                      {Math.min(currentPage * questionsPerPage, totalQuestionBankItems)}
-                    </span>{' '}
-                    of <span className="font-semibold">{totalQuestionBankItems}</span> questions
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                      disabled={currentPage === 1 || isLoadingQuestionBank}
-                      className={`p-2 rounded-lg transition-all ${
-                        currentPage === 1 || isLoadingQuestionBank
-                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          : 'bg-white border text-gray-700 hover:shadow-md'
-                      }`}
-                      style={currentPage > 1 && !isLoadingQuestionBank ? {
-                        borderColor: brand.colors.primary + '40'
-                      } : {}}
-                    >
-                      <FontAwesomeIcon icon={faChevronLeft} />
-                    </button>
-
+            <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-4 py-3 flex items-center justify-between border-t-2 border-gray-200 flex-shrink-0">
+              {/* Left side - Pagination */}
+              <div className="flex items-center space-x-3">
+                {totalQuestionBankItems > questionsPerPage ? (
+                  <>
+                    <div className="text-xs text-gray-500">
+                      <span className="font-semibold text-gray-700">{((currentPage - 1) * questionsPerPage) + 1}-{Math.min(currentPage * questionsPerPage, totalQuestionBankItems)}</span>
+                      <span> of </span>
+                      <span className="font-semibold text-gray-700">{totalQuestionBankItems}</span>
+                    </div>
                     <div className="flex items-center space-x-1">
+                      <button
+                        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                        disabled={currentPage === 1 || isLoadingQuestionBank}
+                        className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center ${
+                          currentPage === 1 || isLoadingQuestionBank
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        <FontAwesomeIcon icon={faChevronLeft} className="text-xs" />
+                      </button>
+
                       {Array.from({ length: Math.ceil(totalQuestionBankItems / questionsPerPage) }, (_, i) => i + 1)
                         .filter(page => {
                           const totalPages = Math.ceil(totalQuestionBankItems / questionsPerPage);
@@ -6143,15 +6353,15 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           return (
                             <div key={page} className="flex items-center">
                               {showEllipsis && (
-                                <span className="px-2 text-gray-400">...</span>
+                                <span className="px-1 text-gray-400 text-xs">...</span>
                               )}
                               <button
                                 onClick={() => setCurrentPage(page)}
                                 disabled={isLoadingQuestionBank}
-                                className={`min-w-[40px] h-10 rounded-lg font-semibold transition-all ${
+                                className={`min-w-[32px] h-8 rounded-lg text-sm font-semibold transition-all ${
                                   currentPage === page
-                                    ? 'text-white shadow-md'
-                                    : 'text-gray-700 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md'
+                                    ? 'text-white shadow-sm'
+                                    : 'text-gray-600 bg-white border border-gray-300 hover:bg-gray-50'
                                 } ${isLoadingQuestionBank ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 style={currentPage === page ? {
                                   background: brand.gradients.primary
@@ -6162,45 +6372,52 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             </div>
                           );
                         })}
+
+                      <button
+                        onClick={() => setCurrentPage(Math.min(Math.ceil(totalQuestionBankItems / questionsPerPage), currentPage + 1))}
+                        disabled={currentPage >= Math.ceil(totalQuestionBankItems / questionsPerPage) || isLoadingQuestionBank}
+                        className={`w-8 h-8 rounded-lg transition-all flex items-center justify-center ${
+                          currentPage >= Math.ceil(totalQuestionBankItems / questionsPerPage) || isLoadingQuestionBank
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-white border border-gray-300 text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        <FontAwesomeIcon icon={faChevronRight} className="text-xs" />
+                      </button>
                     </div>
-
-                    <button
-                      onClick={() => setCurrentPage(Math.min(Math.ceil(totalQuestionBankItems / questionsPerPage), currentPage + 1))}
-                      disabled={currentPage >= Math.ceil(totalQuestionBankItems / questionsPerPage) || isLoadingQuestionBank}
-                      className={`p-2 rounded-lg transition-all ${
-                        currentPage >= Math.ceil(totalQuestionBankItems / questionsPerPage) || isLoadingQuestionBank
-                          ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          : 'bg-white border text-gray-700 hover:shadow-md'
-                      }`}
-                      style={currentPage < Math.ceil(totalQuestionBankItems / questionsPerPage) && !isLoadingQuestionBank ? {
-                        borderColor: brand.colors.primary + '40'
-                      } : {}}
-                    >
-                      <FontAwesomeIcon icon={faChevronRight} />
-                    </button>
+                  </>
+                ) : (
+                  <div className="text-xs text-gray-500">
+                    <span className="font-semibold text-gray-700">{totalQuestionBankItems}</span> question{totalQuestionBankItems !== 1 ? 's' : ''}
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
-            <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-4 flex items-center justify-between border-t-2 border-gray-200 flex-shrink-0">
-              <p className="text-sm font-semibold text-gray-700">
-                {selectedQuestionIds.size} question{selectedQuestionIds.size !== 1 ? 's' : ''} selected
-              </p>
+              {/* Right side - Selection count and buttons */}
               <div className="flex items-center space-x-3">
+                <span className="text-sm font-semibold text-gray-600">
+                  {selectedQuestionIds.size} selected
+                </span>
                 <button
-                  onClick={() => setShowQuestionBankModal(false)}
-                  className="px-5 py-2.5 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowQuestionBankModal(false);
+                  }}
+                  className="px-4 py-2 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all flex items-center space-x-2 text-sm"
                 >
-                  Cancel
+                  <FontAwesomeIcon icon={faChevronLeft} className="text-xs" />
+                  <span>Back</span>
                 </button>
                 <button
-                  onClick={addSelectedQuestions}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    addSelectedQuestions();
+                  }}
                   disabled={selectedQuestionIds.size === 0}
-                  className="px-6 py-2.5 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-xl flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-5 py-2 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-xl flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                   style={{ background: brand.gradients.primary }}
                 >
-                  <FontAwesomeIcon icon={faCheck} />
+                  <FontAwesomeIcon icon={faCheck} className="text-xs" />
                   <span>Add {selectedQuestionIds.size > 0 ? `${selectedQuestionIds.size} ` : ''}Question{selectedQuestionIds.size !== 1 ? 's' : ''}</span>
                 </button>
               </div>

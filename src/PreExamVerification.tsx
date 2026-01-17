@@ -268,6 +268,12 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
     if (!analyserRef.current) return;
     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
     
+    // Check browser for audio sensitivity adjustment
+    const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+    // ✅ FIX: Significantly boost sensitivity for Firefox (25x) vs others (5x)
+    // Firefox typically reports lower raw input values from getByteTimeDomainData
+    const sensitivity = isFirefox ? 25 : 5;
+    
     const update = () => {
       if (!analyserRef.current || !audioContextRef.current || audioContextRef.current.state === 'closed') {
         console.log('❌ Audio monitoring stopped - analyser or context closed');
@@ -294,8 +300,8 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
       // Calculate RMS (Root Mean Square) -> "Loudness"
       const rms = Math.sqrt(sum / dataArray.length);
       
-      // Scale RMS to 0-100 range (RMS usually 0-50 for speech)
-      const volume = Math.min(100, Math.round(rms * 5));
+      // Scale RMS to 0-100 range with browser-specific sensitivity
+      const volume = Math.min(100, Math.round(rms * sensitivity));
       
       setAudioLevel(volume);
 
@@ -307,7 +313,7 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
         return; // Already verified, skip verification logic but loop continues
       }
 
-      // Track continuous audio detection (threshold raised to 10 for RMS-based volume)
+      // Track continuous audio detection (threshold is 10)
       if (volume > 10) {
         if (!audioDetectionStartRef.current) {
           audioDetectionStartRef.current = Date.now();
@@ -536,15 +542,15 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
           )}
         </div>
 
-        <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className={`mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg ${!isSystemReady ? 'opacity-50 pointer-events-none' : ''}`}>
           <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center justify-between">
             <span>Microphone Check</span>
-            <span className={`text-[10px] px-2 py-0.5 rounded ${audioVerified ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
-              {audioVerified ? 'Verified' : 'Action Required'}
+            <span className={`text-[10px] px-2 py-0.5 rounded ${!isSystemReady ? 'bg-gray-400 text-white' : audioVerified ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
+              {!isSystemReady ? 'Waiting for AI' : audioVerified ? 'Verified' : 'Action Required'}
             </span>
           </h3>
 
-          {isVirtualMic && (
+          {isVirtualMic && isSystemReady && (
             <div className="mb-2 p-2 bg-red-100 border border-red-300 rounded text-red-800 text-xs font-medium">
               ⚠️ Virtual Microphone Detected. Please select your physical microphone.
             </div>
@@ -555,6 +561,7 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
               className="flex-1 p-1.5 border rounded text-xs"
               value={selectedAudioDeviceId}
               onChange={(e) => startAudioMonitoring(e.target.value)}
+              disabled={!isSystemReady}
             >
               {audioDevices.length === 0 && <option>Loading microphones...</option>}
               {audioDevices.map(device => (
@@ -567,17 +574,17 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
 
           <div className="mb-1">
             <p className="text-xs text-gray-600 mb-1">
-              Speak <strong>"Hello, I am ready"</strong> to test:
+              {!isSystemReady ? 'Please wait for AI initialization...' : <>Speak <strong>"Hello, I am ready"</strong> to test:</>}
             </p>
             <div className="w-full h-3 bg-gray-300 rounded-full overflow-hidden">
               <div 
                 className={`h-full transition-all duration-100 ${audioLevel > 10 ? 'bg-green-500' : 'bg-blue-500'}`}
-                style={{ width: `${audioLevel}%` }}
+                style={{ width: `${isSystemReady ? audioLevel : 0}%` }}
               />
             </div>
           </div>
           
-          {!audioVerified && (
+          {!audioVerified && isSystemReady && (
             <p className="text-[10px] text-red-500 font-medium">
               * Microphone must detect sound to proceed.
             </p>

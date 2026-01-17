@@ -11,7 +11,8 @@ import {
   faGraduationCap,
   faBooks,
   faBackpack,
-  faUserCircle
+  faUserCircle,
+  faClipboardCheck
 } from '@fortawesome/sharp-light-svg-icons';
 import { useBrand } from './BrandContext';
 import { type UserType } from './constants';
@@ -32,6 +33,8 @@ interface ProfileDropdownProps {
   onViewLoginDetails?: () => void;
   onProfileClick?: () => void;
   onSignOut: () => void;
+  onSwitchMode?: (mode: 'learning' | 'assessment') => void;
+  currentMode?: 'learning' | 'assessment';
   isSecureBrowser?: boolean;
 }
 
@@ -42,6 +45,8 @@ export default function ProfileDropdown({
   onManageUsers,
   onViewLoginDetails,
   onSignOut,
+  onSwitchMode,
+  currentMode = 'assessment',
   isSecureBrowser = false
 }: ProfileDropdownProps) {
   const brand = useBrand();
@@ -121,7 +126,7 @@ export default function ProfileDropdown({
           className="w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm shadow-sm border"
           style={{ 
             background: brand.gradients.primary,
-            borderColor: brand.colors.primary // ✅ FIXED: Use brand.colors.primary
+            borderColor: brand.colors.primary
           }}
         >
           {user.avatar ? (
@@ -142,7 +147,7 @@ export default function ProfileDropdown({
                 className="w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-base shadow-sm flex-shrink-0 border"
                 style={{ 
                   background: brand.gradients.primary,
-                  borderColor: brand.colors.primary // ✅ FIXED: Use brand.colors.primary
+                  borderColor: brand.colors.primary
                 }}
               >
                 {user.avatar ? (
@@ -241,6 +246,80 @@ export default function ProfileDropdown({
                 </div>
               </button>
             )}
+
+            {/* Divider */}
+            <div className="border-t border-gray-100 my-2"></div>
+
+            {/* Mode Switch - Learning / Assessment */}
+            <div className="px-4 py-3">
+              <div className="text-xs font-medium text-gray-500 mb-2">Switch Module</div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    if (onSwitchMode) onSwitchMode('learning');
+                    setIsOpen(false);
+                  }}
+                  className={`flex-1 flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all hover:shadow-md ${
+                    currentMode === 'learning' ? '' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                  style={currentMode === 'learning' ? {
+                    borderColor: brand.colors.primary,
+                    background: `linear-gradient(135deg, ${brand.colors.primary}15 0%, ${brand.colors.primary}05 100%)`
+                  } : {
+                    background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)'
+                  }}
+                >
+                  <div 
+                    className="w-10 h-10 rounded-lg flex items-center justify-center mb-1.5 text-white"
+                    style={currentMode === 'learning' ? { 
+                      background: brand.gradients.primary 
+                    } : {
+                      background: 'linear-gradient(135deg, #d1d5db 0%, #9ca3af 100%)'
+                    }}
+                  >
+                    <FontAwesomeIcon icon={faBooks} className="text-lg" />
+                  </div>
+                  <span 
+                    className="text-xs font-semibold"
+                    style={{ color: currentMode === 'learning' ? brand.colors.primary : '#6b7280' }}
+                  >
+                    Learning
+                  </span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (onSwitchMode) onSwitchMode('assessment');
+                    setIsOpen(false);
+                  }}
+                  className={`flex-1 flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all hover:shadow-md ${
+                    currentMode === 'assessment' ? '' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                  style={currentMode === 'assessment' ? {
+                    borderColor: brand.colors.primary,
+                    background: `linear-gradient(135deg, ${brand.colors.primary}15 0%, ${brand.colors.primary}05 100%)`
+                  } : {
+                    background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)'
+                  }}
+                >
+                  <div 
+                    className="w-10 h-10 rounded-lg flex items-center justify-center mb-1.5 text-white"
+                    style={currentMode === 'assessment' ? { 
+                      background: brand.gradients.primary 
+                    } : {
+                      background: 'linear-gradient(135deg, #d1d5db 0%, #9ca3af 100%)'
+                    }}
+                  >
+                    <FontAwesomeIcon icon={faClipboardCheck} className="text-lg" />
+                  </div>
+                  <span 
+                    className="text-xs font-semibold"
+                    style={{ color: currentMode === 'assessment' ? brand.colors.primary : '#6b7280' }}
+                  >
+                    Assessment
+                  </span>
+                </button>
+              </div>
+            </div>
 
             {/* Divider */}
             <div className="border-t border-gray-100 my-2"></div>

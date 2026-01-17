@@ -65,6 +65,7 @@ import LeaderBoard from './LeaderBoard';
 import AuditUserList from './AuditUserList';
 import UserAudit from './UserAudit';
 import PreExamVerification from './PreExamVerification';
+import Learning from './Learning';
 
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -1725,6 +1726,7 @@ function App() {
   const [totalStudents, setTotalStudents] = useState<number>(0);
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<any>(null);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const [showLearning, setShowLearning] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<any | null>(null);
   const [selectedQuestionType, setSelectedQuestionType] = useState<'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code'>('all');
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
@@ -3339,7 +3341,10 @@ const fetchCounts = async () => {
                 <div className="w-px h-8 bg-gray-200"></div>
                 <button 
                   onClick={() => {
-                    if (activeItem === ACTIVE_ITEMS.QUESTIONS) {
+                    if (showLearning) {
+                      // TODO: Open Create Course Modal
+                      console.log('Create Course clicked');
+                    } else if (activeItem === ACTIVE_ITEMS.QUESTIONS) {
                       setIsCreateQuestionModalOpen(true);
                     } else if (activeItem === ACTIVE_ITEMS.USERS) {
                       setIsCreateUserModalOpen(true);
@@ -3362,14 +3367,16 @@ const fetchCounts = async () => {
                   </div>
                   <div className="text-left">
                     <p className="text-sm font-semibold text-gray-900">
-                      {activeItem === ACTIVE_ITEMS.QUESTIONS ? 'Create Questions' : 
+                      {showLearning ? 'Create Course' :
+                      activeItem === ACTIVE_ITEMS.QUESTIONS ? 'Create Questions' : 
                       activeItem === ACTIVE_ITEMS.USERS ? 'Create Users' : 
                       activeItem === ACTIVE_ITEMS.ROOMS ? 'Create Room' : 
                       activeItem === ACTIVE_ITEMS.HALLTICKETS ? 'Create Hall Ticket' :
                       'Create Exam'}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {activeItem === ACTIVE_ITEMS.QUESTIONS ? 'Add new questions' : 
+                      {showLearning ? 'Add new course' :
+                      activeItem === ACTIVE_ITEMS.QUESTIONS ? 'Add new questions' : 
                       activeItem === ACTIVE_ITEMS.USERS ? 'Add new users' : 
                       activeItem === ACTIVE_ITEMS.ROOMS ? 'Add new room' : 
                       activeItem === ACTIVE_ITEMS.HALLTICKETS ? 'Generate hall ticket' :
@@ -3379,8 +3386,8 @@ const fetchCounts = async () => {
                 </button>
               </>
             )}
-          </div>
-          <div className="flex-1 max-w-2xl mx-8">
+            </div>
+          <div className="flex-1 max-w-xl mx-4">
             <EnhancedSearch
               onResultSelect={handleSearchResultSelect}
               onUserSelect={handleUserSelect}
@@ -3763,6 +3770,8 @@ const fetchCounts = async () => {
                 onViewLoginDetails={() => setShowLoginDetailsDialog(true)}
                 onSignOut={handleLogout}
                 onProfileClick={() => setShowUserProfile(true)}
+                onSwitchMode={(mode) => setShowLearning(mode === 'learning')}
+                currentMode={showLearning ? 'learning' : 'assessment'}
               />
             </div>
           </div>
@@ -3770,6 +3779,15 @@ const fetchCounts = async () => {
       </header>
 
       <div className="flex flex-1 overflow-hidden overflow-x-auto">
+        {/* Learning Center - replaces sidebar and content when active */}
+        {showLearning ? (
+          <Learning
+            onClose={() => setShowLearning(false)}
+            brandTheme={brandTheme}
+            currentUser={currentUser}
+          />
+        ) : (
+        <>
         {/* Left Sidebar */}
         <aside 
           className={`h-full bg-gray-50 border-r border-gray-200 transition-all duration-300 ${isLeftCollapsed ? '' : 'w-64'} flex flex-col overflow-visible relative flex-shrink-0`}
@@ -7531,6 +7549,8 @@ const fetchCounts = async () => {
                 />
             ) : null}
           </aside>
+        )}
+        </>
         )}
       </div>
         

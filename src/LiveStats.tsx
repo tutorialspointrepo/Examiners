@@ -1882,24 +1882,12 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                           {/* Internet Connectivity Info */}
                           <div className="">
                             {/* Header line with label and quality badge */}
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-1">
-                                <FontAwesomeIcon 
-                                  icon={faWifi} 
-                                  className="text-gray-500 text-[10px]" 
-                                />
-                                <p className="text-gray-500">Disconnection</p>
-                              </div>
-                              {/* Quality badge on the right */}
-                              {(() => {
-                                const quality = getNetworkQuality(student);
-                                return (
-                                  <span className={`${quality.color} font-semibold flex items-center space-x-1`}>
-                                    <span>{quality.icon}</span>
-                                    <span>{quality.label}</span>
-                                  </span>
-                                );
-                              })()}
+                            <div className="flex items-center space-x-1">
+                              <FontAwesomeIcon 
+                                icon={faWifi} 
+                                className="text-gray-500 text-[10px]" 
+                              />
+                              <p className="text-gray-500">Disconnection</p>
                             </div>
                             
                             {/* Duration value */}
@@ -1997,8 +1985,10 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                                     <button
                                       onClick={() => {
                                         const url = violation.proofUrl!;
-                                        const isVideo = url.includes('.webm') || url.includes('.mp4') || url.includes('.mov');
-                                        setEvidenceModal({ url, type: isVideo ? 'video' : 'image' });
+                                        // Check if it's an image file, otherwise treat as video
+                                        const isImage = url.includes('.jpg') || url.includes('.jpeg') || url.includes('.png') ||
+                                                       url.includes('%2Ejpg') || url.includes('%2Ejpeg') || url.includes('%2Epng');
+                                        setEvidenceModal({ url, type: isImage ? 'image' : 'video' });
                                       }}
                                       className={`w-5 h-5 rounded flex items-center justify-center transition-all ${
                                         violation.severity === 'critical' ? 'bg-red-200 hover:bg-red-300 text-red-700' :
@@ -2009,7 +1999,12 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                                       title="View evidence"
                                     >
                                       <FontAwesomeIcon 
-                                        icon={(violation.proofUrl.includes('.webm') || violation.proofUrl.includes('.mp4')) ? faPlay : faImage} 
+                                        icon={(() => {
+                                          const url = violation.proofUrl || '';
+                                          const isImage = url.includes('.jpg') || url.includes('.jpeg') || url.includes('.png') ||
+                                                         url.includes('%2Ejpg') || url.includes('%2Ejpeg') || url.includes('%2Epng');
+                                          return isImage ? faImage : faPlay;
+                                        })()} 
                                         className="text-[8px]" 
                                       />
                                     </button>
@@ -2204,8 +2199,10 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                               onClick={() => {
                                 const url = (violation as any).proofUrl;
                                 console.log('🎬 Opening evidence URL:', url);
-                                const isVideo = url.includes('.webm') || url.includes('.mp4') || url.includes('.mov');
-                                setEvidenceModal({ url, type: isVideo ? 'video' : 'image' });
+                                // Check if it's an image file, otherwise treat as video
+                                const isImage = url.includes('.jpg') || url.includes('.jpeg') || url.includes('.png') ||
+                                               url.includes('%2Ejpg') || url.includes('%2Ejpeg') || url.includes('%2Epng');
+                                setEvidenceModal({ url, type: isImage ? 'image' : 'video' });
                               }}
                               className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
                                 violation.severity === 'critical' ? 'bg-red-200 hover:bg-red-300 text-red-700' :
@@ -2216,7 +2213,12 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                               title="View evidence"
                             >
                               <FontAwesomeIcon 
-                                icon={((violation as any).proofUrl.includes('.webm') || (violation as any).proofUrl.includes('.mp4')) ? faPlay : faImage} 
+                                icon={(() => {
+                                  const url = (violation as any).proofUrl || '';
+                                  const isImage = url.includes('.jpg') || url.includes('.jpeg') || url.includes('.png') ||
+                                                 url.includes('%2Ejpg') || url.includes('%2Ejpeg') || url.includes('%2Epng');
+                                  return isImage ? faImage : faPlay;
+                                })()} 
                                 className="text-xs" 
                               />
                             </button>

@@ -12285,7 +12285,7 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
    * @returns Promise with download URL and success status
    */
   async uploadViolationProof(
-    attemptId: string,
+    examId: string,
     proofBlob: Blob
   ): Promise<{ url: string; success: boolean }> {
     try {
@@ -12294,19 +12294,41 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       const fileExtension = proofBlob.type.includes('video') ? 'webm' : 'jpg';
       const fileName = `violation_proof_${timestamp}.${fileExtension}`;
       
-      // Storage path: violations/{attemptId}/{fileName}
+      // Storage path: proctoring_evidence/{examId}/{uid}/{fileName}
+      // Must match Firebase Storage rules: match /proctoring_evidence/{examId}/{uid}/{fileName}
       const user = this.auth.currentUser;
       if (!user) {
         console.error('❌ No authenticated user for violation proof upload');
         return { url: '', success: false };
       }
-      const storageRef = ref(this.storage, `proctoring_evidence/${attemptId}/${user.uid}/${fileName}`);
+      const storageRef = ref(this.storage, `proctoring_evidence/${examId}/${user.uid}/${fileName}`);
       
+      // ✅ FIX: Normalize contentType for Firebase compatibility (Chrome & Firefox)
+      // Firebase rules expect: 'image/.*|video/webm|audio/.*'
+      // Chrome sends: "video/webm;codecs=vp8,opus" or "video/webm;codecs=vp9,opus"
+      // Firefox sends: "video/webm" or "video/webm;codecs=vp8" or sometimes "video/x-matroska"
+      let contentType = proofBlob.type.split(';')[0]; // Strip codec suffix first
+      
+      // Normalize video types to "video/webm" for Firebase rule compatibility
+      if (contentType.startsWith('video/')) {
+        contentType = 'video/webm';
+      }
+      
+      // ✅ DEBUG: Log all details for troubleshooting 403 error
       console.log(`📤 Uploading violation proof: ${fileName} (${(proofBlob.size / 1024 / 1024).toFixed(2)}MB)`);
+      console.log(`🔍 DEBUG upload details:`, {
+        path: `proctoring_evidence/${examId}/${user.uid}/${fileName}`,
+        examId,
+        uid: user.uid,
+        originalContentType: proofBlob.type,
+        normalizedContentType: contentType,
+        sizeBytes: proofBlob.size,
+        sizeMB: (proofBlob.size / 1024 / 1024).toFixed(2),
+      });
       
       // Upload blob with metadata
       const snapshot = await uploadBytes(storageRef, proofBlob, {
-        contentType: proofBlob.type,
+        contentType: contentType,
       });
       
       // Get download URL

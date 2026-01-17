@@ -1150,11 +1150,6 @@ function Exams({
                             {exam.year}
                           </span>
                           
-                          {/* Mode Badge */}
-                          <span className="inline-flex items-center text-[11px] font-semibold text-green-700 bg-gradient-to-r from-green-50 to-green-100 px-3 py-1.5 rounded-lg shadow-sm">
-                            {exam.mode.charAt(0).toUpperCase() + exam.mode.slice(1)}
-                          </span>
-                          
                           {/* Security Level Badge */}
                           {exam.mode === EXAM_MODES.ONLINE && exam.securityLevel === SECURITY_LEVELS.SECURE && (
                             <div 

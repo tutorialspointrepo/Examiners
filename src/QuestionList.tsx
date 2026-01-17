@@ -700,7 +700,7 @@ export default function QuestionList({
       </div>
 
       {/* Questions List */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+      <div className="flex-1 overflow-y-auto px-6 py-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]" style={{ paddingBottom: totalQuestions > questionsPerPage ? '20px' : '16px' }}>
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mb-4"></div>
@@ -1923,105 +1923,106 @@ export default function QuestionList({
             })}
           </div>
         )}
-
-        {/* Pagination Controls */}
-        {totalQuestions > questionsPerPage && !isLoading && (
-          <div className="mt-6 pb-4 flex items-center justify-between border-t border-gray-200 pt-4 px-6">
-            <div className="text-sm text-gray-600">
-              Showing <span className="font-semibold">{((currentPage - 1) * questionsPerPage) + 1}</span> to{' '}
-              <span className="font-semibold">
-                {Math.min(currentPage * questionsPerPage, totalQuestions)}
-              </span>{' '}
-              of <span className="font-semibold">{totalQuestions}</span> questions
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => {
-                  if (currentPage > 1) {
-                    setCurrentPage(currentPage - 1);
-                    // Scroll to top of question list
-                    document.querySelector('.flex-1.flex.flex-col')?.scrollTo({ top: 0, behavior: 'smooth' });
-                  }
-                }}
-                disabled={currentPage === 1}
-                className={`p-2 rounded-lg transition-all ${
-                  currentPage === 1
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
-                }`}
-                style={currentPage > 1 ? {
-                  borderColor: brandTheme.colors.primary + '40'
-                } : {}}
-              >
-                <FontAwesomeIcon icon={faChevronLeft} />
-              </button>
-
-              <div className="flex items-center space-x-1">
-                {Array.from({ length: Math.ceil(totalQuestions / questionsPerPage) }, (_, i) => i + 1)
-                  .filter(page => {
-                    // Show first page, last page, current page, and pages around current
-                    const totalPages = Math.ceil(totalQuestions / questionsPerPage);
-                    return (
-                      page === 1 ||
-                      page === totalPages ||
-                      (page >= currentPage - 1 && page <= currentPage + 1)
-                    );
-                  })
-                  .map((page, index, array) => {
-                    // Add ellipsis
-                    const prevPage = array[index - 1];
-                    const showEllipsis = prevPage && page - prevPage > 1;
-
-                    return (
-                      <div key={page} className="flex items-center">
-                        {showEllipsis && (
-                          <span className="px-2 text-gray-400">...</span>
-                        )}
-                        <button
-                          onClick={() => {
-                            setCurrentPage(page);
-                            document.querySelector('.flex-1.flex.flex-col')?.scrollTo({ top: 0, behavior: 'smooth' });
-                          }}
-                          className={`min-w-[40px] h-10 rounded-lg font-semibold transition-all ${
-                            currentPage === page
-                              ? 'text-white shadow-md'
-                              : 'text-gray-700 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md'
-                          }`}
-                          style={currentPage === page ? {
-                            background: brandTheme.gradients.primary
-                          } : {}}
-                        >
-                          {page}
-                        </button>
-                      </div>
-                    );
-                  })}
-              </div>
-
-              <button
-                onClick={() => {
-                  if (currentPage < Math.ceil(totalQuestions / questionsPerPage)) {
-                    setCurrentPage(currentPage + 1);
-                    document.querySelector('.flex-1.flex.flex-col')?.scrollTo({ top: 0, behavior: 'smooth' });
-                  }
-                }}
-                disabled={currentPage >= Math.ceil(totalQuestions / questionsPerPage)}
-                className={`p-2 rounded-lg transition-all ${
-                  currentPage >= Math.ceil(totalQuestions / questionsPerPage)
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
-                }`}
-                style={currentPage < Math.ceil(totalQuestions / questionsPerPage) ? {
-                  borderColor: brandTheme.colors.primary + '40'
-                } : {}}
-              >
-                <FontAwesomeIcon icon={faChevronRight} />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Sticky Pagination Footer */}
+      {totalQuestions > questionsPerPage && !isLoading && (
+        <div className="sticky bottom-0 bg-white border-t border-gray-200 px-6 py-3 flex items-center justify-between shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+          <div className="text-sm text-gray-600">
+            Showing <span className="font-semibold">{((currentPage - 1) * questionsPerPage) + 1}</span> to{' '}
+            <span className="font-semibold">
+              {Math.min(currentPage * questionsPerPage, totalQuestions)}
+            </span>{' '}
+            of <span className="font-semibold">{totalQuestions}</span> questions
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => {
+                if (currentPage > 1) {
+                  setCurrentPage(currentPage - 1);
+                  // Scroll to top of question list
+                  document.querySelector('.flex-1.overflow-y-auto')?.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+              disabled={currentPage === 1}
+              className={`p-2 rounded-lg transition-all ${
+                currentPage === 1
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
+              }`}
+              style={currentPage > 1 ? {
+                borderColor: brandTheme.colors.primary + '40'
+              } : {}}
+            >
+              <FontAwesomeIcon icon={faChevronLeft} />
+            </button>
+
+            <div className="flex items-center space-x-1">
+              {Array.from({ length: Math.ceil(totalQuestions / questionsPerPage) }, (_, i) => i + 1)
+                .filter(page => {
+                  // Show first page, last page, current page, and pages around current
+                  const totalPages = Math.ceil(totalQuestions / questionsPerPage);
+                  return (
+                    page === 1 ||
+                    page === totalPages ||
+                    (page >= currentPage - 1 && page <= currentPage + 1)
+                  );
+                })
+                .map((page, index, array) => {
+                  // Add ellipsis
+                  const prevPage = array[index - 1];
+                  const showEllipsis = prevPage && page - prevPage > 1;
+
+                  return (
+                    <div key={page} className="flex items-center">
+                      {showEllipsis && (
+                        <span className="px-2 text-gray-400">...</span>
+                      )}
+                      <button
+                        onClick={() => {
+                          setCurrentPage(page);
+                          document.querySelector('.flex-1.overflow-y-auto')?.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className={`min-w-[40px] h-10 rounded-lg font-semibold transition-all ${
+                          currentPage === page
+                            ? 'text-white shadow-md'
+                            : 'text-gray-700 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md'
+                        }`}
+                        style={currentPage === page ? {
+                          background: brandTheme.gradients.primary
+                        } : {}}
+                      >
+                        {page}
+                      </button>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <button
+              onClick={() => {
+                if (currentPage < Math.ceil(totalQuestions / questionsPerPage)) {
+                  setCurrentPage(currentPage + 1);
+                  document.querySelector('.flex-1.overflow-y-auto')?.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+              disabled={currentPage >= Math.ceil(totalQuestions / questionsPerPage)}
+              className={`p-2 rounded-lg transition-all ${
+                currentPage >= Math.ceil(totalQuestions / questionsPerPage)
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
+              }`}
+              style={currentPage < Math.ceil(totalQuestions / questionsPerPage) ? {
+                borderColor: brandTheme.colors.primary + '40'
+              } : {}}
+            >
+              <FontAwesomeIcon icon={faChevronRight} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
 
       {/* Image Carousel Modal */}
       {imageCarouselOpen && carouselImages.length > 0 && (
@@ -2121,7 +2122,6 @@ export default function QuestionList({
           </div>
         </div>
       )}
-      </div>
     
     <style>{`
       .highlight-question {

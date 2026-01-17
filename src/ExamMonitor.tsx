@@ -48,7 +48,7 @@ const CONFIG = {
   
   // Voice Detection
   HARK_THRESHOLD: -50,              // dB threshold
-  MIN_SPEECH_DURATION_MS: 1500,     // More forgiving for brief sounds
+  MIN_SPEECH_DURATION_MS: 1000,     // 1 second - captures speech 1s or longer
 };
 
 const ExamMonitor: React.FC<ExamMonitorProps> = ({
@@ -91,7 +91,10 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
   // Buffers
   const headTurnResetBuffer = useRef<number>(0);
   const noFaceResetBuffer = useRef<number>(0); 
-  const movementResetBuffer = useRef<number>(0); // ✅ NEW: Buffer for movement reset 
+  const movementResetBuffer = useRef<number>(0); // ✅ NEW: Buffer for movement reset
+  
+  // ✅ FIX: Lock to prevent race condition - tracks violations currently being processed
+  const violationProcessingLock = useRef<{ [key: string]: boolean }>({}); 
   
   // ✅ FIX 4: Track mount status to prevent memory leaks
   const isMountedRef = useRef<boolean>(true); 
@@ -159,31 +162,114 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
   }, [examId, studentId, attemptId, onViolation]);
 
   // --- EVIDENCE CAPTURE ---
-  // ✅ FIX 4: Added isMountedRef check to prevent memory leak on unmount
+  // ✅ FIX: Robust video capture for Firefox
   const captureVideoClip = useCallback(async (durationMs: number): Promise<Blob | undefined> => {
     if (!streamRef.current || !isMountedRef.current) return undefined;
     console.log(`🎥 Starting video clip recording (${durationMs}ms)...`);
+    
     return new Promise((resolve) => {
+      // ✅ FAILSAFE: Ensure promise always resolves, even if onstop hangs
+      let isResolved = false;
+      const safeResolve = (value: Blob | undefined) => {
+        if (!isResolved) {
+          isResolved = true;
+          resolve(value);
+        }
+      };
+
       try {
-        const recorder = new MediaRecorder(streamRef.current!, { mimeType: 'video/webm;codecs=vp8,opus' });
-        const chunks: Blob[] = [];
-        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-        recorder.onstop = () => {
-            console.log("🎥 Video clip recording finished.");
-            resolve(new Blob(chunks, { type: 'video/webm' }));
-        };
-        recorder.start();
-        setTimeout(() => { 
-          // ✅ Check if still mounted before stopping
-          if (recorder.state === 'recording' && isMountedRef.current) {
-            recorder.stop();
-          } else if (recorder.state === 'recording') {
-            // Component unmounted, stop but don't process
-            recorder.stop();
-            console.log('⚠️ Recording stopped due to unmount');
+        // Detect supported mimeType - Firefox prefers simple vp8
+        let mimeType = 'video/webm';
+        const codecs = [
+          'video/webm;codecs=vp8,opus', // ✅ Preferred for Firefox stability
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8',
+          'video/webm',
+          'video/mp4'
+        ];
+        
+        for (const codec of codecs) {
+          if (MediaRecorder.isTypeSupported(codec)) {
+            mimeType = codec;
+            console.log(`🎥 Using codec: ${codec}`);
+            break;
           }
+        }
+        
+        // Check if stream is actually active
+        if (streamRef.current!.getTracks().some(t => t.readyState === 'ended')) {
+             console.warn('⚠️ Stream tracks ended, cannot record');
+             safeResolve(undefined);
+             return;
+        }
+
+        const recorder = new MediaRecorder(streamRef.current!, { mimeType });
+        const chunks: Blob[] = [];
+        let hardTimeoutId: ReturnType<typeof setTimeout>;
+        
+        recorder.onerror = (e) => {
+          console.error('❌ MediaRecorder error:', e);
+          clearTimeout(hardTimeoutId);
+          safeResolve(undefined);
+        };
+        
+        recorder.ondataavailable = (e) => { 
+          if (e.data && e.data.size > 0) {
+            chunks.push(e.data);
+          }
+        };
+
+        recorder.onstop = () => {
+          clearTimeout(hardTimeoutId);
+          const totalSize = chunks.reduce((a, b) => a + b.size, 0);
+          console.log(`🎥 Video clip recording finished. Chunks: ${chunks.length}, Size: ${totalSize} bytes`);
+          
+          if (chunks.length > 0 && totalSize > 0) {
+            safeResolve(new Blob(chunks, { type: mimeType }));
+          } else {
+            console.warn('⚠️ No video chunks captured');
+            safeResolve(undefined);
+          }
+        };
+
+        // ✅ FIX: Use 1000ms timeslice. 
+        // 500ms is too aggressive for Firefox and can lead to empty chunks.
+        recorder.start(1000);
+
+        // ✅ FIREFOX FIX: Hard timeout fallback
+        hardTimeoutId = setTimeout(() => {
+          console.log('🎥 Hard timeout reached, forcing stop...');
+          try {
+            if (recorder.state === 'recording') {
+              recorder.requestData(); // Force flush last chunk
+              recorder.stop();
+            } else if (recorder.state === 'paused') {
+              recorder.resume();
+              recorder.requestData();
+              recorder.stop();
+            }
+          } catch (e) {
+            console.warn('⚠️ Error in hard timeout stop:', e);
+          }
+          
+          // Failsafe: if onstop still doesn't fire after 1s (e.g. tab backgrounded)
+          setTimeout(() => {
+            if (!isResolved) {
+              console.warn('⚠️ onstop did not fire (Firefox background tab issue), forcing resolution');
+              const totalSize = chunks.reduce((a, b) => a + b.size, 0);
+              if (chunks.length > 0 && totalSize > 0) {
+                safeResolve(new Blob(chunks, { type: mimeType }));
+              } else {
+                safeResolve(undefined);
+              }
+            }
+          }, 1000);
         }, durationMs);
-      } catch (err) { console.error("❌ Recorder Error:", err); resolve(undefined); }
+
+      } catch (err) { 
+        console.error("❌ Recorder Error:", err); 
+        safeResolve(undefined); 
+      }
     });
   }, []);
 
@@ -362,15 +448,15 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
     loadModels();
   }, []);
 
-  // 2. Start Monitoring
-  const startMonitoring = async () => {
+  // 2. Start Monitoring (with Firefox Retry Logic)
+  const startMonitoring = async (retries = 3) => {
     if (isMonitoring) {
       console.log('⚠️ Already monitoring, skipping start');
       return;
     }
 
     try {
-      console.log(`🔄 Requesting Camera...`);
+      console.log(`🔄 Requesting Camera${retries < 3 ? ` (Retry ${3 - retries})` : ''}...`);
       
       const stream = await navigator.mediaDevices.getUserMedia({
         // ✅ FIX 5: Use 'ideal' to prevent OverconstrainedError on some devices
@@ -398,19 +484,33 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
       // ✅ Listen for track ended event (camera disconnected/disabled)
       videoTrack.onended = async () => {
         console.log('📷 Camera track ended - camera was disconnected or disabled');
+        
+        // ✅ AUTO-RECOVERY: Try to restart the camera if it stops unexpectedly
+        setIsMonitoring(false);
+        streamRef.current = null;
+        if (isMountedRef.current) {
+             console.log('🔄 Attempting to restart camera in 1s...');
+             setTimeout(() => startMonitoring(), 1000);
+        }
+
         // Reset NO_FACE timer since this is a hardware issue
         noFaceStartTime.current = null;
         
-        // Raise DEVICE_CHANGE violation
+        // Only log violation if it stays disconnected
         const now = Date.now();
         const timeSinceLastViolation = lastViolationTime.current['DEVICE_CHANGE'] 
           ? now - lastViolationTime.current['DEVICE_CHANGE']
           : Infinity;
         
         if (timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS) {
-          console.log('🚨 VIOLATION - Camera disconnected (SAVING TO DB)');
-          lastViolationTime.current['DEVICE_CHANGE'] = now;
-          await handleViolation('DEVICE_CHANGE', 'Camera was disconnected or disabled', null, null);
+           // Wait a bit to see if auto-recovery works before logging violation
+           setTimeout(async () => {
+               if (!streamRef.current && isMountedRef.current) {
+                   console.log('🚨 VIOLATION - Camera disconnected (SAVING TO DB)');
+                   lastViolationTime.current['DEVICE_CHANGE'] = Date.now();
+                   await handleViolation('DEVICE_CHANGE', 'Camera was disconnected or disabled', null, null);
+               }
+           }, 3000);
         }
       };
       
@@ -438,15 +538,44 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream; // Store for video recording
+        
+        // Wait for video to be ready (Firefox fix)
+        await new Promise<void>((resolve) => {
+          const video = videoRef.current!;
+          if (video.readyState >= 2) {
+            console.log('✅ Video already ready');
+            resolve();
+          } else {
+            const onCanPlay = () => {
+              console.log('✅ Video can play now (Firefox fix)');
+              video.removeEventListener('canplay', onCanPlay);
+              resolve();
+            };
+            video.addEventListener('canplay', onCanPlay);
+            // Also try to play the video explicitly for Firefox
+            video.play().catch(err => {
+              console.warn('⚠️ Video autoplay blocked:', err);
+            });
+          }
+        });
       }
 
-      // Start Hark voice detection
-      await startHarkVoiceDetection();
+      // Start Hark voice detection (non-blocking - don't let it hold up monitoring)
+      startHarkVoiceDetection().catch(err => {
+        console.warn('⚠️ Hark voice detection failed to start:', err);
+      });
 
       setIsMonitoring(true);
       console.log('✅ Monitoring State set to TRUE');
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ AV Init Failed:', error);
+      
+      // ✅ FIREFOX FIX: Retry if camera is "Busy" or "NotReadable"
+      // This happens often when unmounting/remounting quickly
+      if ((error.name === 'NotReadableError' || error.name === 'TrackStartError' || error.name === 'AbortError') && retries > 0) {
+          console.warn(`⚠️ Camera busy or aborted (common in Firefox on restart), retrying in 1s... (${retries} retries left)`);
+          setTimeout(() => startMonitoring(retries - 1), 1000);
+      }
     }
   };
 
@@ -615,15 +744,27 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
             ? now - lastViolationTime.current['NO_FACE']
             : Infinity;
           
-          if (timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS) {
+          // ✅ FIX: Check both cooldown AND processing lock
+          // ✅ FIREFOX FIX: Also require minimum 5 second gap to prevent race condition
+          const isNotProcessing = !violationProcessingLock.current['NO_FACE'];
+          const cooldownExpired = timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS;
+          const minimumGapMet = timeSinceLastViolation > 5000;
+          
+          if (cooldownExpired && isNotProcessing && minimumGapMet) {
             console.log('🚨 VIOLATION - No Face (SAVING TO DB)');
-            // Set cooldown FIRST before async operations
+            // Set cooldown AND lock FIRST before async operations
             lastViolationTime.current['NO_FACE'] = now;
+            violationProcessingLock.current['NO_FACE'] = true;
             noFaceStartTime.current = null;
-            const evidence = await captureEvidence('NO_FACE');
-            await handleViolation('NO_FACE', `No face detected for ${(duration/1000).toFixed(1)}s`, evidence.video, evidence.frame);
+            try {
+              const evidence = await captureEvidence('NO_FACE');
+              await handleViolation('NO_FACE', `No face detected for ${(duration/1000).toFixed(1)}s`, evidence.video, evidence.frame);
+            } finally {
+              // Always release lock, even on error
+              violationProcessingLock.current['NO_FACE'] = false;
+            }
           } else {
-            console.log(`⚠️ VIOLATION - No Face (cooldown: ${(CONFIG.VIOLATION_COOLDOWN_MS/1000 - timeSinceLastViolation/1000).toFixed(1)}s remaining)`);
+            console.log(`⚠️ VIOLATION - No Face (cooldown: ${(timeSinceLastViolation/1000).toFixed(1)}s/${CONFIG.VIOLATION_COOLDOWN_MS/1000}s, lock: ${!isNotProcessing}, gap<5s: ${!minimumGapMet})`);
           }
         }
         return;
@@ -641,14 +782,25 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
           ? now - lastViolationTime.current['MULTIPLE_FACES']
           : Infinity;
         
-        if (timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS) {
+        // ✅ FIX: Check both cooldown AND processing lock
+        // ✅ FIREFOX FIX: Also require minimum 5 second gap
+        const isNotProcessing = !violationProcessingLock.current['MULTIPLE_FACES'];
+        const cooldownExpired = timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS;
+        const minimumGapMet = timeSinceLastViolation > 5000;
+        
+        if (cooldownExpired && isNotProcessing && minimumGapMet) {
           console.log(`🚨 VIOLATION - Multiple Faces (${confidentDetections.length}) (SAVING TO DB)`);
-          // Set cooldown FIRST before async operations
+          // Set cooldown AND lock FIRST before async operations
           lastViolationTime.current['MULTIPLE_FACES'] = now;
-          const evidence = await captureEvidence('MULTIPLE_FACES');
-          await handleViolation('MULTIPLE_FACES', `${confidentDetections.length} faces detected`, evidence.video, evidence.frame);
+          violationProcessingLock.current['MULTIPLE_FACES'] = true;
+          try {
+            const evidence = await captureEvidence('MULTIPLE_FACES');
+            await handleViolation('MULTIPLE_FACES', `${confidentDetections.length} faces detected`, evidence.video, evidence.frame);
+          } finally {
+            violationProcessingLock.current['MULTIPLE_FACES'] = false;
+          }
         } else {
-          console.log(`⚠️ VIOLATION - Multiple Faces (${confidentDetections.length}) (cooldown: ${(CONFIG.VIOLATION_COOLDOWN_MS/1000 - timeSinceLastViolation/1000).toFixed(1)}s remaining)`);
+          console.log(`⚠️ VIOLATION - Multiple Faces (${confidentDetections.length}) (cooldown: ${(timeSinceLastViolation/1000).toFixed(1)}s/${CONFIG.VIOLATION_COOLDOWN_MS/1000}s, lock: ${!isNotProcessing}, gap<5s: ${!minimumGapMet})`);
         }
         return;
       }
@@ -695,16 +847,27 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
             ? now - lastViolationTime.current['HEAD_TURNED']
             : Infinity;
           
-          if (timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS) {
+          // ✅ FIX: Check both cooldown AND processing lock
+          // ✅ FIREFOX FIX: Also require minimum 5 second gap to prevent race condition
+          const isNotProcessing = !violationProcessingLock.current['HEAD_TURNED'];
+          const cooldownExpired = timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS;
+          const minimumGapMet = timeSinceLastViolation > 5000; // At least 5 seconds between any attempts
+          
+          if (cooldownExpired && isNotProcessing && minimumGapMet) {
             console.log(`🚨 VIOLATION - Head Turn (Yaw: ${yawRatio.toFixed(2)}, Duration: ${(turnDuration/1000).toFixed(1)}s) (SAVING TO DB)`);
-            // Set cooldown FIRST before async operations
+            // Set cooldown AND lock FIRST before async operations
             lastViolationTime.current['HEAD_TURNED'] = now;
+            violationProcessingLock.current['HEAD_TURNED'] = true;
             headTurnStartTime.current = null;
             movementStartTime.current = null;
-            const evidence = await captureEvidence('HEAD_TURNED');
-            await handleViolation('HEAD_TURNED', `Head turned away for ${(turnDuration/1000).toFixed(1)}s (yaw: ${yawRatio.toFixed(2)})`, evidence.video, evidence.frame);
+            try {
+              const evidence = await captureEvidence('HEAD_TURNED');
+              await handleViolation('HEAD_TURNED', `Head turned away for ${(turnDuration/1000).toFixed(1)}s (yaw: ${yawRatio.toFixed(2)})`, evidence.video, evidence.frame);
+            } finally {
+              violationProcessingLock.current['HEAD_TURNED'] = false;
+            }
           } else {
-            console.log(`⚠️ VIOLATION - Head Turn (Yaw: ${yawRatio.toFixed(2)}) (cooldown: ${(CONFIG.VIOLATION_COOLDOWN_MS/1000 - timeSinceLastViolation/1000).toFixed(1)}s remaining)`);
+            console.log(`⚠️ VIOLATION - Head Turn (Yaw: ${yawRatio.toFixed(2)}) (cooldown: ${(timeSinceLastViolation/1000).toFixed(1)}s/${CONFIG.VIOLATION_COOLDOWN_MS/1000}s, lock: ${!isNotProcessing}, gap<5s: ${!minimumGapMet})`);
           }
         }
       } else {
@@ -739,16 +902,27 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
                ? now - lastViolationTime.current['SUSPICIOUS_MOVEMENT']
                : Infinity;
              
-             if (timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS) {
+             // ✅ FIX: Check both cooldown AND processing lock
+             // ✅ FIREFOX FIX: Also require minimum 5 second gap
+             const isNotProcessing = !violationProcessingLock.current['SUSPICIOUS_MOVEMENT'];
+             const cooldownExpired = timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS;
+             const minimumGapMet = timeSinceLastViolation > 5000;
+             
+             if (cooldownExpired && isNotProcessing && minimumGapMet) {
                 console.log(`🚨 VIOLATION - Suspicious Movement (Duration: ${(moveDuration/1000).toFixed(1)}s, Movement: ${(relativeMovement*100).toFixed(0)}%) (SAVING TO DB)`);
-                // Set cooldown FIRST before async operations
+                // Set cooldown AND lock FIRST before async operations
                 lastViolationTime.current['SUSPICIOUS_MOVEMENT'] = now;
+                violationProcessingLock.current['SUSPICIOUS_MOVEMENT'] = true;
                 movementStartTime.current = null;
                 headTurnStartTime.current = null;
-                const evidence = await captureEvidence('SUSPICIOUS_MOVEMENT');
-                await handleViolation('SUSPICIOUS_MOVEMENT', `Excessive movement for ${(moveDuration/1000).toFixed(1)}s`, evidence.video, evidence.frame);
+                try {
+                  const evidence = await captureEvidence('SUSPICIOUS_MOVEMENT');
+                  await handleViolation('SUSPICIOUS_MOVEMENT', `Excessive movement for ${(moveDuration/1000).toFixed(1)}s`, evidence.video, evidence.frame);
+                } finally {
+                  violationProcessingLock.current['SUSPICIOUS_MOVEMENT'] = false;
+                }
              } else {
-                console.log(`⚠️ VIOLATION - Suspicious Movement (cooldown: ${(CONFIG.VIOLATION_COOLDOWN_MS/1000 - timeSinceLastViolation/1000).toFixed(1)}s remaining)`);
+                console.log(`⚠️ VIOLATION - Suspicious Movement (cooldown: ${(timeSinceLastViolation/1000).toFixed(1)}s/${CONFIG.VIOLATION_COOLDOWN_MS/1000}s, lock: ${!isNotProcessing}, gap<5s: ${!minimumGapMet})`);
                 movementStartTime.current = null;
              }
           }
@@ -770,15 +944,26 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
             ? now - lastViolationTime.current['FACE_MISMATCH']
             : Infinity;
           
-          if (timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS) {
+          // ✅ FIX: Check both cooldown AND processing lock
+          // ✅ FIREFOX FIX: Also require minimum 5 second gap
+          const isNotProcessing = !violationProcessingLock.current['FACE_MISMATCH'];
+          const cooldownExpired = timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS;
+          const minimumGapMet = timeSinceLastViolation > 5000;
+          
+          if (cooldownExpired && isNotProcessing && minimumGapMet) {
             console.log('🚨 VIOLATION - Face Mismatch (SAVING TO DB)');
-            // Set cooldown FIRST before async operations
+            // Set cooldown AND lock FIRST before async operations
             lastViolationTime.current['FACE_MISMATCH'] = now;
+            violationProcessingLock.current['FACE_MISMATCH'] = true;
             mismatchStartTime.current = null;
-            const evidence = await captureEvidence('FACE_MISMATCH');
-            await handleViolation('FACE_MISMATCH', `Face mismatch`, evidence.video, evidence.frame);
+            try {
+              const evidence = await captureEvidence('FACE_MISMATCH');
+              await handleViolation('FACE_MISMATCH', `Face mismatch`, evidence.video, evidence.frame);
+            } finally {
+              violationProcessingLock.current['FACE_MISMATCH'] = false;
+            }
           } else {
-            console.log(`⚠️ VIOLATION - Face Mismatch (cooldown: ${(CONFIG.VIOLATION_COOLDOWN_MS/1000 - timeSinceLastViolation/1000).toFixed(1)}s remaining)`);
+            console.log(`⚠️ VIOLATION - Face Mismatch (cooldown: ${(timeSinceLastViolation/1000).toFixed(1)}s/${CONFIG.VIOLATION_COOLDOWN_MS/1000}s, lock: ${!isNotProcessing}, gap<5s: ${!minimumGapMet})`);
           }
         }
       } else {
@@ -795,16 +980,26 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
   monitorFaceRef.current = monitorFace;
 
   useEffect(() => {
-    if (!isMonitoring || !modelsLoaded) return;
+    if (!isMonitoring || !modelsLoaded) {
+      console.log(`⏳ Monitoring loop waiting... (isMonitoring: ${isMonitoring}, modelsLoaded: ${modelsLoaded})`);
+      return;
+    }
     
     let timeoutId: number | null = null;
     let isLoopActive = true;
+    let loopCount = 0;
     
     const loop = async () => {
       // Check if loop should continue
       if (!isLoopActive || !isMountedRef.current || !isMonitoring) {
         console.log('🛑 Monitoring loop stopped');
         return;
+      }
+      
+      loopCount++;
+      // Log heartbeat every 10 iterations (5 seconds at 500ms interval)
+      if (loopCount % 10 === 1) {
+        console.log(`💓 Face monitoring heartbeat #${loopCount} (video ready: ${videoRef.current?.readyState}, stream active: ${!!streamRef.current})`);
       }
       
       // Execute face monitoring

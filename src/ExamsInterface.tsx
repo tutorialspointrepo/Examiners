@@ -1083,9 +1083,9 @@ useEffect(() => {
       const proofBlob = queuedViolation.videoProof || queuedViolation.frameProof;
       if (proofBlob) {
         try {
-          console.log(`📤 Uploading proof for ${queuedViolation.type}...`);
+          console.log(`📤 Uploading proof for ${queuedViolation.type}... (examId=${queuedViolation.examId})`);
           const uploadResult = await firebaseService.uploadViolationProof(
-            queuedViolation.attemptId,
+            queuedViolation.examId,
             proofBlob
           );
           
@@ -3858,10 +3858,11 @@ const formatTime = (seconds: number) => {
     
     console.log(`✅ ${type} passed checks - scheduling with ${debounceMs}ms debounce`);
 
-    // ✅ Determine if this is a browser violation (no proof blob) BEFORE setTimeout
+    // ✅ Determine if this is from ExamMonitor vs browser events
+    // ExamMonitor violations: NO_FACE, HEAD_TURNED, MULTIPLE_FACES, FACE_MISMATCH, SUSPICIOUS_MOVEMENT, HUMAN_VOICE_DETECTED
     // Browser violations: WINDOW_BLUR, TAB_SWITCH, FULLSCREEN_EXIT, DEVTOOLS_OPEN, etc.
-    // ExamMonitor violations: NO_FACE, HEAD_TURNED, etc. (these come with a Blob)
-    const isFromExamMonitor = arg3 instanceof Blob;
+    const EXAM_MONITOR_VIOLATION_TYPES = ['NO_FACE', 'HEAD_TURNED', 'MULTIPLE_FACES', 'FACE_MISMATCH', 'SUSPICIOUS_MOVEMENT', 'HUMAN_VOICE_DETECTED'];
+    const isFromExamMonitor = EXAM_MONITOR_VIOLATION_TYPES.includes(type);
 
     // Debounce logic (Clear existing timeout for this specific violation type)
     const existingTimeout = violationTimeouts.current.get(type);
