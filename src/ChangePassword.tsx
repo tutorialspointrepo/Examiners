@@ -176,7 +176,7 @@ export default function ChangePassword({ user, onPasswordChanged, onCancel }: Ch
                       e.target.style.boxShadow = 'none';
                     }
                   }}
-                  className="w-full pl-16 pr-4 py-3.5 border-2 rounded-xl transition-all outline-none font-medium"
+                  className="w-full pl-16 pr-4 py-3.5 border rounded-xl transition-all outline-none font-medium"
                   placeholder="Enter temporary password"
                   disabled={isLoading}
                 />
@@ -227,7 +227,7 @@ export default function ChangePassword({ user, onPasswordChanged, onCancel }: Ch
                       e.target.style.boxShadow = 'none';
                     }
                   }}
-                  className="w-full pl-16 pr-4 py-3.5 border-2 rounded-xl transition-all outline-none font-medium"
+                  className="w-full pl-16 pr-4 py-3.5 border rounded-xl transition-all outline-none font-medium"
                   placeholder="Create a strong password"
                   disabled={isLoading}
                 />
@@ -310,7 +310,7 @@ export default function ChangePassword({ user, onPasswordChanged, onCancel }: Ch
                       e.target.style.boxShadow = 'none';
                     }
                   }}
-                  className="w-full pl-16 pr-4 py-3.5 border-2 rounded-xl transition-all outline-none font-medium"
+                  className="w-full pl-16 pr-4 py-3.5 border rounded-xl transition-all outline-none font-medium"
                   placeholder="Confirm your password"
                   disabled={isLoading}
                 />

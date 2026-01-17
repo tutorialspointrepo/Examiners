@@ -367,7 +367,7 @@ const HallTicket: React.FC<HallTicketProps> = ({
                 const buttonRect = classDropdownRef.current.getBoundingClientRect();
                 return (
                   <div 
-                    className="fixed bg-white rounded-xl shadow-2xl border-2 border-gray-300 py-2 max-h-96 overflow-y-auto"
+                    className="fixed bg-white rounded-xl shadow-2xl border border-gray-300 py-2 max-h-96 overflow-y-auto"
                     style={{
                       maxHeight: '400px',
                       zIndex: 999999,
@@ -531,7 +531,7 @@ const HallTicket: React.FC<HallTicketProps> = ({
               const buttonRect = examTypeDropdownRef.current.getBoundingClientRect();
               return (
                 <div 
-                  className="fixed bg-white rounded-xl shadow-2xl border-2 border-gray-300 py-2 max-h-96 overflow-y-auto"
+                  className="fixed bg-white rounded-xl shadow-2xl border border-gray-300 py-2 max-h-96 overflow-y-auto"
                   style={{ 
                     maxHeight: '400px',
                     zIndex: 999999,
@@ -638,7 +638,7 @@ const HallTicket: React.FC<HallTicketProps> = ({
                 className={`bg-white rounded-2xl p-6 cursor-pointer transition-all duration-200 ${
                   selectedHallTicket?.id === group.id 
                     ? 'border-[1px] shadow-2xl scale-[1.02]' 
-                    : 'border-2 border-gray-200 hover:shadow-md hover:scale-[1.01]'
+                    : 'border border-gray-200 hover:shadow-md hover:scale-[1.01]'
                 }`}
                 style={
                   selectedHallTicket?.id === group.id

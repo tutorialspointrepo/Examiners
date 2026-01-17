@@ -117,7 +117,7 @@ const CodeTerminal: React.FC<CodeTerminalProps> = ({
         }`}>
           {isRunning ? (
             <div className="flex items-center space-x-2">
-              <div className="animate-spin w-4 h-4 border-2 border-green-400 border-t-transparent rounded-full"></div>
+              <div className="animate-spin w-4 h-4 border border-green-400 border-t-transparent rounded-full"></div>
               <span>Executing code...</span>
             </div>
           ) : output ? (

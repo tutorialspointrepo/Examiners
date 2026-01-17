@@ -147,45 +147,45 @@ export default function NoticeDialog({
       {/* Backdrop */}
       <div 
         id="notice-backdrop"
-        className="fixed inset-0 bg-black bg-opacity-50 z-50 transition-opacity duration-500 opacity-0"
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 transition-opacity duration-500 opacity-0"
         onClick={onClose}
       />
 
-      {/* Dialog - Slides in from right */}
+      {/* Dialog - Slides in from right with margin and rounded corners */}
       <div 
         id="notice-dialog"
-        className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-2xl bg-white shadow-2xl transition-transform duration-500 ease-out overflow-hidden translate-x-full"
+        className="fixed right-2 top-2 bottom-2 z-50 w-[calc(100%-16px)] max-w-[35rem] bg-white shadow-2xl transition-transform duration-500 ease-out overflow-hidden translate-x-full rounded-2xl"
       >
         <div className="h-full flex flex-col">
           {/* Header */}
           <div 
-            className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0"
+            className="px-5 py-3 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
             style={{ 
-              background: `linear-gradient(135deg, ${brand.colors.primary}08 0%, ${brand.colors.secondary}08 100%)`
+              background: brand.gradients.primary
             }}
           >
             <div className="flex items-center space-x-3">
               <div 
-                className="w-10 h-10 rounded-lg flex items-center justify-center"
-                style={{ background: brand.gradients.primary }}
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(255,255,255,0.2)' }}
               >
                 <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: '20px' }} className="text-white" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-900">Create Campus Notice</h2>
-                <p className="text-sm text-gray-500">Share important updates with everyone</p>
+                <h2 className="text-lg font-bold text-white">Create Campus Notice</h2>
+                <p className="text-xs text-white/80">Share important updates with everyone</p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
             >
-              <FontAwesomeIcon icon={faXmark} style={{ fontSize: '20px' }} className="text-gray-500" />
+              <FontAwesomeIcon icon={faXmark} style={{ fontSize: '18px' }} className="text-white" />
             </button>
           </div>
 
           {/* Content - Scrollable */}
-          <div className="flex-1 overflow-y-auto px-6 py-6">
+          <div className="flex-1 overflow-y-auto px-5 py-5">
             <form onSubmit={handleSubmit}>
               {/* Notice Title */}
               <div className="mb-6">
@@ -197,7 +197,7 @@ export default function NoticeDialog({
                   value={noticeTitle}
                   onChange={(e) => setNoticeTitle(e.target.value)}
                   placeholder="Enter a clear and concise title"
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none transition-all text-sm"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none transition-all text-sm"
                   onFocus={(e) => e.target.style.borderColor = brand.colors.primary}
                   onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
                   maxLength={100}
@@ -214,7 +214,7 @@ export default function NoticeDialog({
                   value={noticeContent}
                   onChange={(e) => setNoticeContent(e.target.value)}
                   placeholder="Write your notice content here..."
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none transition-all resize-none text-sm"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none transition-all resize-none text-sm"
                   onFocus={(e) => e.target.style.borderColor = brand.colors.primary}
                   onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
                   rows={6}
@@ -235,7 +235,7 @@ export default function NoticeDialog({
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(openDropdown === 'priority' ? null : 'priority')}
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm hover:border-gray-400 bg-white"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm hover:border-gray-400 bg-white"
                     >
                       <span className="text-gray-900 flex items-center space-x-2">
                         <span>{selectedPriority?.emoji}</span>
@@ -273,7 +273,7 @@ export default function NoticeDialog({
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(openDropdown === 'category' ? null : 'category')}
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm hover:border-gray-400 bg-white"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm hover:border-gray-400 bg-white"
                     >
                       <span className="text-gray-900 flex items-center space-x-2">
                         <span>{selectedCategory?.emoji}</span>
@@ -313,7 +313,7 @@ export default function NoticeDialog({
                     <button
                       type="button"
                       onClick={() => setOpenDropdown(openDropdown === 'audience' ? null : 'audience')}
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm hover:border-gray-400 bg-white"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm hover:border-gray-400 bg-white"
                     >
                       <span className="text-gray-900 flex items-center space-x-2">
                         <span>{selectedAudience?.emoji}</span>
@@ -352,7 +352,7 @@ export default function NoticeDialog({
                   type="datetime-local"
                   value={noticeExpiryDate}
                   onChange={(e) => setNoticeExpiryDate(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none transition-all text-sm"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none transition-all text-sm"
                   onFocus={(e) => e.target.style.borderColor = brand.colors.primary}
                   onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
                 />
@@ -362,7 +362,7 @@ export default function NoticeDialog({
           </div>
 
           {/* Footer - Fixed at bottom */}
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between flex-shrink-0">
+          <div className="px-5 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between flex-shrink-0 rounded-b-2xl">
             <div className="text-xs text-gray-500">
               Posted by <span className="font-medium text-gray-700">{currentUserName}</span> • {currentUserRole}
             </div>
@@ -370,7 +370,7 @@ export default function NoticeDialog({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-5 py-2.5 border-2 border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-100 transition-colors text-sm"
+                className="px-5 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-100 transition-colors text-sm"
                 disabled={isSubmitting}
               >
                 Cancel
@@ -384,7 +384,7 @@ export default function NoticeDialog({
               >
                 {isSubmitting ? (
                   <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin"></div>
                     <span>Creating...</span>
                   </>
                 ) : (

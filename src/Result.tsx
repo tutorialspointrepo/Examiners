@@ -1369,7 +1369,7 @@ function Result({
                         {!hasMorePresentStudents && !hasMoreAbsentStudents && (presentStudents.length > 0 || absentStudents.length > 0) && (
                           <div className="flex flex-col items-center justify-center py-8">
                             <div className="relative mb-3">
-                              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
+                              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
                                 <div className="text-center">
                                   <div className="text-2xl mb-1">📭</div>
                                   <div className="w-8 h-0.5 bg-gray-300 rounded"></div>
@@ -1520,7 +1520,7 @@ function Result({
                         {!hasMorePresentStudents && presentStudents.length > 0 && (
                           <div className="flex flex-col items-center justify-center py-8">
                             <div className="relative mb-3">
-                              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
+                              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
                                 <div className="text-center">
                                   <div className="text-2xl mb-1">📭</div>
                                   <div className="w-8 h-0.5 bg-gray-300 rounded"></div>
@@ -1568,7 +1568,7 @@ function Result({
                             ) : (
                               <div className="flex flex-col items-center justify-center py-20">
                                 <div className="relative mb-4">
-                                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 flex items-center justify-center">
+                                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-green-50 to-green-100 border border-green-200 flex items-center justify-center">
                                     <div className="text-center">
                                       <div className="text-3xl mb-1">✅</div>
                                     </div>
@@ -1603,7 +1603,7 @@ function Result({
                           {!hasMoreAbsentStudents && absentStudents.length > 0 && (
                             <div className="flex flex-col items-center justify-center py-8">
                               <div className="relative mb-3">
-                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
+                                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
                                   <div className="text-center">
                                     <div className="text-2xl mb-1">📭</div>
                                     <div className="w-8 h-0.5 bg-gray-300 rounded"></div>
@@ -1853,9 +1853,6 @@ function Result({
                                 <span className="text-[11px] font-medium text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
                                   {exam.year}
                                 </span>
-                                <span className="text-[11px] font-medium text-green-700 bg-green-100 px-3 py-1 rounded-full">
-                                  {exam.mode.charAt(0).toUpperCase() + exam.mode.slice(1)}
-                                </span>
                                 {exam.mode === 'online' && exam.securityLevel === 'secure' && (
                                   <div className="w-7 h-7 bg-red-100 rounded-full flex items-center justify-center" title="Secure Exam">
                                     <FontAwesomeIcon icon={faShield} style={{ fontSize: '14px' }} className="text-red-600" />
@@ -1910,7 +1907,7 @@ function Result({
                     {!hasMoreExams && exams.length > 0 && (
                       <div className="flex flex-col items-center justify-center py-8">
                         <div className="relative mb-3">
-                          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
+                          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
                             <div className="text-center">
                               <div className="text-2xl mb-1">📭</div>
                               <div className="w-8 h-0.5 bg-gray-300 rounded"></div>

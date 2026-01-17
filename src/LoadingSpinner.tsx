@@ -343,10 +343,10 @@ export function LoadingSpinner({
           
           {/* Pulsing rings */}
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className={`absolute border-2 border-white/30 rounded-full pulse-ring ${
+            <div className={`absolute border border-white/30 rounded-full pulse-ring ${
               size === 'sm' ? 'w-16 h-16' : size === 'md' ? 'w-24 h-24' : 'w-32 h-32'
             }`}></div>
-            <div className={`absolute border-2 border-white/20 rounded-full pulse-ring delay-1000 ${
+            <div className={`absolute border border-white/20 rounded-full pulse-ring delay-1000 ${
               size === 'sm' ? 'w-20 h-20' : size === 'md' ? 'w-28 h-28' : 'w-36 h-36'
             }`}></div>
           </div>

@@ -304,40 +304,40 @@ Click on any quick action below or type your question!`,
       {/* Backdrop */}
       <div 
         id="ai-assistant-backdrop"
-        className="fixed inset-0 bg-black bg-opacity-50 z-[9999] transition-opacity duration-500 opacity-0"
+        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] transition-opacity duration-500 opacity-0"
         onClick={onClose}
       />
 
-      {/* Dialog - Slides in from right */}
+      {/* Dialog - Slides in from right with margin and rounded corners */}
       <div 
         id="ai-assistant-dialog"
-        className="fixed right-0 top-0 bottom-0 z-[9999] w-full max-w-2xl bg-white shadow-2xl transition-transform duration-500 ease-out overflow-hidden translate-x-full"
+        className="fixed right-2 top-2 bottom-2 z-[9999] w-[calc(100%-16px)] max-w-[35rem] bg-white shadow-2xl transition-transform duration-500 ease-out overflow-hidden translate-x-full rounded-2xl"
       >
         <div className="h-full flex flex-col">
           {/* Header */}
           <div 
-            className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0"
+            className="px-5 py-3 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
             style={{ 
-              background: `linear-gradient(135deg, ${brand.colors.primary}08 0%, ${brand.colors.secondary}08 100%)`
+              background: brand.gradients.primary
             }}
           >
             <div className="flex items-center space-x-3">
               <div 
-                className="w-10 h-10 rounded-lg flex items-center justify-center"
-                style={{ background: brand.gradients.primary }}
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(255,255,255,0.2)' }}
               >
                 <Bot size={22} className="text-white" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-900">AI Exams Specialist</h2>
-                <p className="text-sm text-gray-500">Powered by ChatGPT</p>
+                <h2 className="text-lg font-bold text-white">AI Exams Specialist</h2>
+                <p className="text-xs text-white/80">Powered by ChatGPT</p>
               </div>
             </div>
             <button 
               onClick={onClose} 
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
             >
-              <X size={20} className="text-gray-500" />
+              <X size={18} className="text-white" />
             </button>
           </div>
 
@@ -372,7 +372,7 @@ Click on any quick action below or type your question!`,
                         sendMessage(action.prompt);
                         setIsQuickActionsExpanded(false);
                       }}
-                      className="flex items-center space-x-2 px-3 py-2.5 bg-white border-2 border-gray-200 rounded-lg hover:border-gray-300 transition-all text-left group"
+                      className="flex items-center space-x-2 px-3 py-2.5 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-all text-left group"
                       disabled={isLoading}
                     >
                       <div 
@@ -484,7 +484,7 @@ Click on any quick action below or type your question!`,
             <div ref={messagesEndRef} />
           </div>
 
-          <div className="px-6 py-4 bg-white border-t border-gray-200 flex-shrink-0">
+          <div className="px-5 py-4 bg-white border-t border-gray-200 flex-shrink-0 rounded-b-2xl">
             <form onSubmit={handleSubmit}>
               <div className="relative w-full">
                 <textarea
@@ -493,7 +493,7 @@ Click on any quick action below or type your question!`,
                   onKeyPress={handleKeyPress}
                   placeholder="Ask me anything about exams, questions, or assessments..."
                   rows={2}
-                  className="w-full px-4 py-3 pr-14 border-2 border-gray-300 rounded-lg focus:outline-none transition-all resize-none text-sm"
+                  className="w-full px-4 py-3 pr-14 border border-gray-300 rounded-xl focus:outline-none transition-all resize-none text-sm"
                   style={{
                     borderColor: inputMessage ? brand.colors.primary : '#d1d5db',
                     maxHeight: '120px'

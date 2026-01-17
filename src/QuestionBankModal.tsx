@@ -487,12 +487,12 @@ const QuestionBankModal: React.FC<QuestionBankModalProps> = memo(({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search questions..."
-              className="w-full pl-10 pr-20 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 transition-all text-sm"
+              className="w-full pl-10 pr-20 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 transition-all text-sm"
             />
             <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
               {searchQuery !== debouncedSearchQuery && searchQuery !== '' && (
                 <div className="flex items-center space-x-1.5 text-xs text-gray-500">
-                  <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
                   <span className="font-medium">...</span>
                 </div>
               )}
@@ -514,7 +514,7 @@ const QuestionBankModal: React.FC<QuestionBankModalProps> = memo(({
               <div className="text-sm text-gray-600 transition-opacity duration-200">
                 {isLoadingQuestionBank && questionBankItems.length === 0 ? (
                   <span className="flex items-center space-x-2">
-                    <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                    <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
                     <span>Searching...</span>
                   </span>
                 ) : searchQuery.trim().length > 0 && searchQuery.trim().length < 2 ? (
@@ -545,7 +545,7 @@ const QuestionBankModal: React.FC<QuestionBankModalProps> = memo(({
         <div className="flex-1 overflow-y-auto p-6 relative custom-scrollbar">
           {isLoadingQuestionBank && questionBankItems.length > 0 && (
             <div className="absolute inset-0 bg-white/70 backdrop-blur-[2px] z-10 flex items-center justify-center transition-opacity duration-200">
-              <div className="bg-white rounded-xl shadow-lg px-5 py-3 flex items-center space-x-3 border-2" style={{ borderColor: brand.colors.primary + '20' }}>
+              <div className="bg-white rounded-xl shadow-lg px-5 py-3 flex items-center space-x-3 border" style={{ borderColor: brand.colors.primary + '20' }}>
                 <div className="w-5 h-5 border-3 border-t-transparent rounded-full animate-spin"
                   style={{ borderColor: brand.colors.primary, borderTopColor: 'transparent', borderWidth: '3px' }} />
                 <p className="text-gray-700 font-semibold text-sm">Searching...</p>
@@ -616,7 +616,7 @@ const QuestionBankModal: React.FC<QuestionBankModalProps> = memo(({
                     key={question.id}
                     className={`bg-white rounded-2xl p-5 transition-all ${
                       isSelected 
-                        ? 'shadow-md ring-2 ring-blue-200 border-2 border-blue-300' 
+                        ? 'shadow-md ring-2 ring-blue-200 border border-blue-300' 
                         : 'border border-gray-200 hover:shadow-sm hover:border-gray-300'
                     }`}
                   >
@@ -772,7 +772,7 @@ const QuestionBankModal: React.FC<QuestionBankModalProps> = memo(({
                       <div className="flex-shrink-0 ml-4">
                         <div
                           onClick={() => handleToggleSelection(question.id)}
-                          className={`w-6 h-6 rounded-md border-2 flex items-center justify-center cursor-pointer transition-all ${
+                          className={`w-6 h-6 rounded-md border flex items-center justify-center cursor-pointer transition-all ${
                             isSelected
                               ? 'bg-blue-600 border-blue-600'
                               : 'border-gray-300 hover:border-blue-400 bg-white'
@@ -856,7 +856,7 @@ const QuestionBankModal: React.FC<QuestionBankModalProps> = memo(({
                   className={`p-2 rounded-lg transition-all ${
                     currentPage === 1 || isLoadingQuestionBank
                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-white border-2 text-gray-700 hover:shadow-md'
+                      : 'bg-white border text-gray-700 hover:shadow-md'
                   }`}
                   style={currentPage > 1 && !isLoadingQuestionBank ? {
                     borderColor: brand.colors.primary + '40'
@@ -890,7 +890,7 @@ const QuestionBankModal: React.FC<QuestionBankModalProps> = memo(({
                             className={`min-w-[40px] h-10 rounded-lg font-semibold transition-all ${
                               currentPage === page
                                 ? 'text-white shadow-md'
-                                : 'text-gray-700 bg-white border-2 border-gray-200 hover:border-gray-300 hover:shadow-md'
+                                : 'text-gray-700 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md'
                             } ${isLoadingQuestionBank ? 'opacity-50 cursor-not-allowed' : ''}`}
                             style={currentPage === page ? {
                               background: brand.gradients.primary
@@ -909,7 +909,7 @@ const QuestionBankModal: React.FC<QuestionBankModalProps> = memo(({
                   className={`p-2 rounded-lg transition-all ${
                     currentPage >= Math.ceil(totalQuestionBankItems / questionsPerPage) || isLoadingQuestionBank
                       ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-white border-2 text-gray-700 hover:shadow-md'
+                      : 'bg-white border text-gray-700 hover:shadow-md'
                   }`}
                   style={currentPage < Math.ceil(totalQuestionBankItems / questionsPerPage) && !isLoadingQuestionBank ? {
                     borderColor: brand.colors.primary + '40'
@@ -930,7 +930,7 @@ const QuestionBankModal: React.FC<QuestionBankModalProps> = memo(({
           <div className="flex items-center space-x-3">
             <button
               onClick={onClose}
-              className="px-5 py-2.5 bg-white border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
+              className="px-5 py-2.5 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
             >
               Cancel
             </button>

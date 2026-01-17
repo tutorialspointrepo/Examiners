@@ -699,8 +699,6 @@ export default function CreateQuestionModal({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
     <>
       <style>{`
@@ -731,44 +729,73 @@ export default function CreateQuestionModal({
             transform: translateY(0) scale(1);
           }
         }
+        
+        /* Custom scrollbar styling - Hidden */
+        .custom-scrollbar {
+          scrollbar-width: none; /* Firefox */
+          -ms-overflow-style: none; /* IE and Edge */
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+          display: none; /* Chrome, Safari, Opera */
+        }
       `}</style>
       
     <div 
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4"
+      className={`fixed inset-0 z-[9999] flex items-start justify-start p-2 transition-opacity duration-300 ${
+        isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+      }`}
     >
       <div 
-        className="bg-white rounded-2xl shadow-2xl w-full mx-4 overflow-hidden"
-        style={{ maxWidth: view === 'choice' ? '700px' : '1000px', maxHeight: '90vh' }}
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
+        onClick={onClose}
+      />
+      
+      <div 
+        className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[50rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+          isOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
 
         {/* Choice View */}
         {view === 'choice' && (
           <>
-            <div className="px-8 py-6 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Create Questions</h2>
-                  <p className="text-sm text-gray-500 mt-1">Choose how you want to add questions</p>
-                </div>
-                <button
-                  onClick={onClose}
-                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            <div 
+              className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+              style={{ 
+                background: brandTheme.gradients.primary,
+                borderColor: brandTheme.colors.secondary
+              }}
+            >
+              <div className="flex items-center space-x-3">
+                <div 
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{ background: 'rgba(255,255,255,0.2)' }}
                 >
-                  <X size={24} className="text-gray-500" />
-                </button>
+                  <span className="text-lg">📝</span>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Create Questions</h2>
+                  <p className="text-white/80 text-xs">Choose how you want to add questions</p>
+                </div>
               </div>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
+              >
+                <X size={16} className="text-white" />
+              </button>
             </div>
 
-            <div className="p-8">
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar flex flex-col justify-center">
               <div className="grid grid-cols-2 gap-6">
                 {/* Bulk Upload Option */}
                 <button
                   onClick={() => {
                     onBulkUpload();
-                    onClose();
                   }}
-                  className="group relative bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200 hover:border-blue-400 transition-all duration-300 hover:shadow-xl"
+                  className="group relative bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200 hover:border-blue-400 transition-all duration-300 hover:shadow-xl"
                 >
                   <div className="flex flex-col items-center text-center space-y-4">
                     <div
@@ -779,7 +806,7 @@ export default function CreateQuestionModal({
                     </div>
 
                     <div>
-                      <h3 className="text-lg font-bold text-gray-900 mb-2">Bulk Upload</h3>
+                      <h3 className="text-base font-semibold text-gray-900 mb-2">Bulk Upload</h3>
                       <p className="text-sm text-gray-600">
                         Upload multiple questions at once using Excel file
                       </p>
@@ -807,7 +834,7 @@ export default function CreateQuestionModal({
                 {/* Manual Creation Option */}
                 <button
                   onClick={() => setView('manual')}
-                  className="group relative bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6 border-2 border-purple-200 hover:border-purple-400 transition-all duration-300 hover:shadow-xl"
+                  className="group relative bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-200 hover:border-purple-400 transition-all duration-300 hover:shadow-xl"
                 >
                   <div className="flex flex-col items-center text-center space-y-4">
                     <div
@@ -818,7 +845,7 @@ export default function CreateQuestionModal({
                     </div>
 
                     <div>
-                      <h3 className="text-lg font-bold text-gray-900 mb-2">Manual Creation</h3>
+                      <h3 className="text-base font-semibold text-gray-900 mb-2">Manual Creation</h3>
                       <p className="text-sm text-gray-600">
                         Create questions one by one with full control
                       </p>
@@ -859,37 +886,36 @@ export default function CreateQuestionModal({
           <>
             {/* Header */}
             <div 
-              className="px-6 py-5 relative overflow-hidden"
-              style={{ background: brandTheme.gradients.primary }}
+              className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+              style={{ 
+                background: brandTheme.gradients.primary,
+                borderColor: brandTheme.colors.secondary
+              }}
             >
-              <div className="absolute inset-0 opacity-10">
-                <div className="absolute top-0 left-0 w-32 h-32 bg-white rounded-full -translate-x-16 -translate-y-16"></div>
-                <div className="absolute bottom-0 right-0 w-40 h-40 bg-white rounded-full translate-x-20 translate-y-20"></div>
-              </div>
-              
-              <div className="relative flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                    <Sparkles size={24} className="text-white" />
-                  </div>
-                  <div>
-                    <h2 className="text-2xl font-bold text-white">Create New Question</h2>
-                    <p className="text-white/90 text-sm">Fill in the details below</p>
-                  </div>
-                </div>
-                <button
-                  onClick={onClose}
-                  className="w-10 h-10 rounded-lg bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center transition-colors"
-                  disabled={isSubmitting}
+              <div className="flex items-center space-x-3">
+                <div 
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{ background: 'rgba(255,255,255,0.2)' }}
                 >
-                  <X size={20} className="text-white" />
-                </button>
+                  <Sparkles size={18} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Create New Question</h2>
+                  <p className="text-white/80 text-xs">{activeCollegeName || 'Select College'}</p>
+                </div>
               </div>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
+                disabled={isSubmitting}
+              >
+                <X size={16} className="text-white" />
+              </button>
             </div>
 
             {/* Form Content */}
-            <div ref={scrollContainerRef} className="overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]" style={{ maxHeight: 'calc(90vh - 200px)' }}>
-              <div className="px-6 py-6 space-y-6">
+            <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+              <div className="space-y-4">
                 {/* Error Message */}
                 {error && (
                   <div ref={errorRef} className="bg-red-50 border-l-4 border-red-500 p-4 flex items-start space-x-3 rounded-lg">
@@ -939,7 +965,7 @@ export default function CreateQuestionModal({
                       </div>
                     )}
                     {/* Basic Information */}
-                    <div className="border-2 rounded-xl p-4"
+                    <div className="border rounded-xl p-4"
                       style={{ 
                         background: brandTheme.gradients.card,
                         borderColor: brandTheme.colors.secondary + '33'
@@ -950,7 +976,7 @@ export default function CreateQuestionModal({
                           <FileText size={20} style={{ color: brandTheme.colors.secondary }} />
                         </div>
                         <div>
-                          <h3 className="font-bold text-gray-900">Basic Information</h3>
+                          <h3 className="text-base font-semibold text-gray-900">Basic Information</h3>
                           <p className="text-xs" style={{ color: brandTheme.colors.secondary, opacity: 0.9 }}>Select the question details</p>
                         </div>
                       </div>
@@ -1074,7 +1100,7 @@ export default function CreateQuestionModal({
                     </div>
 
                     {/* Question Type - Interactive Cards */}
-                    <div className="border-2 rounded-xl p-4"
+                    <div className="border rounded-xl p-4"
                       style={{ 
                         background: brandTheme.gradients.card,
                         borderColor: brandTheme.colors.secondary + '33'
@@ -1085,7 +1111,7 @@ export default function CreateQuestionModal({
                           <BookOpen size={20} style={{ color: brandTheme.colors.secondary }} />
                         </div>
                         <div>
-                          <h3 className="font-bold text-gray-900">Question Type</h3>
+                          <h3 className="text-base font-semibold text-gray-900">Question Type</h3>
                           <p className="text-xs" style={{ color: brandTheme.colors.secondary, opacity: 0.9 }}>Choose the question format</p>
                         </div>
                       </div>
@@ -1102,7 +1128,7 @@ export default function CreateQuestionModal({
                                 setFormData(prev => ({ ...prev, options: [''], correct_answers: [], correct_sequence: [] }));
                               }
                             }}
-                            className={`group relative p-4 rounded-xl border-2 transition-all overflow-hidden ${
+                            className={`group relative p-4 rounded-xl border transition-all overflow-hidden ${
                               formData.type === type.value
                                 ? 'border-transparent shadow-lg'
                                 : 'border-gray-200 hover:border-gray-300'
@@ -1141,7 +1167,7 @@ export default function CreateQuestionModal({
                     {/* Question Text with Image Upload */}
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+                        <h3 className="text-sm text-base font-semibold text-gray-900 uppercase tracking-wide">
                           {formData.type === QUESTION_TYPES.CODE ? 'Problem Statement' : 'Question'} <span className="text-red-500">*</span>
                         </h3>
                         <button
@@ -1156,7 +1182,7 @@ export default function CreateQuestionModal({
                         >
                           {isUploadingImage ? (
                             <>
-                              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                              <div className="w-4 h-4 border border-current border-t-transparent rounded-full animate-spin" />
                               <span>Uploading...</span>
                             </>
                           ) : (
@@ -1194,7 +1220,7 @@ export default function CreateQuestionModal({
                               <img 
                                 src={imageUrl} 
                                 alt={`Question Image ${index + 1}`} 
-                                className="w-full h-24 object-cover rounded-lg border-2 border-gray-200 hover:border-gray-300 transition-colors"
+                                className="w-full h-24 object-cover rounded-lg border border-gray-200 hover:border-gray-300 transition-colors"
                               />
                               <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
                                 <button
@@ -1216,7 +1242,7 @@ export default function CreateQuestionModal({
 
                     {/* MCQ Options - Long Text Support */}
                     {formData.type === QUESTION_TYPES.MCQ && (
-                      <div className="border-2 rounded-xl p-4"
+                      <div className="border rounded-xl p-4"
                         style={{ 
                           background: brandTheme.gradients.card,
                           borderColor: brandTheme.colors.secondary + '33'
@@ -1227,7 +1253,7 @@ export default function CreateQuestionModal({
                             <ListChecks size={20} style={{ color: brandTheme.colors.secondary }} />
                           </div>
                           <div>
-                            <h3 className="font-bold text-gray-900">Options</h3>
+                            <h3 className="text-base font-semibold text-gray-900">Options</h3>
                             <p className="text-xs" style={{ color: brandTheme.colors.secondary, opacity: 0.9 }}>Add answer options</p>
                           </div>
                         </div>
@@ -1280,7 +1306,7 @@ export default function CreateQuestionModal({
 
                     {/* Jumbled Quiz Options */}
                     {formData.type === QUESTION_TYPES.JUMBLED && (
-                      <div className="border-2 rounded-xl p-4"
+                      <div className="border rounded-xl p-4"
                         style={{ 
                           background: brandTheme.gradients.card,
                           borderColor: brandTheme.colors.secondary + '33'
@@ -1291,7 +1317,7 @@ export default function CreateQuestionModal({
                             <GripVertical size={20} style={{ color: brandTheme.colors.secondary }} />
                           </div>
                           <div>
-                            <h3 className="font-bold text-gray-900">Items to Arrange</h3>
+                            <h3 className="text-base font-semibold text-gray-900">Items to Arrange</h3>
                             <p className="text-xs" style={{ color: brandTheme.colors.secondary, opacity: 0.9 }}>Drag to set correct order</p>
                           </div>
                         </div>
@@ -1305,7 +1331,7 @@ export default function CreateQuestionModal({
                               onDragStart={() => handleDragStart(index)}
                               onDragOver={(e) => handleDragOver(e, index)}
                               onDragEnd={handleDragEnd}
-                              className={`flex items-center space-x-2 p-3 bg-white border-2 rounded-lg cursor-move transition-all ${
+                              className={`flex items-center space-x-2 p-3 bg-white border rounded-lg cursor-move transition-all ${
                                 draggedIndex === index ? 'opacity-50 border-blue-400' : 'border-gray-300 hover:border-gray-400'
                               }`}
                             >
@@ -1330,7 +1356,7 @@ export default function CreateQuestionModal({
                           ))}
                           <button
                             onClick={addOption}
-                            className="w-full flex items-center justify-center space-x-2 px-4 py-3 text-sm font-medium rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 transition-colors"
+                            className="w-full flex items-center justify-center space-x-2 px-4 py-3 text-sm font-medium rounded-lg border border-dashed border-gray-300 hover:border-gray-400 transition-colors"
                           >
                             <Plus size={16} />
                             <span>Add Item</span>
@@ -1341,7 +1367,7 @@ export default function CreateQuestionModal({
 
                     {/* Fill in the Blank Answers */}
                     {formData.type === QUESTION_TYPES.FITB && (
-                      <div className="border-2 rounded-xl p-4"
+                      <div className="border rounded-xl p-4"
                         style={{ 
                           background: brandTheme.gradients.card,
                           borderColor: brandTheme.colors.secondary + '33'
@@ -1353,7 +1379,7 @@ export default function CreateQuestionModal({
                               <CheckCircle size={20} style={{ color: brandTheme.colors.secondary }} />
                             </div>
                             <div>
-                              <h3 className="font-bold text-gray-900">Fill in the Blanks</h3>
+                              <h3 className="text-base font-semibold text-gray-900">Fill in the Blanks</h3>
                               <p className="text-xs" style={{ color: brandTheme.colors.secondary, opacity: 0.9 }}>Add blanks and acceptable answers for each</p>
                             </div>
                           </div>
@@ -1362,9 +1388,9 @@ export default function CreateQuestionModal({
                         {/* Render each blank */}
                         <div className="space-y-4">
                           {formData.blanks.map((blankAnswers, blankIndex) => (
-                            <div key={blankIndex} className="border-2 border-gray-200 rounded-lg p-3 bg-white">
+                            <div key={blankIndex} className="border border-gray-200 rounded-lg p-3 bg-white">
                               <div className="flex items-center justify-between mb-2">
-                                <h4 className="text-sm font-bold text-gray-700">Blank {blankIndex + 1}</h4>
+                                <h4 className="text-base font-semibold text-gray-700">Blank {blankIndex + 1}</h4>
                                 {formData.blanks.length > 1 && (
                                   <button
                                     onClick={() => {
@@ -1434,7 +1460,7 @@ export default function CreateQuestionModal({
                           onClick={() => {
                             setFormData(prev => ({ ...prev, blanks: [...prev.blanks, ['']] }));
                           }}
-                          className="mt-3 w-full flex items-center justify-center space-x-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors border-2 border-dashed"
+                          className="mt-3 w-full flex items-center justify-center space-x-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors border border-dashed"
                           style={{ 
                             color: brandTheme.colors.primary,
                             borderColor: brandTheme.colors.primary,
@@ -1453,7 +1479,7 @@ export default function CreateQuestionModal({
                     {formData.type === QUESTION_TYPES.CODE && (
                       <>
                         {/* Test Stub */}
-                        <div className="border-2 rounded-xl p-4"
+                        <div className="border rounded-xl p-4"
                           style={{ 
                             background: brandTheme.gradients.card,
                             borderColor: brandTheme.colors.secondary + '33'
@@ -1465,7 +1491,7 @@ export default function CreateQuestionModal({
                                 <FileText size={20} style={{ color: brandTheme.colors.secondary }} />
                               </div>
                               <div>
-                                <h3 className="font-bold text-gray-900">Starter Code <span className="text-red-500">*</span></h3>
+                                <h3 className="text-base font-semibold text-gray-900">Starter Code <span className="text-red-500">*</span></h3>
                                 <p className="text-xs" style={{ color: brandTheme.colors.secondary, opacity: 0.9 }}>Pre-filled code template for students</p>
                               </div>
                             </div>
@@ -1533,7 +1559,7 @@ export default function CreateQuestionModal({
                         </div>
 
                         {/* Test Cases */}
-                        <div className="border-2 rounded-xl p-4"
+                        <div className="border rounded-xl p-4"
                           style={{ 
                             background: brandTheme.gradients.card,
                             borderColor: brandTheme.colors.secondary + '33'
@@ -1544,7 +1570,7 @@ export default function CreateQuestionModal({
                               <ListChecks size={20} style={{ color: brandTheme.colors.secondary }} />
                             </div>
                             <div>
-                              <h3 className="font-bold text-gray-900">Test Cases <span className="text-red-500">*</span></h3>
+                              <h3 className="text-base font-semibold text-gray-900">Test Cases <span className="text-red-500">*</span></h3>
                               <p className="text-xs" style={{ color: brandTheme.colors.secondary, opacity: 0.9 }}>Input and expected output pairs</p>
                             </div>
                           </div>
@@ -1626,7 +1652,7 @@ export default function CreateQuestionModal({
 
                     
                     <div className="space-y-3">
-                      <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+                      <h3 className="text-sm text-base font-semibold text-gray-900 uppercase tracking-wide">
                         Difficulty Level <span className="text-red-500">*</span>
                       </h3>
                       <div className="grid grid-cols-3 gap-3">
@@ -1643,7 +1669,7 @@ export default function CreateQuestionModal({
                             <button
                               key={level.value}
                               onClick={() => handleInputChange('difficulty_level', level.value)}
-                              className={`relative p-4 rounded-xl border-2 transition-all ${
+                              className={`relative p-4 rounded-xl border transition-all ${
                                 isSelected ? 'border-transparent shadow-lg' : 'border-gray-200 hover:border-gray-300'
                               }`}
                               style={isSelected ? {
@@ -1654,8 +1680,8 @@ export default function CreateQuestionModal({
                                 color: color.text
                               }}
                             >
-                              <div className="text-3xl mb-1">{level.emoji}</div>
-                              <p className="text-sm font-bold">{level.label}</p>
+                              <div className="text-2xl mb-1">{level.emoji}</div>
+                              <p className="text-sm font-semibold">{level.label}</p>
                               {isSelected && (
                                 <div className="absolute top-2 right-2">
                                   <CheckCircle size={16} className="text-white" />
@@ -1668,7 +1694,7 @@ export default function CreateQuestionModal({
                     </div>
 
                     {/* Additional Details & Help Students - Combined Box */}
-                    <div className="border-2 rounded-xl p-4"
+                    <div className="border rounded-xl p-4"
                       style={{ 
                         background: brandTheme.gradients.card,
                         borderColor: brandTheme.colors.accent + '33'
@@ -1679,7 +1705,7 @@ export default function CreateQuestionModal({
                           <Award size={20} style={{ color: brandTheme.colors.accent }} />
                         </div>
                         <div>
-                          <h3 className="font-bold text-gray-900">Additional Details & Help</h3>
+                          <h3 className="text-base font-semibold text-gray-900">Additional Details & Help</h3>
                           <p className="text-xs" style={{ color: brandTheme.colors.accent, opacity: 0.9 }}>Marks, visibility, hints & solutions</p>
                         </div>
                       </div>
@@ -1761,7 +1787,7 @@ export default function CreateQuestionModal({
                           <svg className="w-4 h-4" style={{ color: brandTheme.colors.accent }} fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
                           </svg>
-                          <h4 className="font-bold text-gray-900 text-sm">Tags <span className="text-gray-400 text-xs">(Optional - for categorization)</span></h4>
+                          <h4 className="text-base font-semibold text-gray-900 text-sm">Tags <span className="text-gray-400 text-xs">(Optional - for categorization)</span></h4>
                         </div>
                         
                         <div>
@@ -1833,7 +1859,7 @@ export default function CreateQuestionModal({
                       {/* Help Students - Hint and Solution */}
                       <div className="flex items-center space-x-2 mb-3">
                         <HelpCircle size={18} style={{ color: brandTheme.colors.accent }} />
-                        <h4 className="font-bold text-gray-900 text-sm">Help Students <span className="text-gray-400 text-xs">(Optional)</span></h4>
+                        <h4 className="text-base font-semibold text-gray-900 text-sm">Help Students <span className="text-gray-400 text-xs">(Optional)</span></h4>
                       </div>
 
                       <div className="space-y-4">
@@ -1910,7 +1936,7 @@ export default function CreateQuestionModal({
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+            <div className="px-5 py-3 border-t border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
                 <p className="text-xs text-gray-600">
                   <span className="text-red-500">*</span> Required fields
@@ -1919,24 +1945,24 @@ export default function CreateQuestionModal({
                   <button
                     onClick={onClose}
                     disabled={isSubmitting}
-                    className="px-6 py-2.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium rounded-lg transition-colors disabled:opacity-50"
+                    className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium text-sm rounded-lg transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSubmit}
                     disabled={isSubmitting || isLoadingCollegeData}
-                    className="px-6 py-2.5 text-white font-medium rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center space-x-2"
+                    className="px-5 py-2 text-white font-medium text-sm rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center space-x-2"
                     style={{ background: isSubmitting ? brandTheme.colors.primary : brandTheme.gradients.primary }}
                   >
                     {isSubmitting ? (
                       <>
-                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin" />
                         <span>Saving...</span>
                       </>
                     ) : (
                       <>
-                        <Save size={18} />
+                        <Save size={16} />
                         <span>Save Question</span>
                       </>
                     )}

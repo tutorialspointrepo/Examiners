@@ -1,13 +1,15 @@
 // ==================== VIOLATION OFFLINE QUEUE SERVICE ====================
 // Handles violation queuing when offline and syncs when online
 // Supports Blob (video/image) proof storage
+// Video proofs upload directly, frame images stored in localStorage for offline
 
 interface QueuedViolation {
   id: string;
   type: string;
   details?: string;
-  proofBlob?: Blob;
-  proofUrl?: string; // URL after upload
+  videoProof?: Blob;    // Full video - for online upload only
+  frameProof?: Blob;    // Single frame - for localStorage backup
+  proofUrl?: string;    // URL after upload
   timestamp: number;
   examId: string;
   studentId: string;
@@ -35,7 +37,7 @@ class ViolationQueueService {
   private readonly STORAGE_KEY = 'exam_violation_queue';
   private readonly BLOB_STORAGE_PREFIX = 'violation_blob_';
   private readonly MAX_RETRY_COUNT = 5; // More retries for violations
-  private readonly SYNC_INTERVAL = 10000; // 10 seconds
+  private readonly SYNC_INTERVAL = 12000; // ✅ 12 seconds (offset from answer sync at 5s)
   private readonly MAX_QUEUE_AGE = 48 * 60 * 60 * 1000; // 48 hours
   private syncTimer: number | null = null;
   private syncCallback: ((violation: QueuedViolation) => Promise<boolean>) | null = null;
@@ -108,7 +110,8 @@ class ViolationQueueService {
       // Save queue without Blob objects (Blobs stored separately)
       const queueToSave = this.queue.map(v => ({
         ...v,
-        proofBlob: undefined, // Don't serialize Blob
+        videoProof: undefined, // Don't serialize video Blob
+        frameProof: undefined, // Don't serialize frame Blob
       }));
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(queueToSave));
     } catch (error) {
@@ -117,31 +120,89 @@ class ViolationQueueService {
   }
 
   /**
-   * Store Blob in IndexedDB (localStorage can't handle Blobs)
+   * Store frame Blob in localStorage (only images, skip videos)
+   * Returns true if stored successfully, false if storage full or too large
    */
-  private async saveBlobToStorage(id: string, blob: Blob): Promise<void> {
+  private async saveBlobToStorage(id: string, blob: Blob): Promise<boolean> {
     try {
-      // Convert Blob to Base64 for localStorage (temporary solution)
-      // For production, use IndexedDB for better Blob handling
+      // Only store images in localStorage - videos are too large
+      if (blob.type.includes('video')) {
+        console.log(`⏭️ Skipping video blob for localStorage (${(blob.size / 1024 / 1024).toFixed(2)}MB) - will upload directly when online`);
+        return false;
+      }
+      
+      // Check if image is too large (skip if > 500KB)
+      const MAX_BLOB_SIZE = 500 * 1024; // 500KB for frame images
+      if (blob.size > MAX_BLOB_SIZE) {
+        console.warn(`⚠️ Frame too large (${(blob.size / 1024).toFixed(0)}KB), skipping localStorage.`);
+        return false;
+      }
+      
+      // Convert Blob to Base64
       const reader = new FileReader();
       reader.readAsDataURL(blob);
       
-      await new Promise<void>((resolve, reject) => {
-        reader.onload = () => {
-          try {
-            const base64 = reader.result as string;
-            localStorage.setItem(`${this.BLOB_STORAGE_PREFIX}${id}`, base64);
-            console.log(`💾 Saved violation proof blob for ${id}`);
-            resolve();
-          } catch (err) {
-            console.error('❌ Error saving blob (likely too large):', err);
-            reject(err);
-          }
-        };
-        reader.onerror = reject;
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Read failed"));
       });
+      
+      // Clear old blobs first to make space (keep only latest 3)
+      this.cleanupOldBlobs(3);
+      
+      // Try to store
+      try {
+        localStorage.setItem(`${this.BLOB_STORAGE_PREFIX}${id}`, base64);
+        console.log(`💾 Saved violation frame for ${id} (${(blob.size / 1024).toFixed(0)}KB)`);
+        return true;
+      } catch (quotaError) {
+        // Storage quota exceeded - clear all blobs and try again
+        console.warn('⚠️ localStorage quota exceeded, clearing old blobs...');
+        this.cleanupOldBlobs(0); // Clear all
+        
+        try {
+          localStorage.setItem(`${this.BLOB_STORAGE_PREFIX}${id}`, base64);
+          console.log(`💾 Saved violation frame for ${id} after cleanup`);
+          return true;
+        } catch (retryError) {
+          console.error('❌ Cannot store frame - localStorage still full');
+          return false;
+        }
+      }
     } catch (error) {
       console.error('❌ Error saving blob to storage:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Clean up old blobs, keeping only the specified number
+   */
+  private cleanupOldBlobs(keepCount: number): void {
+    try {
+      const blobKeys: { key: string; timestamp: number }[] = [];
+      
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(this.BLOB_STORAGE_PREFIX)) {
+          // Extract timestamp from key format: violation_blob_TYPE_TIMESTAMP_RANDOM
+          const parts = key.replace(this.BLOB_STORAGE_PREFIX, '').split('_');
+          const timestamp = parseInt(parts[1] || '0');
+          blobKeys.push({ key, timestamp });
+        }
+      }
+      
+      // Sort by timestamp (oldest first)
+      blobKeys.sort((a, b) => a.timestamp - b.timestamp);
+      
+      // Remove oldest blobs, keeping only keepCount
+      const toRemove = blobKeys.slice(0, Math.max(0, blobKeys.length - keepCount));
+      toRemove.forEach(({ key }) => {
+        localStorage.removeItem(key);
+        console.log(`🧹 Removed old blob: ${key}`);
+      });
+    } catch (error) {
+      console.error('❌ Error cleaning up old blobs:', error);
     }
   }
 
@@ -175,14 +236,19 @@ class ViolationQueueService {
 
   /**
    * Setup network event listeners
+   * ✅ IMPORTANT: Violations sync AFTER answers to avoid race condition
    */
   private setupNetworkListeners(): void {
     window.addEventListener('online', () => {
-      console.log('🌐 Network restored - syncing violations...');
+      console.log('🌐 Network restored - violations will sync after answers...');
       this.isOnline = true;
       this.notifyListeners();
-      // Immediately sync when connection is restored
-      setTimeout(() => this.syncQueue(), 1000);
+      // ✅ DELAY: Wait 3 seconds for answer sync to complete first
+      // offline_queue_service syncs at 500ms, so 3000ms gives plenty of buffer
+      setTimeout(() => {
+        console.log('🔄 Starting violation sync (after answer sync window)...');
+        this.syncQueue();
+      }, 3000);
     });
 
     window.addEventListener('offline', () => {
@@ -192,8 +258,9 @@ class ViolationQueueService {
     });
 
     // Initial sync if online and has queued items
+    // ✅ DELAY: Also delay initial sync to avoid conflict with answer sync
     if (this.isOnline && this.queue.length > 0) {
-      setTimeout(() => this.syncQueue(), 2000);
+      setTimeout(() => this.syncQueue(), 4000);
     }
   }
 
@@ -208,61 +275,61 @@ class ViolationQueueService {
     }, this.SYNC_INTERVAL);
   }
 
-  /**
-   * Stop automatic sync
-   */
-  public stopAutoSync(): void {
-    if (this.syncTimer) {
-      clearInterval(this.syncTimer);
-      this.syncTimer = null;
-    }
-  }
-
-  // ==================== QUEUE MANAGEMENT ====================
+  // ==================== QUEUE OPERATIONS ====================
 
   /**
-   * Add violation to queue (immediate or when offline)
+   * Queue a violation for sync
+   * @param type - Violation type
+   * @param details - Additional details
+   * @param videoProof - Full video blob (for online upload)
+   * @param frameProof - Single frame blob (for offline storage)
+   * @param examId - Exam ID
+   * @param studentId - Student ID
+   * @param attemptId - Attempt ID
    */
   public async queueViolation(
     type: string,
-    details: string | undefined,
-    proofBlob: Blob | undefined,
-    examId: string,
-    studentId: string,
-    attemptId: string
+    details?: string,
+    videoProof?: Blob,
+    frameProof?: Blob,
+    examId?: string,
+    studentId?: string,
+    attemptId?: string
   ): Promise<{ success: boolean; message: string; queued: boolean }> {
-    
     const violationId = `${type}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
+    // Store frame in localStorage for offline backup (small size)
+    if (frameProof) {
+      const stored = await this.saveBlobToStorage(violationId, frameProof);
+      if (stored) {
+        console.log(`💾 Frame stored in localStorage for offline backup`);
+      }
+    }
+
     const queueItem: QueuedViolation = {
       id: violationId,
       type,
       details,
-      proofBlob,
+      videoProof,      // Keep in memory for immediate upload
+      frameProof,      // Keep in memory for immediate upload
       timestamp: Date.now(),
-      examId,
-      studentId,
-      attemptId,
+      examId: examId || '',
+      studentId: studentId || '',
+      attemptId: attemptId || '',
       retryCount: 0,
       status: 'pending',
     };
 
-    // Save Blob separately if provided
-    if (proofBlob) {
-      await this.saveBlobToStorage(violationId, proofBlob);
-    }
-
-    // If online, try to submit immediately
+    // If online and has sync callback, try immediate sync with video
     if (this.isOnline && this.syncCallback) {
       try {
+        console.log(`🔄 Attempting immediate sync for: ${type}`);
         const success = await this.syncCallback(queueItem);
 
         if (success) {
           console.log(`✅ Violation submitted immediately: ${type}`);
-          // Clean up blob storage since it's synced
-          if (proofBlob) {
-            this.deleteBlobFromStorage(violationId);
-          }
+          // Clean up localStorage frame since it's synced
+          this.deleteBlobFromStorage(violationId);
           return {
             success: true,
             message: 'Violation submitted successfully',
@@ -271,6 +338,8 @@ class ViolationQueueService {
         } else {
           // Submit failed, add to queue
           console.warn(`⚠️ Submit failed, queueing violation: ${type}`);
+          // Clear video from memory (too large to keep), keep frame reference
+          queueItem.videoProof = undefined;
           this.queue.push(queueItem);
           this.saveQueueToStorage();
           this.notifyListeners();
@@ -284,7 +353,8 @@ class ViolationQueueService {
       } catch (error: any) {
         console.error(`❌ Error submitting violation ${type}:`, error);
         
-        // Add to queue on error
+        // Add to queue on error (without video, keep frame)
+        queueItem.videoProof = undefined;
         this.queue.push(queueItem);
         this.saveQueueToStorage();
         this.notifyListeners();
@@ -296,8 +366,9 @@ class ViolationQueueService {
         };
       }
     } else {
-      // Offline or no callback - add to queue immediately
+      // Offline or no callback - add to queue immediately (without video)
       console.log(`🔴 ${this.isOnline ? 'No sync callback' : 'Offline'} - queueing violation: ${type}`);
+      queueItem.videoProof = undefined; // Don't keep large video in memory
       this.queue.push(queueItem);
       this.saveQueueToStorage();
       this.notifyListeners();
@@ -351,9 +422,12 @@ class ViolationQueueService {
       item.lastSyncAttempt = Date.now();
       this.notifyListeners();
 
-      // Load blob from storage if not in memory
-      if (!item.proofBlob && item.id) {
-        item.proofBlob = await this.loadBlobFromStorage(item.id) || undefined;
+      // Load frame from storage if not in memory (for offline-queued items)
+      if (!item.frameProof && !item.videoProof && item.id) {
+        item.frameProof = await this.loadBlobFromStorage(item.id) || undefined;
+        if (item.frameProof) {
+          console.log(`📦 Loaded frame from localStorage for ${item.type}`);
+        }
       }
 
       try {
@@ -364,7 +438,7 @@ class ViolationQueueService {
           successCount++;
           console.log(`✅ Synced violation: ${item.type}`);
           
-          // Clean up blob storage
+          // Clean up localStorage
           if (item.id) {
             this.deleteBlobFromStorage(item.id);
           }

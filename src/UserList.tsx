@@ -452,7 +452,7 @@ export default function UserList({
             placeholder={currentUserRole === USER_TYPES.STUDENT ? "Search by name..." : "Search by name, email, or phone..."}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border-2 border-gray-200 rounded-xl text-sm focus:outline-none transition-all"
+            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none transition-all"
             style={{
               borderColor: searchQuery ? brandTheme.colors.primary : '#e5e7eb'
             }}
@@ -640,7 +640,7 @@ export default function UserList({
                 <div
                   id={`user-card-${user.userId}`}
                   key={user.userId}
-                  className={`bg-white border-2 rounded-xl p-4 hover:shadow-md transition-all ${
+                  className={`bg-white border rounded-xl p-4 hover:shadow-md transition-all ${
                     isDisabled ? 'opacity-60' : ''
                   } ${
                     highlightUserId === user.userId 
@@ -845,7 +845,7 @@ export default function UserList({
                 className={`p-2 rounded-lg transition-all ${
                   currentPage === 1
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
+                    : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
                 }`}
                 style={currentPage > 1 ? {
                   borderColor: brandTheme.colors.primary + '40'
@@ -883,7 +883,7 @@ export default function UserList({
                           className={`min-w-[40px] h-10 rounded-lg font-semibold transition-all ${
                             currentPage === page
                               ? 'text-white shadow-md'
-                              : 'text-gray-700 bg-white border-2 border-gray-200 hover:border-gray-300 hover:shadow-md'
+                              : 'text-gray-700 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md'
                           }`}
                           style={currentPage === page ? {
                             background: brandTheme.gradients.primary
@@ -907,7 +907,7 @@ export default function UserList({
                 className={`p-2 rounded-lg transition-all ${
                   currentPage >= Math.ceil(totalUsers / usersPerPage)
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
+                    : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
                 }`}
                 style={currentPage < Math.ceil(totalUsers / usersPerPage) ? {
                   borderColor: brandTheme.colors.primary + '40'
@@ -994,7 +994,7 @@ export default function UserList({
             >
               {isDisabling ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin" />
                   <span>{userToDisable.status === USER_STATUS.DISABLED ? 'Enabling...' : 'Disabling...'}</span>
                 </>
               ) : (

@@ -966,7 +966,7 @@ export default function RoomDetail({
                   <button
                     onClick={cancelDelete}
                     disabled={deleteConfirmation.isDeleting}
-                    className="px-6 py-2.5 rounded-lg font-semibold text-gray-700 bg-white border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-6 py-2.5 rounded-lg font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancel
                   </button>
@@ -1053,7 +1053,7 @@ export default function RoomDetail({
                             <div className="w-12 h-12 rounded-lg bg-gray-100 flex items-center justify-center">
                               <FontAwesomeIcon icon={faUser} className="text-gray-400 text-lg" />
                             </div>
-                            <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center border-2 border-white">
+                            <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center border border-white">
                               <span className="text-white text-xs font-semibold">{index + 1}</span>
                             </div>
                           </div>
@@ -1100,7 +1100,7 @@ export default function RoomDetail({
             <div className="sticky bottom-0 px-8 py-5 bg-gradient-to-r from-gray-50 to-slate-50 border-t border-gray-200">
               <button
                 onClick={() => setIsInChargeDialogOpen(false)}
-                className="w-full px-6 py-3.5 rounded-xl font-semibold text-gray-700 bg-white border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm hover:shadow-md"
+                className="w-full px-6 py-3.5 rounded-xl font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm hover:shadow-md"
               >
                 Close
               </button>
@@ -1256,7 +1256,7 @@ export default function RoomDetail({
                 <>
                   <button
                     onClick={cancelDeleteRoom}
-                    className="px-6 py-2.5 rounded-lg font-semibold text-gray-700 bg-white border-2 border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-all"
+                    className="px-6 py-2.5 rounded-lg font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 hover:border-gray-400 transition-all"
                   >
                     Cancel
                   </button>

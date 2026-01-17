@@ -2304,46 +2304,46 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         }
       `}</style>
       
-    <div className={`fixed inset-0 z-[9999] flex items-start justify-start transition-opacity duration-300 ${
+    <div className={`fixed inset-0 z-[9999] flex items-start justify-start p-2 transition-opacity duration-300 ${
       isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
     }`}>
       <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm z-0"
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
         onClick={onClose}
       />
       
       <div 
-        className={`relative bg-white shadow-2xl w-full max-w-4xl h-full flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out ${
+        className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[50rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div 
-          className="px-6 py-5 flex items-center justify-between border-b-2 flex-shrink-0"
+          className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
           style={{ 
             background: brand.gradients.primary,
             borderColor: brand.colors.secondary
           }}
         >
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-3">
             <div 
-              className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg"
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
               style={{ background: 'rgba(255,255,255,0.2)' }}
             >
-              <FontAwesomeIcon icon={faGraduationCap} className="text-white" />
+              <FontAwesomeIcon icon={faGraduationCap} className="text-white text-sm" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-white">
+              <h2 className="text-lg font-bold text-white">
                 {existingExam ? 'Edit Exam' : 'Create New Exam'}
               </h2>
-              <p className="text-white/80 text-sm">{activeCollegeName || 'Select College'}</p>
+              <p className="text-white/80 text-xs">{activeCollegeName || 'Select College'}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:bg-white/20"
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
           >
-            <FontAwesomeIcon icon={faXmark} className="text-white" />
+            <FontAwesomeIcon icon={faXmark} className="text-white text-sm" />
           </button>
         </div>
 
@@ -2360,122 +2360,96 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           ) : (
             <div className="space-y-4">
               {/* Exam Mode Selection - Compact Design */}
-              <div className="border-2 rounded-xl overflow-hidden"
+              <div className="border rounded-xl overflow-hidden"
                 style={{ 
                   borderColor: brand.colors.primary + '33'
                 }}>
                 <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3">
                   <div className="flex items-center space-x-2 mb-0.5">
                     <FontAwesomeIcon icon={faLaptop} className="text-blue-600" />
-                    <h3 className="font-bold text-gray-900">Exam Mode</h3>
+                    <h3 className="text-base font-semibold text-gray-900">Exam Settings</h3>
                   </div>
-                  <p className="text-gray-600 text-xs">Choose how the exam will be conducted</p>
+                  <p className="text-gray-600 text-xs">Configure security and monitoring options</p>
                 </div>
 
                 <div className="p-4">
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Security Options */}
+                  <div className="flex items-center justify-center space-x-2.5">
                     <button
-                      onClick={() => setExamMode(EXAM_MODES.ONLINE)}
-                      className={`p-3 rounded-lg border-2 transition-all flex items-center space-x-2.5 ${
-                        examMode === EXAM_MODES.ONLINE 
-                          ? 'border-purple-400 bg-white' 
+                      onClick={() => setSecurityLevel(SECURITY_LEVELS.NORMAL)}
+                      className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
+                        securityLevel === SECURITY_LEVELS.NORMAL 
+                          ? 'border-green-500 bg-white' 
                           : 'border-gray-300 bg-white hover:border-gray-400'
                       }`}
                     >
-                      <FontAwesomeIcon icon={faSparkles} className={examMode === EXAM_MODES.ONLINE ? 'text-purple-600' : 'text-gray-400'} />
-                      <div className="text-left">
-                        <h4 className={`font-bold text-sm mb-0.5 ${examMode === EXAM_MODES.ONLINE ? 'text-purple-900' : 'text-gray-700'}`}>Online</h4>
-                        <p className={`text-xs ${examMode === EXAM_MODES.ONLINE ? 'text-purple-600' : 'text-gray-500'}`}>Create questions digitally</p>
+                      <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
+                        securityLevel === SECURITY_LEVELS.NORMAL 
+                          ? 'border border-green-500 bg-green-500' 
+                          : 'border border-gray-400'
+                      }`}>
+                        {securityLevel === SECURITY_LEVELS.NORMAL && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
                       </div>
+                      <span className={`font-semibold text-xs ${securityLevel === SECURITY_LEVELS.NORMAL ? 'text-green-600' : 'text-gray-600'}`}>Normal</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => setSecurityLevel(SECURITY_LEVELS.SECURE)}
+                      className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
+                        securityLevel === SECURITY_LEVELS.SECURE
+                          ? 'border-gray-500 bg-white'
+                          : 'border-gray-300 bg-white hover:border-gray-400'
+                      }`}
+                    >
+                      <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
+                        securityLevel === SECURITY_LEVELS.SECURE 
+                          ? 'border border-gray-600 bg-gray-600' 
+                          : 'border border-gray-400'
+                      }`}>
+                        {securityLevel === SECURITY_LEVELS.SECURE && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
+                      </div>
+                      <span className="font-semibold text-xs text-gray-600">Secure</span>
                     </button>
 
                     <button
-                      onClick={() => setExamMode(EXAM_MODES.OFFLINE)}
-                      className={`p-3 rounded-lg border-2 transition-all flex items-center space-x-2.5 ${
-                        examMode === EXAM_MODES.OFFLINE 
-                          ? 'border-gray-400 bg-white' 
+                      onClick={() => setAttendance(!attendance)}
+                      className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
+                        attendance 
+                          ? 'border-blue-500 bg-white' 
                           : 'border-gray-300 bg-white hover:border-gray-400'
                       }`}
                     >
-                      <FontAwesomeIcon icon={faFileArrowUp} className={examMode === EXAM_MODES.OFFLINE ? 'text-gray-600' : 'text-gray-400'} />
-                      <div className="text-left">
-                        <h4 className={`font-bold text-sm mb-0.5 ${examMode === EXAM_MODES.OFFLINE ? 'text-gray-900' : 'text-gray-700'}`}>Offline</h4>
-                        <p className={`text-xs ${examMode === EXAM_MODES.OFFLINE ? 'text-gray-600' : 'text-gray-500'}`}>Upload question paper images</p>
+                      <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
+                        attendance 
+                          ? 'border border-blue-500 bg-blue-500' 
+                          : 'border border-gray-400'
+                      }`}>
+                        {attendance && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
                       </div>
+                      <span className={`font-semibold text-xs ${attendance ? 'text-blue-600' : 'text-gray-600'}`}>Attendance</span>
+                    </button>
+
+                    <button
+                      onClick={() => setAvProctoring(!avProctoring)}
+                      className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
+                        avProctoring
+                          ? 'border-gray-500 bg-white'
+                          : 'border-gray-300 bg-white hover:border-gray-400'
+                      }`}
+                    >
+                      <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
+                        avProctoring 
+                          ? 'border border-gray-600 bg-gray-600' 
+                          : 'border border-gray-400'
+                      }`}>
+                        {avProctoring && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
+                      </div>
+                      <span className="font-semibold text-xs text-gray-600">A/V Proctoring</span>
                     </button>
                   </div>
 
-                  {examMode === EXAM_MODES.ONLINE && (
-                    <div className="mt-4 pt-4 border-t-2 border-gray-200">
-                      <div className="flex items-center justify-center space-x-2.5">
-                        <button
-                          onClick={() => setSecurityLevel(SECURITY_LEVELS.NORMAL)}
-                          className={`px-5 py-2 rounded-full border-2 transition-all ${
-                            securityLevel === SECURITY_LEVELS.NORMAL 
-                              ? 'border-green-500 bg-white' 
-                              : 'border-gray-300 bg-white hover:border-gray-400'
-                          }`}
-                        >
-                          <span className={`font-semibold text-sm ${securityLevel === SECURITY_LEVELS.NORMAL ? 'text-green-600' : 'text-gray-600'}`}>Normal</span>
-                        </button>
-                        
-                        <button
-                          onClick={() => setSecurityLevel(SECURITY_LEVELS.SECURE)}
-                          className={`px-5 py-2 rounded-full border-2 transition-all flex items-center space-x-2 ${
-                            securityLevel === SECURITY_LEVELS.SECURE
-                              ? 'border-gray-500 bg-white'
-                              : 'border-gray-300 bg-white hover:border-gray-400'
-                          }`}
-                        >
-                          <div className={`w-4 h-4 rounded flex items-center justify-center ${
-                            securityLevel === SECURITY_LEVELS.SECURE 
-                              ? 'border-2 border-gray-600 bg-gray-600' 
-                              : 'border-2 border-gray-400'
-                          }`}>
-                            {securityLevel === SECURITY_LEVELS.SECURE && <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />}
-                          </div>
-                          <span className="font-semibold text-sm text-gray-600">Secure</span>
-                        </button>
-
-                        <button
-                          onClick={() => setAttendance(!attendance)}
-                          className={`px-5 py-2 rounded-full border-2 transition-all flex items-center space-x-2 ${
-                            attendance 
-                              ? 'border-blue-500 bg-white' 
-                              : 'border-gray-300 bg-white hover:border-gray-400'
-                          }`}
-                        >
-                          <div className={`w-4 h-4 rounded flex items-center justify-center ${
-                            attendance 
-                              ? 'border-2 border-blue-500 bg-blue-500' 
-                              : 'border-2 border-gray-400'
-                          }`}>
-                            {attendance && <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />}
-                          </div>
-                          <span className={`font-semibold text-sm ${attendance ? 'text-blue-600' : 'text-gray-600'}`}>Attendance</span>
-                        </button>
-
-                        <button
-                          onClick={() => setAvProctoring(!avProctoring)}
-                          className={`px-5 py-2 rounded-full border-2 transition-all flex items-center space-x-2 ${
-                            avProctoring
-                              ? 'border-gray-500 bg-white'
-                              : 'border-gray-300 bg-white hover:border-gray-400'
-                          }`}
-                        >
-                          <div className={`w-4 h-4 rounded flex items-center justify-center ${
-                            avProctoring 
-                              ? 'border-2 border-gray-600 bg-gray-600' 
-                              : 'border-2 border-gray-400'
-                          }`}>
-                            {avProctoring && <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />}
-                          </div>
-                          <span className="font-semibold text-sm text-gray-600">A/V Proctoring</span>
-                        </button>
-                      </div>
-
-                      {/* Completion Policy Section */}
-                      <div className="mt-6 pt-6 border-t-2 border-gray-200">
+                  {/* Completion Policy Section */}
+                  <div className="mt-6 pt-6 border-t-2 border-gray-200">
                         <div className="mb-4">
                           <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2">
                             <FontAwesomeIcon icon={faClock} className="text-gray-600" />
@@ -2489,7 +2463,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           <button
                             type="button"
                             onClick={() => setCompletionPolicy('strict')}
-                            className={`relative overflow-hidden border-2 rounded-xl p-4 transition-all text-left ${
+                            className={`relative overflow-hidden border rounded-xl p-4 transition-all text-left ${
                               completionPolicy === 'strict'
                                 ? 'border-blue-500 bg-blue-50'
                                 : 'border-gray-300 bg-white hover:border-blue-300'
@@ -2588,7 +2562,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           <button
                             type="button"
                             onClick={() => setCompletionPolicy('flexible')}
-                            className={`relative overflow-hidden border-2 rounded-xl p-4 transition-all text-left ${
+                            className={`relative overflow-hidden border rounded-xl p-4 transition-all text-left ${
                               completionPolicy === 'flexible'
                                 ? 'border-green-500 bg-green-50'
                                 : 'border-gray-300 bg-white hover:border-green-300'
@@ -2720,13 +2694,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           </div>
                         </div>
                       </div>
-                    </div>
-                  )}
                 </div>
               </div>
 
               {/* Basic Information */}
-              <div className="border-2 rounded-xl p-4"
+              <div className="border rounded-xl p-4"
                 style={{ 
                   background: brand.gradients.card,
                   borderColor: brand.colors.secondary + '33'
@@ -2737,7 +2709,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     <FontAwesomeIcon icon={faFileLines} style={{ color: brand.colors.secondary }} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">Basic Information</h3>
+                    <h3 className="text-base font-semibold text-gray-900">Basic Information</h3>
                     <p className="text-xs" style={{ color: brand.colors.secondary, opacity: 0.9 }}>Fill in the exam details</p>
                   </div>
                 </div>
@@ -2866,7 +2838,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <div className="mt-1.5 flex items-center space-x-2">
                         {isLoadingStudentCount ? (
                           <div className="flex items-center space-x-1.5 text-xs text-gray-500">
-                            <div className="w-2.5 h-2.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                            <div className="w-2.5 h-2.5 border border-gray-400 border-t-transparent rounded-full animate-spin" />
                             <span>Loading...</span>
                           </div>
                         ) : (
@@ -2983,7 +2955,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
               </div>
 
               {/* Schedule */}
-              <div className="border-2 rounded-xl p-4"
+              <div className="border rounded-xl p-4"
                 style={{ 
                   background: brand.gradients.card,
                   borderColor: brand.colors.secondary + '33'
@@ -2994,7 +2966,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     <FontAwesomeIcon icon={faCalendar} style={{ color: brand.colors.secondary }} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">Schedule</h3>
+                    <h3 className="text-base font-semibold text-gray-900">Schedule</h3>
                     <p className="text-xs" style={{ color: brand.colors.secondary, opacity: 0.9 }}>Set the exam date and time</p>
                   </div>
                 </div>
@@ -3085,7 +3057,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
               {/* Content based on exam mode */}
               {examMode === EXAM_MODES.OFFLINE ? (
-                <div className="border-2 rounded-xl p-5"
+                <div className="border rounded-xl p-5"
                   style={{ 
                     background: brand.gradients.card,
                     borderColor: brand.colors.secondary + '33'
@@ -3097,7 +3069,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         <FontAwesomeIcon icon={faUpload} style={{ color: brand.colors.secondary }} />
                       </div>
                       <div>
-                        <h3 className="font-bold text-gray-900 text-lg flex items-center">
+                        <h3 className="text-base font-semibold text-gray-900 flex items-center">
                           Question Paper
                           <span className="text-red-500 ml-1">*</span>
                         </h3>
@@ -3125,7 +3097,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           <img
                             src={image}
                             alt={`Question paper page ${index + 1}`}
-                            className="w-full h-48 object-cover rounded-xl border-2 border-gray-200"
+                            className="w-full h-48 object-cover rounded-xl border border-gray-200"
                           />
                           <button
                             onClick={() => removeImage(index)}
@@ -3141,7 +3113,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     </div>
                   ) : (
                     <div 
-                      className="text-center py-12 bg-white/50 rounded-xl border-2 border-dashed"
+                      className="text-center py-12 bg-white/50 rounded-xl border border-dashed"
                       style={{
                         borderColor: errors.questionPaperImages && showErrors ? '#fca5a5' : brand.colors.primary + '33'
                       }}
@@ -3160,7 +3132,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 </div>
               ) : (
                 <>
-                  <div className="border-2 rounded-2xl p-5" 
+                  <div className="border rounded-2xl p-5" 
                     style={{ 
                       background: brand.gradients.card,
                       borderColor: brand.colors.secondary + '33'
@@ -3172,7 +3144,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         <FontAwesomeIcon icon={faBook} style={{ color: brand.colors.secondary }} />
                       </div>
                       <div>
-                        <h3 className="font-bold text-gray-900 text-lg flex items-center">
+                        <h3 className="text-base font-semibold text-gray-900 flex items-center">
                           Questions
                           <span className="text-red-500 ml-1">*</span>
                         </h3>
@@ -3220,14 +3192,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   {questions.length > 0 ? (
                     <div className="space-y-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '280px' }}>
                       {questions.map((question, index) => (
-                        <div key={question.id} className="bg-white border-2 rounded-xl p-4 transition-all shadow-sm"
+                        <div key={question.id} className="bg-white border rounded-xl p-4 transition-all shadow-sm"
                           style={{ 
                             borderColor: brand.colors.secondary + '33'
                           }}>
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center space-x-2 mb-2">
-                                <span className="text-sm font-bold text-gray-900 w-8 h-8 rounded-lg flex items-center justify-center"
+                                <span className="text-base font-semibold text-gray-900 w-8 h-8 rounded-lg flex items-center justify-center"
                                   style={{ backgroundColor: brand.colors.secondary + '20' }}>
                                   {index + 1}
                                 </span>
@@ -3321,7 +3293,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     </div>
                   ) : (
                     <div 
-                      className="text-center py-12 bg-white/50 rounded-xl border-2 border-dashed"
+                      className="text-center py-12 bg-white/50 rounded-xl border border-dashed"
                       style={{
                         borderColor: errors.questions && showErrors ? '#fca5a5' : brand.colors.secondary + '33'
                       }}
@@ -3339,7 +3311,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   )}
                 </div>
 
-                <div className="border-2 rounded-2xl p-5 mt-5" 
+                <div className="border rounded-2xl p-5 mt-5" 
                   style={{ 
                     background: brand.gradients.card,
                     borderColor: brand.colors.secondary + '33'
@@ -3352,7 +3324,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       </div>
                       <div>
                         <div className="flex items-center space-x-3">
-                          <h3 className="font-bold text-gray-900 text-lg">
+                          <h3 className="text-base font-semibold text-gray-900">
                             Question Pool (Optional)
                           </h3>
                           <label className="relative inline-flex items-center cursor-pointer">
@@ -3420,7 +3392,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
                   {enableQuestionPool && (
                     <>
-                      <div className="mb-4 p-4 bg-blue-50 rounded-xl border-2 border-blue-200">
+                      <div className="mb-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -3447,7 +3419,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                   setPickRandomCount(0);
                                 }
                               }}
-                              className="w-full px-4 py-2.5 bg-white border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+                              className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
                               placeholder="e.g., 5"
                             />
                             {pickRandomCount > questionPool.length && (
@@ -3487,7 +3459,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                   setPoolQuestionMarks(0);
                                 }
                               }}
-                              className="w-full px-4 py-2.5 bg-white border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
+                              className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
                               placeholder="e.g., 4"
                             />
                             {errors.poolQuestionMarks && showErrors && (
@@ -3505,14 +3477,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       {questionPool.length > 0 ? (
                         <div className="space-y-3 overflow-y-auto custom-scrollbar" style={{ maxHeight: '280px' }}>
                           {questionPool.map((question, index) => (
-                            <div key={question.id} className="bg-white border-2 rounded-xl p-4 transition-all shadow-sm"
+                            <div key={question.id} className="bg-white border rounded-xl p-4 transition-all shadow-sm"
                               style={{ 
                                 borderColor: brand.colors.secondary + '33'
                               }}>
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                   <div className="flex items-center space-x-2 mb-2">
-                                    <span className="text-sm font-bold text-gray-900 w-8 h-8 rounded-lg flex items-center justify-center"
+                                    <span className="text-base font-semibold text-gray-900 w-8 h-8 rounded-lg flex items-center justify-center"
                                       style={{ backgroundColor: brand.colors.secondary + '20' }}>
                                       {index + 1}
                                     </span>
@@ -3594,7 +3566,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         </div>
                       ) : (
                         <div 
-                          className="text-center py-12 bg-white/50 rounded-xl border-2 border-dashed"
+                          className="text-center py-12 bg-white/50 rounded-xl border border-dashed"
                           style={{
                             borderColor: brand.colors.secondary + '33'
                           }}
@@ -3616,27 +3588,27 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           )}
         </div>
 
-        <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-6 py-4 flex items-center justify-end space-x-3 border-t-2 border-gray-200 flex-shrink-0">
+        <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-5 py-3 flex items-center justify-end space-x-3 border-t border-gray-200 flex-shrink-0">
           <button
             onClick={onClose}
-            className="px-5 py-2.5 bg-white border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
+            className="px-4 py-2 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold text-sm rounded-lg transition-all"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={isSaving || isLoadingData}
-            className="px-6 py-2.5 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-xl flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-5 py-2 text-white font-semibold text-sm rounded-lg transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ background: brand.gradients.primary }}
           >
             {isSaving ? (
               <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="w-3.5 h-3.5 border border-white border-t-transparent rounded-full animate-spin" />
                 <span>Saving...</span>
               </>
             ) : (
               <>
-                <FontAwesomeIcon icon={faCheck} />
+                <FontAwesomeIcon icon={faCheck} className="text-xs" />
                 <span>{existingExam ? 'Update Exam' : 'Create Exam'}</span>
               </>
             )}
@@ -3721,7 +3693,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       {/* Custom Question Creation Modal */}
       {showCustomQuestionModal && (
         <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm rounded-2xl">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[50rem] max-h-[90vh] flex flex-col overflow-hidden">
             <div className="px-6 py-5 border-b-2 flex-shrink-0"
               style={{ 
                 background: brand.gradients.primary,
@@ -3759,7 +3731,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
               <div className="space-y-5">
                 {/* Question Type Selection */}
-                <div className="border-2 rounded-xl p-4"
+                <div className="border rounded-xl p-4"
                   style={{ 
                     background: brand.gradients.card,
                     borderColor: brand.colors.accent + '33'
@@ -3770,7 +3742,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <FontAwesomeIcon icon={faListCheck} style={{ color: brand.colors.accent }} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-gray-900">Question Type</h3>
+                      <h3 className="text-base font-semibold text-gray-900">Question Type</h3>
                       <p className="text-xs" style={{ color: brand.colors.accent, opacity: 0.9 }}>Select the type of question</p>
                     </div>
                   </div>
@@ -3817,7 +3789,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         <button
                           key={type.value}
                           onClick={() => setCustomQuestionType(type.value as any)}
-                          className={`relative p-4 rounded-xl border-2 transition-all text-center overflow-hidden ${
+                          className={`relative p-4 rounded-xl border transition-all text-center overflow-hidden ${
                             isSelected
                               ? 'border-transparent shadow-lg scale-105'
                               : 'border-gray-300 hover:border-gray-400 hover:shadow-md'
@@ -3855,7 +3827,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 </div>
 
                 {/* Chapter Selection */}
-                <div className="border-2 rounded-xl p-4"
+                <div className="border rounded-xl p-4"
                   style={{ 
                     background: brand.gradients.card,
                     borderColor: brand.colors.accent + '33'
@@ -3866,7 +3838,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <FontAwesomeIcon icon={faBookOpen} style={{ color: brand.colors.accent }} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-gray-900">Chapter</h3>
+                      <h3 className="text-base font-semibold text-gray-900">Chapter</h3>
                       <p className="text-xs text-blue-600">Select or enter chapter name</p>
                     </div>
                   </div>
@@ -3882,7 +3854,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           const value = e.target.value;
                           setCustomQuestionChapter(value);
                         }}
-                        className="w-full h-[52px] px-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base text-gray-900 hover:border-gray-300 bg-white transition-all"
+                        className="w-full h-[52px] px-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base text-gray-900 hover:border-gray-300 bg-white transition-all"
                       >
                         <option value="">Select a chapter</option>
                         {availableChapters.map((chapter, index) => (
@@ -3896,7 +3868,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           type="text"
                           value={customQuestionChapter === '__new__' ? '' : customQuestionChapter}
                           onChange={(e) => setCustomQuestionChapter(e.target.value)}
-                          className="w-full h-[52px] px-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base text-gray-900 hover:border-gray-300 bg-white transition-all"
+                          className="w-full h-[52px] px-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base text-gray-900 hover:border-gray-300 bg-white transition-all"
                           placeholder="Enter new chapter name"
                         />
                         {availableChapters.length > 0 && (
@@ -3913,7 +3885,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 </div>
 
                 {/* Question Text / Problem Statement */}
-                <div className="border-2 rounded-xl p-4"
+                <div className="border rounded-xl p-4"
                   style={{ 
                     background: brand.gradients.card,
                     borderColor: brand.colors.accent + '33'
@@ -3924,7 +3896,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <FontAwesomeIcon icon={faFileLines} style={{ color: brand.colors.accent }} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-gray-900">
+                      <h3 className="text-base font-semibold text-gray-900">
                         {customQuestionType === QUESTION_TYPES.CODE ? 'Problem Statement' : 'Question Text'} <span className="text-red-500">*</span>
                       </h3>
                       <p className="text-xs text-blue-600">
@@ -3944,7 +3916,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 </div>
 
                 {/* Image Upload Section */}
-                <div className="border-2 rounded-xl p-4"
+                <div className="border rounded-xl p-4"
                   style={{ 
                     background: brand.gradients.card,
                     borderColor: brand.colors.accent + '33'
@@ -3955,7 +3927,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <FontAwesomeIcon icon={faImage} style={{ color: brand.colors.accent }} />
                     </div>
                     <div className="flex-1">
-                      <h3 className="font-bold text-gray-900">Question Images</h3>
+                      <h3 className="text-base font-semibold text-gray-900">Question Images</h3>
                       <p className="text-xs text-blue-600">Add images to your question (optional, max 5)</p>
                     </div>
                     <input
@@ -3992,7 +3964,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           <img
                             src={imageUrl}
                             alt={`Question image ${index + 1}`}
-                            className="w-full h-24 object-cover rounded-lg border-2 border-gray-200"
+                            className="w-full h-24 object-cover rounded-lg border border-gray-200"
                           />
                           <button
                             onClick={() => removeCustomQuestionImage(index)}
@@ -4009,7 +3981,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
                 {/* Type-specific fields */}
                 {customQuestionType === QUESTION_TYPES.MCQ && (
-                  <div className="border-2 rounded-xl p-4"
+                  <div className="border rounded-xl p-4"
                     style={{ 
                       background: brand.gradients.card,
                       borderColor: brand.colors.accent + '33'
@@ -4020,7 +3992,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         <FontAwesomeIcon icon={faListCheck} style={{ color: '#3B82F6' }} />
                       </div>
                       <div>
-                        <h3 className="text-lg font-bold text-gray-900">Options</h3>
+                        <h3 className="text-base font-semibold text-gray-900">Options</h3>
                         <p className="text-sm text-blue-600">Add answer options</p>
                       </div>
                     </div>
@@ -4060,7 +4032,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                 newOptions[index] = e.target.value;
                                 setCustomQuestionOptions(newOptions);
                               }}
-                              className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900 placeholder-gray-400 hover:border-gray-300 bg-white transition-all"
+                              className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900 placeholder-gray-400 hover:border-gray-300 bg-white transition-all"
                               placeholder={`Option ${index + 1}`}
                             />
                             
@@ -4086,7 +4058,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     </div>
                     <button
                       onClick={() => setCustomQuestionOptions([...customQuestionOptions, ''])}
-                      className="mt-4 px-4 py-2.5 rounded-lg font-semibold text-sm flex items-center space-x-2 transition-all hover:bg-blue-50 text-blue-600 border-2 border-transparent hover:border-blue-200"
+                      className="mt-4 px-4 py-2.5 rounded-lg font-semibold text-sm flex items-center space-x-2 transition-all hover:bg-blue-50 text-blue-600 border border-transparent hover:border-blue-200"
                     >
                       <FontAwesomeIcon icon={faPlus} />
                       <span>Add Option</span>
@@ -4101,7 +4073,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 )}
 
                 {customQuestionType === QUESTION_TYPES.FITB && (
-                  <div className="border-2 rounded-xl p-4"
+                  <div className="border rounded-xl p-4"
                     style={{ 
                       background: brand.gradients.card,
                       borderColor: brand.colors.accent + '33'
@@ -4112,7 +4084,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         <FontAwesomeIcon icon={faCircleCheck} style={{ color: brand.colors.accent }} />
                       </div>
                       <div>
-                        <h3 className="font-bold text-gray-900">Correct Answer(s) <span className="text-red-500">*</span></h3>
+                        <h3 className="text-base font-semibold text-gray-900">Correct Answer(s) <span className="text-red-500">*</span></h3>
                         <p className="text-xs text-blue-600">Add acceptable answers for the blank</p>
                       </div>
                     </div>
@@ -4128,7 +4100,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                               newBlanks[index] = e.target.value;
                               setCustomQuestionBlanks(newBlanks);
                             }}
-                            className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900 placeholder-gray-400 hover:border-gray-300 bg-white transition-all"
+                            className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900 placeholder-gray-400 hover:border-gray-300 bg-white transition-all"
                             placeholder={`Answer ${index + 1}`}
                           />
                           {customQuestionBlanks.length > 1 && (
@@ -4147,7 +4119,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     </div>
                     <button
                       onClick={() => setCustomQuestionBlanks([...customQuestionBlanks, ''])}
-                      className="mt-4 px-4 py-2.5 rounded-lg font-semibold text-sm flex items-center space-x-2 transition-all hover:bg-blue-50 text-blue-600 border-2 border-transparent hover:border-blue-200"
+                      className="mt-4 px-4 py-2.5 rounded-lg font-semibold text-sm flex items-center space-x-2 transition-all hover:bg-blue-50 text-blue-600 border border-transparent hover:border-blue-200"
                     >
                       <FontAwesomeIcon icon={faPlus} />
                       <span>Add Answer</span>
@@ -4162,7 +4134,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 )}
 
                 {customQuestionType === QUESTION_TYPES.JUMBLED && (
-                  <div className="border-2 rounded-xl p-4"
+                  <div className="border rounded-xl p-4"
                     style={{ 
                       background: brand.gradients.card,
                       borderColor: brand.colors.accent + '33'
@@ -4173,7 +4145,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         <FontAwesomeIcon icon={faGripVertical} style={{ color: brand.colors.accent }} />
                       </div>
                       <div>
-                        <h3 className="font-bold text-gray-900">Items to Arrange</h3>
+                        <h3 className="text-base font-semibold text-gray-900">Items to Arrange</h3>
                         <p className="text-xs text-blue-600">Drag to set correct order</p>
                       </div>
                     </div>
@@ -4193,7 +4165,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           onDragStart={() => handleDragStart(index)}
                           onDragOver={(e) => handleDragOver(e, index)}
                           onDragEnd={handleDragEnd}
-                          className={`flex items-center space-x-3 p-3 bg-white border-2 rounded-lg cursor-move transition-all ${
+                          className={`flex items-center space-x-3 p-3 bg-white border rounded-lg cursor-move transition-all ${
                             draggedIndex === index ? 'opacity-50 border-blue-400' : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
@@ -4224,7 +4196,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     
                     <button
                       onClick={() => setCustomQuestionSequence([...customQuestionSequence, ''])}
-                      className="mt-3 w-full flex items-center justify-center space-x-2 px-4 py-3 text-sm font-medium rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 text-gray-700 transition-colors"
+                      className="mt-3 w-full flex items-center justify-center space-x-2 px-4 py-3 text-sm font-medium rounded-lg border border-dashed border-gray-300 hover:border-gray-400 text-gray-700 transition-colors"
                     >
                       <FontAwesomeIcon icon={faPlus} />
                       <span>Add Item</span>
@@ -4233,7 +4205,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 )}
 
                 {customQuestionType === QUESTION_TYPES.DESCRIPTIVE && (
-                  <div className="border-2 rounded-xl p-4"
+                  <div className="border rounded-xl p-4"
                     style={{ 
                       background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
                       borderColor: '#fbbf24'
@@ -4252,7 +4224,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 {customQuestionType === QUESTION_TYPES.CODE && (
                   <div className="space-y-4">
                     {/* Programming Language */}
-                    <div className="border-2 rounded-xl p-4"
+                    <div className="border rounded-xl p-4"
                       style={{ 
                         background: brand.gradients.card,
                         borderColor: brand.colors.accent + '33'
@@ -4263,7 +4235,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           <span className="text-xl">💻</span>
                         </div>
                         <div>
-                          <h3 className="font-bold text-gray-900">Programming Language <span className="text-red-500">*</span></h3>
+                          <h3 className="text-base font-semibold text-gray-900">Programming Language <span className="text-red-500">*</span></h3>
                           <p className="text-xs text-blue-600">Select the programming language</p>
                         </div>
                       </div>
@@ -4272,7 +4244,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           type="button"
                           onClick={() => setOpenDropdown(openDropdown === 'programmingLanguage' ? null : 'programmingLanguage')}
                           disabled={isLoadingLanguages}
-                          className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-left font-semibold transition-all flex items-center justify-between text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-300 bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-left font-semibold transition-all flex items-center justify-between text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-300 bg-white disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <span className="flex items-center space-x-2.5">
                             <FontAwesomeIcon icon={getProgrammingLanguageIcon(customQuestionProgrammingLanguage)} className="text-base" />
@@ -4283,7 +4255,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           <FontAwesomeIcon icon={faChevronDown} className="text-gray-500" />
                         </button>
                         {openDropdown === 'programmingLanguage' && !isLoadingLanguages && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border-2 border-gray-200 rounded-xl shadow-2xl z-30 overflow-hidden max-h-64 overflow-y-auto custom-scrollbar">
+                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl z-30 overflow-hidden max-h-64 overflow-y-auto custom-scrollbar">
                             {codingLanguages.map((lang) => (
                               <button
                                 key={lang}
@@ -4311,7 +4283,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     </div>
 
                     {/* Test Stub / Starter Code */}
-                    <div className="border-2 rounded-xl p-4"
+                    <div className="border rounded-xl p-4"
                       style={{ 
                         background: brand.gradients.card,
                         borderColor: brand.colors.accent + '33'
@@ -4323,7 +4295,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             <FontAwesomeIcon icon={faFileLines} style={{ color: brand.colors.accent }} />
                           </div>
                           <div>
-                            <h3 className="font-bold text-gray-900">Starter Code <span className="text-red-500">*</span></h3>
+                            <h3 className="text-base font-semibold text-gray-900">Starter Code <span className="text-red-500">*</span></h3>
                             <p className="text-xs text-blue-600">Pre-filled code template for students</p>
                           </div>
                         </div>
@@ -4385,12 +4357,12 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     # Your code here
     pass`}
                         rows={6}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-sm hover:border-gray-300 bg-white transition-all custom-scrollbar"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-sm hover:border-gray-300 bg-white transition-all custom-scrollbar"
                       />
                     </div>
 
                     {/* Test Cases */}
-                    <div className="border-2 rounded-xl p-4"
+                    <div className="border rounded-xl p-4"
                       style={{ 
                         background: brand.gradients.card,
                         borderColor: brand.colors.accent + '33'
@@ -4401,7 +4373,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           <FontAwesomeIcon icon={faListCheck} style={{ color: brand.colors.accent }} />
                         </div>
                         <div>
-                          <h3 className="font-bold text-gray-900">Test Cases <span className="text-red-500">*</span></h3>
+                          <h3 className="text-base font-semibold text-gray-900">Test Cases <span className="text-red-500">*</span></h3>
                           <p className="text-xs text-blue-600">Input and expected output pairs</p>
                         </div>
                       </div>
@@ -4466,7 +4438,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             const newTestCases = [...customQuestionTestCases, { input: '', expected_output: '', marks: 0 }];
                             setCustomQuestionTestCases(newTestCases);
                           }}
-                          className="flex items-center space-x-2 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all text-blue-600 hover:bg-blue-50 border-2 border-transparent hover:border-blue-200"
+                          className="flex items-center space-x-2 px-4 py-2.5 text-sm font-semibold rounded-lg transition-all text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200"
                         >
                           <FontAwesomeIcon icon={faPlus} />
                           <span>Add Test Case</span>
@@ -4478,7 +4450,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 )}
 
                 {/* Marks and Difficulty Level */}
-                <div className="border-2 rounded-xl p-4"
+                <div className="border rounded-xl p-4"
                   style={{ 
                     background: brand.gradients.card,
                     borderColor: brand.colors.accent + '33'
@@ -4488,7 +4460,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <FontAwesomeIcon icon={faAward} className="text-cyan-600" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-gray-900">Marks & Difficulty</h3>
+                      <h3 className="text-base font-semibold text-gray-900">Marks & Difficulty</h3>
                       <p className="text-sm text-blue-600">Set marks and complexity level</p>
                     </div>
                   </div>
@@ -4520,7 +4492,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         }}
                         min="0.5"
                         step="0.5"
-                        className="w-full h-[52px] px-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base text-gray-900 hover:border-gray-300 bg-white transition-all"
+                        className="w-full h-[52px] px-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base text-gray-900 hover:border-gray-300 bg-white transition-all"
                         placeholder="Enter marks (min 0.5)"
                       />
                     </div>
@@ -4541,7 +4513,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             <button
                               key={level.value}
                               onClick={() => setCustomQuestionComplexity(level.value as any)}
-                              className={`relative flex items-center justify-center space-x-2 h-[52px] rounded-xl border-2 transition-all ${
+                              className={`relative flex items-center justify-center space-x-2 h-[52px] rounded-xl border transition-all ${
                                 isSelected ? 'shadow-md' : 'border-gray-200 hover:border-gray-300'
                               }`}
                               style={isSelected ? {
@@ -4570,7 +4542,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 </div>
 
                 {/* Help Students - Hint and Solution */}
-                <div className="border-2 rounded-xl p-4"
+                <div className="border rounded-xl p-4"
                   style={{ 
                     background: brand.gradients.card,
                     borderColor: brand.colors.accent + '33'
@@ -4581,7 +4553,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <FontAwesomeIcon icon={faCircleQuestion} style={{ color: brand.colors.accent }} />
                     </div>
                     <div>
-                      <h3 className="font-bold text-gray-900">Help Students</h3>
+                      <h3 className="text-base font-semibold text-gray-900">Help Students</h3>
                       <p className="text-xs text-blue-600">
                         <span className="text-gray-400">(Optional)</span> Provide hints & solutions
                       </p>
@@ -4666,7 +4638,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   setIsAddingToPool(false);
                   setIsEditingFromPool(false);
                 }}
-                className="px-5 py-2.5 bg-white border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
+                className="px-5 py-2.5 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
               >
                 Cancel
               </button>
@@ -4686,7 +4658,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       {showQuestionBankModal && (
         <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div 
-            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col overflow-hidden z-10"
+            className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[50rem] h-[90vh] flex flex-col overflow-hidden z-10"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-5 border-b-2 flex-shrink-0"
@@ -4941,12 +4913,12 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     setSearchQuery(e.target.value);
                   }}
                   placeholder="Search questions..."
-                  className="w-full pl-10 pr-20 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 transition-all text-sm"
+                  className="w-full pl-10 pr-20 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 transition-all text-sm"
                 />
                 <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-2">
                   {searchQuery !== debouncedSearchQuery && searchQuery !== '' && (
                     <div className="flex items-center space-x-1.5 text-xs text-gray-500">
-                      <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                      <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
                       <span className="font-medium">...</span>
                     </div>
                   )}
@@ -4968,7 +4940,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   <div className="text-sm text-gray-600 transition-opacity duration-200">
                     {isLoadingQuestionBank && questionBankItems.length === 0 ? (
                       <span className="flex items-center space-x-2">
-                        <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
                         <span>Searching...</span>
                       </span>
                     ) : searchQuery.trim().length > 0 && searchQuery.trim().length < 2 ? (
@@ -5006,7 +4978,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   >
                     {isSelectingAll ? (
                       <>
-                        <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-4 h-4 border border-gray-400 border-t-transparent rounded-full animate-spin" />
                         <span className="text-sm font-semibold text-gray-500">
                           Selecting...
                         </span>
@@ -5037,7 +5009,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
             <div className="flex-1 overflow-y-auto p-6 relative custom-scrollbar">
               {isLoadingQuestionBank && questionBankItems.length > 0 && (
                 <div className="absolute inset-0 bg-white/70 backdrop-blur-[2px] z-10 flex items-center justify-center transition-opacity duration-200">
-                  <div className="bg-white rounded-xl shadow-lg px-5 py-3 flex items-center space-x-3 border-2" style={{ borderColor: brand.colors.primary + '20' }}>
+                  <div className="bg-white rounded-xl shadow-lg px-5 py-3 flex items-center space-x-3 border" style={{ borderColor: brand.colors.primary + '20' }}>
                     <div className="w-5 h-5 border-3 border-t-transparent rounded-full animate-spin"
                       style={{ borderColor: brand.colors.primary, borderTopColor: 'transparent', borderWidth: '3px' }} />
                     <p className="text-gray-700 font-semibold text-sm">Searching...</p>
@@ -5196,7 +5168,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             )}
                             
                             <div className="h-8 bg-gray-100 px-3 rounded-lg flex items-center">
-                              <span className="text-sm font-bold text-gray-900">{question.marks}</span>
+                              <span className="text-base font-semibold text-gray-900">{question.marks}</span>
                               <span className="text-xs text-gray-600 ml-1">marks</span>
                             </div>
                             
@@ -5433,7 +5405,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           {/* Options with Correct Answer - Outside (MCQ ONLY) */}
                           {expandedQuestionId === question.id && question.type === QUESTION_TYPES.MCQ && question.options && (
                             <div className="mt-3">
-                              <h2 className="text-lg font-bold text-gray-900 mb-2">Options with Correct Answer</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-2">Options with Correct Answer</h2>
                               <div className="space-y-2">
                                 {question.options.map((option: string, optIndex: number) => {
                                   // Check if this option is correct
@@ -5483,7 +5455,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           {/* FITB - Correct Answers (Outside) */}
                           {expandedQuestionId === question.id && question.type === QUESTION_TYPES.FITB && question.correctAnswers && Array.isArray(question.correctAnswers) && question.correctAnswers.length > 0 && (
                             <div className="mt-4">
-                              <h2 className="text-lg font-bold text-gray-900 mb-3">Correct Answers:</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-3">Correct Answers:</h2>
                               <div className="flex flex-wrap gap-2">
                                 {question.correctAnswers.map((blank: string, blankIndex: number) => (
                                   <span
@@ -5528,7 +5500,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                               <>
                                 {/* Jumbled Items (What student sees) */}
                                 <div className="mt-4">
-                                  <h2 className="text-lg font-bold text-gray-900 mb-3">Items to Arrange:</h2>
+                                  <h2 className="text-base font-semibold text-gray-900 mb-3">Items to Arrange:</h2>
                                   <div className="space-y-2">
                                     {(() => {
                                       // Convert jumbledItems from Firebase format if needed
@@ -5558,7 +5530,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
                                 {/* Correct Sequence (The Answer) */}
                                 <div className="mt-4">
-                                  <h2 className="text-lg font-bold text-gray-900 mb-3">Correct Sequence:</h2>
+                                  <h2 className="text-base font-semibold text-gray-900 mb-3">Correct Sequence:</h2>
                                   <div className="space-y-2">
                                     {correctAnswersArray && correctAnswersArray.map((item: string, seqIndex: number) => (
                                       <div
@@ -5582,7 +5554,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           {/* Chapter Section - Outside Question Details (NON-CODE QUESTIONS) */}
                           {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && (question as any).chapter && (
                             <div className="mt-3">
-                              <h2 className="text-lg font-bold text-gray-900 mb-2">Chapter</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-2">Chapter</h2>
                               <p className="text-sm text-gray-900">{(question as any).chapter}</p>
                             </div>
                           )}
@@ -5590,7 +5562,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           {/* Hint Section - Outside Question Details (NON-CODE QUESTIONS) */}
                           {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.hint && (
                             <div className="mt-3">
-                              <h2 className="text-lg font-bold text-gray-900 mb-2">Hint</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-2">Hint</h2>
                               {containsHTML(question.hint) ? (
                                 <div 
                                   className="text-sm text-gray-700 italic prose prose-sm max-w-none"
@@ -5605,7 +5577,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           {/* Solution Section - Outside Question Details (NON-CODE QUESTIONS) */}
                           {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.solution && (
                             <div className="mt-3">
-                              <h2 className="text-lg font-bold text-gray-900 mb-2">Solution</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-2">Solution</h2>
                               {(question.type === QUESTION_TYPES.MCQ || question.type === QUESTION_TYPES.JUMBLED || question.type === QUESTION_TYPES.FITB || question.type === QUESTION_TYPES.DESCRIPTIVE) ? (
                                 // Enhanced solution display for MCQ, jumbled, FITB, and descriptive questions - NO BOX
                                 <div>
@@ -5906,7 +5878,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           {/* Chapter Section - Outside Question Details (CODE ONLY) */}
                           {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && (question as any).chapter && (
                             <div className="mt-3">
-                              <h2 className="text-lg font-bold text-gray-900 mb-2">Chapter</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-2">Chapter</h2>
                               <p className="text-sm text-gray-900">{(question as any).chapter}</p>
                             </div>
                           )}
@@ -5914,7 +5886,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           {/* Solution Hint Section - Outside Question Details (CODE ONLY) */}
                           {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && question.hint && (
                             <div className="mt-3">
-                              <h2 className="text-lg font-bold text-gray-900 mb-2">Solution Hint</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-2">Solution Hint</h2>
                               {containsHTML(question.hint) ? (
                                 <div 
                                   className="text-sm text-gray-700 italic prose prose-sm max-w-none"
@@ -5929,7 +5901,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           {/* Solution Section - Outside Question Details (CODE ONLY) */}
                           {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && question.solution && (
                             <div className="mt-3">
-                              <h2 className="text-lg font-bold text-gray-900 mb-2">Solution</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-2">Solution</h2>
                               <div className="relative rounded-lg overflow-hidden">
                                 {/* Terminal-style header with dots and copy button */}
                                 <div className="absolute top-0 left-0 right-0 h-10 bg-gray-800/95 backdrop-blur-sm z-10 flex items-center justify-between px-3 rounded-t-lg">
@@ -5980,7 +5952,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           {/* Test Cases Section - Only for Code Questions */}
                           {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && question.testCases && Array.isArray(question.testCases) && question.testCases.length > 0 && (
                             <div className="mt-3">
-                              <h2 className="text-lg font-bold text-gray-900 mb-2">Test Cases</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-2">Test Cases</h2>
                               <div className="overflow-x-auto rounded-lg border border-gray-200 custom-scrollbar">
                                 <table className="w-full text-sm">
                                   <thead>
@@ -6026,7 +5998,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           {/* Starter Code Template Section - Outside, Only for Code Questions */}
                           {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && question.testStub && (
                             <div className="mt-3">
-                              <h2 className="text-lg font-bold text-gray-900 mb-2">Starter Code Template</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-2">Starter Code Template</h2>
                               <div className="relative rounded-lg overflow-hidden">
                                 {/* Terminal-style header with dots and copy button */}
                                 <div className="absolute top-0 left-0 right-0 h-10 bg-gray-800/95 backdrop-blur-sm z-10 flex items-center justify-between px-3 rounded-t-lg">
@@ -6145,7 +6117,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       className={`p-2 rounded-lg transition-all ${
                         currentPage === 1 || isLoadingQuestionBank
                           ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          : 'bg-white border-2 text-gray-700 hover:shadow-md'
+                          : 'bg-white border text-gray-700 hover:shadow-md'
                       }`}
                       style={currentPage > 1 && !isLoadingQuestionBank ? {
                         borderColor: brand.colors.primary + '40'
@@ -6179,7 +6151,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                 className={`min-w-[40px] h-10 rounded-lg font-semibold transition-all ${
                                   currentPage === page
                                     ? 'text-white shadow-md'
-                                    : 'text-gray-700 bg-white border-2 border-gray-200 hover:border-gray-300 hover:shadow-md'
+                                    : 'text-gray-700 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md'
                                 } ${isLoadingQuestionBank ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 style={currentPage === page ? {
                                   background: brand.gradients.primary
@@ -6198,7 +6170,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       className={`p-2 rounded-lg transition-all ${
                         currentPage >= Math.ceil(totalQuestionBankItems / questionsPerPage) || isLoadingQuestionBank
                           ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          : 'bg-white border-2 text-gray-700 hover:shadow-md'
+                          : 'bg-white border text-gray-700 hover:shadow-md'
                       }`}
                       style={currentPage < Math.ceil(totalQuestionBankItems / questionsPerPage) && !isLoadingQuestionBank ? {
                         borderColor: brand.colors.primary + '40'
@@ -6218,7 +6190,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
               <div className="flex items-center space-x-3">
                 <button
                   onClick={() => setShowQuestionBankModal(false)}
-                  className="px-5 py-2.5 bg-white border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
+                  className="px-5 py-2.5 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
                 >
                   Cancel
                 </button>
@@ -6304,7 +6276,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <button
                         key={idx}
                         onClick={() => setCurrentImageIndex(idx)}
-                        className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                        className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border transition-all ${
                           idx === currentImageIndex
                             ? 'border-white scale-110 shadow-lg'
                             : 'border-white/30 hover:border-white/60 opacity-70 hover:opacity-100'

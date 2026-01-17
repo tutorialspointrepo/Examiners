@@ -1435,7 +1435,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
                       editor.chain().focus().setColor(color.value).run();
                       setShowTextColorPicker(false);
                     }}
-                    className={`w-10 h-10 rounded-md border-2 transition-all hover:scale-110 ${
+                    className={`w-10 h-10 rounded-md border transition-all hover:scale-110 ${
                       darkMode ? 'border-gray-600 hover:border-gray-400' : 'border-gray-300 hover:border-gray-500'
                     }`}
                     style={{ backgroundColor: color.value }}
@@ -1494,7 +1494,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
                       editor.chain().focus().setHighlight({ color: color.value }).run();
                       setShowHighlightPicker(false);
                     }}
-                    className={`w-12 h-10 rounded-md border-2 transition-all hover:scale-110 flex items-center justify-center ${
+                    className={`w-12 h-10 rounded-md border transition-all hover:scale-110 flex items-center justify-center ${
                       darkMode ? 'border-gray-600 hover:border-gray-400' : 'border-gray-300 hover:border-gray-500'
                     }`}
                     style={{ backgroundColor: color.value }}

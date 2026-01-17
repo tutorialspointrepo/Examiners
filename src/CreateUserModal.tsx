@@ -483,53 +483,76 @@ const [isSubmitting, setIsSubmitting] = useState(false);
 
   return (
     <>
-      {isOpen && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000] p-4">
-      <div className={`bg-white rounded-2xl shadow-2xl w-full mx-4 overflow-hidden ${view === 'manual' ? 'max-w-4xl max-h-[90vh] flex flex-col' : 'max-w-2xl'}`}>
+      <style>{`
+        /* Custom scrollbar styling - Hidden */
+        .custom-scrollbar {
+          scrollbar-width: none; /* Firefox */
+          -ms-overflow-style: none; /* IE and Edge */
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+          display: none; /* Chrome, Safari, Opera */
+        }
+      `}</style>
+      
+      <div className={`fixed inset-0 z-[10000] flex items-start justify-start p-2 transition-opacity duration-300 ${
+        isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+      }`}>
+        <div 
+          className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
+          onClick={onClose}
+        />
+        
+        <div 
+          className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[50rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+            isOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header */}
-        <div className="px-8 py-6 flex items-center justify-between flex-shrink-0"
+        <div className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
           style={{ background: brandTheme.gradients.header }}>
           <div className="flex items-center space-x-3">
-            <div className="w-12 h-12 bg-white bg-opacity-20 rounded-lg flex items-center justify-center">
-              <UserPlus size={26} className="text-white" />
+            <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+              <UserPlus size={18} className="text-white" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-white">
+              <h2 className="text-lg font-bold text-white">
                 {view === 'choice' ? 'Create User' : view === 'manual' ? (editUser ? 'Edit User Details' : 'Add User Details') : 'Success!'}
               </h2>
-              <p className="text-sm text-white text-opacity-90">
+              <p className="text-xs text-white text-opacity-80">
                 {view === 'choice' ? 'Choose how you want to add users' : view === 'manual' ? (editUser ? 'Update the user information' : 'Fill in the user information') : 'User ' + (editUser ? 'updated' : 'created') + ' successfully'}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white hover:bg-opacity-20 rounded-lg transition-colors"
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
           >
-            <X size={20} className="text-white" />
+            <X size={16} className="text-white" />
           </button>
         </div>
 
         {/* Choice View */}
         {view === 'choice' && (
-          <div className="p-8">
+          <div className="flex-1 overflow-y-auto p-6 custom-scrollbar flex flex-col justify-center">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Bulk Upload Option */}
               <button
                 onClick={handleBulkUploadClick}
-                className="group relative hover:opacity-90 border-2 rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
+                className="group relative hover:opacity-90 border rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
                 style={{ 
                   background: `linear-gradient(135deg, ${brandTheme.colors.primary}10 0%, ${brandTheme.colors.secondary}10 100%)`,
                   borderColor: brandTheme.colors.primary + '40'
                 }}
               >
                 <div className="flex flex-col items-center text-center space-y-4">
-                  <div className="w-16 h-16 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"
+                  <div className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"
                     style={{ background: brandTheme.gradients.primary }}>
-                    <Upload size={32} className="text-white" />
+                    <Upload size={24} className="text-white" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">Bulk Upload</h3>
+                    <h3 className="text-base font-semibold text-gray-900 mb-2">Bulk Upload</h3>
                     <p className="text-sm text-gray-600">
                       Upload multiple users at once using Excel file
                     </p>
@@ -551,26 +574,26 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                     </span>
                   </div>
                 </div>
-                <div className="absolute inset-0 border-2 border-transparent rounded-xl transition-all duration-300"
+                <div className="absolute inset-0 border border-transparent rounded-xl transition-all duration-300"
                   style={{ borderColor: 'transparent' }}></div>
               </button>
 
               {/* Single User Creation Option */}
               <button
                 onClick={handleSingleUserClick}
-                className="group relative hover:opacity-90 border-2 rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
+                className="group relative hover:opacity-90 border rounded-xl p-6 transition-all duration-300 hover:shadow-xl hover:-translate-y-1"
                 style={{ 
                   background: `linear-gradient(135deg, ${brandTheme.colors.primary}10 0%, ${brandTheme.colors.secondary}10 100%)`,
                   borderColor: brandTheme.colors.primary + '40'
                 }}
               >
                 <div className="flex flex-col items-center text-center space-y-4">
-                  <div className="w-16 h-16 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"
+                  <div className="w-14 h-14 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"
                     style={{ background: brandTheme.gradients.primary }}>
-                    <User size={32} className="text-white" />
+                    <User size={24} className="text-white" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">Create Single User</h3>
+                    <h3 className="text-base font-semibold text-gray-900 mb-2">Create Single User</h3>
                     <p className="text-sm text-gray-600">
                       Add one user at a time with detailed information
                     </p>
@@ -599,7 +622,7 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                     </span>
                   </div>
                 </div>
-                <div className="absolute inset-0 border-2 border-transparent rounded-xl transition-all duration-300"></div>
+                <div className="absolute inset-0 border border-transparent rounded-xl transition-all duration-300"></div>
               </button>
             </div>
 
@@ -621,8 +644,8 @@ const [isSubmitting, setIsSubmitting] = useState(false);
         {/* Manual View - Form */}
         {view === 'manual' && (
           <>
-            <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
-              <div className="p-8 space-y-6">
+            <div className="flex-1 overflow-y-auto custom-scrollbar" ref={scrollContainerRef}>
+              <div className="p-6 space-y-4">
                 {/* Error Message */}
                 {error && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start space-x-3">
@@ -636,7 +659,7 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                 )}
 
                 {/* Basic Information */}
-                <div className="border-2 rounded-xl p-4"
+                <div className="border rounded-xl p-4"
                   style={{ 
                     background: brandTheme.gradients.card,
                     borderColor: brandTheme.colors.secondary + '33'
@@ -767,7 +790,7 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                           type="button"
                           onClick={() => !editUser && handleInputChange('userType', role.value)}
                           disabled={!!editUser}
-                          className={`relative p-4 rounded-xl border-2 transition-all ${
+                          className={`relative p-4 rounded-xl border transition-all ${
                             isSelected 
                               ? 'border-transparent shadow-lg' 
                               : 'border-gray-200 hover:border-gray-300 bg-white'
@@ -1074,7 +1097,7 @@ const [isSubmitting, setIsSubmitting] = useState(false);
             </div>
 
             {/* Footer */}
-            <div className="px-8 py-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+            <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
               <div className="flex items-center justify-between">
                 <p className="text-xs text-gray-600">
                   <span className="text-red-500">*</span> Required fields
@@ -1084,7 +1107,7 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                     <button
                       onClick={() => setView('choice')}
                       disabled={isSubmitting}
-                      className="px-6 py-2.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium rounded-lg transition-colors disabled:opacity-50"
+                      className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium text-sm rounded-lg transition-colors disabled:opacity-50"
                     >
                       Back
                     </button>
@@ -1092,17 +1115,17 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                   <button
                     onClick={handleSubmit}
                     disabled={isSubmitting || isLoadingCollegeData}
-                    className="px-6 py-2.5 text-white font-medium rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center space-x-2"
+                    className="px-5 py-2 text-white font-medium text-sm rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 flex items-center space-x-2"
                     style={{ background: isSubmitting ? brandTheme.colors.primary : brandTheme.gradients.primary }}
                   >
                     {isSubmitting ? (
                       <>
-                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin" />
                         <span>{editUser ? 'Updating...' : 'Creating...'}</span>
                       </>
                     ) : (
                       <>
-                        <Save size={18} />
+                        <Save size={16} />
                         <span>{editUser ? 'Update User' : 'Create User'}</span>
                       </>
                     )}
@@ -1130,7 +1153,6 @@ const [isSubmitting, setIsSubmitting] = useState(false);
         )}
       </div>
       </div>
-      )}
 
       {/* Bulk User Upload Modal */}
       <BulkUploadUsers

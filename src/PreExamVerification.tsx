@@ -281,22 +281,34 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
         audioContextRef.current.resume();
       }
       
-      analyserRef.current.getByteFrequencyData(dataArray);
+      // ✅ FIX: Use Time Domain Data (Waveform) instead of Frequency
+      // This measures actual volume deviation, fixing the "always 100%" bug
+      analyserRef.current.getByteTimeDomainData(dataArray);
       
       let sum = 0;
       for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i];
+        const x = dataArray[i] - 128; // 128 is silence (midpoint)
+        sum += x * x;
       }
-      const average = sum / dataArray.length;
-      setAudioLevel(average);
+      
+      // Calculate RMS (Root Mean Square) -> "Loudness"
+      const rms = Math.sqrt(sum / dataArray.length);
+      
+      // Scale RMS to 0-100 range (RMS usually 0-50 for speech)
+      const volume = Math.min(100, Math.round(rms * 5));
+      
+      setAudioLevel(volume);
+
+      // ✅ FIX: Move requestAnimationFrame BEFORE verification check to prevent freezing
+      animationFrameRef.current = requestAnimationFrame(update);
 
       // Check ref instead of state to avoid stale closure
       if (audioVerifiedRef.current) {
-        return; // Already verified, skip
+        return; // Already verified, skip verification logic but loop continues
       }
 
-      // Track continuous audio detection
-      if (average > 1) {
+      // Track continuous audio detection (threshold raised to 10 for RMS-based volume)
+      if (volume > 10) {
         if (!audioDetectionStartRef.current) {
           audioDetectionStartRef.current = Date.now();
           console.log('🎤 Audio detection started');
@@ -305,7 +317,7 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
         // Fallback: If audio detected for 2 seconds straight, force verification
         const detectionDuration = Date.now() - audioDetectionStartRef.current;
         if (detectionDuration > 2000) {
-          console.log(`✅ Audio verified after ${detectionDuration}ms of continuous detection! Level: ${average.toFixed(2)}`);
+          console.log(`✅ Audio verified after ${detectionDuration}ms of continuous detection! Level: ${volume}`);
           audioVerifiedRef.current = true;
           setAudioVerified(true);
           return;
@@ -314,23 +326,22 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
         audioDetectionStartRef.current = null;
       }
 
-      // ✅ Immediate verification on ANY audio activity
-      if (average > 1) {
-        console.log(`✅ Audio verified immediately! Level: ${average.toFixed(2)}`);
+      // ✅ Immediate verification on audio activity above threshold
+      if (volume > 10) {
+        console.log(`✅ Audio verified immediately! Level: ${volume}`);
         audioVerifiedRef.current = true;
         setAudioVerified(true);
       }
       
       // Additional logging for debugging
-      if (average > 0.5) {
-        console.log(`🎤 Audio level: ${average.toFixed(2)}, verified: ${audioVerifiedRef.current}`);
+      if (volume > 5) {
+        console.log(`🎤 Audio level: ${volume}, verified: ${audioVerifiedRef.current}`);
       }
-
-      animationFrameRef.current = requestAnimationFrame(update);
     };
     update();
   };
 
+  // ✅ Step 1: Verify face only (no fullscreen, no auto-start)
   const verifyFace = async () => {
     if (!videoRef.current || !canvasRef.current || baselineDescriptors.length === 0) return;
 
@@ -361,22 +372,10 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
 
       if (similarity >= 60) {
         setVerificationStatus('success');
-        setCountdown(10);
-        
-        // Start countdown
-        let timeLeft = 10;
-        const countdownInterval = setInterval(() => {
-          timeLeft--;
-          setCountdown(timeLeft);
-          
-          if (timeLeft <= 0) {
-            clearInterval(countdownInterval);
-            onSuccess(selectedAudioDeviceId);
-          }
-        }, 1000);
+        console.log('✅ Face verified successfully - ready to start exam');
       } else {
         setVerificationStatus('failed');
-        setErrorMessage(`Face match score too low (${similarity.toFixed(1)}%).`);
+        setErrorMessage(`Face match score too low (${similarity.toFixed(1)}%). Please try again.`);
       }
     } catch (error) {
       setVerificationStatus('failed');
@@ -384,6 +383,25 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
     } finally {
       setIsVerifying(false);
     }
+  };
+
+  // ✅ Step 2: Start exam - called on "Start Exam" button click AFTER verification
+  const startExam = () => {
+    // Request fullscreen IMMEDIATELY in direct response to user click
+    const elem = document.documentElement;
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen().catch(err => console.warn('Fullscreen error:', err));
+    } else if ((elem as any).webkitRequestFullscreen) {
+      (elem as any).webkitRequestFullscreen();
+    } else if ((elem as any).mozRequestFullScreen) {
+      (elem as any).mozRequestFullScreen();
+    } else if ((elem as any).msRequestFullscreen) {
+      (elem as any).msRequestFullscreen();
+    }
+    console.log('✅ Fullscreen requested on Start Exam click');
+    
+    // Start exam immediately (don't wait for fullscreen promise)
+    onSuccess(selectedAudioDeviceId);
   };
 
   const handleCancel = () => {
@@ -425,31 +443,31 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
       `}</style>
       
       <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black bg-opacity-90">
-        <div className="bg-white rounded-lg shadow-2xl p-8 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold text-gray-800 mb-2">Pre-Exam Verification</h2>
-        <p className="text-gray-600 mb-4">
-          Please verify your identity and audio setup to ensure a secure exam experience.
+        <div className="bg-white rounded-lg shadow-2xl p-6 max-w-xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-bold text-gray-800 mb-1">Pre-Exam Verification</h2>
+        <p className="text-sm text-gray-600 mb-3">
+          Verify your identity and audio setup before starting the exam.
         </p>
 
-        <div className="relative mb-4">
+        <div className="relative mb-3">
           <div className="relative w-full aspect-video bg-gray-900 rounded-lg overflow-hidden border border-gray-300">
             <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
             <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full" />
             
             {isCameraLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 text-white">
-                <div><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white mx-auto mb-2"></div>Loading Camera...</div>
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 text-white text-sm">
+                <div><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mx-auto mb-2"></div>Loading Camera...</div>
               </div>
             )}
 
             {!isSystemReady && !isCameraLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-blue-600/95 to-purple-700/95 backdrop-blur-sm animate-fadeIn">
-                <div className="text-center px-6 py-8">
-                  <div className="relative w-20 h-20 mx-auto mb-4">
+                <div className="text-center px-4 py-6">
+                  <div className="relative w-14 h-14 mx-auto mb-3">
                     <div className="absolute inset-0 bg-white/20 rounded-full animate-ping"></div>
                     <div className="absolute inset-0 bg-white/30 rounded-full animate-pulse"></div>
                     <div className="relative w-full h-full bg-white rounded-full flex items-center justify-center">
-                    <svg className="w-10 h-10 text-blue-600 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-7 h-7 text-blue-600 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <circle cx="12" cy="4" r="1" fill="currentColor"/>
                     <line x1="12" y1="5" x2="12" y2="7" strokeWidth="2" strokeLinecap="round"/>
                     <rect x="7" y="7" width="10" height="8" rx="1.5" fill="currentColor" stroke="none"/>
@@ -465,31 +483,31 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
                     </div>
                   </div>
                   
-                  <h3 className="text-2xl font-bold text-white mb-2">Initializing AI</h3>
-                  <p className="text-blue-100 mb-4">Please wait while we prepare verification...</p>
+                  <h3 className="text-base font-bold text-white mb-1">Initializing AI</h3>
+                  <p className="text-blue-100 text-sm mb-3">Please wait while we prepare verification...</p>
                   
-                  <div className="space-y-2 text-left max-w-xs mx-auto">
+                  <div className="space-y-1.5 text-left max-w-xs mx-auto">
                     <div className="flex items-center gap-2">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-500 ${!isCameraLoading ? 'bg-green-400 scale-110' : 'bg-white/20'}`}>
-                        {!isCameraLoading ? <span className="text-white text-xs">✓</span> : <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>}
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center transition-all duration-500 ${!isCameraLoading ? 'bg-green-400 scale-110' : 'bg-white/20'}`}>
+                        {!isCameraLoading ? <span className="text-white text-[10px]">✓</span> : <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>}
                       </div>
-                      <span className="text-white text-sm">Initializing Audio/Video Devices</span>
+                      <span className="text-white text-xs">Initializing Audio/Video Devices</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-500 ${modelsLoaded ? 'bg-green-400 scale-110' : 'bg-white/20'}`}>
-                        {modelsLoaded ? <span className="text-white text-xs">✓</span> : <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>}
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center transition-all duration-500 ${modelsLoaded ? 'bg-green-400 scale-110' : 'bg-white/20'}`}>
+                        {modelsLoaded ? <span className="text-white text-[10px]">✓</span> : <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>}
                       </div>
-                      <span className="text-white text-sm">Loading AI Models</span>
+                      <span className="text-white text-xs">Loading AI Models</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center transition-all duration-500 ${baselineLoaded ? 'bg-green-400 scale-110' : 'bg-white/20'}`}>
-                        {baselineLoaded ? <span className="text-white text-xs">✓</span> : <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>}
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center transition-all duration-500 ${baselineLoaded ? 'bg-green-400 scale-110' : 'bg-white/20'}`}>
+                        {baselineLoaded ? <span className="text-white text-[10px]">✓</span> : <div className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></div>}
                       </div>
-                      <span className="text-white text-sm">Processing Your Identity</span>
+                      <span className="text-white text-xs">Processing Your Identity</span>
                     </div>
                   </div>
                   
-                  <div className="w-full h-1.5 bg-white/20 rounded-full overflow-hidden mt-4">
+                  <div className="w-full h-1 bg-white/20 rounded-full overflow-hidden mt-3">
                     <div 
                       className="h-full bg-white transition-all duration-500 ease-out rounded-full"
                       style={{ width: `${(!isCameraLoading ? 33.33 : 0) + (modelsLoaded ? 33.33 : 0) + (baselineLoaded ? 33.33 : 0)}%` }}
@@ -505,37 +523,36 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
           </div>
           
           {verificationStatus !== 'idle' && (
-            <div className={`mt-2 p-2 text-center rounded font-semibold ${
+            <div className={`mt-2 p-2 text-center rounded text-sm font-medium ${
               verificationStatus === 'success' ? 'bg-green-100 text-green-700' : 
               verificationStatus === 'failed' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
             }`}>
               {verificationStatus === 'verifying' && '🔍 Analyzing Face...'}
               {verificationStatus === 'success' && (
-                `✅ Face Verified (${similarityScore?.toFixed(0)}%) - Starting exam in ${countdown} second${countdown !== 1 ? 's' : ''}...`
+                `✅ Identity Verified (${similarityScore?.toFixed(0)}% match) - Click "Start Exam" to begin`
               )}
-              {verificationStatus === 'failed' && '❌ Face Verification Failed'}
+              {verificationStatus === 'failed' && `❌ ${errorMessage || 'Verification Failed'}`}
             </div>
           )}
         </div>
 
-        <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-          <h3 className="font-bold text-gray-800 mb-3 flex items-center justify-between">
+        <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+          <h3 className="text-sm font-bold text-gray-800 mb-2 flex items-center justify-between">
             <span>Microphone Check</span>
-            <span className={`text-xs px-2 py-1 rounded ${audioVerified ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
+            <span className={`text-[10px] px-2 py-0.5 rounded ${audioVerified ? 'bg-green-500 text-white' : 'bg-red-500 text-white'}`}>
               {audioVerified ? 'Verified' : 'Action Required'}
             </span>
           </h3>
 
           {isVirtualMic && (
-            <div className="mb-3 p-3 bg-red-100 border border-red-300 rounded text-red-800 text-sm font-semibold">
-              ⚠️ Virtual Microphone Detected ("{audioDevices.find(d => d.deviceId === selectedAudioDeviceId)?.label}"). 
-              Please select your physical microphone (e.g., Built-in, Headset) to prevent exam termination.
+            <div className="mb-2 p-2 bg-red-100 border border-red-300 rounded text-red-800 text-xs font-medium">
+              ⚠️ Virtual Microphone Detected. Please select your physical microphone.
             </div>
           )}
 
-          <div className="flex gap-2 mb-3">
+          <div className="flex gap-2 mb-2">
             <select 
-              className="flex-1 p-2 border rounded text-sm"
+              className="flex-1 p-1.5 border rounded text-xs"
               value={selectedAudioDeviceId}
               onChange={(e) => startAudioMonitoring(e.target.value)}
             >
@@ -548,43 +565,55 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
             </select>
           </div>
 
-          <div className="mb-2">
-            <p className="text-sm text-gray-600 mb-1">
-              Speak <strong>"Hello, I am ready"</strong> to test your microphone:
+          <div className="mb-1">
+            <p className="text-xs text-gray-600 mb-1">
+              Speak <strong>"Hello, I am ready"</strong> to test:
             </p>
-            <div className="w-full h-4 bg-gray-300 rounded-full overflow-hidden">
+            <div className="w-full h-3 bg-gray-300 rounded-full overflow-hidden">
               <div 
-                className={`h-full transition-all duration-100 ${audioLevel > 1 ? 'bg-green-500' : 'bg-blue-500'}`}
-                style={{ width: `${Math.min(audioLevel * 3, 100)}%` }}
+                className={`h-full transition-all duration-100 ${audioLevel > 10 ? 'bg-green-500' : 'bg-blue-500'}`}
+                style={{ width: `${audioLevel}%` }}
               />
             </div>
           </div>
           
           {!audioVerified && (
-            <p className="text-xs text-red-500 font-medium">
+            <p className="text-[10px] text-red-500 font-medium">
               * Microphone must detect sound to proceed.
             </p>
           )}
         </div>
 
-        <div className="flex gap-4">
-          <button onClick={handleCancel} className="flex-1 px-4 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-semibold">
+        <div className="flex gap-3">
+          <button onClick={handleCancel} className="flex-1 px-3 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 text-sm font-medium">
             Cancel
           </button>
           
-          <button
-            onClick={verifyFace}
-            disabled={!isSystemReady || isVerifying || !audioVerified || verificationStatus === 'success'}
-            className={`flex-1 px-4 py-3 rounded-lg font-semibold transition ${
-              !isSystemReady || isVerifying || !audioVerified || verificationStatus === 'success'
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
-            }`}
-          >
-            {isVerifying ? 'Verifying...' : 
-             !isSystemReady ? 'Initializing AI...' :
-             verificationStatus === 'success' ? 'Starting Exam...' : 'Verify & Start Exam'}
-          </button>
+          {/* Show "Verify" button if not yet verified */}
+          {verificationStatus !== 'success' && (
+            <button
+              onClick={verifyFace}
+              disabled={!isSystemReady || isVerifying || !audioVerified}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition ${
+                !isSystemReady || isVerifying || !audioVerified
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              {isVerifying ? 'Verifying...' : 
+               !isSystemReady ? 'Initializing...' : 'Verify Identity'}
+            </button>
+          )}
+          
+          {/* Show "Start Exam" button AFTER verification success */}
+          {verificationStatus === 'success' && (
+            <button
+              onClick={startExam}
+              className="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition bg-green-600 text-white hover:bg-green-700"
+            >
+              ▶ Start Exam
+            </button>
+          )}
         </div>
       </div>
     </div>

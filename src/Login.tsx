@@ -88,7 +88,7 @@ export default function Login({ onLoginSuccess, onRequirePasswordChange, onForgo
 
   return (
     <div 
-      className="min-h-screen flex items-center justify-center p-4"
+      className="min-h-screen flex items-center justify-center p-4 overflow-x-hidden"
       style={{ background: brand.gradients.background }}
     >
       {/* Background decorative elements using brand colors */}
@@ -110,7 +110,7 @@ export default function Login({ onLoginSuccess, onRequirePasswordChange, onForgo
       {/* Login Card */}
       <div className="relative w-full max-w-md">
         {/* Main Card */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8 md:p-10">
+        <div className="bg-white border rounded-2xl shadow-2xl p-8 md:p-10">
           {/* EXAMINERS Logo - AI Evaluation Theme */}
           <div className="flex justify-center mb-6">
             <div 
@@ -222,7 +222,7 @@ export default function Login({ onLoginSuccess, onRequirePasswordChange, onForgo
                       e.target.style.boxShadow = 'none';
                     }
                   }}
-                  className="w-full pl-16 pr-4 py-3.5 border-2 rounded-xl transition-all outline-none font-medium"
+                  className="w-full pl-16 pr-4 py-3.5 border rounded-xl transition-all outline-none font-medium"
                   placeholder="Enter your email"
                   disabled={isLoading}
                 />
@@ -273,7 +273,7 @@ export default function Login({ onLoginSuccess, onRequirePasswordChange, onForgo
                       e.target.style.boxShadow = 'none';
                     }
                   }}
-                  className="w-full pl-16 pr-14 py-3.5 border-2 rounded-xl transition-all outline-none font-medium"
+                  className="w-full pl-16 pr-14 py-3.5 border rounded-xl transition-all outline-none font-medium"
                   placeholder="Enter your password"
                   disabled={isLoading}
                 />

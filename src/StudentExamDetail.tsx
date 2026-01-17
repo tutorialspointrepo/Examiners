@@ -21,6 +21,7 @@ import { useState, useEffect, useRef } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faChevronLeft,
+  faChevronRight,
   faClock,
   faAward,
   faExclamationTriangle,
@@ -42,7 +43,27 @@ import {
   faPercentage,
   faChevronDown,
   faChevronUp,
-  faInfoCircle
+  faInfoCircle,
+  faEye,
+  faArrowsRotate,
+  faExpand,
+  faClipboard,
+  faThumbTack,
+  faScissors,
+  faComputer,
+  faCamera,
+  faScrewdriverWrench,
+  faLaptopCode,
+  faTowerBroadcast,
+  faClockRotateLeft,
+  faKeyboard,
+  faRightLeft,
+  faMagnifyingGlass,
+  faWrench,
+  faPrint,
+  faFloppyDisk,
+  faTriangleExclamation,
+  faPlay
 } from '@fortawesome/sharp-light-svg-icons';
 import { firebaseService } from './services/firebase_service';
 import { 
@@ -50,7 +71,9 @@ import {
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
   COMPLEXITY_LEVELS,
-  COMPLEXITY_LABELS
+  COMPLEXITY_LABELS,
+  VIOLATION_DESCRIPTIONS,
+  type ViolationType
 } from './constants';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -155,11 +178,56 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
   const [showViolationsModal, setShowViolationsModal] = useState(false);
   const [selectedViolations, setSelectedViolations] = useState<any[]>([]);
   const [selectedQuestionNo, setSelectedQuestionNo] = useState<number>(0);
+  const [violationsCurrentPage, setViolationsCurrentPage] = useState(1);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [isChapterAnalysisExpanded, setIsChapterAnalysisExpanded] = useState(false);
   const [showGradeModal, setShowGradeModal] = useState(false);
+  const [evidenceModal, setEvidenceModal] = useState<{ url: string; type: 'video' | 'image' } | null>(null);
   const hasLoggedView = useRef(false); // Track if we've logged this view
+  
+  const VIOLATIONS_PER_PAGE = 25;
+
+  // Helper function to get violation icon
+  const getViolationIcon = (type: string) => {
+    const iconMap: Record<string, any> = {
+      'WINDOW_BLUR': faEye,
+      'TAB_SWITCH': faArrowsRotate,
+      'WINDOW_MINIMIZE': faChevronDown,
+      'FULLSCREEN_EXIT': faExpand,
+      'COPY_ATTEMPT': faClipboard,
+      'PASTE_ATTEMPT': faThumbTack,
+      'CUT_ATTEMPT': faScissors,
+      'RIGHT_CLICK': faComputer,
+      'PRINT_SCREEN': faCamera,
+      'SCREENSHOT_ATTEMPT': faCamera,
+      'DEVTOOLS_OPEN': faScrewdriverWrench,
+      'CONSOLE_OPEN': faLaptopCode,
+      'MULTIPLE_TABS': faCopy,
+      'NETWORK_DISCONNECT': faTowerBroadcast,
+      'TIME_MANIPULATION': faClockRotateLeft,
+      'SHORTCUT_CTRLC': faKeyboard,
+      'SHORTCUT_CTRLV': faKeyboard,
+      'SHORTCUT_CTRLX': faKeyboard,
+      'SHORTCUT_CTRLA': faKeyboard,
+      'SHORTCUT_ALTTAB': faRightLeft,
+      'SHORTCUT_CTRLSHIFTC': faMagnifyingGlass,
+      'SHORTCUT_F12': faWrench,
+      'SHORTCUT_CTRLP': faPrint,
+      'SHORTCUT_CTRLS': faFloppyDisk,
+      'SHORTCUT_DEVTOOLS': faScrewdriverWrench,
+      'NO_FACE_DETECTED': faCamera,
+      'FACE_MISMATCH': faCamera,
+      'HEAD_TURNED': faEye,
+      'MULTIPLE_FACES': faCamera
+    };
+    return iconMap[type] || faTriangleExclamation;
+  };
+
+  // Helper function to get violation label
+  const getViolationLabel = (type: string) => {
+    return VIOLATION_DESCRIPTIONS[type as ViolationType] || type.replace(/_/g, ' ');
+  };
 
   useEffect(() => {
     const loadAttemptData = async () => {
@@ -887,9 +955,9 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                   return (
                     <div
                       key={chapterName}
-                      className="group relative bg-white rounded-xl p-4 hover:shadow-md transition-all duration-300"
+                      className="group relative rounded-xl p-4 hover:shadow-md transition-all duration-300"
                       style={{
-                        border: `2px solid ${themeColor.border}`,
+                        backgroundColor: `${themeColor.accent}08`,
                         animationDelay: `${index * 50}ms`,
                         animation: isChapterAnalysisExpanded ? 'fadeInUp 0.5s ease-out forwards' : 'none',
                         opacity: isChapterAnalysisExpanded ? 0 : 1
@@ -904,8 +972,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                             className="w-16 h-16 rounded-xl flex items-center justify-center font-bold text-xl shadow-sm flex-shrink-0 transition-all duration-200 hover:scale-105 hover:shadow-md cursor-pointer"
                             style={{ 
                               backgroundColor: `${themeColor.accent}15`,
-                              color: themeColor.accent,
-                              border: `2px solid ${themeColor.border}`
+                              color: themeColor.accent
                             }}
                             title="Click to view grade criteria"
                           >
@@ -963,8 +1030,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                             <div 
                               className="relative w-full h-3 rounded-full overflow-hidden"
                               style={{ 
-                                backgroundColor: `${themeColor.accent}10`,
-                                border: `1px solid ${themeColor.border}`
+                                backgroundColor: `${themeColor.accent}15`
                               }}
                             >
                               <div
@@ -1019,15 +1085,14 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {/* Total Chapters */}
                   <div 
-                    className="bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #bfdbfe' }}
+                    className="rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                    style={{ backgroundColor: 'rgba(59, 130, 246, 0.08)' }}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div 
                         className="w-10 h-10 rounded-lg flex items-center justify-center"
                         style={{ 
-                          backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                          border: '2px solid #bfdbfe'
+                          backgroundColor: 'rgba(59, 130, 246, 0.15)'
                         }}
                       >
                         <FontAwesomeIcon icon={faBook} className="text-base" style={{ color: '#3b82f6' }} />
@@ -1048,15 +1113,14 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
 
                   {/* Total Questions */}
                   <div 
-                    className="bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #e9d5ff' }}
+                    className="rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                    style={{ backgroundColor: 'rgba(168, 85, 247, 0.08)' }}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div 
                         className="w-10 h-10 rounded-lg flex items-center justify-center"
                         style={{ 
-                          backgroundColor: 'rgba(168, 85, 247, 0.15)',
-                          border: '2px solid #e9d5ff'
+                          backgroundColor: 'rgba(168, 85, 247, 0.15)'
                         }}
                       >
                         <FontAwesomeIcon icon={faQuestionCircle} className="text-base" style={{ color: '#a855f7' }} />
@@ -1079,15 +1143,14 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
 
                   {/* Total Score */}
                   <div 
-                    className="bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #a7f3d0' }}
+                    className="rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                    style={{ backgroundColor: 'rgba(16, 185, 129, 0.08)' }}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div 
                         className="w-10 h-10 rounded-lg flex items-center justify-center"
                         style={{ 
-                          backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                          border: '2px solid #a7f3d0'
+                          backgroundColor: 'rgba(16, 185, 129, 0.15)'
                         }}
                       >
                         <FontAwesomeIcon icon={faTrophy} className="text-base" style={{ color: '#10b981' }} />
@@ -1110,15 +1173,14 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
 
                   {/* Average Performance */}
                   <div 
-                    className="bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #fed7aa' }}
+                    className="rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                    style={{ backgroundColor: 'rgba(249, 115, 22, 0.08)' }}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div 
                         className="w-10 h-10 rounded-lg flex items-center justify-center"
                         style={{ 
-                          backgroundColor: 'rgba(249, 115, 22, 0.15)',
-                          border: '2px solid #fed7aa'
+                          backgroundColor: 'rgba(249, 115, 22, 0.15)'
                         }}
                       >
                         <FontAwesomeIcon 
@@ -2274,7 +2336,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                                   </div>
                                 </div>
 
-                                <div className="overflow-x-auto rounded-lg border-2 border-gray-200">
+                                <div className="overflow-x-auto rounded-lg border border-gray-200">
                                   <table className="w-full text-sm">
                                     <thead>
                                       <tr className="bg-gray-100 border-b-2 border-gray-200">
@@ -2355,7 +2417,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                                   AI Code Analysis
                                 </h3>
                                 
-                                <div className={`rounded-lg border-2 p-4 ${
+                                <div className={`rounded-lg border p-4 ${
                                   question.codeAIFeedback.severityLevel === 'success' ? 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-200' :
                                   question.codeAIFeedback.severityLevel === 'critical' ? 'bg-gradient-to-br from-red-50 to-rose-50 border-red-200' :
                                   'bg-gradient-to-br from-yellow-50 to-amber-50 border-yellow-200'
@@ -2541,7 +2603,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                                             </svg>
                                           </div>
                                         </summary>
-                                        <div className="mt-3 bg-white rounded-lg p-4 border-2 border-indigo-200">
+                                        <div className="mt-3 bg-white rounded-lg p-4 border border-indigo-200">
                                           {question.codeAIFeedback.codeExplanation && (
                                             <div className="mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
                                               <p className="text-xs font-semibold text-blue-900 mb-1">Explanation:</p>
@@ -3272,71 +3334,315 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
         )}
       </div>
 
-      {showViolationsModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden flex flex-col">
-            <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
-                  <FontAwesomeIcon icon={faExclamationTriangle} className="text-red-600 text-xl" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">
-                    {selectedQuestionNo === 0 ? 'All Violations' : `Violations - Q${selectedQuestionNo}`}
-                  </h3>
-                  <p className="text-sm text-gray-600">{selectedViolations.length} violation(s)</p>
-                </div>
+      {/* Violations Modal - Slide from Right */}
+      <div className={`fixed inset-0 z-[9999] flex items-start justify-end p-2 transition-opacity duration-300 ${
+        showViolationsModal ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+      }`}>
+        <div 
+          className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
+          onClick={() => { setShowViolationsModal(false); setSelectedViolations([]); setSelectedQuestionNo(0); setViolationsCurrentPage(1); }}
+        />
+        
+        <div 
+          className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[35rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+            showViolationsModal ? 'translate-x-0' : 'translate-x-[calc(100%+1rem)]'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header with Gradient - Red */}
+          <div 
+            className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+            style={{ background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)' }}
+          >
+            <div className="flex items-center space-x-3">
+              <div 
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(255,255,255,0.2)' }}
+              >
+                <FontAwesomeIcon icon={faTriangleExclamation} className="text-white" />
               </div>
-              <button onClick={() => { setShowViolationsModal(false); setSelectedViolations([]); setSelectedQuestionNo(0); }} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center">
-                <FontAwesomeIcon icon={faTimes} className="text-gray-600" />
-              </button>
+              <div>
+                <h2 className="text-lg font-bold text-white">
+                  {selectedQuestionNo === 0 ? 'Violations' : `Violations - Q${selectedQuestionNo}`}
+                  {selectedViolations.length > 0 && ` (${selectedViolations.length})`}
+                </h2>
+                <p className="text-xs text-white/80">
+                  {student?.studentName || student?.fullName || 'Student'} • Roll No: {student?.studentRoll || student?.rollNumber || '—'}
+                </p>
+              </div>
             </div>
-            <div className="flex-1 overflow-y-auto px-6 py-4">
-              <div className="space-y-3">
-                {selectedViolations.map((violation: any, vIdx: number) => {
-                  // DEBUG: Log the full violation object
-                  console.log('🐛 [VIOLATION DEBUG] Full violation object:', JSON.stringify(violation, null, 2));
-                  console.log('🐛 [VIOLATION DEBUG] Violation keys:', Object.keys(violation));
-                  console.log('🐛 [VIOLATION DEBUG] Violation type:', violation.type);
-                  console.log('🐛 [VIOLATION DEBUG] Violation timestamp:', violation.timestamp);
+            <button
+              onClick={() => { setShowViolationsModal(false); setSelectedViolations([]); setSelectedQuestionNo(0); setViolationsCurrentPage(1); }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
+            >
+              <FontAwesomeIcon icon={faTimes} className="text-white" />
+            </button>
+          </div>
+          
+          {/* Violation Summary Badges */}
+          {selectedViolations.length > 0 && (
+            <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center space-x-2 flex-wrap gap-y-2">
+              {(() => {
+                const summary = {
+                  critical: selectedViolations.filter(v => v.severity === 'critical').length,
+                  high: selectedViolations.filter(v => v.severity === 'high').length,
+                  medium: selectedViolations.filter(v => v.severity === 'medium').length,
+                  low: selectedViolations.filter(v => v.severity === 'low' || !v.severity).length
+                };
+                
+                return (
+                  <>
+                    {summary.critical > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-300 flex items-center space-x-1.5">
+                        <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                        <span>Critical: {summary.critical}</span>
+                      </span>
+                    )}
+                    {summary.high > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-800 border border-orange-300 flex items-center space-x-1.5">
+                        <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                        <span>High: {summary.high}</span>
+                      </span>
+                    )}
+                    {summary.medium > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-300 flex items-center space-x-1.5">
+                        <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                        <span>Medium: {summary.medium}</span>
+                      </span>
+                    )}
+                    {summary.low > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300 flex items-center space-x-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                        <span>Low: {summary.low}</span>
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+          
+          {/* Violations Content */}
+          <div className="flex-1 overflow-y-auto px-5 py-4">
+            {selectedViolations.length > 0 ? (
+              <div className="space-y-2">
+                {(() => {
+                  const startIdx = (violationsCurrentPage - 1) * VIOLATIONS_PER_PAGE;
+                  const endIdx = startIdx + VIOLATIONS_PER_PAGE;
+                  const pageViolations = selectedViolations.slice(startIdx, endIdx);
                   
-                  return (
-                    <div key={vIdx} className="bg-red-50 border border-red-200 rounded-lg p-4">
-                      {selectedQuestionNo === 0 && violation.questionNo && (
-                        <div className="mb-2 pb-2 border-b border-red-200">
-                          <span className="text-xs font-bold text-red-800 bg-red-200 px-2 py-1 rounded">
-                            Question {violation.questionNo}
-                          </span>
+                  return pageViolations.map((violation: any, vIdx: number) => {
+                    const severityLevel = violation.severity || 'low';
+                    return (
+                      <div 
+                        key={startIdx + vIdx} 
+                        className={`p-3 rounded-xl border ${
+                          severityLevel === 'critical' 
+                            ? 'bg-red-50 border-red-200' 
+                            : severityLevel === 'high'
+                            ? 'bg-orange-50 border-orange-200'
+                            : severityLevel === 'medium'
+                            ? 'bg-yellow-50 border-yellow-200'
+                            : 'bg-blue-50 border-blue-200'
+                        }`}
+                      >
+                        {/* Top Row: Icon, Title, Play Button */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2.5">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                              severityLevel === 'critical' ? 'bg-red-100' :
+                              severityLevel === 'high' ? 'bg-orange-100' :
+                              severityLevel === 'medium' ? 'bg-yellow-100' :
+                              'bg-blue-100'
+                            }`}>
+                              <FontAwesomeIcon 
+                                icon={getViolationIcon(violation.type)} 
+                                className={`text-sm ${
+                                  severityLevel === 'critical' ? 'text-red-600' :
+                                  severityLevel === 'high' ? 'text-orange-600' :
+                                  severityLevel === 'medium' ? 'text-yellow-600' :
+                                  'text-blue-600'
+                                }`}
+                              />
+                            </div>
+                            <h4 className="text-sm font-semibold text-gray-900">{getViolationLabel(violation.type)}</h4>
+                          </div>
+                          
+                          {/* Play/View Evidence Button */}
+                          {violation.proofUrl && (
+                            <button 
+                              onClick={() => {
+                                const url = violation.proofUrl;
+                                const isVideo = url.includes('.webm') || url.includes('.mp4') || url.includes('.mov');
+                                setEvidenceModal({ url, type: isVideo ? 'video' : 'image' });
+                              }}
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                                severityLevel === 'critical' ? 'bg-red-200 hover:bg-red-300 text-red-700' :
+                                severityLevel === 'high' ? 'bg-orange-200 hover:bg-orange-300 text-orange-700' :
+                                severityLevel === 'medium' ? 'bg-yellow-200 hover:bg-yellow-300 text-yellow-700' :
+                                'bg-blue-200 hover:bg-blue-300 text-blue-700'
+                              }`}
+                              title="View evidence"
+                            >
+                              <FontAwesomeIcon 
+                                icon={(violation.proofUrl.includes('.webm') || violation.proofUrl.includes('.mp4')) ? faPlay : faImage} 
+                                className="text-xs" 
+                              />
+                            </button>
+                          )}
                         </div>
-                      )}
-                      <div className="flex items-start space-x-3">
-                        <FontAwesomeIcon icon={faExclamationTriangle} className="text-red-600 mt-0.5" />
-                        <div className="flex-1">
-                          <p className="text-sm font-semibold text-red-900">{violation.type || 'Violation'}</p>
-                          {violation.description && <p className="text-sm text-red-700 mt-1">{violation.description}</p>}
+                        
+                        {/* Details Text */}
+                        {(violation.details || violation.description) && (
+                          <p className="text-xs text-gray-600 mb-2 pl-[42px]">{violation.details || violation.description}</p>
+                        )}
+                        
+                        {/* Bottom Row: Badges and Timestamp */}
+                        <div className="flex items-center justify-between pl-[42px]">
+                          <div className="flex items-center space-x-1.5">
+                            {violation.questionNo && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-200 text-gray-700">
+                                Q{violation.questionNo}
+                              </span>
+                            )}
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              severityLevel === 'critical' ? 'bg-red-200 text-red-800' :
+                              severityLevel === 'high' ? 'bg-orange-200 text-orange-800' :
+                              severityLevel === 'medium' ? 'bg-yellow-200 text-yellow-800' :
+                              'bg-blue-200 text-blue-800'
+                            }`}>
+                              {(severityLevel || 'LOW').toUpperCase()}
+                            </span>
+                          </div>
                           {violation.timestamp && (
-                            <p className="text-xs text-red-600 mt-2">
+                            <p className="text-[10px] text-gray-500">
                               <FontAwesomeIcon icon={faClock} className="mr-1" />
                               {formatTimestamp(violation.timestamp)}
                             </p>
                           )}
-                          {!violation.timestamp && (
-                            <p className="text-xs text-orange-600 mt-2">
-                              <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
-                              ⚠️ Timestamp missing - data integrity issue
-                            </p>
-                          )}
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <FontAwesomeIcon icon={faCheckCircle} className="text-green-500 text-5xl mb-4" />
+                <p className="text-gray-600 text-sm">No violations detected</p>
+              </div>
+            )}
+          </div>
+
+          {/* Footer with Pagination */}
+          {selectedViolations.length > VIOLATIONS_PER_PAGE && (
+            <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between bg-gray-50 flex-shrink-0">
+              <div className="text-xs text-gray-600">
+                Showing {((violationsCurrentPage - 1) * VIOLATIONS_PER_PAGE) + 1} to {Math.min(violationsCurrentPage * VIOLATIONS_PER_PAGE, selectedViolations.length)} of {selectedViolations.length}
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setViolationsCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={violationsCurrentPage === 1}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                    violationsCurrentPage === 1
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <FontAwesomeIcon icon={faChevronLeft} className="mr-1" />
+                  Previous
+                </button>
+                
+                <span className="text-xs font-medium text-gray-700">
+                  Page {violationsCurrentPage} of {Math.ceil(selectedViolations.length / VIOLATIONS_PER_PAGE)}
+                </span>
+                
+                <button
+                  onClick={() => setViolationsCurrentPage(prev => Math.min(Math.ceil(selectedViolations.length / VIOLATIONS_PER_PAGE), prev + 1))}
+                  disabled={violationsCurrentPage >= Math.ceil(selectedViolations.length / VIOLATIONS_PER_PAGE)}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                    violationsCurrentPage >= Math.ceil(selectedViolations.length / VIOLATIONS_PER_PAGE)
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Next
+                  <FontAwesomeIcon icon={faChevronRight} className="ml-1" />
+                </button>
               </div>
             </div>
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end">
-              <button onClick={() => { setShowViolationsModal(false); setSelectedViolations([]); }} className="px-6 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-100">
-                Close
-              </button>
+          )}
+
+          {/* Close Footer */}
+          <div className="px-5 py-4 bg-gray-50 border-t border-gray-200 flex justify-end flex-shrink-0 rounded-b-2xl">
+            <button 
+              onClick={() => { setShowViolationsModal(false); setSelectedViolations([]); setSelectedQuestionNo(0); setViolationsCurrentPage(1); }} 
+              className="px-6 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-semibold hover:bg-gray-100 transition-all"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Evidence Modal Overlay - for playing violation videos/images */}
+      {evidenceModal && (
+        <div 
+          className="fixed inset-0 bg-black/80 z-[10000] flex items-center justify-center p-4"
+          onClick={() => setEvidenceModal(null)}
+        >
+          <div 
+            className="relative bg-gray-900 rounded-2xl overflow-hidden max-w-full max-h-full shadow-2xl p-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header with Close and Open in New Tab */}
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-800 rounded-t-xl">
+              <span className="text-xs text-gray-400 font-medium">
+                {evidenceModal.type === 'video' ? '🎬 Video Evidence' : '🖼️ Image Evidence'}
+              </span>
+              <div className="flex items-center space-x-2">
+                <a
+                  href={evidenceModal.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-all flex items-center space-x-1"
+                >
+                  <FontAwesomeIcon icon={faExpand} className="text-[10px]" />
+                  <span>Open in New Tab</span>
+                </a>
+                <button
+                  onClick={() => setEvidenceModal(null)}
+                  className="w-7 h-7 bg-gray-700 hover:bg-gray-600 rounded-lg flex items-center justify-center transition-all"
+                >
+                  <FontAwesomeIcon icon={faTimes} className="text-white text-sm" />
+                </button>
+              </div>
+            </div>
+            
+            {/* Media Content */}
+            <div className="bg-black rounded-b-xl flex items-center justify-center min-h-[200px] min-w-[300px]">
+              {evidenceModal.type === 'video' ? (
+                <video 
+                  key={evidenceModal.url}
+                  controls 
+                  autoPlay
+                  playsInline
+                  className="max-w-[80vw] max-h-[70vh] rounded-b-lg"
+                >
+                  <source src={evidenceModal.url} type="video/webm" />
+                  <source src={evidenceModal.url} type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
+              ) : (
+                <img 
+                  key={evidenceModal.url}
+                  src={evidenceModal.url} 
+                  alt="Evidence" 
+                  className="max-w-[80vw] max-h-[70vh] object-contain rounded-b-lg"
+                  referrerPolicy="no-referrer"
+                />
+              )}
             </div>
           </div>
         </div>

@@ -313,7 +313,7 @@ function LeaderBoard({
             <div className="relative" ref={yearDropdownRef}>
               <button
                 onClick={() => setShowYearDropdown(!showYearDropdown)}
-                className="w-full px-4 py-2.5 bg-white border-2 border-gray-200 rounded-lg text-left hover:border-gray-300 focus:outline-none focus:ring-2 transition-all flex items-center justify-between"
+                className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-left hover:border-gray-300 focus:outline-none focus:ring-2 transition-all flex items-center justify-between"
                 style={{
                   ['--tw-ring-color' as any]: brandTheme.colors.primary + '40'
                 }}
@@ -328,7 +328,7 @@ function LeaderBoard({
               </button>
               
               {showYearDropdown && (
-                <div className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
                   <button
                     onClick={() => {
                       setFilterYear('all');
@@ -372,7 +372,7 @@ function LeaderBoard({
             <div className="relative" ref={classDropdownRef}>
               <button
                 onClick={() => setShowClassDropdown(!showClassDropdown)}
-                className="w-full px-4 py-2.5 bg-white border-2 border-gray-200 rounded-lg text-left hover:border-gray-300 focus:outline-none focus:ring-2 transition-all flex items-center justify-between"
+                className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-left hover:border-gray-300 focus:outline-none focus:ring-2 transition-all flex items-center justify-between"
                 style={{
                   ['--tw-ring-color' as any]: brandTheme.colors.primary + '40'
                 }}
@@ -387,7 +387,7 @@ function LeaderBoard({
               </button>
               
               {showClassDropdown && (
-                <div className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
                   <button
                     onClick={() => {
                       setFilterClass('all');
@@ -429,7 +429,7 @@ function LeaderBoard({
             <div className="relative" ref={subjectDropdownRef}>
               <button
                 onClick={() => setShowSubjectDropdown(!showSubjectDropdown)}
-                className="w-full px-4 py-2.5 bg-white border-2 border-gray-200 rounded-lg text-left hover:border-gray-300 focus:outline-none focus:ring-2 transition-all flex items-center justify-between"
+                className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-left hover:border-gray-300 focus:outline-none focus:ring-2 transition-all flex items-center justify-between"
                 style={{
                   ['--tw-ring-color' as any]: brandTheme.colors.primary + '40'
                 }}
@@ -444,7 +444,7 @@ function LeaderBoard({
               </button>
               
               {showSubjectDropdown && (
-                <div className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto">
                   <button
                     onClick={() => {
                       setFilterSubject('all');

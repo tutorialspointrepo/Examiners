@@ -818,22 +818,22 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
     <>
       {/* Backdrop */}
       <div 
-        className={`fixed inset-0 bg-black/60 backdrop-blur-sm z-[10000] transition-opacity duration-200 ${
+        className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] transition-opacity duration-200 ${
           isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
       />
 
-      {/* Sidebar Panel */}
+      {/* Sidebar Panel - with margin and rounded corners */}
       <div 
-        className={`fixed right-0 top-0 h-full w-full sm:w-[550px] bg-white shadow-2xl z-[10001] transition-transform duration-200 ease-out ${
-          isOpen ? 'translate-x-0' : 'translate-x-full'
+        className={`fixed right-2 top-2 bottom-2 w-[calc(100%-16px)] sm:w-[35rem] bg-white shadow-2xl z-[10001] transition-transform duration-200 ease-out rounded-2xl overflow-hidden ${
+          isOpen ? 'translate-x-0' : 'translate-x-[calc(100%+1rem)]'
         }`}
       >
         <div className="h-full flex flex-col">
           {/* Compact Gradient Header */}
           <div 
-            className="relative overflow-hidden"
+            className="relative overflow-hidden rounded-t-2xl"
             style={{ 
               background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,
               minHeight: '200px'
@@ -847,10 +847,10 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
             {/* Close button */}
             <button
               onClick={onClose}
-              className="absolute top-4 right-4 p-2.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md text-white transition-all hover:rotate-90 duration-300 z-50"
+              className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 backdrop-blur-md text-white transition-all flex items-center justify-center z-50"
               type="button"
             >
-              <X size={20} />
+              <X size={18} />
             </button>
 
             {/* Profile content - more compact */}
@@ -956,7 +956,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
               <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
                 Contact Information
               </h3>
-              <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-white">
+              <div className="border border-dashed border-gray-200 rounded-xl p-4 bg-white">
                 <div className="space-y-4">
                   {/* Full Name */}
                   {isEditing && (
@@ -968,7 +968,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                           type="text"
                           value={formData.fullName}
                           onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                          className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
                           placeholder="Enter full name"
                         />
                       </div>
@@ -986,7 +986,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                             type="email"
                             value={formData.email}
                             onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
                             placeholder="Email address"
                           />
                         </>
@@ -1013,7 +1013,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                             type="tel"
                             value={formData.phone}
                             onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                            className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
                             placeholder="Phone number"
                           />
                         </>
@@ -1032,7 +1032,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
                   Proctoring Photos
                 </h3>
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mb-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-3">
                   <div className="flex items-start space-x-2 text-blue-700">
                     <Shield size={16} className="flex-shrink-0 mt-0.5" />
                     <p className="text-xs">
@@ -1043,7 +1043,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                 
                 <div className="grid grid-cols-3 gap-3">
                     {/* Front Photo */}
-                    <div className="border-2 border-dashed border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition-colors">
+                    <div className="border border-dashed border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition-colors">
                       <div className="text-center">
                         <p className="text-xs font-semibold text-gray-700 mb-2">Front</p>
                         <div className="relative w-full aspect-square mb-2 rounded-lg overflow-hidden bg-gray-100">
@@ -1115,7 +1115,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                     </div>
 
                     {/* Left Photo */}
-                    <div className="border-2 border-dashed border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition-colors">
+                    <div className="border border-dashed border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition-colors">
                       <div className="text-center">
                         <p className="text-xs font-semibold text-gray-700 mb-2">Left</p>
                         <div className="relative w-full aspect-square mb-2 rounded-lg overflow-hidden bg-gray-100">
@@ -1187,7 +1187,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                     </div>
 
                     {/* Right Photo */}
-                    <div className="border-2 border-dashed border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition-colors">
+                    <div className="border border-dashed border-gray-200 rounded-xl p-3 bg-white hover:border-blue-300 transition-colors">
                       <div className="text-center">
                         <p className="text-xs font-semibold text-gray-700 mb-2">Right</p>
                         <div className="relative w-full aspect-square mb-2 rounded-lg overflow-hidden bg-gray-100">
@@ -1267,7 +1267,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
                   Academic Details
                 </h3>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-white">
+                <div className="border border-dashed border-gray-200 rounded-xl p-4 bg-white">
                   <div className="space-y-4">
                     <div className="flex items-start space-x-3">
                       <GraduationCap size={20} className="text-gray-400 flex-shrink-0 mt-0.5" />
@@ -1311,7 +1311,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
                   Teaching Information
                 </h3>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-white">
+                <div className="border border-dashed border-gray-200 rounded-xl p-4 bg-white">
                   <div className="space-y-4">
                     {/* Classes */}
                     <div>
@@ -1367,7 +1367,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
                   Professional Information
                 </h3>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-white">
+                <div className="border border-dashed border-gray-200 rounded-xl p-4 bg-white">
                   <div className="flex items-start space-x-3">
                     <User size={20} className="text-gray-400 flex-shrink-0 mt-0.5" />
                     <div className="flex-1">
@@ -1376,7 +1376,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                         type="text"
                         value={formData.title}
                         onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                        className="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none text-sm"
                         placeholder="e.g., Senior Professor, Head of Department"
                       />
                     </div>
@@ -1390,7 +1390,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
               <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
                 Account Status
               </h3>
-              <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-white">
+              <div className="border border-dashed border-gray-200 rounded-xl p-4 bg-white">
                 <div className="space-y-4">
                   {/* Status */}
                   <div className="flex items-start space-x-3">
@@ -1437,7 +1437,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                 <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
                   Institution
                 </h3>
-                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 bg-white">
+                <div className="border border-dashed border-gray-200 rounded-xl p-4 bg-white">
                   <div className="flex items-start space-x-3">
                     <Building2 size={20} className="text-gray-400 flex-shrink-0 mt-0.5" />
                     <div className="flex-1">
@@ -1479,7 +1479,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                     });
                     setError(null);
                   }}
-                  className="flex-1 px-4 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-all"
+                  className="flex-1 px-4 py-3 rounded-xl border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-all"
                   disabled={isSaving}
                 >
                   Cancel
@@ -1529,7 +1529,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
 
             <div className="p-6">
               {cameraError ? (
-                <div className="bg-red-50 border-2 border-red-200 rounded-xl p-6 text-center">
+                <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
                   <div className="text-red-500 mb-4">
                     <Camera size={48} className="mx-auto opacity-50" />
                   </div>
@@ -1558,7 +1558,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                   <div className="flex items-center justify-center space-x-4">
                     <button
                       onClick={stopCamera}
-                      className="px-6 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-all"
+                      className="px-6 py-3 rounded-xl border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-all"
                     >
                       Cancel
                     </button>

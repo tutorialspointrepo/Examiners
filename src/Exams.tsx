@@ -1021,7 +1021,7 @@ function Exams({
                           ? 'opacity-60 cursor-not-allowed bg-gray-50' // ✅ Visually show submitted exams
                           : 'cursor-pointer ' + (
                             highlightedExamId === exam.id
-                              ? 'shadow-lg border-2'
+                              ? 'shadow-lg border'
                               : selectedExam?.id === exam.id 
                               ? 'shadow-md' 
                               : 'bg-white border-gray-200 hover:shadow-md'
@@ -1232,7 +1232,7 @@ function Exams({
                 {!hasMore && exams.length > 0 && (
                   <div className="flex flex-col items-center justify-center py-8">
                     <div className="relative mb-3">
-                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
                         <div className="text-center">
                           <div className="text-2xl mb-1">📭</div>
                           <div className="w-8 h-0.5 bg-gray-300 rounded"></div>

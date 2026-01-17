@@ -1007,7 +1007,7 @@ function QuestionPaperView({
                 key={question.id} 
                 className={`bg-white rounded-xl p-5 hover:shadow-lg transition-all duration-200 ${
                   expandedQuestionId === question.id 
-                    ? 'border-2 border-orange-400' 
+                    ? 'border border-orange-400' 
                     : 'border border-gray-200'
                 }`}
                 style={expandedQuestionId === question.id ? { borderColor: '#fb923c' } : {}}
@@ -1567,7 +1567,7 @@ function QuestionPaperView({
 
       {/* Question Pool Section */}
       {selectedExam.questionPool && Array.isArray(selectedExam.questionPool) && selectedExam.questionPool.length > 0 && selectedExam.pickRandomCount && selectedExam.pickRandomCount > 0 ? (
-        <div className="bg-white p-5 mb-6 mx-6 rounded-xl border-2 border-purple-200 shadow-md">
+        <div className="bg-white p-5 mb-6 mx-6 rounded-xl border border-purple-200 shadow-md">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-gray-900 flex items-center space-x-2">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center shadow-md">
@@ -1582,7 +1582,7 @@ function QuestionPaperView({
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {/* Total Questions in Pool */}
-            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 p-4 rounded-xl border-2 border-blue-200">
+            <div className="bg-gradient-to-br from-blue-50 to-cyan-50 p-4 rounded-xl border border-blue-200">
               <div className="flex items-center space-x-2 mb-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-500 flex items-center justify-center">
                   <FontAwesomeIcon icon={faCircleQuestion} className="text-white text-sm" />
@@ -1596,7 +1596,7 @@ function QuestionPaperView({
             </div>
 
             {/* Random Count */}
-            <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-xl border-2 border-purple-200">
+            <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-xl border border-purple-200">
               <div className="flex items-center space-x-2 mb-2">
                 <div className="w-8 h-8 rounded-lg bg-purple-500 flex items-center justify-center">
                   <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1612,7 +1612,7 @@ function QuestionPaperView({
             </div>
 
             {/* Marks Per Question */}
-            <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-4 rounded-xl border-2 border-orange-200">
+            <div className="bg-gradient-to-br from-orange-50 to-amber-50 p-4 rounded-xl border border-orange-200">
               <div className="flex items-center space-x-2 mb-2">
                 <div className="w-8 h-8 rounded-lg bg-orange-500 flex items-center justify-center">
                   <FontAwesomeIcon icon={faStar} className="text-white text-sm" />
@@ -1626,7 +1626,7 @@ function QuestionPaperView({
             </div>
 
             {/* Total Marks */}
-            <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl border-2 border-green-200">
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200">
               <div className="flex items-center space-x-2 mb-2">
                 <div className="w-8 h-8 rounded-lg bg-green-500 flex items-center justify-center">
                   <FontAwesomeIcon icon={faAward} className="text-white text-sm" />

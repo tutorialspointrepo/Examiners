@@ -98,8 +98,6 @@ export default function BulkUploadRooms({
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   const downloadTemplate = () => {
     // Create main data sheet
     const mainData = [
@@ -390,28 +388,63 @@ export default function BulkUploadRooms({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <>
+      <style>{`
+        /* Custom scrollbar styling - Hidden */
+        .custom-scrollbar {
+          scrollbar-width: none; /* Firefox */
+          -ms-overflow-style: none; /* IE and Edge */
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+          display: none; /* Chrome, Safari, Opera */
+        }
+      `}</style>
+      
+      <div className={`fixed inset-0 z-[10001] flex items-start justify-start p-2 transition-opacity duration-300 ${
+        isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+      }`}>
+        <div 
+          className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
+          onClick={onClose}
+        />
+        
+        <div 
+          className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[50rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+            isOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header */}
-        <div className="px-6 py-5 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white">
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900">Bulk Upload Rooms</h2>
-            <p className="text-sm text-gray-600 mt-1">Import multiple rooms using Excel file</p>
+        <div 
+          className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+          style={{ background: brandTheme.gradients.primary }}
+        >
+          <div className="flex items-center space-x-3">
+            <div 
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background: 'rgba(255,255,255,0.2)' }}
+            >
+              <FontAwesomeIcon icon={faUpload} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white">Bulk Upload Rooms</h2>
+              <p className="text-xs text-white/80">Import multiple rooms using Excel file</p>
+            </div>
           </div>
           <div className="flex items-center space-x-3">
             <button
               onClick={downloadTemplate}
-              className="flex items-center space-x-2 px-4 py-2.5 rounded-xl font-medium text-white transition-all hover:shadow-lg"
-              style={{ background: brandTheme.gradients.primary }}
+              className="px-3 py-1.5 text-white/90 font-medium text-sm rounded-lg transition-all duration-200 flex items-center space-x-2 hover:bg-white/20"
             >
-              <FontAwesomeIcon icon={faDownload} />
+              <FontAwesomeIcon icon={faDownload} className="text-sm" />
               <span>Download template</span>
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
             >
-              <FontAwesomeIcon icon={faXmark} size="lg" className="text-gray-500" />
+              <FontAwesomeIcon icon={faXmark} className="text-white" />
             </button>
           </div>
         </div>
@@ -435,7 +468,7 @@ export default function BulkUploadRooms({
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
           {/* Step 1: Upload File */}
           {uploadStep === UPLOAD_STEPS.SELECT && (
             <div className="space-y-6">
@@ -446,7 +479,7 @@ export default function BulkUploadRooms({
                 }}
                 onDragLeave={() => setIsDragging(false)}
                 onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all ${
+                className={`border border-dashed rounded-2xl p-12 text-center transition-all ${
                   isDragging
                     ? 'border-blue-500 bg-blue-50 scale-105'
                     : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
@@ -589,7 +622,7 @@ export default function BulkUploadRooms({
                 {visibleRoomsCount < parsedRooms.length && (
                   <button
                     onClick={loadMoreRooms}
-                    className="w-full py-3 border-2 border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all font-medium text-gray-700"
+                    className="w-full py-3 border border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all font-medium text-gray-700"
                   >
                     <FontAwesomeIcon icon={faEye} className="mr-2" />
                     Show More ({parsedRooms.length - visibleRoomsCount} remaining)
@@ -628,7 +661,7 @@ export default function BulkUploadRooms({
           {/* Step 4: Complete */}
           {uploadStep === UPLOAD_STEPS.COMPLETE && (
             <div className="space-y-6">
-              <div className={`border-2 rounded-xl p-6 ${
+              <div className={`border rounded-xl p-6 ${
                 uploadResults.failed === 0 
                   ? 'bg-green-50 border-green-200' 
                   : 'bg-yellow-50 border-yellow-200'
@@ -663,7 +696,7 @@ export default function BulkUploadRooms({
               <div className="flex justify-center space-x-4">
                 <button
                   onClick={reset}
-                  className="px-6 py-3 bg-white border-2 border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all font-medium text-gray-700"
+                  className="px-6 py-3 bg-white border border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all font-medium text-gray-700"
                 >
                   Upload More Rooms
                 </button>
@@ -684,17 +717,17 @@ export default function BulkUploadRooms({
 
         {/* Footer */}
         {uploadStep === UPLOAD_STEPS.PREVIEW && (
-          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+          <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
             <div className="flex justify-between">
               <button
                 onClick={reset}
-                className="px-6 py-3 bg-white border-2 border-gray-300 hover:bg-gray-50 text-gray-700 font-medium rounded-xl transition-all"
+                className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium text-sm rounded-lg transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleUpload}
-                className="px-8 py-3 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg"
+                className="px-5 py-2 text-white font-semibold text-sm rounded-lg transition-all shadow-md hover:shadow-lg"
                 style={{ background: brandTheme.gradients.primary }}
               >
                 Upload {parsedRooms.length} Room{parsedRooms.length !== 1 ? 's' : ''}
@@ -703,6 +736,7 @@ export default function BulkUploadRooms({
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }

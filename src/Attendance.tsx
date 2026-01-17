@@ -674,7 +674,7 @@ const loadPage = async (pageNumber: number) => {
                   key={student.userId}
                   onClick={() => !isExamOver && toggleAttendance(student.userId)}
                   disabled={isPaginating || isExamOver}
-                  className={`p-4 rounded-xl border-2 transition-all text-left ${
+                  className={`p-4 rounded-xl border transition-all text-left ${
                     student.isPresent 
                       ? 'border-green-500 bg-green-50' 
                       : 'border-gray-200 bg-white hover:border-gray-300'
@@ -698,7 +698,7 @@ const loadPage = async (pageNumber: number) => {
                       {student.isPresent ? (
                         <FontAwesomeIcon icon={faCircleCheck} className="text-green-500 flex-shrink-0" />
                       ) : (
-                        <div className="w-6 h-6 rounded-full border-2 border-gray-300 flex-shrink-0"></div>
+                        <div className="w-6 h-6 rounded-full border border-gray-300 flex-shrink-0"></div>
                       )}
                     </div>
 
@@ -757,7 +757,7 @@ const loadPage = async (pageNumber: number) => {
                 <button
                   onClick={goToPreviousPage}
                   disabled={currentPage === 1 || isPaginating}
-                  className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed border-2"
+                  className="flex items-center space-x-2 px-4 py-2 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed border"
                   style={{
                     borderColor: currentPage === 1 || isPaginating ? '#E5E7EB' : brandTheme.colors.primary,
                     color: currentPage === 1 || isPaginating ? '#9CA3AF' : brandTheme.colors.primary,

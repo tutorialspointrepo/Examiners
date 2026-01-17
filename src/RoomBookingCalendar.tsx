@@ -440,7 +440,7 @@ export default function RoomBookingCalendar({
           </div>
           
           {/* Center table indicator */}
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-20 border-2 border-dashed border-gray-400 rounded-lg flex items-center justify-center">
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-32 h-20 border border-dashed border-gray-400 rounded-lg flex items-center justify-center">
             <span className="text-xs text-gray-500 font-semibold">TABLE</span>
           </div>
         </div>
@@ -549,24 +549,24 @@ export default function RoomBookingCalendar({
       return (
         <div className="inline-block mx-auto">
           {/* Column labels at top */}
-          <div className="flex items-center mb-2">
-            <div className="w-6 flex-shrink-0" /> {/* Space for row label - sticky column */}
+          <div className="flex items-center mb-1">
+            <div className="w-5 flex-shrink-0" /> {/* Space for row label - sticky column */}
             <div className="flex justify-center items-center">
               {seatGroups.map((groupSize, groupIndex) => (
-                <div key={groupIndex} className="flex space-x-2">
+                <div key={groupIndex} className="flex gap-1">
                   {Array.from({ length: groupSize }).map((_, seatIndex) => {
                     const globalIndex = seatGroups.slice(0, groupIndex).reduce((sum, g) => sum + g, 0) + seatIndex;
                     return (
                       <div
                         key={seatIndex}
-                        className="w-8 h-6 flex items-center justify-center text-xs font-bold text-gray-600"
+                        className="w-6 h-5 flex items-center justify-center text-[10px] font-bold text-gray-600"
                       >
                         {columnLabels[globalIndex]}
                       </div>
                     );
                   })}
                   {groupIndex < seatGroups.length - 1 && (
-                    <div className="w-4" /> /* Aisle space */
+                    <div className="w-3" /> /* Aisle space */
                   )}
                 </div>
               ))}
@@ -574,49 +574,51 @@ export default function RoomBookingCalendar({
           </div>
           
           {/* Rows with labels and aisles */}
-          {Array.from({ length: rows }).map((_, rowIndex) => (
-            <div key={rowIndex} className="flex items-center">
-              {/* Row number label - sticky on left */}
-              <div className="w-6 flex-shrink-0 h-8 flex items-center justify-center text-xs font-bold text-gray-600 bg-gray-50">
-                {rowIndex + 1}
-              </div>
-              
-              {/* Seat groups with aisles */}
-              <div className="flex justify-center items-center">
-                {seatGroups.map((groupSize, groupIndex) => (
-                  <div key={groupIndex} className="flex space-x-2">
-                    {Array.from({ length: groupSize }).map((_, seatIndex) => {
-                      const globalSeatIndex = seatGroups.slice(0, groupIndex).reduce((sum, g) => sum + g, 0) + seatIndex;
-                      const seatNumber = rowIndex * totalSeatsPerRow + globalSeatIndex + 1;
-                      
-                      if (seatNumber > roomCapacity) {
-                        return <div key={seatIndex} className="w-8 h-8" />;
-                      }
-                      
-                      return (
-                        <div
-                          key={seatIndex}
-                          className="w-8 h-8 rounded flex items-center justify-center text-xs font-semibold"
-                          style={{ 
-                            backgroundColor: primaryColor + '20',
-                            border: `2px solid ${primaryColor}`
-                          }}
-                          title={`${columnLabels[globalSeatIndex]}${rowIndex + 1}`}
-                        >
-                          <FontAwesomeIcon icon={faChair} style={{ color: primaryColor }} />
+          <div className="flex flex-col gap-1">
+            {Array.from({ length: rows }).map((_, rowIndex) => (
+              <div key={rowIndex} className="flex items-center">
+                {/* Row number label - sticky on left */}
+                <div className="w-5 flex-shrink-0 h-6 flex items-center justify-center text-[10px] font-bold text-gray-600 bg-gray-50">
+                  {rowIndex + 1}
+                </div>
+                
+                {/* Seat groups with aisles */}
+                <div className="flex justify-center items-center">
+                  {seatGroups.map((groupSize, groupIndex) => (
+                    <div key={groupIndex} className="flex gap-1">
+                      {Array.from({ length: groupSize }).map((_, seatIndex) => {
+                        const globalSeatIndex = seatGroups.slice(0, groupIndex).reduce((sum, g) => sum + g, 0) + seatIndex;
+                        const seatNumber = rowIndex * totalSeatsPerRow + globalSeatIndex + 1;
+                        
+                        if (seatNumber > roomCapacity) {
+                          return <div key={seatIndex} className="w-6 h-6" />;
+                        }
+                        
+                        return (
+                          <div
+                            key={seatIndex}
+                            className="w-6 h-6 rounded flex items-center justify-center text-[10px] font-semibold"
+                            style={{ 
+                              backgroundColor: primaryColor + '20',
+                              border: `1.5px solid ${primaryColor}`
+                            }}
+                            title={`${columnLabels[globalSeatIndex]}${rowIndex + 1}`}
+                          >
+                            <FontAwesomeIcon icon={faChair} className="text-[10px]" style={{ color: primaryColor }} />
+                          </div>
+                        );
+                      })}
+                      {groupIndex < seatGroups.length - 1 && (
+                        <div className="w-3 h-6 flex items-center justify-center">
+                          <div className="text-[10px] text-gray-400">│</div>
                         </div>
-                      );
-                    })}
-                    {groupIndex < seatGroups.length - 1 && (
-                      <div className="w-4 h-8 flex items-center justify-center">
-                        <div className="text-xs text-gray-400">│</div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       );
     }

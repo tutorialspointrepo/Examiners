@@ -213,7 +213,7 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
                       }
                     }}
                     placeholder="Enter your email"
-                    className="w-full pl-14 pr-4 py-3 border-2 border-gray-300 rounded-xl transition-all outline-none"
+                    className="w-full pl-14 pr-4 py-3 border border-gray-300 rounded-xl transition-all outline-none"
                     onFocus={(e) => {
                       e.target.style.borderColor = brand.colors.primary;
                       e.target.style.boxShadow = `0 0 0 3px ${brand.colors.primary}20`;
@@ -286,7 +286,7 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
                   }}
                   placeholder="• • • •"
                   maxLength={4}
-                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl transition-all outline-none font-bold text-center text-xl tracking-[0.8rem]"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl transition-all outline-none font-bold text-center text-xl tracking-[0.8rem]"
                   onFocus={(e) => {
                     e.target.style.borderColor = brand.colors.primary;
                     e.target.style.boxShadow = `0 0 0 3px ${brand.colors.primary}20`;
@@ -317,7 +317,7 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Enter new password"
-                    className="w-full pl-14 pr-12 py-3 border-2 border-gray-300 rounded-xl transition-all outline-none"
+                    className="w-full pl-14 pr-12 py-3 border border-gray-300 rounded-xl transition-all outline-none"
                     onFocus={(e) => {
                       e.target.style.borderColor = brand.colors.primary;
                       e.target.style.boxShadow = `0 0 0 3px ${brand.colors.primary}20`;
@@ -362,7 +362,7 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
                       }
                     }}
                     placeholder="Re-enter new password"
-                    className="w-full pl-14 pr-12 py-3 border-2 border-gray-300 rounded-xl transition-all outline-none"
+                    className="w-full pl-14 pr-12 py-3 border border-gray-300 rounded-xl transition-all outline-none"
                     onFocus={(e) => {
                       e.target.style.borderColor = brand.colors.primary;
                       e.target.style.boxShadow = `0 0 0 3px ${brand.colors.primary}20`;

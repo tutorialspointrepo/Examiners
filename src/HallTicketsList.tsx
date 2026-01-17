@@ -665,7 +665,7 @@ const HallTicketsList: React.FC<HallTicketListProps> = ({
               {/* Main empty icon container */}
               <div className="relative">
                 {/* Empty ticket illustration */}
-                <div className="inline-flex items-center justify-center w-28 h-28 rounded-2xl shadow-xl mb-4 relative overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 border-2 border-dashed border-gray-300">
+                <div className="inline-flex items-center justify-center w-28 h-28 rounded-2xl shadow-xl mb-4 relative overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 border border-dashed border-gray-300">
                   <FontAwesomeIcon icon={faIdCard} className="text-gray-400 text-4xl" />
                 </div>
                 

@@ -293,8 +293,6 @@ export default function CreateRoomModal({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
     <>
       <style>
@@ -326,13 +324,31 @@ export default function CreateRoomModal({
               transform: scale(1);
             }
           }
+          
+          /* Custom scrollbar styling - Hidden */
+          .custom-scrollbar {
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE and Edge */
+          }
+          
+          .custom-scrollbar::-webkit-scrollbar {
+            display: none; /* Chrome, Safari, Opera */
+          }
         `}
       </style>
       
-      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className={`fixed inset-0 z-[10000] flex items-start justify-start p-2 transition-opacity duration-300 ${
+        isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+      }`}>
         <div 
-          className={`bg-white rounded-2xl shadow-2xl w-full mx-4 overflow-hidden ${view === 'form' ? 'flex flex-col' : ''}`}
-          style={{ maxWidth: view === 'choice' ? '700px' : '1000px', maxHeight: '90vh' }}
+          className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
+          onClick={handleClose}
+        />
+        
+        <div 
+          className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[50rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+            isOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
           onClick={(e) => e.stopPropagation()}
         >
           
@@ -340,41 +356,49 @@ export default function CreateRoomModal({
           {/* Choice View */}
           {view === 'choice' && (
             <>
-              <div className="px-8 py-6 border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-2xl font-bold text-gray-900">Create Room</h2>
-                    <p className="text-sm text-gray-500 mt-1">Choose how you want to add rooms</p>
-                  </div>
-                  <button
-                    onClick={handleClose}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              <div 
+                className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+                style={{ background: brandTheme.gradients.primary }}
+              >
+                <div className="flex items-center space-x-3">
+                  <div 
+                    className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{ background: 'rgba(255,255,255,0.2)' }}
                   >
-                    <FontAwesomeIcon icon={faXmark} size="lg" className="text-gray-500" />
-                  </button>
+                    <FontAwesomeIcon icon={faDoorOpen} className="text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">Create Room</h2>
+                    <p className="text-xs text-white/80">Choose how you want to add rooms</p>
+                  </div>
                 </div>
+                <button
+                  onClick={handleClose}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
+                >
+                  <FontAwesomeIcon icon={faXmark} className="text-white" />
+                </button>
               </div>
 
-              <div className="p-8">
+              <div className="flex-1 overflow-y-auto p-6 custom-scrollbar flex flex-col justify-center">
                 <div className="grid grid-cols-2 gap-6">
                   {/* Bulk Upload Option */}
                   <button
                     onClick={() => {
                       onBulkUpload();
-                      handleClose();
                     }}
-                    className="group relative bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200 hover:border-blue-400 transition-all duration-300 hover:shadow-xl"
+                    className="group relative bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border border-blue-200 hover:border-blue-400 transition-all duration-300 hover:shadow-xl"
                   >
                     <div className="flex flex-col items-center text-center space-y-4">
                       <div
-                        className="w-16 h-16 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300"
+                        className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300"
                         style={{ background: brandTheme.gradients.primary }}
                       >
-                        <FontAwesomeIcon icon={faFileLines} size="2x" className="text-white" />
+                        <FontAwesomeIcon icon={faFileLines} size="lg" className="text-white" />
                       </div>
 
                       <div>
-                        <h3 className="text-lg font-bold text-gray-900 mb-2">Bulk Upload</h3>
+                        <h3 className="text-base font-semibold text-gray-900 mb-2">Bulk Upload</h3>
                         <p className="text-sm text-gray-600">
                           Upload multiple rooms at once using Excel file
                         </p>
@@ -402,18 +426,18 @@ export default function CreateRoomModal({
                   {/* Manual Creation Option */}
                   <button
                     onClick={() => setView('form')}
-                    className="group relative bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6 border-2 border-purple-200 hover:border-purple-400 transition-all duration-300 hover:shadow-xl"
+                    className="group relative bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-6 border border-purple-200 hover:border-purple-400 transition-all duration-300 hover:shadow-xl"
                   >
                     <div className="flex flex-col items-center text-center space-y-4">
                       <div
-                        className="w-16 h-16 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300"
+                        className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300"
                         style={{ background: brandTheme.gradients.secondary || brandTheme.gradients.primary }}
                       >
-                        <FontAwesomeIcon icon={faPlus} size="2x" className="text-white" />
+                        <FontAwesomeIcon icon={faPlus} size="lg" className="text-white" />
                       </div>
 
                       <div>
-                        <h3 className="text-lg font-bold text-gray-900 mb-2">Manual Creation</h3>
+                        <h3 className="text-base font-semibold text-gray-900 mb-2">Manual Creation</h3>
                         <p className="text-sm text-gray-600">
                           Create rooms one by one with full control
                         </p>
@@ -454,37 +478,33 @@ export default function CreateRoomModal({
             <>
               {/* Beautiful Gradient Header */}
               <div 
-                className="px-6 py-5 relative overflow-hidden"
+                className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
                 style={{ background: brandTheme.gradients.primary }}
               >
-                <div className="absolute inset-0 opacity-10">
-                  <div className="absolute top-0 left-0 w-32 h-32 bg-white rounded-full -translate-x-16 -translate-y-16"></div>
-                  <div className="absolute bottom-0 right-0 w-40 h-40 bg-white rounded-full translate-x-20 translate-y-20"></div>
-                </div>
-                
-                <div className="relative flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                      <FontAwesomeIcon icon={faDoorOpen} size="lg" className="text-white" />
-                    </div>
-                    <div>
-                      <h2 className="text-2xl font-bold text-white">{editMode ? 'Edit Room' : 'Create New Room'}</h2>
-                      <p className="text-white/90 text-sm">{editMode ? 'Update the room details below' : 'Fill in the room details below'}</p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleClose}
-                    className="w-10 h-10 rounded-lg bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center transition-colors"
-                    disabled={isSubmitting}
+                <div className="flex items-center space-x-3">
+                  <div 
+                    className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    style={{ background: 'rgba(255,255,255,0.2)' }}
                   >
-                    <FontAwesomeIcon icon={faXmark} className="text-white" />
-                  </button>
+                    <FontAwesomeIcon icon={faDoorOpen} className="text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-white">{editMode ? 'Edit Room' : 'Create New Room'}</h2>
+                    <p className="text-xs text-white/80">{editMode ? 'Update the room details below' : 'Fill in the room details below'}</p>
+                  </div>
                 </div>
+                <button
+                  onClick={handleClose}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
+                  disabled={isSubmitting}
+                >
+                  <FontAwesomeIcon icon={faXmark} className="text-white" />
+                </button>
               </div>
 
               {/* Form Content */}
-              <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 140px)' }}>
-                <div className="px-6 py-6 space-y-6">
+              <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+                <div className="space-y-4">
                   {/* Error Message */}
                   {error && (
                     <div className="bg-red-50 border-l-4 border-red-500 p-4 flex items-start space-x-3 rounded-lg">
@@ -497,7 +517,7 @@ export default function CreateRoomModal({
                   )}
 
                   {/* Basic Information Card */}
-                  <div className="border-2 rounded-xl p-5"
+                  <div className="border rounded-xl p-5"
                     style={{ 
                       background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)',
                       borderColor: brandTheme.colors.primary + '33'
@@ -524,7 +544,7 @@ export default function CreateRoomModal({
                           value={formData.room_name}
                           onChange={(e) => handleInputChange('room_name', e.target.value)}
                           placeholder="e.g., Room 101, Auditorium, Library Hall"
-                          className={`w-full px-4 py-3 border-2 rounded-xl focus:ring-2 focus:border-transparent transition-all ${
+                          className={`w-full px-4 py-3 border rounded-xl focus:ring-2 focus:border-transparent transition-all ${
                             errors.room_name ? 'border-red-500' : 'border-gray-200 focus:border-blue-300'
                           }`}
                         />
@@ -544,7 +564,7 @@ export default function CreateRoomModal({
                         <div className="relative dropdown-container">
                           <button
                             onClick={() => setOpenDropdown(openDropdown === 'roomType' ? null : 'roomType')}
-                            className="w-full px-4 py-3 bg-white border-2 border-gray-200 rounded-xl text-left flex items-center justify-between hover:border-blue-300 transition-all"
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-left flex items-center justify-between hover:border-blue-300 transition-all"
                           >
                             <span className="flex items-center space-x-3">
                               <div className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -561,7 +581,7 @@ export default function CreateRoomModal({
                             <FontAwesomeIcon icon={faChevronDown} className="text-gray-400" />
                           </button>
                           {openDropdown === 'roomType' && (
-                            <div className="absolute top-full left-0 right-0 mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl z-20 max-h-64 overflow-y-auto">
+                            <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl z-20 max-h-64 overflow-y-auto">
                               {roomTypes.map((type) => (
                                 <button
                                   key={type.value}
@@ -599,7 +619,7 @@ export default function CreateRoomModal({
                             value={formData.room_address}
                             onChange={(e) => handleInputChange('room_address', e.target.value)}
                             placeholder="e.g., D Block, 2nd Floor, Campus"
-                            className={`w-full pl-11 pr-4 py-3 border-2 rounded-xl focus:ring-2 focus:border-transparent transition-all ${
+                            className={`w-full pl-11 pr-4 py-3 border rounded-xl focus:ring-2 focus:border-transparent transition-all ${
                               errors.room_address ? 'border-red-500' : 'border-gray-200 focus:border-blue-300'
                             }`}
                           />
@@ -627,7 +647,7 @@ export default function CreateRoomModal({
                               value={formData.room_capacity || ''}
                               onChange={(e) => handleInputChange('room_capacity', parseInt(e.target.value))}
                               placeholder="e.g., 50"
-                              className={`w-full pl-11 pr-4 py-3 border-2 rounded-xl focus:ring-2 focus:border-transparent transition-all ${
+                              className={`w-full pl-11 pr-4 py-3 border rounded-xl focus:ring-2 focus:border-transparent transition-all ${
                                 errors.room_capacity ? 'border-red-500' : 'border-gray-200 focus:border-blue-300'
                               }`}
                             />
@@ -653,7 +673,7 @@ export default function CreateRoomModal({
                               value={formData.sitting_matrix}
                               onChange={(e) => handleInputChange('sitting_matrix', e.target.value)}
                               placeholder="e.g., 5x2+4+2"
-                              className={`w-full pl-11 pr-4 py-3 border-2 rounded-xl focus:ring-2 focus:border-transparent transition-all ${
+                              className={`w-full pl-11 pr-4 py-3 border rounded-xl focus:ring-2 focus:border-transparent transition-all ${
                                 errors.sitting_matrix ? 'border-red-500' : 'border-gray-200 focus:border-blue-300'
                               }`}
                             />
@@ -670,7 +690,7 @@ export default function CreateRoomModal({
                   </div>
 
                   {/* Room In-charge Card */}
-                  <div className="border-2 rounded-xl p-5"
+                  <div className="border rounded-xl p-5"
                     style={{ 
                       background: 'linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%)',
                       borderColor: '#fdcb6e' + '33'
@@ -703,7 +723,7 @@ export default function CreateRoomModal({
                           )}
 
                           {/* Checkbox list of users */}
-                          <div className="max-h-64 overflow-y-auto border-2 border-gray-200 rounded-xl divide-y divide-gray-100">
+                          <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-xl divide-y divide-gray-100">
                             {users.length === 0 ? (
                               <div className="p-4 text-center text-gray-500 text-sm">
                                 No users available
@@ -802,7 +822,7 @@ export default function CreateRoomModal({
               </div>
 
               {/* Beautiful Action Buttons */}
-              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <div className="px-5 py-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
                 <div className="flex items-center justify-end space-x-3">
                   {editMode ? (
                     // Edit mode: Show Cancel and Update Room buttons side by side
@@ -811,7 +831,7 @@ export default function CreateRoomModal({
                         onClick={() => {
                           onClose();
                         }}
-                        className="px-6 py-3 border-2 border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-100 transition-all"
+                        className="px-4 py-2 border border-gray-300 rounded-lg font-medium text-sm text-gray-700 hover:bg-gray-100 transition-all"
                         disabled={isSubmitting}
                       >
                         Cancel
@@ -819,17 +839,17 @@ export default function CreateRoomModal({
                       <button
                         onClick={handleSubmit}
                         disabled={isSubmitting}
-                        className="px-8 py-3 rounded-xl font-semibold text-white transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                        className="px-5 py-2 rounded-lg font-semibold text-sm text-white transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                         style={{ background: brandTheme.gradients.primary }}
                       >
                         {isSubmitting ? (
                           <>
-                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin"></div>
                             <span>Updating...</span>
                           </>
                         ) : (
                           <>
-                            <FontAwesomeIcon icon={faSave} />
+                            <FontAwesomeIcon icon={faSave} className="text-xs" />
                             <span>Update Room</span>
                           </>
                         )}
@@ -840,7 +860,7 @@ export default function CreateRoomModal({
                     <>
                       <button
                         onClick={() => setView('choice')}
-                        className="px-6 py-3 border-2 border-gray-300 rounded-xl font-medium text-gray-700 hover:bg-gray-100 transition-all mr-auto"
+                        className="px-4 py-2 border border-gray-300 rounded-lg font-medium text-sm text-gray-700 hover:bg-gray-100 transition-all"
                         disabled={isSubmitting}
                       >
                         ← Back
@@ -848,17 +868,17 @@ export default function CreateRoomModal({
                       <button
                         onClick={handleSubmit}
                         disabled={isSubmitting}
-                        className="px-8 py-3 rounded-xl font-semibold text-white transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                        className="px-5 py-2 rounded-lg font-semibold text-sm text-white transition-all hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                         style={{ background: brandTheme.gradients.primary }}
                       >
                         {isSubmitting ? (
                           <>
-                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            <div className="w-4 h-4 border border-white border-t-transparent rounded-full animate-spin"></div>
                             <span>Creating...</span>
                           </>
                         ) : (
                           <>
-                            <FontAwesomeIcon icon={faSave} />
+                            <FontAwesomeIcon icon={faSave} className="text-xs" />
                             <span>Create Room</span>
                           </>
                         )}

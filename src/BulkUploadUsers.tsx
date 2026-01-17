@@ -88,8 +88,6 @@ export default function BulkUploadUsers({
     }
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   // Download Excel template
   const downloadTemplate = () => {
     // Sample data rows
@@ -557,34 +555,64 @@ export default function BulkUploadUsers({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60000]" onClick={handleClose}>
-      <div 
-        className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <>
+      <style>{`
+        /* Custom scrollbar styling - Hidden */
+        .custom-scrollbar {
+          scrollbar-width: none; /* Firefox */
+          -ms-overflow-style: none; /* IE and Edge */
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+          display: none; /* Chrome, Safari, Opera */
+        }
+      `}</style>
+      
+      <div className={`fixed inset-0 z-[60000] flex items-start justify-start p-2 transition-opacity duration-300 ${
+        isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+      }`}>
+        <div 
+          className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
+          onClick={handleClose}
+        />
+        
+        <div 
+          className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[50rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+            isOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
         {/* Header */}
-        <div className="px-8 py-6 border-b border-gray-200"
-          style={{ background: brandTheme.gradients.card }}>
-          <div className="flex items-center justify-between">
+        <div 
+          className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+          style={{ background: brandTheme.gradients.primary }}
+        >
+          <div className="flex items-center space-x-3">
+            <div 
+              className="w-10 h-10 rounded-xl flex items-center justify-center"
+              style={{ background: 'rgba(255,255,255,0.2)' }}
+            >
+              <Upload size={18} className="text-white" />
+            </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">Bulk Upload Users</h2>
-              <p className="text-sm text-gray-500 mt-1">Import multiple users using Excel file</p>
+              <h2 className="text-lg font-bold text-white">Bulk Upload Users</h2>
+              <p className="text-xs text-white/80">Import multiple users using Excel file</p>
             </div>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={downloadTemplate}
-                className="px-3 py-2 text-gray-700 font-medium rounded-lg transition-all duration-200 flex items-center space-x-2 hover:bg-gray-50"
-              >
-                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: brandTheme.colors.primary }}>
-                  <Download size={16} className="text-white" />
-                </div>
-                <span>Download template</span>
-              </button>
-              <button onClick={handleClose} className="p-2 hover:bg-white rounded-lg transition-colors">
-                <X size={24} className="text-gray-500" />
-              </button>
-            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={downloadTemplate}
+              className="px-3 py-1.5 text-white/90 font-medium text-sm rounded-lg transition-all duration-200 flex items-center space-x-2 hover:bg-white/20"
+            >
+              <Download size={14} className="text-white" />
+              <span>Download template</span>
+            </button>
+            <button
+              onClick={handleClose}
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
+            >
+              <X size={16} className="text-white" />
+            </button>
           </div>
         </div>
 
@@ -643,7 +671,7 @@ export default function BulkUploadUsers({
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
           {uploadStep === 'select' && (
             <div className="space-y-6">
               {/* Drag and Drop Upload Area */}
@@ -652,7 +680,7 @@ export default function BulkUploadUsers({
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`relative border-2 border-dashed rounded-xl transition-all duration-300 ${
+                className={`relative border border-dashed rounded-xl transition-all duration-300 ${
                   isDragging
                     ? 'scale-[1.02]'
                     : 'border-gray-300 hover:border-gray-400'
@@ -678,7 +706,7 @@ export default function BulkUploadUsers({
                   </div>
 
                   {/* Text */}
-                  <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  <h3 className="text-base font-semibold text-gray-900 mb-2">
                     {isDragging ? 'Drop your file here' : 'Upload Excel File'}
                   </h3>
                   <p className="text-sm text-gray-600 mb-6">
@@ -843,7 +871,7 @@ export default function BulkUploadUsers({
           {uploadStep === 'uploading' && (
             <div className="flex flex-col items-center justify-center py-12">
               <Loader2 size={64} className="animate-spin mb-6" style={{ color: brandTheme.colors.primary }} />
-              <h3 className="text-xl font-bold text-gray-900 mb-2">Uploading Users...</h3>
+              <h3 className="text-base font-semibold text-gray-900 mb-2">Uploading Users...</h3>
               <p className="text-gray-600 mb-6">Please wait while we process your users</p>
               <div className="w-full max-w-md">
                 <div className="bg-gray-200 rounded-full h-4 overflow-hidden">
@@ -1021,7 +1049,7 @@ export default function BulkUploadUsers({
 
               <button
                 onClick={handleClose}
-                className="w-full px-4 py-3 text-white font-medium rounded-lg transition-all shadow-md hover:shadow-lg"
+                className="w-full px-4 py-3 text-white font-medium text-sm rounded-lg transition-all shadow-md hover:shadow-lg"
                 style={{ background: brandTheme.gradients.primary }}
               >
                 Done
@@ -1030,6 +1058,7 @@ export default function BulkUploadUsers({
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

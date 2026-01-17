@@ -1948,7 +1948,7 @@ export default function QuestionList({
                 className={`p-2 rounded-lg transition-all ${
                   currentPage === 1
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
+                    : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
                 }`}
                 style={currentPage > 1 ? {
                   borderColor: brandTheme.colors.primary + '40'
@@ -1986,7 +1986,7 @@ export default function QuestionList({
                           className={`min-w-[40px] h-10 rounded-lg font-semibold transition-all ${
                             currentPage === page
                               ? 'text-white shadow-md'
-                              : 'text-gray-700 bg-white border-2 border-gray-200 hover:border-gray-300 hover:shadow-md'
+                              : 'text-gray-700 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md'
                           }`}
                           style={currentPage === page ? {
                             background: brandTheme.gradients.primary
@@ -2010,7 +2010,7 @@ export default function QuestionList({
                 className={`p-2 rounded-lg transition-all ${
                   currentPage >= Math.ceil(totalQuestions / questionsPerPage)
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
+                    : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
                 }`}
                 style={currentPage < Math.ceil(totalQuestions / questionsPerPage) ? {
                   borderColor: brandTheme.colors.primary + '40'
@@ -2090,7 +2090,7 @@ export default function QuestionList({
                       <button
                         key={idx}
                         onClick={() => setCurrentImageIndex(idx)}
-                        className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                        className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border transition-all ${
                           idx === currentImageIndex
                             ? 'border-white scale-110 shadow-lg'
                             : 'border-white/30 hover:border-white/60 opacity-70 hover:opacity-100'

@@ -53,7 +53,7 @@ const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
 
   return (
     <div 
-      className={`fixed top-4 right-4 z-50 flex items-center space-x-3 px-4 py-3 rounded-lg border-2 shadow-lg animate-[slideIn_0.3s_ease-out] ${bgColors[type]}`}
+      className={`fixed top-4 right-4 z-50 flex items-center space-x-3 px-4 py-3 rounded-lg border shadow-lg animate-[slideIn_0.3s_ease-out] ${bgColors[type]}`}
       style={{ minWidth: '300px', maxWidth: '500px' }}
     >
       <FontAwesomeIcon 
@@ -124,7 +124,7 @@ const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({ isOpen, onCon
         <div className="flex items-center justify-end space-x-3 p-6 bg-gray-50 rounded-b-2xl">
           <button
             onClick={onCancel}
-            className="px-6 py-2.5 rounded-lg font-semibold text-gray-700 bg-white border-2 border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200"
+            className="px-6 py-2.5 rounded-lg font-semibold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300 transition-all duration-200"
           >
             Cancel
           </button>
@@ -873,7 +873,7 @@ export default function ReportDetail({
       <div className="flex-1 overflow-y-auto">
         <div className="p-6 space-y-6">
           {/* Generate New Report Section */}
-          <div className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="p-6 border-b border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
@@ -978,7 +978,7 @@ export default function ReportDetail({
           </div>
 
           {/* Generated Reports List */}
-          <div className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden">
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="p-6 border-b border-gray-200 bg-gray-50">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
@@ -1219,7 +1219,7 @@ export default function ReportDetail({
                       <button
                         onClick={loadMoreReports}
                         disabled={loadingMore}
-                        className="inline-flex items-center space-x-2 px-6 py-3 bg-white border-2 border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="inline-flex items-center space-x-2 px-6 py-3 bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {loadingMore ? (
                           <>

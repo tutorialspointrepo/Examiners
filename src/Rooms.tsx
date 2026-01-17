@@ -377,7 +377,7 @@ export default function Rooms({
             <div
               key={room.room_id}
               onClick={() => onRoomSelect?.(room)}
-              className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+              className={`p-4 rounded-xl border cursor-pointer transition-all ${
                 externalSelectedRoom?.room_id === room.room_id
                   ? 'shadow-md'
                   : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'

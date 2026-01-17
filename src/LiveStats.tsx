@@ -40,7 +40,9 @@ import {
   faRightFromBracket,
   faRightToBracket,
   faHourglassHalf,
-  faHashtag
+  faHashtag,
+  faPlay,
+  faImage
 } from '@fortawesome/sharp-light-svg-icons';
 
 import { firebaseService } from './services/firebase_service';
@@ -65,6 +67,7 @@ interface Violation {
   severity?: 'low' | 'medium' | 'high' | 'critical';
   questionNo?: number;
   questionId?: string;
+  proofUrl?: string;
 }
 
 interface Question {
@@ -187,6 +190,8 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
   const [selectedStudentForViolations, setSelectedStudentForViolations] = useState<Student | null>(null);
   const [selectedStudentForActivities, setSelectedStudentForActivities] = useState<Student | null>(null);
   const [violationsCurrentPage, setViolationsCurrentPage] = useState(1);
+  const [activitiesCurrentPage, setActivitiesCurrentPage] = useState(1);
+  const [evidenceModal, setEvidenceModal] = useState<{ url: string; type: 'video' | 'image' } | null>(null);
   const hasLoggedView = useRef(false); // Track if we've logged this view
   
   // Override refresh interval to 60 seconds
@@ -772,7 +777,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
           status = 'not_started' as StudentStatus;
         }
         
-        // ✅ Collect violations from response level (not global level)
+        // ✅ Collect violations from response level
         const allViolations: any[] = [];
         if (attempt?.responses && Array.isArray(attempt.responses)) {
           attempt.responses.forEach((response: any) => {
@@ -1481,24 +1486,6 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
               return sum + maxDurationInGroup;
             }, 0);
             
-            console.log('📡 SMART DISCONNECTION GROUPING:', {
-              totalRecords: allDisconnections.length,
-              uniqueIncidents: disconnectionGroups.length,
-              groupDetails: disconnectionGroups.map((group, idx) => ({
-                incident: idx + 1,
-                affectedUsers: group.userIds.length,
-                startTime: group.timestamps[0].toLocaleTimeString(),
-                durations: group.durations,
-                maxDuration: Math.max(...group.durations),
-                userIds: group.userIds
-              })),
-              totalDurationCalculation: {
-                oldWay: allDisconnections.reduce((sum, d) => sum + d.duration, 0),
-                newWay: totalDuration,
-                savedSeconds: allDisconnections.reduce((sum, d) => sum + d.duration, 0) - totalDuration
-              }
-            });
-            
             return {
               incidents: disconnectionGroups.length,
               totalDuration: totalDuration
@@ -1506,21 +1493,6 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
           };
           
           const { incidents: totalDisconnections, totalDuration } = calculateSmartMetrics();
-          
-          // ✅ DEBUG: Log connectivity summary calculation
-          console.log('📡 CONNECTIVITY SUMMARY BOX CALCULATION:', {
-            presentStudentsCount: presentStudents.length,
-            usersWithDisconnections,
-            totalDisconnections,
-            totalDuration,
-            affectedPercentage,
-            sampleStudents: presentStudents.slice(0, 3).map(s => ({
-              userId: s.userId,
-              fullName: s.fullName,
-              totalDisconnections: s.totalDisconnections,
-              totalInternetUnavailableDuration: s.totalInternetUnavailableDuration
-            }))
-          });
           
           // Format duration
           const formatDuration = (seconds: number): string => {
@@ -1607,7 +1579,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
         
         {/* Exam Expired Warning Banner */}
         {examEndTime && currentTime > examEndTime && (
-          <div className="bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-300 rounded-xl p-4 mb-4 animate-pulse">
+          <div className="bg-gradient-to-r from-orange-50 to-red-50 border border-orange-300 rounded-xl p-4 mb-4 animate-pulse">
             <div className="flex items-start space-x-3">
               <div className="flex-shrink-0">
                 <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center">
@@ -1635,7 +1607,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                 </p>
                 {activeCount > 0 && !hasAutoSubmittedRef.current && (
                   <div className="flex items-center space-x-2 text-xs font-medium text-orange-900">
-                    <div className="w-4 h-4 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+                    <div className="w-4 h-4 border border-orange-500 border-t-transparent rounded-full animate-spin"></div>
                     <span>Processing {activeCount} active attempt(s)...</span>
                   </div>
                 )}
@@ -1977,7 +1949,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                                   ? 'text-orange-800'
                                   : 'text-yellow-800'
                               }`}>
-                                Latest Violations (Showing 4 of {student.violations.length})
+                                Latest Violations (Showing {Math.min(4, student.violations.length)} of {student.violations.length})
                               </span>
                             </div>
                             {/* Only show "view more" button if there are more than 4 violations */}
@@ -2020,6 +1992,28 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                                   <span className="truncate">{getViolationLabel(violation.type)}</span>
                                 </span>
                                 <div className="flex items-center space-x-2 ml-2">
+                                  {/* Play button for violations with proofUrl */}
+                                  {violation.proofUrl && (
+                                    <button
+                                      onClick={() => {
+                                        const url = violation.proofUrl!;
+                                        const isVideo = url.includes('.webm') || url.includes('.mp4') || url.includes('.mov');
+                                        setEvidenceModal({ url, type: isVideo ? 'video' : 'image' });
+                                      }}
+                                      className={`w-5 h-5 rounded flex items-center justify-center transition-all ${
+                                        violation.severity === 'critical' ? 'bg-red-200 hover:bg-red-300 text-red-700' :
+                                        violation.severity === 'high' ? 'bg-orange-200 hover:bg-orange-300 text-orange-700' :
+                                        violation.severity === 'medium' ? 'bg-yellow-200 hover:bg-yellow-300 text-yellow-700' :
+                                        'bg-blue-200 hover:bg-blue-300 text-blue-700'
+                                      }`}
+                                      title="View evidence"
+                                    >
+                                      <FontAwesomeIcon 
+                                        icon={(violation.proofUrl.includes('.webm') || violation.proofUrl.includes('.mp4')) ? faPlay : faImage} 
+                                        className="text-[8px]" 
+                                      />
+                                    </button>
+                                  )}
                                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                                     SEVERITY_BADGE_CLASSES[violation.severity as SeverityLevel] || 
                                     SEVERITY_BADGE_CLASSES[SEVERITY_LEVELS.LOW]
@@ -2055,376 +2049,567 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
       </div>
       </div>
       
-      {/* Violations Modal */}
-      {selectedStudentForViolations && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <div className="flex-1">
-                <div className="flex items-center space-x-3 mb-3">
-                  <FontAwesomeIcon icon={faTriangleExclamation} className="text-yellow-600 text-2xl" />
-                  <div>
-                    <h3 className="text-xl font-bold text-gray-900">
-                      Violations {selectedStudentForViolations.violations && selectedStudentForViolations.violations.length > 0 && 
-                        `(${selectedStudentForViolations.violations.length})`}
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      {selectedStudentForViolations.fullName} • Roll No: {selectedStudentForViolations.studentRoll}
-                      {selectedStudentForViolations.activityLogId && (
-                        <span className="text-gray-500 font-mono text-sm ml-2">
-                          • Attempt: <span className="font-semibold text-blue-600">{selectedStudentForViolations.activityLogId}</span>
-                        </span>
-                      )}
-                      {selectedStudentForViolations.violations && selectedStudentForViolations.violations.length > VIOLATIONS_PER_PAGE && (
-                        <span className="ml-2 text-xs font-semibold text-blue-600">
-                          Page {violationsCurrentPage} of {Math.ceil(selectedStudentForViolations.violations.length / VIOLATIONS_PER_PAGE)}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Violation Summary by Severity */}
-                {selectedStudentForViolations.violations && selectedStudentForViolations.violations.length > 0 && (
-                  <div className="flex items-center space-x-3 flex-wrap">
-                    {(() => {
-                      const summary = {
-                        critical: selectedStudentForViolations.violations.filter(v => v.severity === 'critical').length,
-                        high: selectedStudentForViolations.violations.filter(v => v.severity === 'high').length,
-                        medium: selectedStudentForViolations.violations.filter(v => v.severity === 'medium').length,
-                        low: selectedStudentForViolations.violations.filter(v => v.severity === 'low').length
-                      };
-                      
-                      return (
-                        <>
-                          {summary.critical > 0 && (
-                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-300">
-                              🔴 Critical: {summary.critical}
-                            </span>
-                          )}
-                          {summary.high > 0 && (
-                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-800 border border-orange-300">
-                              🟠 High: {summary.high}
-                            </span>
-                          )}
-                          {summary.medium > 0 && (
-                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-300">
-                              🟡 Medium: {summary.medium}
-                            </span>
-                          )}
-                          {summary.low > 0 && (
-                            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300">
-                              🔵 Low: {summary.low}
-                            </span>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </div>
+      {/* Violations Modal - Slide from Right */}
+      <div className={`fixed inset-0 z-[9999] flex items-start justify-end p-2 transition-opacity duration-300 ${
+        selectedStudentForViolations ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+      }`}>
+        <div 
+          className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
+          onClick={() => {
+            setSelectedStudentForViolations(null);
+            setViolationsCurrentPage(1);
+          }}
+        />
+        
+        <div 
+          className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[35rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+            selectedStudentForViolations ? 'translate-x-0' : 'translate-x-full'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header with Gradient */}
+          <div 
+            className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+            style={{ 
+              background: 'linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'
+            }}
+          >
+            <div className="flex items-center space-x-3">
+              <div 
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(255,255,255,0.2)' }}
+              >
+                <FontAwesomeIcon icon={faTriangleExclamation} className="text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">
+                  Violations {selectedStudentForViolations?.violations && selectedStudentForViolations.violations.length > 0 && 
+                    `(${selectedStudentForViolations.violations.length})`}
+                </h2>
+                <p className="text-xs text-white/80">
+                  {selectedStudentForViolations?.fullName} • Roll No: {selectedStudentForViolations?.studentRoll}
+                </p>
+                {selectedStudentForViolations?.activityLogId && (
+                  <p className="text-xs text-white/80 font-mono">
+                    Attempt Id: <span className="font-semibold">{selectedStudentForViolations.activityLogId}</span>
+                  </p>
                 )}
               </div>
-              
-              <button
-                onClick={() => {
-                  setSelectedStudentForViolations(null);
-                  setViolationsCurrentPage(1);
-                }}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors ml-4"
-              >
-                <FontAwesomeIcon icon={faXmark} className="text-gray-600 text-xl" />
-              </button>
             </div>
-            
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto max-h-[calc(80vh-200px)] hide-scrollbar">
-              {selectedStudentForViolations.violations && selectedStudentForViolations.violations.length > 0 ? (
-                <>
-                  <div className="space-y-3">
-                    {/* Sort by timestamp descending (latest first) and show current page */}
-                    {(() => {
-                      const sortedViolations = selectedStudentForViolations.violations
-                        .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-                      const startIdx = (violationsCurrentPage - 1) * VIOLATIONS_PER_PAGE;
-                      const endIdx = startIdx + VIOLATIONS_PER_PAGE;
-                      const pageViolations = sortedViolations.slice(startIdx, endIdx);
-                      
-                      return pageViolations.map((violation, idx) => (
-                        <div 
-                          key={startIdx + idx}
-                          className={`p-4 rounded-lg border ${
-                            violation.severity === 'critical' 
-                              ? 'bg-red-50 border-red-300' 
-                              : violation.severity === 'high'
-                              ? 'bg-orange-50 border-orange-300'
-                              : violation.severity === 'medium'
-                              ? 'bg-yellow-50 border-yellow-300'
-                              : 'bg-blue-50 border-blue-300'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-start space-x-3 flex-1">
+            <button
+              onClick={() => {
+                setSelectedStudentForViolations(null);
+                setViolationsCurrentPage(1);
+              }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
+            >
+              <FontAwesomeIcon icon={faXmark} className="text-white" />
+            </button>
+          </div>
+          
+          {/* Violation Summary Badges */}
+          {selectedStudentForViolations?.violations && selectedStudentForViolations.violations.length > 0 && (
+            <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center space-x-2 flex-wrap gap-y-2">
+              {(() => {
+                const summary = {
+                  critical: selectedStudentForViolations.violations.filter(v => v.severity === 'critical').length,
+                  high: selectedStudentForViolations.violations.filter(v => v.severity === 'high').length,
+                  medium: selectedStudentForViolations.violations.filter(v => v.severity === 'medium').length,
+                  low: selectedStudentForViolations.violations.filter(v => v.severity === 'low').length
+                };
+                
+                return (
+                  <>
+                    {summary.critical > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-800 border border-red-300 flex items-center space-x-1.5">
+                        <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                        <span>Critical: {summary.critical}</span>
+                      </span>
+                    )}
+                    {summary.high > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-orange-100 text-orange-800 border border-orange-300 flex items-center space-x-1.5">
+                        <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                        <span>High: {summary.high}</span>
+                      </span>
+                    )}
+                    {summary.medium > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 border border-yellow-300 flex items-center space-x-1.5">
+                        <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                        <span>Medium: {summary.medium}</span>
+                      </span>
+                    )}
+                    {summary.low > 0 && (
+                      <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800 border border-blue-300 flex items-center space-x-1.5">
+                        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                        <span>Low: {summary.low}</span>
+                      </span>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+          
+          {/* Modal Body */}
+          <div className="flex-1 overflow-y-auto p-5 hide-scrollbar">
+            {selectedStudentForViolations?.violations && selectedStudentForViolations.violations.length > 0 ? (
+              <>
+                <div className="space-y-2">
+                  {/* Sort by timestamp descending (latest first) and show current page */}
+                  {(() => {
+                    const sortedViolations = selectedStudentForViolations.violations
+                      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+                    const startIdx = (violationsCurrentPage - 1) * VIOLATIONS_PER_PAGE;
+                    const endIdx = startIdx + VIOLATIONS_PER_PAGE;
+                    const pageViolations = sortedViolations.slice(startIdx, endIdx);
+                    
+                    return pageViolations.map((violation, idx) => (
+                      <div 
+                        key={startIdx + idx}
+                        className={`p-3 rounded-xl border ${
+                          violation.severity === 'critical' 
+                            ? 'bg-red-50 border-red-200' 
+                            : violation.severity === 'high'
+                            ? 'bg-orange-50 border-orange-200'
+                            : violation.severity === 'medium'
+                            ? 'bg-yellow-50 border-yellow-200'
+                            : 'bg-blue-50 border-blue-200'
+                        }`}
+                      >
+                        {/* Top Row: Icon, Title, Play Button */}
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2.5">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                              violation.severity === 'critical' ? 'bg-red-100' :
+                              violation.severity === 'high' ? 'bg-orange-100' :
+                              violation.severity === 'medium' ? 'bg-yellow-100' :
+                              'bg-blue-100'
+                            }`}>
                               <FontAwesomeIcon 
                                 icon={getViolationIcon(violation.type)} 
-                                className={`text-xl mt-1 ${
+                                className={`text-sm ${
                                   violation.severity === 'critical' ? 'text-red-600' :
                                   violation.severity === 'high' ? 'text-orange-600' :
                                   violation.severity === 'medium' ? 'text-yellow-600' :
                                   'text-blue-600'
                                 }`}
                               />
-                              <div className="flex-1">
-                                <div className="flex items-center space-x-2 mb-1">
-                                  <h4 className="font-semibold text-gray-900">{getViolationLabel(violation.type)}</h4>
-                                  {violation.questionNo && (
-                                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-200 text-gray-700">
-                                      Q{violation.questionNo}
-                                    </span>
-                                  )}
-                                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                                    SEVERITY_BADGE_CLASSES[violation.severity as SeverityLevel] || 
-                                    SEVERITY_BADGE_CLASSES[SEVERITY_LEVELS.LOW]
-                                  }`}>
-                                    {violation.severity?.toUpperCase()}
-                                  </span>
-                                </div>
-                                {violation.details && (
-                                  <p className="text-sm text-gray-600 mb-2">{violation.details}</p>
-                                )}
-                                <p className="text-xs text-gray-500">
-                                  <FontAwesomeIcon icon={faClock} className="mr-1" />
-                                  {(() => {
-                                      const timestamp = violation.timestamp && typeof violation.timestamp === 'object' && 'toDate' in violation.timestamp
-                                      ? (violation.timestamp as any).toDate()
-                                      : violation.timestamp instanceof Date
-                                      ? violation.timestamp 
-                                      : new Date(violation.timestamp);
-                                    return formatISTTime(timestamp);
-                                  })()}
-                                </p>
-                              </div>
                             </div>
+                            <h4 className="text-sm font-semibold text-gray-900">{getViolationLabel(violation.type)}</h4>
                           </div>
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                  
-                  {/* Pagination Controls */}
-                  {selectedStudentForViolations.violations.length > VIOLATIONS_PER_PAGE && (
-                    <div className="mt-6 flex items-center justify-between border-t pt-4">
-                      <div className="text-sm text-gray-600">
-                        Showing {((violationsCurrentPage - 1) * VIOLATIONS_PER_PAGE) + 1} to {Math.min(violationsCurrentPage * VIOLATIONS_PER_PAGE, selectedStudentForViolations.violations.length)} of {selectedStudentForViolations.violations.length} violations
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => setViolationsCurrentPage(prev => Math.max(1, prev - 1))}
-                          disabled={violationsCurrentPage === 1}
-                          className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
-                            violationsCurrentPage === 1
-                              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          <FontAwesomeIcon icon={faChevronLeft} className="mr-1" />
-                          Previous
-                        </button>
-                        
-                        <span className="text-sm font-medium text-gray-700">
-                          Page {violationsCurrentPage} of {Math.ceil(selectedStudentForViolations.violations.length / VIOLATIONS_PER_PAGE)}
-                        </span>
-                        
-                        <button
-                          onClick={() => setViolationsCurrentPage(prev => Math.min(Math.ceil((selectedStudentForViolations.violations?.length || 0) / VIOLATIONS_PER_PAGE), prev + 1))}
-                          disabled={violationsCurrentPage >= Math.ceil(selectedStudentForViolations.violations.length / VIOLATIONS_PER_PAGE)}
-                          className={`px-3 py-1.5 rounded-lg border text-sm font-medium ${
-                            violationsCurrentPage >= Math.ceil(selectedStudentForViolations.violations.length / VIOLATIONS_PER_PAGE)
-                              ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-                              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                          }`}
-                        >
-                          Next
-                          <FontAwesomeIcon icon={faChevronRight} className="ml-1" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="text-center py-12">
-                  <FontAwesomeIcon icon={faCircleCheck} className="text-green-500 text-5xl mb-4" />
-                  <p className="text-gray-600">No violations detected</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Activities Modal */}
-      {selectedStudentForActivities && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <div className="flex items-center space-x-3">
-                <FontAwesomeIcon icon={faClockRotateLeft} className="text-blue-600 text-2xl" />
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">
-                    Activity Log {selectedStudentForActivities.activities && selectedStudentForActivities.activities.length > 0 && 
-                      `(${selectedStudentForActivities.activities.length})`}
-                  </h3>
-                  <p className="text-sm text-gray-600">
-                    {selectedStudentForActivities.fullName} • Roll No: {selectedStudentForActivities.studentRoll}
-                    {selectedStudentForActivities.activityLogId && (
-                      <span className="text-gray-500 font-mono text-sm ml-2">
-                        • Attempt: <span className="font-semibold text-blue-600">{selectedStudentForActivities.activityLogId}</span>
-                      </span>
-                    )}
-                    <span className="ml-2 text-xs font-semibold text-blue-600">Latest first</span>
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedStudentForActivities(null)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <FontAwesomeIcon icon={faXmark} className="text-gray-600 text-xl" />
-              </button>
-            </div>
-            
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto max-h-[calc(80vh-140px)] hide-scrollbar">
-              {selectedStudentForActivities.activities && selectedStudentForActivities.activities.length > 0 ? (
-                <div className="space-y-2">
-                  {/* Sort by timestamp descending (latest first) */}
-                  {selectedStudentForActivities.activities
-                    .slice()
-                    .sort((a, b) => {
-                      const timeA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : 
-                                    a.timestamp instanceof Date ? a.timestamp.getTime() : 
-                                    new Date(a.timestamp).getTime();
-                      const timeB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : 
-                                    b.timestamp instanceof Date ? b.timestamp.getTime() : 
-                                    new Date(b.timestamp).getTime();
-                      return timeB - timeA; // Descending order (latest first)
-                    })
-                    .map((activity, idx, sortedActivities) => {
-                    const nextActivity = sortedActivities[idx + 1];
-                    const isExit = activity.type === 'exit';
-                    const isEntry = activity.type === 'enter';
-                    
-                    // Check if this entry has a different IP than the initial IP
-                    const initialIP = selectedStudentForActivities.initialIP || '';
-                    const currentIP = activity.ipAddress || '';
-                    const isDifferentIP = isEntry && currentIP && initialIP && currentIP !== initialIP;
-                    
-                    // Safely convert activity timestamp
-                    const activityTimestamp = activity.timestamp?.toDate 
-                      ? activity.timestamp.toDate() 
-                      : activity.timestamp instanceof Date 
-                      ? activity.timestamp 
-                      : new Date(activity.timestamp);
-                    
-                    // Calculate duration out if this is an exit and next is an enter
-                    let durationOut = null;
-                    if (isExit && nextActivity && nextActivity.type === 'enter') {
-                      const nextTimestamp = nextActivity.timestamp?.toDate 
-                        ? nextActivity.timestamp.toDate() 
-                        : nextActivity.timestamp instanceof Date 
-                        ? nextActivity.timestamp 
-                        : new Date(nextActivity.timestamp);
-                      
-                      const exitTime = activityTimestamp.getTime();
-                      const reentryTime = nextTimestamp.getTime();
-                      const durationMs = reentryTime - exitTime;
-                      const minutes = Math.floor(durationMs / 60000);
-                      const seconds = Math.floor((durationMs % 60000) / 1000);
-                      durationOut = `${minutes}m ${seconds}s`;
-                    }
-                    
-                    return (
-                      <div key={idx}>
-                        <div 
-                          className={`p-4 rounded-lg border-2 ${
-                            isDifferentIP 
-                              ? 'bg-red-50 border-red-500' 
-                              : isEntry 
-                              ? 'bg-green-50 border-green-300' 
-                              : 'bg-red-50 border-red-300'
-                          }`}
-                        >
-                          {/* Warning badge for different IP */}
-                          {isDifferentIP && (
-                            <div className="mb-2 flex items-center space-x-2 px-3 py-1.5 bg-red-100 border border-red-400 rounded-lg">
-                              <FontAwesomeIcon icon={faTriangleExclamation} className="text-red-600 text-sm" />
-                              <span className="text-xs font-bold text-red-800">
-                                ⚠️ DIFFERENT IP ADDRESS - Possible security violation
-                              </span>
-                            </div>
-                          )}
                           
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3">
+                          {/* Play/View Evidence Button */}
+                          {(violation as any).proofUrl && (
+                            <button 
+                              onClick={() => {
+                                const url = (violation as any).proofUrl;
+                                console.log('🎬 Opening evidence URL:', url);
+                                const isVideo = url.includes('.webm') || url.includes('.mp4') || url.includes('.mov');
+                                setEvidenceModal({ url, type: isVideo ? 'video' : 'image' });
+                              }}
+                              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                                violation.severity === 'critical' ? 'bg-red-200 hover:bg-red-300 text-red-700' :
+                                violation.severity === 'high' ? 'bg-orange-200 hover:bg-orange-300 text-orange-700' :
+                                violation.severity === 'medium' ? 'bg-yellow-200 hover:bg-yellow-300 text-yellow-700' :
+                                'bg-blue-200 hover:bg-blue-300 text-blue-700'
+                              }`}
+                              title="View evidence"
+                            >
                               <FontAwesomeIcon 
-                                icon={isEntry ? faRightToBracket : faRightFromBracket} 
-                                className={`text-xl ${isEntry ? 'text-green-600' : 'text-red-600'}`}
+                                icon={((violation as any).proofUrl.includes('.webm') || (violation as any).proofUrl.includes('.mp4')) ? faPlay : faImage} 
+                                className="text-xs" 
                               />
-                              <div>
-                                <h4 className={`font-semibold ${
-                                  isEntry ? 'text-green-900' : 'text-red-900'
-                                }`}>
-                                  {isEntry ? 'Entered Exam' : 'Exited Exam'}
-                                </h4>
-                                <p className="text-xs text-gray-600">
-                                  {activityTimestamp.toLocaleString('en-US', { 
-                                    dateStyle: 'short',
-                                    timeStyle: 'medium'
-                                  })}
-                                </p>
-                              </div>
-                            </div>
-                            {activity.ipAddress && (
-                              <div className="text-right">
-                                <p className="text-xs text-gray-500">IP Address</p>
-                                <p className={`text-xs font-mono font-semibold ${
-                                  isDifferentIP ? 'text-red-700' : 'text-gray-700'
-                                }`}>
-                                  {activity.ipAddress}
-                                  {isDifferentIP && (
-                                    <span className="ml-1 text-red-600">⚠️</span>
-                                  )}
-                                </p>
-                                {isDifferentIP && (
-                                  <p className="text-[10px] text-red-600 font-semibold mt-0.5">
-                                    Initial: {initialIP}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-                          </div>
+                            </button>
+                          )}
                         </div>
                         
-                        {/* Duration Out Display */}
-                        {durationOut && (
-                          <div className="flex items-center justify-center py-2">
-                            <div className="flex items-center space-x-2 px-3 py-1 bg-orange-100 border border-orange-300 rounded-full">
-                              <FontAwesomeIcon icon={faHourglassHalf} className="text-orange-600 text-sm" />
-                              <span className="text-xs font-semibold text-orange-800">
-                                Out for {durationOut}
+                        {/* Details Text */}
+                        {violation.details && (
+                          <p className="text-xs text-gray-600 mb-2 pl-[42px]">{violation.details}</p>
+                        )}
+                        
+                        {/* Bottom Row: Badges and Timestamp */}
+                        <div className="flex items-center justify-between pl-[42px]">
+                          <div className="flex items-center space-x-1.5">
+                            {violation.questionNo && (
+                              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-200 text-gray-700">
+                                Q{violation.questionNo}
                               </span>
-                            </div>
+                            )}
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              SEVERITY_BADGE_CLASSES[violation.severity as SeverityLevel] || 
+                              SEVERITY_BADGE_CLASSES[SEVERITY_LEVELS.LOW]
+                            }`}>
+                              {violation.severity?.toUpperCase()}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-gray-500">
+                            <FontAwesomeIcon icon={faClock} className="mr-1" />
+                            {(() => {
+                                const timestamp = violation.timestamp && typeof violation.timestamp === 'object' && 'toDate' in violation.timestamp
+                                ? (violation.timestamp as any).toDate()
+                                : violation.timestamp instanceof Date
+                                ? violation.timestamp 
+                                : new Date(violation.timestamp);
+                              return formatISTTime(timestamp);
+                            })()}
+                          </p>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </>
+            ) : (
+              <div className="text-center py-12">
+                <FontAwesomeIcon icon={faCircleCheck} className="text-green-500 text-5xl mb-4" />
+                <p className="text-gray-600 text-sm">No violations detected</p>
+              </div>
+            )}
+          </div>
+          
+          {/* Footer with Pagination */}
+          {selectedStudentForViolations?.violations && selectedStudentForViolations.violations.length > VIOLATIONS_PER_PAGE && (
+            <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between bg-gray-50 flex-shrink-0">
+              <div className="text-xs text-gray-600">
+                Showing {((violationsCurrentPage - 1) * VIOLATIONS_PER_PAGE) + 1} to {Math.min(violationsCurrentPage * VIOLATIONS_PER_PAGE, selectedStudentForViolations.violations.length)} of {selectedStudentForViolations.violations.length}
+              </div>
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setViolationsCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={violationsCurrentPage === 1}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                    violationsCurrentPage === 1
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <FontAwesomeIcon icon={faChevronLeft} className="mr-1" />
+                  Previous
+                </button>
+                
+                <span className="text-xs font-medium text-gray-700">
+                  Page {violationsCurrentPage} of {Math.ceil(selectedStudentForViolations.violations.length / VIOLATIONS_PER_PAGE)}
+                </span>
+                
+                <button
+                  onClick={() => setViolationsCurrentPage(prev => Math.min(Math.ceil((selectedStudentForViolations.violations?.length || 0) / VIOLATIONS_PER_PAGE), prev + 1))}
+                  disabled={violationsCurrentPage >= Math.ceil(selectedStudentForViolations.violations.length / VIOLATIONS_PER_PAGE)}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                    violationsCurrentPage >= Math.ceil(selectedStudentForViolations.violations.length / VIOLATIONS_PER_PAGE)
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Next
+                  <FontAwesomeIcon icon={faChevronRight} className="ml-1" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Activities Modal - Slide from Right */}
+      <div className={`fixed inset-0 z-[9999] flex items-start justify-end p-2 transition-opacity duration-300 ${
+        selectedStudentForActivities ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+      }`}>
+        {/* Backdrop */}
+        <div 
+          className={`absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity duration-300 ${
+            selectedStudentForActivities ? 'opacity-100' : 'opacity-0'
+          }`}
+          onClick={() => {
+            setSelectedStudentForActivities(null);
+            setActivitiesCurrentPage(1);
+          }}
+        />
+        
+        {/* Modal Panel */}
+        <div 
+          className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[35rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+            selectedStudentForActivities ? 'translate-x-0' : 'translate-x-full'
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header with Blue Gradient */}
+          <div 
+            className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+            style={{ 
+              background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)'
+            }}
+          >
+            <div className="flex items-center space-x-3">
+              <div 
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(255,255,255,0.2)' }}
+              >
+                <FontAwesomeIcon icon={faClockRotateLeft} className="text-white" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">
+                  Activity Log {selectedStudentForActivities?.activities && selectedStudentForActivities.activities.length > 0 && 
+                    `(${selectedStudentForActivities.activities.length})`}
+                </h2>
+                <p className="text-xs text-white/80">
+                  {selectedStudentForActivities?.fullName} • Roll No: {selectedStudentForActivities?.studentRoll}
+                </p>
+                {selectedStudentForActivities?.activityLogId && (
+                  <p className="text-xs text-white/80 font-mono">
+                    Attempt Id: <span className="font-semibold">{selectedStudentForActivities.activityLogId}</span>
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setSelectedStudentForActivities(null);
+                setActivitiesCurrentPage(1);
+              }}
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
+            >
+              <FontAwesomeIcon icon={faXmark} className="text-white" />
+            </button>
+          </div>
+
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 hide-scrollbar">
+            {selectedStudentForActivities?.activities && selectedStudentForActivities.activities.length > 0 ? (
+              (() => {
+                const ACTIVITIES_PER_PAGE = 25;
+                const sortedActivities = selectedStudentForActivities.activities
+                  .slice()
+                  .sort((a, b) => {
+                    const timeA = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : 
+                                  a.timestamp instanceof Date ? a.timestamp.getTime() : 
+                                  new Date(a.timestamp).getTime();
+                    const timeB = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : 
+                                  b.timestamp instanceof Date ? b.timestamp.getTime() : 
+                                  new Date(b.timestamp).getTime();
+                    return timeB - timeA; // Descending order (latest first)
+                  });
+                
+                const startIdx = (activitiesCurrentPage - 1) * ACTIVITIES_PER_PAGE;
+                const pageActivities = sortedActivities.slice(startIdx, startIdx + ACTIVITIES_PER_PAGE);
+                
+                return pageActivities.map((activity, idx) => {
+                  const globalIdx = startIdx + idx;
+                  const nextActivity = sortedActivities[globalIdx + 1];
+                  const isExit = activity.type === 'exit';
+                  const isEntry = activity.type === 'enter';
+                  
+                  // Check if this entry has a different IP than the initial IP
+                  const initialIP = selectedStudentForActivities.initialIP || '';
+                  const currentIP = activity.ipAddress || '';
+                  const isDifferentIP = isEntry && currentIP && initialIP && currentIP !== initialIP;
+                  
+                  // Safely convert activity timestamp
+                  const activityTimestamp = activity.timestamp?.toDate 
+                    ? activity.timestamp.toDate() 
+                    : activity.timestamp instanceof Date 
+                    ? activity.timestamp 
+                    : new Date(activity.timestamp);
+                  
+                  // Calculate duration out if this is an exit and next is an enter
+                  let durationOut = null;
+                  if (isExit && nextActivity && nextActivity.type === 'enter') {
+                    const nextTimestamp = nextActivity.timestamp?.toDate 
+                      ? nextActivity.timestamp.toDate() 
+                      : nextActivity.timestamp instanceof Date 
+                      ? nextActivity.timestamp 
+                      : new Date(nextActivity.timestamp);
+                    
+                    const exitTime = activityTimestamp.getTime();
+                    const reentryTime = nextTimestamp.getTime();
+                    const durationMs = reentryTime - exitTime;
+                    const minutes = Math.floor(durationMs / 60000);
+                    const seconds = Math.floor((durationMs % 60000) / 1000);
+                    durationOut = `${minutes}m ${seconds}s`;
+                  }
+                  
+                  return (
+                    <div key={idx}>
+                      <div 
+                        className={`p-3 rounded-xl border ${
+                          isDifferentIP 
+                            ? 'bg-red-50 border-red-400' 
+                            : isEntry 
+                            ? 'bg-green-50 border-green-200' 
+                            : 'bg-red-50 border-red-200'
+                        }`}
+                      >
+                        {/* Warning badge for different IP */}
+                        {isDifferentIP && (
+                          <div className="mb-2 flex items-center space-x-2 px-2 py-1 bg-red-100 border border-red-300 rounded-lg">
+                            <FontAwesomeIcon icon={faTriangleExclamation} className="text-red-600 text-xs" />
+                            <span className="text-[10px] font-bold text-red-800">
+                              DIFFERENT IP - Security violation
+                            </span>
                           </div>
                         )}
+                        
+                        {/* Top Row: Icon, Title, IP */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2.5">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                              isEntry ? 'bg-green-100' : 'bg-red-100'
+                            }`}>
+                              <FontAwesomeIcon 
+                                icon={isEntry ? faRightToBracket : faRightFromBracket} 
+                                className={`text-sm ${isEntry ? 'text-green-600' : 'text-red-600'}`}
+                              />
+                            </div>
+                            <div>
+                              <h4 className={`text-sm font-semibold ${
+                                isEntry ? 'text-green-900' : 'text-red-900'
+                              }`}>
+                                {isEntry ? 'Entered Exam' : 'Exited Exam'}
+                              </h4>
+                              <p className="text-[10px] text-gray-500">
+                                <FontAwesomeIcon icon={faClock} className="mr-1" />
+                                {activityTimestamp.toLocaleString('en-US', { 
+                                  dateStyle: 'short',
+                                  timeStyle: 'medium'
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                          {activity.ipAddress && (
+                            <div className="text-right">
+                              <p className="text-[10px] text-gray-500">IP Address</p>
+                              <p className={`text-xs font-mono font-semibold ${
+                                isDifferentIP ? 'text-red-700' : 'text-gray-700'
+                              }`}>
+                                {activity.ipAddress}
+                              </p>
+                              {isDifferentIP && (
+                                <p className="text-[9px] text-red-600 font-semibold">
+                                  Initial: {initialIP}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    );
-                  })}
-                </div>
+                      
+                      {/* Duration Out Display */}
+                      {durationOut && (
+                        <div className="flex items-center justify-center py-1.5">
+                          <div className="flex items-center space-x-1.5 px-2.5 py-0.5 bg-orange-100 border border-orange-200 rounded-full">
+                            <FontAwesomeIcon icon={faHourglassHalf} className="text-orange-600 text-[10px]" />
+                            <span className="text-[10px] font-semibold text-orange-800">
+                              Out for {durationOut}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                });
+              })()
+            ) : (
+              <div className="text-center py-12">
+                <FontAwesomeIcon icon={faClockRotateLeft} className="text-gray-300 text-5xl mb-4" />
+                <p className="text-gray-600">No activity recorded yet</p>
+              </div>
+            )}
+          </div>
+
+          {/* Footer with Pagination */}
+          {selectedStudentForActivities?.activities && selectedStudentForActivities.activities.length > 25 && (
+            <div className="border-t border-gray-200 px-4 py-3 flex-shrink-0 bg-gray-50 rounded-b-2xl">
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setActivitiesCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={activitiesCurrentPage === 1}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                    activitiesCurrentPage === 1
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <FontAwesomeIcon icon={faChevronLeft} className="mr-1" />
+                  Previous
+                </button>
+                
+                <span className="text-xs font-medium text-gray-700">
+                  Page {activitiesCurrentPage} of {Math.ceil(selectedStudentForActivities.activities.length / 25)}
+                </span>
+                
+                <button
+                  onClick={() => setActivitiesCurrentPage(prev => Math.min(Math.ceil((selectedStudentForActivities.activities?.length || 0) / 25), prev + 1))}
+                  disabled={activitiesCurrentPage >= Math.ceil(selectedStudentForActivities.activities.length / 25)}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                    activitiesCurrentPage >= Math.ceil(selectedStudentForActivities.activities.length / 25)
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Next
+                  <FontAwesomeIcon icon={faChevronRight} className="ml-1" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Evidence Modal Overlay - Global (appears on top of everything) */}
+      {evidenceModal && (
+        <div 
+          className="fixed inset-0 bg-black/80 z-[10000] flex items-center justify-center p-4"
+          onClick={() => setEvidenceModal(null)}
+        >
+          <div 
+            className="relative bg-gray-900 rounded-2xl overflow-hidden max-w-full max-h-full shadow-2xl p-1"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header with Close and Open in New Tab */}
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-800 rounded-t-xl">
+              <span className="text-xs text-gray-400 font-medium">
+                {evidenceModal.type === 'video' ? '🎬 Video Evidence' : '🖼️ Image Evidence'}
+              </span>
+              <div className="flex items-center space-x-2">
+                <a
+                  href={evidenceModal.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-all flex items-center space-x-1"
+                >
+                  <FontAwesomeIcon icon={faExpand} className="text-[10px]" />
+                  <span>Open in New Tab</span>
+                </a>
+                <button
+                  onClick={() => setEvidenceModal(null)}
+                  className="w-7 h-7 bg-gray-700 hover:bg-gray-600 rounded-lg flex items-center justify-center transition-all"
+                >
+                  <FontAwesomeIcon icon={faXmark} className="text-white text-sm" />
+                </button>
+              </div>
+            </div>
+            
+            {/* Media Content */}
+            <div className="bg-black rounded-b-xl flex items-center justify-center min-h-[200px] min-w-[300px]">
+              {evidenceModal.type === 'video' ? (
+                <video 
+                  key={evidenceModal.url}
+                  controls 
+                  autoPlay
+                  playsInline
+                  className="max-w-[80vw] max-h-[70vh] rounded-b-lg"
+                >
+                  <source src={evidenceModal.url} type="video/webm" />
+                  <source src={evidenceModal.url} type="video/mp4" />
+                  Your browser does not support the video tag.
+                </video>
               ) : (
-                <div className="text-center py-12">
-                  <FontAwesomeIcon icon={faClockRotateLeft} className="text-gray-300 text-5xl mb-4" />
-                  <p className="text-gray-600">No activity recorded yet</p>
-                </div>
+                <img 
+                  key={evidenceModal.url}
+                  src={evidenceModal.url} 
+                  alt="Evidence" 
+                  className="max-w-[80vw] max-h-[70vh] object-contain rounded-b-lg"
+                  referrerPolicy="no-referrer"
+                />
               )}
             </div>
           </div>

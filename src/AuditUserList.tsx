@@ -266,7 +266,7 @@ const AuditUserList: React.FC<AuditUserListProps> = ({ collegeId, onUserSelect, 
             {filteredUsers.map((user) => (
               <div
                 key={user.userId}
-                className={`flex items-center p-4 rounded-lg cursor-pointer transition-all border-2 ${
+                className={`flex items-center p-4 rounded-lg cursor-pointer transition-all border ${
                   selectedUser?.userId === user.userId
                     ? 'border-blue-500 bg-blue-50 shadow-md'
                     : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'

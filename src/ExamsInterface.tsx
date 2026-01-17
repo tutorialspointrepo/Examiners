@@ -50,6 +50,7 @@ import {
   VIOLATION_TYPES,
   VIOLATION_SEVERITY_MAP,
   VIOLATION_DESCRIPTIONS,
+  MAX_VIOLATIONS,
   type QuestionType,
   type ComplexityLevel,
   type SeverityLevel,
@@ -1079,31 +1080,45 @@ useEffect(() => {
       
       // Upload proof if exists
       let proofUrl: string | undefined = undefined;
-      if (queuedViolation.proofBlob) {
+      const proofBlob = queuedViolation.videoProof || queuedViolation.frameProof;
+      if (proofBlob) {
         try {
+          console.log(`📤 Uploading proof for ${queuedViolation.type}...`);
           const uploadResult = await firebaseService.uploadViolationProof(
             queuedViolation.attemptId,
-            queuedViolation.proofBlob
+            proofBlob
           );
-          proofUrl = uploadResult.url;
+          
+          if (uploadResult.success) {
+            proofUrl = uploadResult.url;
+            console.log(`✅ Proof uploaded successfully for ${queuedViolation.type}`);
+          } else {
+            console.warn(`⚠️ Failed to upload proof for ${queuedViolation.type}, will save violation without proof`);
+          }
         } catch (uploadError) {
           console.error('❌ Failed to upload queued violation proof:', uploadError);
+          // Continue without proof rather than failing the entire violation sync
         }
       }
 
-      // Create violation object
+      // ✅ FIX: Use current question info from ref (not hardcoded 0)
+      const currentQuestionId = currentQuestionRef.current.id;
+      const currentQuestionNo = currentQuestionRef.current.no;
+
+      // Create violation object with proof URL if available
       const violation: Violation = {
         type: queuedViolation.type as ViolationType,
         timestamp: new Date(queuedViolation.timestamp).toISOString(),
         details: queuedViolation.details,
         severity: VIOLATION_SEVERITY_MAP[queuedViolation.type as ViolationType] || 'medium',
-        questionNo: 0, // Unknown for offline violations
-        questionId: '', // Unknown for offline violations
+        questionNo: currentQuestionNo,
+        questionId: currentQuestionId,
+        proofUrl, // Add proof URL if uploaded
       };
 
       // Add to Firebase
       await addViolationToAttempt(violation);
-      console.log(`✅ Successfully synced queued violation: ${queuedViolation.type}`);
+      console.log(`✅ Successfully synced queued violation: ${queuedViolation.type} on Q${currentQuestionNo}${proofUrl ? ' (with proof)' : ' (no proof)'}`);
       return true;
     } catch (error) {
       console.error('❌ Failed to sync queued violation:', error);
@@ -1177,8 +1192,7 @@ useEffect(() => {
   const VIOLATIONS_TRACKING_KEY = `exam_violations_${examId}_${userId}`;
   const [violationsLoaded, setViolationsLoaded] = useState(false);
   
-  // ✅ NEW: Pending violations queue for batched sync
-  const [pendingViolationsSync, setPendingViolationsSync] = useState<Violation[]>([]);
+  // ✅ REMOVED: pendingViolationsSync - now handled by violationQueueService
   
   const [isMonitoringActive, setIsMonitoringActive] = useState(false);
   const [fullscreenRequested, setFullscreenRequested] = useState(false);
@@ -1186,6 +1200,7 @@ useEffect(() => {
   const [faceMonitoringEnabled, setFaceMonitoringEnabled] = useState(false);
   const [currentIpAddress, setCurrentIpAddress] = useState<string>('');
   const violationTimeouts = useRef<Map<ViolationType, number>>(new Map());
+  const lastViolationLoggedTime = useRef<Map<ViolationType, number>>(new Map()); // ✅ Track cooldown per violation type
   const violationLimitReached = useRef<boolean>(false);
   const entryTimeRef = useRef<Date>(new Date());
   const tabId = useRef<string>(`exam_tab_${Date.now()}`);
@@ -1797,6 +1812,12 @@ useEffect(() => {
   const [fillBlanksAnswers, setFillBlanksAnswers] = useState<string[]>([]);
   const [jumbledAnswers, setJumbledAnswers] = useState<string[]>([]);
   
+  // ✅ FIX: Refs to access latest answer values in auto-save interval (prevents stale closure)
+  const mcqAnswerRef = useRef<string[]>([]);
+  const descriptiveAnswerRef = useRef<string>('');
+  const fillBlanksAnswersRef = useRef<string[]>([]);
+  const jumbledAnswersRef = useRef<string[]>([]);
+  
   // 🔥 Track initial code length for stable editor key (doesn't change while typing)
   const initialCodeLengthRef = useRef<Record<string, number>>({});
   
@@ -1821,6 +1842,12 @@ useEffect(() => {
       setImageCarouselOpen(true);
     }
   };
+
+  // ✅ FIX: Keep answer refs in sync with state (for auto-save interval)
+  useEffect(() => { mcqAnswerRef.current = mcqAnswer; }, [mcqAnswer]);
+  useEffect(() => { descriptiveAnswerRef.current = descriptiveAnswer; }, [descriptiveAnswer]);
+  useEffect(() => { fillBlanksAnswersRef.current = fillBlanksAnswers; }, [fillBlanksAnswers]);
+  useEffect(() => { jumbledAnswersRef.current = jumbledAnswers; }, [jumbledAnswers]);
 
   // ✅ NEW: Calculate visible test cases for UI display
   const visibleTestCases = currentQuestion?.testCases 
@@ -2154,8 +2181,19 @@ useEffect(() => {
     requestFullscreenOnce();
     
     // Also listen for interactions in case immediate request fails
-    const handleInteraction = () => {
-      requestFullscreenOnce();
+    const handleInteraction = (e: Event) => {
+      // ✅ Only request if not already in fullscreen
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      
+      if (!isCurrentlyFullscreen && !fullscreenRequested) {
+        console.log('🖱️ User interaction detected - requesting fullscreen...');
+        requestFullscreenOnce();
+      }
     };
     
     // ✅ USE CAPTURE: Pass { capture: true } or true as the 3rd argument
@@ -2625,19 +2663,14 @@ useEffect(() => {
   setIsMonitoringActive(false);
   
   // ==================== SYNC PENDING VIOLATIONS ====================
-  // ✅ Force sync any pending violations before submission
-  if (pendingViolationsSync.length > 0 && attempt?.attemptId) {
-    console.log(`🔄 Syncing ${pendingViolationsSync.length} final violations before submission...`);
-    try {
-      for (const violation of pendingViolationsSync) {
-        await addViolationToAttempt(violation);
-      }
-      setPendingViolationsSync([]); // Clear after successful sync
-      console.log(`✅ Successfully synced all pending violations`);
-    } catch (error) {
-      console.error('❌ Failed to sync some violations before submission:', error);
-      // Continue with submission anyway - violations are saved in localStorage
-    }
+  // ✅ Force sync any pending violations before submission via violationQueueService
+  console.log('🔄 Force syncing all pending violations before submission...');
+  try {
+    await violationQueueService.forceSyncNow();
+    console.log('✅ Successfully synced all pending violations');
+  } catch (error) {
+    console.error('❌ Failed to sync some violations before submission:', error);
+    // Continue with submission anyway - violations are saved in localStorage
   }
   
   // ==================== ENHANCED SUBMISSION ====================
@@ -2658,7 +2691,8 @@ useEffect(() => {
         
         // Clear ALL offline data after successful submission
         offlineQueueService.clearBackup(attempt.attemptId);
-        offlineQueueService.clearQueue(); // ✅ Clear the queue too!
+        offlineQueueService.clearQueue(); // ✅ Clear the answer queue
+        violationQueueService.clearQueue(); // ✅ Clear the violation queue
         
         // Clear localStorage backups
         try {
@@ -2763,7 +2797,6 @@ useEffect(() => {
   violations, 
   syncStatus, 
   questionViolations, 
-  pendingViolationsSync, // ✅ NEW: Include pending violations
   examId, 
   userId, 
   saveCurrentAnswer, 
@@ -3118,8 +3151,9 @@ useEffect(() => {
   const autoSaveInterval = setInterval(() => {
     const triggerTime = new Date().toLocaleTimeString();
     
-    // Get the current question at the time of auto-save (not from closure)
-    const currentQ = questions[currentQuestionIndex];
+    // ✅ FIX: Get current question index from REF (not stale closure)
+    const currentIdx = currentQuestionRef.current.index;
+    const currentQ = questions[currentIdx];
     if (!currentQ) {
       console.log('⏭️ Auto-save skipped - no current question');
       return;
@@ -3127,24 +3161,25 @@ useEffect(() => {
     
     console.log('\n⏰ AUTO-SAVE TRIGGER at', triggerTime, '- Question', currentQ.questionNo);
     
-    // Get current answer based on question type
+    // ✅ FIX: Get current answer from REFS (not stale closure values)
     let currentAnswer: any;
     
     switch (currentQ.type) {
       case QUESTION_TYPES.CODE:
-        currentAnswer = editorRef.current ? editorRef.current.getValue() : codeInput;
+        // editorRef is already a ref, so this is safe
+        currentAnswer = editorRef.current ? editorRef.current.getValue() : '';
         break;
       case QUESTION_TYPES.MCQ:
-        currentAnswer = mcqAnswer;
+        currentAnswer = mcqAnswerRef.current; // ✅ USE REF
         break;
       case QUESTION_TYPES.DESCRIPTIVE:
-        currentAnswer = descriptiveAnswer;
+        currentAnswer = descriptiveAnswerRef.current; // ✅ USE REF
         break;
       case QUESTION_TYPES.FITB:
-        currentAnswer = fillBlanksAnswers;
+        currentAnswer = fillBlanksAnswersRef.current; // ✅ USE REF
         break;
       case QUESTION_TYPES.JUMBLED:
-        currentAnswer = jumbledAnswers;
+        currentAnswer = jumbledAnswersRef.current; // ✅ USE REF
         break;
     }
     
@@ -3174,8 +3209,8 @@ useEffect(() => {
       return;
     }
     
-    // 🔥 DIRTY FLAG CHECK: Compare with last saved answer
-    const lastSaved = lastSavedAnswers[currentQ.id];
+    // 🔥 DIRTY FLAG CHECK: Compare with last saved answer (use answersRef for latest)
+    const lastSaved = answersRef.current[currentQ.id];
     const currentSerialized = JSON.stringify(currentAnswer);
     const lastSavedSerialized = JSON.stringify(lastSaved);
     
@@ -3764,48 +3799,69 @@ const formatTime = (seconds: number) => {
    * Log a violation with debouncing to avoid duplicate entries
    */
   /**
-   * Log a violation with debouncing and optional evidence upload
+   * Log a violation for UI tracking only
+   * 
+   * ✅ NOTE: Evidence upload and Firebase sync is handled by ExamMonitor via violationQueueService
+   * This function only updates local UI state (violations array, localStorage)
+   * 
    * Supports overloaded signatures:
    * 1. logViolation(type, details, debounceMs) - Legacy/Internal calls
-   * 2. logViolation(type, details, proofBlob, debounceMs) - New ExamMonitor calls
+   * 2. logViolation(type, details, proofBlob, debounceMs) - ExamMonitor calls (proofBlob ignored)
    */
   const logViolation = useCallback(async (
     type: ViolationType,
     details?: string,
-    arg3?: Blob | number, // Can be proof blob OR debounce time
+    arg3?: Blob | number, // Can be proof blob OR debounce time (blob ignored - handled by ExamMonitor)
     arg4?: number         // Optional debounce time if blob is present
   ) => {
-    // 1. Parse Overloaded Arguments
-    let proofBlob: Blob | undefined = undefined;
+    console.log(`📝 logViolation called: ${type} (UI update only)`);
+    
+    // 1. Parse debounce time from overloaded arguments
     let debounceMs = 1000;
 
     if (typeof arg3 === 'number') {
       debounceMs = arg3; // Legacy call: logViolation('WINDOW_BLUR', 'msg', 5000)
-    } else if (arg3 instanceof Blob) {
-      proofBlob = arg3;  // New call: logViolation('NO_FACE', 'msg', blob)
-      if (typeof arg4 === 'number') {
-        debounceMs = arg4;
-      }
+    } else if (arg3 instanceof Blob && typeof arg4 === 'number') {
+      debounceMs = arg4; // New call: logViolation('NO_FACE', 'msg', blob, 1000)
     }
+    // Note: proofBlob (arg3 as Blob) is ignored - ExamMonitor handles upload via violationQueueService
 
-    if (!isMonitoringActive) return;
+    if (!isMonitoringActive) {
+      console.log(`⏭️ Skipping ${type} - monitoring not active`);
+      return;
+    }
     
     // Grace period check (reduced to 2s)
     const timeSinceMonitoringStart = Date.now() - monitoringStartTime.current;
     if (timeSinceMonitoringStart < 2000) { 
-      console.log(`⏭️ Skipping ${type} violation - within grace period`);
+      console.log(`⏭️ Skipping ${type} violation - within grace period (${timeSinceMonitoringStart}ms)`);
       return;
     }
 
-    // Violation limit check (Stop at 100 to prevent database spam)
+    // Violation limit check (Stop at MAX_VIOLATIONS to prevent database spam)
     const totalViolations = Object.values(questionViolations).reduce((sum, arr) => sum + arr.length, 0);
-    if (totalViolations >= 100) {
+    if (totalViolations >= MAX_VIOLATIONS) {
       if (!violationLimitReached.current) {
-        console.warn('🚫 VIOLATION LIMIT REACHED: 100 violations logged. No more violations will be recorded.');
+        console.warn(`🚫 VIOLATION LIMIT REACHED: ${MAX_VIOLATIONS} violations logged. No more violations will be recorded.`);
         violationLimitReached.current = true;
       }
       return;
     }
+
+    // ✅ Cooldown check: Skip if same violation type was logged within last 20 seconds
+    const VIOLATION_COOLDOWN_MS = 20000; // 20 seconds
+    const lastLoggedTime = lastViolationLoggedTime.current.get(type);
+    if (lastLoggedTime && (Date.now() - lastLoggedTime) < VIOLATION_COOLDOWN_MS) {
+      console.log(`⏭️ Skipping ${type} - within cooldown period (${Math.round((Date.now() - lastLoggedTime) / 1000)}s < 20s)`);
+      return;
+    }
+    
+    console.log(`✅ ${type} passed checks - scheduling with ${debounceMs}ms debounce`);
+
+    // ✅ Determine if this is a browser violation (no proof blob) BEFORE setTimeout
+    // Browser violations: WINDOW_BLUR, TAB_SWITCH, FULLSCREEN_EXIT, DEVTOOLS_OPEN, etc.
+    // ExamMonitor violations: NO_FACE, HEAD_TURNED, etc. (these come with a Blob)
+    const isFromExamMonitor = arg3 instanceof Blob;
 
     // Debounce logic (Clear existing timeout for this specific violation type)
     const existingTimeout = violationTimeouts.current.get(type);
@@ -3820,25 +3876,9 @@ const formatTime = (seconds: number) => {
       
       console.log(`🚨 Processing violation: ${type} on Q${currentQuestionNo}`);
       
-      // ✅ 2. UPLOAD EVIDENCE VIA SERVICE (If provided)
-      let proofUrl: string | undefined = undefined;
+      // ✅ Update cooldown timestamp WHEN violation is actually logged
+      lastViolationLoggedTime.current.set(type, Date.now());
       
-      if (proofBlob) {
-        try {
-          // Use the centralized service method we created
-          // This handles the file extension logic (.webm vs .jpg) internally
-          const url = await firebaseService.uploadProctoringEvidence(
-            examId,
-            userId,
-            type,
-            proofBlob
-          );
-          if (url) proofUrl = url;
-        } catch (error) {
-          console.error('❌ Failed to upload evidence:', error);
-        }
-      }
-
       // 3. Create Violation Object (Using Constants)
       const violation: Violation = {
         type,
@@ -3847,10 +3887,9 @@ const formatTime = (seconds: number) => {
         severity: VIOLATION_SEVERITY_MAP[type],
         questionNo: currentQuestionNo,
         questionId: currentQuestionId,
-        ...(proofUrl && { proofUrl }) // ✅ Attached to record
       };
 
-      // 4. Update State & Local Storage
+      // 4. Update State & Local Storage (for UI display)
       setViolations(prev => [...prev, violation]);
       
       if (currentQuestionId && currentQuestionId !== 'unknown') {
@@ -3863,7 +3902,7 @@ const formatTime = (seconds: number) => {
           try {
             localStorage.setItem(VIOLATIONS_TRACKING_KEY, JSON.stringify(updated));
             const newTotal = Object.values(updated).reduce((sum, arr) => sum + arr.length, 0);
-            console.log(`🚨 Q${currentQuestionNo}: Violation tracked - ${type} [Total: ${newTotal}/100]`);
+            console.log(`🚨 Q${currentQuestionNo}: Violation tracked - ${type} [Total: ${newTotal}/${MAX_VIOLATIONS}]`);
           } catch (error) {
             console.error('❌ Error saving violations to storage:', error);
           }
@@ -3872,71 +3911,35 @@ const formatTime = (seconds: number) => {
         });
       }
 
-      // 5. Queue for Batched Firebase Sync
-      setPendingViolationsSync(prev => [...prev, violation]);
-      console.log(`📦 Violation queued for sync: ${type} (Proof: ${proofUrl ? 'Yes' : 'No'})`);
+      // ✅ 5. Save to Firebase
+      // Browser violations (WINDOW_BLUR, TAB_SWITCH, FULLSCREEN_EXIT, etc.) need to be saved here
+      // ExamMonitor violations are already saved via violationQueueService syncCallback
+      console.log(`🔍 Firebase save check: isFromExamMonitor=${isFromExamMonitor}, attemptId=${attempt?.attemptId}`);
+      
+      if (!isFromExamMonitor && attempt?.attemptId) {
+        try {
+          console.log(`📤 Saving browser violation to Firebase: ${type}...`);
+          await addViolationToAttempt(violation);
+          console.log(`✅ Browser violation saved to Firebase: ${type}`);
+        } catch (error) {
+          console.error(`❌ Failed to save browser violation to Firebase: ${type}`, error);
+        }
+      } else {
+        console.log(`⏭️ Skipping Firebase save: isFromExamMonitor=${isFromExamMonitor}, hasAttemptId=${!!attempt?.attemptId}`);
+      }
 
       violationTimeouts.current.delete(type);
     }, debounceMs);
 
     violationTimeouts.current.set(type, timeout);
-  }, [isMonitoringActive, questions, currentQuestionIndex, attempt, questionViolations, examId, userId]);
+  }, [isMonitoringActive, questions, currentQuestionIndex, attempt, questionViolations, examId, userId, addViolationToAttempt]);
   
-  // ✅ NEW: Batch sync violations every 30 seconds to reduce Firebase writes
-  useEffect(() => {
-    if (!attempt?.attemptId || pendingViolationsSync.length === 0) {
-      return;
-    }
-    
-    const syncInterval = setInterval(async () => {
-      if (pendingViolationsSync.length === 0) return;
-      
-      console.log(`🔄 Syncing ${pendingViolationsSync.length} batched violations to Firebase...`);
-      
-      const toSync = [...pendingViolationsSync];
-      setPendingViolationsSync([]); // Clear immediately to avoid double-sync
-      
-      try {
-        // Batch all violations into one Firebase update
-        for (const violation of toSync) {
-          await addViolationToAttempt(violation);
-        }
-        console.log(`✅ Successfully synced ${toSync.length} violations to Firebase`);
-        
-        // Check total violations and warn if approaching limit
-        setQuestionViolations(currentViolations => {
-          const totalViolations = Object.values(currentViolations).reduce((sum, arr) => sum + arr.length, 0);
-          if (totalViolations >= 90 && totalViolations < 100) {
-            console.warn(`⚠️ WARNING: ${totalViolations}/100 violations logged. Approaching limit!`);
-          }
-          return currentViolations; // No change, just reading
-        });
-      } catch (error) {
-        console.error('❌ Failed to sync batched violations:', error);
-        // Re-add failed violations to queue for retry
-        setPendingViolationsSync(prev => [...toSync, ...prev]);
-      }
-    }, 30000); // ✅ Sync every 30 seconds
-    
-    return () => clearInterval(syncInterval);
-  }, [pendingViolationsSync.length, attempt?.attemptId]);
-  
-  // ✅ NEW: Sync pending violations on exam submit or unmount
-  useEffect(() => {
-    return () => {
-      // On unmount, sync any remaining violations
-      if (pendingViolationsSync.length > 0 && attempt?.attemptId) {
-        console.log(`🔄 Syncing ${pendingViolationsSync.length} final violations on unmount...`);
-        pendingViolationsSync.forEach(async (violation) => {
-          try {
-            await addViolationToAttempt(violation);
-          } catch (error) {
-            console.error('❌ Failed to sync final violation:', error);
-          }
-        });
-      }
-    };
-  }, []);
+  // ✅ REMOVED: Old batch sync effects - now handled by violationQueueService
+  // The service handles:
+  // - Automatic sync every 10 seconds when online
+  // - Offline queuing with localStorage persistence
+  // - Retry logic for failed syncs
+  // - Sync on network reconnection
 
   /**
    * Setup all monitoring event listeners
@@ -3945,6 +3948,41 @@ const formatTime = (seconds: number) => {
     if (!isMonitoringActive) return;
 
     console.log('🔒 Exam monitoring activated');
+
+    // ✅ IMMEDIATE CHECK: DevTools already open?
+    const checkDevToolsImmediate = () => {
+      const threshold = 160;
+      const widthThreshold = window.outerWidth - window.innerWidth > threshold;
+      const heightThreshold = window.outerHeight - window.innerHeight > threshold;
+      return widthThreshold || heightThreshold;
+    };
+    
+    // ✅ IMMEDIATE CHECK: Not in fullscreen?
+    const checkFullscreenImmediate = () => {
+      return !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+    };
+    
+    // ✅ Run immediate checks after a short delay (let monitoring initialize)
+    setTimeout(() => {
+      // Check DevTools
+      if (checkDevToolsImmediate()) {
+        console.log('🚨 IMMEDIATE: DevTools already open on exam start!');
+        logViolation('DEVTOOLS_OPEN', 'DevTools was already open when exam started', 0);
+      }
+      
+      // Check Fullscreen - but don't log if we're still showing the prompt
+      // The prompt gives user a chance to enter fullscreen
+      if (!checkFullscreenImmediate()) {
+        console.log('⚠️ Not in fullscreen on exam start - prompt should be showing');
+        // Don't log violation immediately - give user time via the prompt
+        // Violation will be logged after 1 minute via checkFullscreenStatus
+      }
+    }, 3000); // 3 second delay to let user enter fullscreen
 
     let lastClipboardCheck = Date.now();
 
@@ -3975,10 +4013,10 @@ const formatTime = (seconds: number) => {
           window.screenTop < -10000;
         
         if (isLikelyMinimized) {
-          console.log('🚨 WINDOW MINIMIZED - Logging violation!');
+          console.log('🚨 WINDOW_MINIMIZE detected - calling logViolation...');
           logViolation('WINDOW_MINIMIZE', 'Window minimized', 10000); // 10 second grace period
         } else {
-          console.log('🚨 TAB SWITCHED - Logging violation!');
+          console.log('🚨 TAB_SWITCH detected - calling logViolation...');
           logViolation('TAB_SWITCH', undefined, 5000); // 5 second grace period
         }
       } else {
@@ -4110,6 +4148,12 @@ const formatTime = (seconds: number) => {
       if (e.altKey && e.key === 'Tab') {
         e.preventDefault();
         logViolation('SHORTCUT_ALTTAB');
+      }
+      
+      // ✅ Mac: Cmd+Tab (App switcher)
+      if (e.metaKey && e.key === 'Tab') {
+        e.preventDefault();
+        logViolation('SHORTCUT_CMDTAB', 'Cmd+Tab (Mac app switcher)');
       }
     };
 
@@ -4255,6 +4299,9 @@ let previousSize = { width: window.innerWidth, height: window.innerHeight };
       }
     };
 
+    // ✅ Clean up stale tabs before registering - prevents false MULTIPLE_TABS violations
+    localStorage.removeItem('activeExamTabs');
+    
     localStorage.setItem('activeExamTabs', 
       (localStorage.getItem('activeExamTabs') || '') + ',' + tabId.current
     );
@@ -4460,12 +4507,12 @@ const calculateStudentEndTime = (
     // Current question shows blue gradient with purple border if bookmarked
     if (isCurrent) {
       return isBookmarked 
-        ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg border-2 border-purple-500'
+        ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg border border-purple-500'
         : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg';
     }
     
     // Other questions show their status
-    if (isAnswered && isBookmarked) return 'bg-green-500 text-white border-2 border-purple-500 shadow-md'; // Answered + Bookmarked
+    if (isAnswered && isBookmarked) return 'bg-green-500 text-white border border-purple-500 shadow-md'; // Answered + Bookmarked
     if (isAnswered) return 'bg-green-500 text-white'; // Just answered
     if (isBookmarked) return 'bg-purple-500 text-white'; // Just bookmarked
     if (isViewed) return 'bg-orange-400 text-white'; // Skipped
@@ -4688,7 +4735,7 @@ const calculateStudentEndTime = (
                 >
                   {isSavingAnswer ? (
                     <>
-                      <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                      <div className="animate-spin w-4 h-4 border border-white border-t-transparent rounded-full" />
                       <span>Saving...</span>
                     </>
                   ) : lastSavedQuestion === currentQuestion.id ? (
@@ -4860,7 +4907,7 @@ const calculateStudentEndTime = (
               >
                 {isSavingAnswer ? (
                   <>
-                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                    <div className="animate-spin w-4 h-4 border border-white border-t-transparent rounded-full" />
                     <span>Saving...</span>
                   </>
                 ) : lastSavedQuestion === currentQuestion.id ? (
@@ -4887,7 +4934,7 @@ const calculateStudentEndTime = (
                   // ✅ Check if actual option text is selected (not index)
                   const isSelected = mcqAnswer.includes(option);
                   
-                  let buttonClasses = 'w-full text-left px-4 py-3 rounded-lg border-2 transition-all flex items-center ';
+                  let buttonClasses = 'w-full text-left px-4 py-3 rounded-lg border transition-all flex items-center ';
                   
                   if (darkMode) {
                     buttonClasses += isSelected 
@@ -4916,7 +4963,7 @@ const calculateStudentEndTime = (
                     >
                       {/* Selection Indicator: Checkbox */}
                       <div className="mr-3 flex-shrink-0">
-                        <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                        <div className={`w-5 h-5 rounded border flex items-center justify-center ${
                           isSelected 
                             ? 'bg-blue-500 border-blue-500' 
                             : darkMode ? 'border-gray-500' : 'border-gray-400'
@@ -4977,7 +5024,7 @@ const calculateStudentEndTime = (
               >
                 {isSavingAnswer ? (
                   <>
-                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                    <div className="animate-spin w-4 h-4 border border-white border-t-transparent rounded-full" />
                     <span>Saving...</span>
                   </>
                 ) : lastSavedQuestion === currentQuestion.id ? (
@@ -5068,7 +5115,7 @@ const calculateStudentEndTime = (
               >
                 {isSavingAnswer ? (
                   <>
-                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                    <div className="animate-spin w-4 h-4 border border-white border-t-transparent rounded-full" />
                     <span>Saving...</span>
                   </>
                 ) : lastSavedQuestion === currentQuestion.id ? (
@@ -5089,7 +5136,7 @@ const calculateStudentEndTime = (
             <div className="flex-1 overflow-y-auto p-6">
               {blanksCount === 0 ? (
                 <div className={`mt-6 p-6 rounded-lg text-center ${
-                  darkMode ? 'bg-red-900/20 border-2 border-red-800' : 'bg-red-50 border-2 border-red-200'
+                  darkMode ? 'bg-red-900/20 border border-red-800' : 'bg-red-50 border border-red-200'
                 }`}>
                   <div className="text-4xl mb-3">⚠️</div>
                   <p className={`text-base font-bold mb-2 ${darkMode ? 'text-red-400' : 'text-red-700'}`}>
@@ -5131,7 +5178,7 @@ const calculateStudentEndTime = (
                               value={fillBlanksAnswers[index] || ''}
                               onChange={(e) => handleBlankChange(index, e.target.value)}
                               placeholder={`Enter answer for blank ${index + 1}`}
-                              className={`w-full px-4 py-3 rounded-lg border-2 transition-all focus:outline-none ${
+                              className={`w-full px-4 py-3 rounded-lg border transition-all focus:outline-none ${
                                 isFilled
                                   ? darkMode 
                                     ? 'bg-gray-800 text-white border-green-700 focus:border-green-500 focus:ring-2 focus:ring-green-500/20'
@@ -5202,7 +5249,7 @@ const calculateStudentEndTime = (
               >
                 {isSavingAnswer ? (
                   <>
-                    <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                    <div className="animate-spin w-4 h-4 border border-white border-t-transparent rounded-full" />
                     <span>Saving...</span>
                   </>
                 ) : lastSavedQuestion === currentQuestion.id ? (
@@ -5227,7 +5274,7 @@ const calculateStudentEndTime = (
               
               {jumbledAnswers.length === 0 ? (
                 <div className={`mt-6 p-6 rounded-lg text-center ${
-                  darkMode ? 'bg-red-900/20 border-2 border-red-800' : 'bg-red-50 border-2 border-red-200'
+                  darkMode ? 'bg-red-900/20 border border-red-800' : 'bg-red-50 border border-red-200'
                 }`}>
                   <div className="text-4xl mb-3">⚠️</div>
                   <p className={`text-base font-bold mb-2 ${darkMode ? 'text-red-400' : 'text-red-700'}`}>
@@ -5365,6 +5412,7 @@ const calculateStudentEndTime = (
           examId={examId}
           studentId={userId}
           attemptId={attempt.attemptId}
+          initialViolationCount={Object.values(questionViolations).reduce((sum, arr) => sum + arr.length, 0)}
         />
       )}
 
@@ -5661,7 +5709,7 @@ const calculateStudentEndTime = (
                         <div className={`absolute bottom-0 left-0 right-0 p-4 border-t ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'}`}>
                           <div className="flex items-center justify-center space-x-2 overflow-x-auto">
                             {carouselImages.map((img, idx) => (
-                              <button key={idx} onClick={() => setCurrentImageIndex(idx)} className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${idx === currentImageIndex ? 'border-white scale-110 shadow-lg' : 'border-white/30 hover:border-white/60 opacity-70 hover:opacity-100'}`}>
+                              <button key={idx} onClick={() => setCurrentImageIndex(idx)} className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border transition-all ${idx === currentImageIndex ? 'border-white scale-110 shadow-lg' : 'border-white/30 hover:border-white/60 opacity-70 hover:opacity-100'}`}>
                                 <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
                               </button>
                             ))}
@@ -5916,7 +5964,7 @@ const calculateStudentEndTime = (
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search questions..."
-                  className={`w-full px-4 py-3 pr-10 rounded-lg border-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  className={`w-full px-4 py-3 pr-10 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                     darkMode
                       ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400'
                       : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
@@ -5934,7 +5982,7 @@ const calculateStudentEndTime = (
               <select
                 value={selectedChapter}
                 onChange={(e) => setSelectedChapter(e.target.value)}
-                className={`w-full px-4 py-3 rounded-lg border-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                className={`w-full px-4 py-3 rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 ${
                   darkMode
                     ? 'bg-gray-700 border-gray-600 text-gray-100'
                     : 'bg-white border-gray-300 text-gray-900'
@@ -6404,21 +6452,21 @@ const calculateStudentEndTime = (
                     <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Violations:</span>
                   </div>
                   <span className={`text-sm font-semibold ${
-                    violations.length >= 100 
+                    violations.length >= MAX_VIOLATIONS 
                       ? 'text-red-600 dark:text-red-400'
-                      : violations.length >= 90
+                      : violations.length >= MAX_VIOLATIONS - 25
                       ? 'text-orange-600 dark:text-orange-400'
                       : violations.length > 0 
                       ? (darkMode ? 'text-red-400' : 'text-red-600') 
                       : (darkMode ? 'text-green-400' : 'text-green-600')
                   }`}>
-                    {violations.length}/100
+                    {violations.length}/{MAX_VIOLATIONS}
                     {violations.filter(v => v.severity === 'critical').length > 0 && (
                       <span className="ml-2 text-xs">
                         ({violations.filter(v => v.severity === 'critical').length} critical)
                       </span>
                     )}
-                    {violations.length >= 100 && (
+                    {violations.length >= MAX_VIOLATIONS && (
                       <span className="ml-2 text-xs font-normal">
                         (LIMIT REACHED)
                       </span>
@@ -6876,7 +6924,7 @@ const calculateStudentEndTime = (
             >
               {isSubmittingFromOverlay ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <div className="w-5 h-5 border border-white border-t-transparent rounded-full animate-spin"></div>
                   <span>{autoSubmitTriggered.current ? 'Exiting...' : 'Submitting Exam...'}</span>
                 </>
               ) : (

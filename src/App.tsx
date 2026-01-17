@@ -440,7 +440,33 @@ function triggerPreExamVerification(
   setActiveExam: (exam: any) => void,
   setShowExamInterface: (show: boolean) => void
 ) {
-  // Check if user has proctoring photos
+  // ✅ CHECK: If proctoring is NOT enabled, skip verification and go directly to exam
+  if (exam.avProctoring !== true) {
+    console.log('ℹ️ Proctoring not enabled - requesting fullscreen and starting exam');
+    
+    // ✅ Request fullscreen IMMEDIATELY (synchronous call in user gesture context)
+    const elem = document.documentElement;
+    if (elem.requestFullscreen) {
+      elem.requestFullscreen().then(() => {
+        console.log('✅ Fullscreen activated');
+      }).catch((err) => {
+        console.warn('⚠️ Fullscreen failed:', err);
+      });
+    } else if ((elem as any).webkitRequestFullscreen) {
+      (elem as any).webkitRequestFullscreen();
+    } else if ((elem as any).mozRequestFullScreen) {
+      (elem as any).mozRequestFullScreen();
+    } else if ((elem as any).msRequestFullscreen) {
+      (elem as any).msRequestFullscreen();
+    }
+    
+    // Start exam immediately (don't wait for fullscreen promise)
+    setActiveExam(exam);
+    setShowExamInterface(true);
+    return;
+  }
+
+  // Proctoring IS enabled - check if user has proctoring photos
   if (!user?.proctoringPhotos?.front || !user?.proctoringPhotos?.left || !user?.proctoringPhotos?.right) {
     console.error('❌ Proctoring photos missing - cannot verify identity');
     alert('Please complete ID verification in your profile before taking the exam.');
@@ -1673,6 +1699,7 @@ const getSectionBg = (section?: string) => {
   if (section === SECTION_CATEGORIES.MEMBERS) return 'bg-purple-50';
   if (section === SECTION_CATEGORIES.ACTIVITY) return 'bg-pink-50';
   if (section === SECTION_CATEGORIES.RESOURCES) return 'bg-cyan-50';
+  if (section === 'tools') return 'bg-slate-100';
   return '';
 };
 
@@ -1683,6 +1710,7 @@ const getSectionTextColor = (section?: string) => {
   if (section === SECTION_CATEGORIES.MEMBERS) return 'text-purple-600';
   if (section === SECTION_CATEGORIES.ACTIVITY) return 'text-pink-600';
   if (section === SECTION_CATEGORIES.RESOURCES) return 'text-cyan-600';
+  if (section === 'tools') return 'text-slate-700';
   return 'text-gray-700';
 };
 
@@ -1780,6 +1808,18 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   const userInteractedLeft = useRef(false);
   const userInteractedMain = useRef(false);
   const [activeItem, setActiveItem] = useState('exams');
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
+    management: false, // Always expanded
+    tools: true,       // Collapsed by default (will be expanded for students via useEffect)
+  });
+  
+  // Expand Tools section for students (they have fewer menu items)
+  useEffect(() => {
+    if (currentUser?.userType === 'student') {
+      setCollapsedSections(prev => ({ ...prev, tools: false }));
+    }
+  }, [currentUser?.userType]);
+  
   const [_rightPanelWidth, setRightPanelWidth] = useState(380); // Default 380px
   const [actualRightWidth, setActualRightWidth] = useState(0); // Actual rendered width
   const [isResizing, setIsResizing] = useState(false);
@@ -2295,24 +2335,21 @@ const fetchCounts = async () => {
 
   // Memoized topics data with dynamic counts
   const topicsDataWithCounts = useMemo(() => [
-    { id: 'management', label: 'Management', icon: faBriefcase, count: 0, section: 'management', isHeader: true },
+    // ===== MANAGEMENT SECTION (Always Opened) =====
+    { id: 'management', label: 'Management', icon: faBriefcase, count: 0, section: 'management', isHeader: true, defaultExpanded: true },
     { id: 'exams', label: 'Exams', icon: faClipboardList, count: examsCount, description: 'Create and manage examinations' },
     { id: 'results', label: 'Results', icon: faTrophy, count: resultsCount, description: 'View and publish exam results' },
     { id: 'users', label: 'Users', icon: faUsers, count: usersCount, description: 'Manage students, teachers, and staff' },
-    {id: 'halltickets',label: 'Hall Tickets',icon: faIdCard, count: hallTicketsCount,section: 'academic', description: 'Manage Students Hall Tickets'},
-
-    // ADDED: Calendar Page
-    { id: 'calendar', label: 'Calendar', icon: faCalendarDays, count: calendarEventsCount, description: 'View and manage academic schedule', alwaysShow: true, onClick: () => setActiveItem(ACTIVE_ITEMS.CALENDAR) },
-   
-    { id: 'academic', label: 'Academic', icon: faGraduationCap, count: 0, section: 'academic', isHeader: true },
     { id: 'questions', label: 'Questions', icon: faBookOpen, count: questionsCount, description: 'Question bank and paper management' },
-    { id: 'rooms', label: 'Rooms', icon: faDoorOpen, count: roomsCount, description: 'Manage college rooms and schedules'},
-    
-    { id: 'analytics', label: 'Analytics', icon: faChartBar, count: 0, section: 'analytics', isHeader: true },
-     // ADDED: Leader Board Page (no count needed)
-    { id: 'leaderboard', label: 'Leader Board', icon: faMedal, count: -1, description: 'View student performance rankings' },
     { id: 'reports', label: 'Reports', icon: faFileLines, count: reportsCount, description: 'Performance analytics and reports' },
-    { id: 'audit', label: 'Audit Trail', icon: faClipboardCheck, count: -1, description: 'View user activity logs and browsing history', hideForStudents: true },
+    
+    // ===== TOOLS SECTION (Collapsed by default) =====
+    { id: 'tools', label: 'Tools', icon: faGear, count: 0, section: 'tools', isHeader: true, defaultExpanded: false },
+    { id: 'calendar', label: 'Calendar', icon: faCalendarDays, count: calendarEventsCount, description: 'View and manage academic schedule', alwaysShow: true, onClick: () => setActiveItem(ACTIVE_ITEMS.CALENDAR) },
+    { id: 'rooms', label: 'Rooms', icon: faDoorOpen, count: roomsCount, description: 'Manage college rooms and schedules' },
+    { id: 'halltickets', label: 'Hall Tickets', icon: faIdCard, count: hallTicketsCount, description: 'Manage Students Hall Tickets' },
+    { id: 'audit', label: 'Audit Trail', icon: faClipboardCheck, count: -1, description: 'View user activity logs and browsing history', hideForStudents: true, showEmptyBadge: true },
+    { id: 'leaderboard', label: 'Leader Board', icon: faMedal, count: -1, description: 'View student performance rankings', showEmptyBadge: true },
    ], [examsCount, resultsCount, reportsCount, questionsCount, usersCount, roomsCount, calendarEventsCount, hallTicketsCount, collegeData.features]);
   
   // Reset selected audit user when leaving audit trail section
@@ -3723,7 +3760,6 @@ const fetchCounts = async () => {
                 }}
                 onEditProfile={() => setShowUserProfile(true)}
                 onDownloadBrowser={() => setShowSecureBrowserModal(true)}
-                onManageUsers={() => alert('Manage Users clicked')}
                 onViewLoginDetails={() => setShowLoginDetailsDialog(true)}
                 onSignOut={handleLogout}
                 onProfileClick={() => setShowUserProfile(true)}
@@ -3853,6 +3889,25 @@ const fetchCounts = async () => {
               const isActive = activeItem === item.id;
               const isHeader = item.isHeader;
               
+              // Get current section for this item
+              const getCurrentSection = () => {
+                const itemIndex = topicsDataWithCounts.findIndex(i => i.id === item.id);
+                for (let i = itemIndex; i >= 0; i--) {
+                  if (topicsDataWithCounts[i].isHeader) {
+                    return topicsDataWithCounts[i].id;
+                  }
+                }
+                return 'management';
+              };
+              
+              const currentSection = getCurrentSection();
+              const isSectionCollapsed = collapsedSections[currentSection] ?? false;
+              
+              // Hide non-header items if their section is collapsed
+              if (!isHeader && isSectionCollapsed && !isLeftCollapsed) {
+                return null;
+              }
+              
               if (isHeader && isLeftCollapsed) {
                 return (
                   <div key={item.id}>
@@ -3863,6 +3918,34 @@ const fetchCounts = async () => {
                         {item.label}
                       </div>
                     </div>
+                  </div>
+                );
+              }
+              
+              // Render collapsible header
+              if (isHeader && !isLeftCollapsed) {
+                const isCollapsed = collapsedSections[item.id] ?? false;
+                return (
+                  <div key={item.id} className="mb-1">
+                    {item.section !== 'management' && <div className="w-full h-px bg-gray-200 my-2"></div>}
+                    <button
+                      onClick={() => {
+                        setCollapsedSections(prev => ({
+                          ...prev,
+                          [item.id]: !prev[item.id]
+                        }));
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${getSectionBg(item.section)} hover:opacity-80`}
+                    >
+                      <div className="flex items-center space-x-3">
+                        <FontAwesomeIcon icon={Icon} className="text-gray-700" />
+                        <span className="text-sm font-medium text-gray-900">{item.label}</span>
+                      </div>
+                      <FontAwesomeIcon 
+                        icon={isCollapsed ? faChevronRight : faChevronDown} 
+                        className="text-gray-500 text-xs transition-transform"
+                      />
+                    </button>
                   </div>
                 );
               }
@@ -3920,11 +4003,11 @@ const fetchCounts = async () => {
                     onMouseEnter={() => setHoveredCategory(item.id)}
                     onMouseLeave={() => setHoveredCategory(null)}
                     className={`w-full flex items-center ${isLeftCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-3 rounded-lg transition-all relative
-                      ${isHeader ? `${getSectionBg(item.section)} font-medium cursor-default` : 'hover:bg-gray-50'}
+                      hover:bg-gray-50
                     `}
-                    style={isActive && !isHeader ? { backgroundColor: `${brandTheme.colors.primary}10` } : {}}
+                    style={isActive ? { backgroundColor: `${brandTheme.colors.primary}10` } : {}}
                   >
-                    {isActive && !isHeader && (
+                    {isActive && (
                       <div 
                         className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
                         style={{ backgroundColor: brandTheme.colors.primary }}
@@ -3934,7 +4017,7 @@ const fetchCounts = async () => {
                     {isLeftCollapsed ? (
                       <FontAwesomeIcon 
                         icon={Icon} 
-                        className={`${isHeader ? 'text-gray-700' : 'text-gray-600'}`}
+                        className="text-gray-600"
                         style={isActive ? { color: brandTheme.colors.primary } : {}}
                       />
                     ) : (
@@ -3942,7 +4025,7 @@ const fetchCounts = async () => {
                         <div className="flex items-center space-x-3 flex-1">
                           <FontAwesomeIcon 
                             icon={Icon} 
-                            className={`${isHeader ? 'text-gray-700' : 'text-gray-600'}`}
+                            className="text-gray-600"
                             style={isActive ? { color: brandTheme.colors.primary } : {}}
                           />
                           <span 
@@ -3952,16 +4035,18 @@ const fetchCounts = async () => {
                             {item.label}
                           </span>
                         </div>
-                        {!isHeader && (
+                        {item.count >= 0 ? (
                           <span className="text-xs text-gray-700 bg-gray-200 px-2 py-0.5 rounded-full">
-                            {item.count >= 0 && item.count}
+                            {item.count}
                           </span>
+                        ) : (
+                          <span className="w-5 h-5 rounded-full border-2 border-gray-300 bg-transparent"></span>
                         )}
                       </>
                     )}
                   </button>
                   
-                  {isLeftCollapsed && !isHeader && hoveredCategory === item.id && (
+                  {isLeftCollapsed && hoveredCategory === item.id && (
                     <div 
                       className="absolute left-full top-0 ml-2 bg-gray-900 text-white px-3 py-2.5 rounded-lg shadow-lg pointer-events-none min-w-[200px]"
                       style={{ zIndex: 1000 }}
@@ -7577,46 +7662,46 @@ const fetchCounts = async () => {
             {/* Backdrop */}
             <div 
               id="notice-backdrop"
-              className="fixed inset-0 bg-black bg-opacity-50 z-[10000] transition-opacity duration-500 opacity-0"
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] transition-opacity duration-500 opacity-0"
               onClick={() => setShowNoticeDialog(false)}
             />
 
-            {/* Dialog - Slides in from right */}
+            {/* Dialog - Slides in from right with margin and rounded corners */}
             <div 
               id="notice-dialog"
-              className="fixed right-0 top-0 bottom-0 z-[10001] w-full max-w-2xl bg-white shadow-2xl transition-transform duration-500 ease-out overflow-hidden translate-x-full"
+              className="fixed right-2 top-2 bottom-2 z-[10001] w-[calc(100%-16px)] max-w-[35rem] bg-white shadow-2xl transition-transform duration-500 ease-out overflow-hidden translate-x-full rounded-2xl"
             >
               <div className="h-full flex flex-col">
                 {/* Header */}
                 <div 
-                  className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0"
+                  className="px-5 py-3 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
                   style={{ 
-                    background: `linear-gradient(135deg, ${brandTheme.colors.primary}08 0%, ${brandTheme.colors.secondary}08 100%)`
+                    background: brandTheme.gradients.primary
                   }}
                 >
                   <div className="flex items-center space-x-3">
                     <div 
-                      className="w-10 h-10 rounded-lg flex items-center justify-center"
-                      style={{ background: brandTheme.gradients.primary }}
+                      className="w-10 h-10 rounded-xl flex items-center justify-center"
+                      style={{ background: 'rgba(255,255,255,0.2)' }}
                     >
                       <FontAwesomeIcon icon={faBullhorn} size="lg" className="text-white" />
                     </div>
                     <div>
-                      <h2 className="text-xl font-bold text-gray-900">Create Campus Notice</h2>
-                      <p className="text-sm text-gray-500">Share important updates with everyone</p>
+                      <h2 className="text-lg font-bold text-white">Create Campus Notice</h2>
+                      <p className="text-xs text-white/80">Share important updates with everyone</p>
                     </div>
                   </div>
                   <button
                     onClick={() => setShowNoticeDialog(false)}
-                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
                   >
-                    <FontAwesomeIcon icon={faXmark} className="text-gray-500" />
+                    <FontAwesomeIcon icon={faXmark} className="text-white" />
                   </button>
                 </div>
 
                 {/* Form - Scrollable */}
                 <div className="flex-1 overflow-y-auto">
-                  <form onSubmit={handleNoticeSubmit} className="p-6">
+                  <form onSubmit={handleNoticeSubmit} className="p-5">
                     {/* Notice Title */}
                     <div className="mb-6">
                       <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -7746,7 +7831,7 @@ const fetchCounts = async () => {
                 </div>
 
                 {/* Footer - Fixed at bottom */}
-                <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between flex-shrink-0">
+                <div className="px-5 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between flex-shrink-0 rounded-b-2xl">
                   <div className="text-xs text-gray-500">
                     Posted by <span className="font-medium text-gray-700">{currentUser?.fullName || currentUser?.email?.split('@')[0].replace(/[._]/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'User'}</span> • {currentUser?.userType ? firebaseService.getUserTypeDisplayName(currentUser.userType) : 'User'}
                   </div>
@@ -8045,7 +8130,6 @@ const fetchCounts = async () => {
       isOpen={isCreateQuestionModalOpen}
       onClose={() => setIsCreateQuestionModalOpen(false)}
       onBulkUpload={() => {
-        setIsCreateQuestionModalOpen(false);
         setIsBulkUploadOpen(true);
       }}
       activeCollegeId={getActiveCollegeId() || ''}
@@ -8062,7 +8146,9 @@ const fetchCounts = async () => {
 
     <BulkUploadQuestions
       isOpen={isBulkUploadOpen}
-      onClose={() => setIsBulkUploadOpen(false)}
+      onClose={() => {
+        setIsBulkUploadOpen(false);
+      }}
       activeCollegeId={getActiveCollegeId() || ''}
       activeCollegeName={getActiveCollegeName() || ''}
       currentUser={currentUser}
@@ -8948,7 +9034,6 @@ const fetchCounts = async () => {
       isOpen={isCreateRoomModalOpen}
       onClose={() => setIsCreateRoomModalOpen(false)}
       onBulkUpload={() => {
-        setIsCreateRoomModalOpen(false);
         setIsBulkUploadRoomsOpen(true);
       }}
       activeCollegeId={getActiveCollegeId() ?? ''}

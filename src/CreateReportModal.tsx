@@ -336,7 +336,7 @@ export default function CreateReportModal({
                   onClick={() => {
                     setReportType(type.id);
                   }}
-                  className={`relative p-4 rounded-2xl border-2 transition-all hover:shadow-xl ${
+                  className={`relative p-4 rounded-2xl border transition-all hover:shadow-xl ${
                     reportType === type.id
                       ? 'shadow-lg scale-105'
                       : 'border-gray-200 hover:border-gray-300'
@@ -406,7 +406,7 @@ export default function CreateReportModal({
                   value={reportTitle}
                   onChange={(e) => setReportTitle(e.target.value)}
                   placeholder="Enter report title"
-                  className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:outline-none transition-colors"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none transition-colors"
                   style={{ 
                     borderColor: reportTitle ? brand.colors.primary + '40' : undefined,
                     backgroundColor: reportTitle ? brand.colors.primary + '05' : undefined
@@ -424,7 +424,7 @@ export default function CreateReportModal({
                   onChange={(e) => setReportDescription(e.target.value)}
                   placeholder="Add a description for this report"
                   rows={3}
-                  className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:outline-none transition-colors resize-none"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none transition-colors resize-none"
                   style={{ 
                     borderColor: reportDescription ? brand.colors.primary + '40' : undefined,
                     backgroundColor: reportDescription ? brand.colors.primary + '05' : undefined
@@ -440,7 +440,7 @@ export default function CreateReportModal({
                 <select
                   value={timePeriod}
                   onChange={(e) => setTimePeriod(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:outline-none transition-colors"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none transition-colors"
                   style={{ 
                     borderColor: brand.colors.primary + '40',
                     backgroundColor: brand.colors.primary + '05'
@@ -470,7 +470,7 @@ export default function CreateReportModal({
                         type="date"
                         value={startDate}
                         onChange={(e) => setStartDate(e.target.value)}
-                        className="w-full pl-11 pr-4 py-3 rounded-xl border-2 border-gray-200 focus:outline-none transition-colors"
+                        className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none transition-colors"
                         style={{ 
                           borderColor: startDate ? brand.colors.primary + '40' : undefined,
                           backgroundColor: startDate ? brand.colors.primary + '05' : undefined
@@ -492,7 +492,7 @@ export default function CreateReportModal({
                         value={endDate}
                         onChange={(e) => setEndDate(e.target.value)}
                         min={startDate}
-                        className="w-full pl-11 pr-4 py-3 rounded-xl border-2 border-gray-200 focus:outline-none transition-colors"
+                        className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none transition-colors"
                         style={{ 
                           borderColor: endDate ? brand.colors.primary + '40' : undefined,
                           backgroundColor: endDate ? brand.colors.primary + '05' : undefined
@@ -513,7 +513,7 @@ export default function CreateReportModal({
                     <button
                       key={format.id}
                       onClick={() => setReportFormat(format.id)}
-                      className={`p-4 rounded-xl border-2 transition-all ${
+                      className={`p-4 rounded-xl border transition-all ${
                         reportFormat === format.id
                           ? 'shadow-md'
                           : 'border-gray-200 hover:border-gray-300'
@@ -550,7 +550,7 @@ export default function CreateReportModal({
                 <div className="relative">
                   <button
                     onClick={() => setShowClassDropdown(!showClassDropdown)}
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 hover:border-gray-300 flex items-center justify-between transition-colors"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 hover:border-gray-300 flex items-center justify-between transition-colors"
                   >
                     <span className="text-gray-700">
                       {selectedClasses.length === 0 
@@ -606,7 +606,7 @@ export default function CreateReportModal({
                 <div className="relative">
                   <button
                     onClick={() => setShowSubjectDropdown(!showSubjectDropdown)}
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 hover:border-gray-300 flex items-center justify-between transition-colors"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 hover:border-gray-300 flex items-center justify-between transition-colors"
                   >
                     <span className="text-gray-700">
                       {selectedSubjects.length === 0 
@@ -660,7 +660,7 @@ export default function CreateReportModal({
                   Additional Options
                 </label>
                 
-                <label className="flex items-center justify-between p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-gray-300 transition-colors">
+                <label className="flex items-center justify-between p-4 rounded-xl border border-gray-200 cursor-pointer hover:border-gray-300 transition-colors">
                   <div className="flex items-center space-x-3">
                     <FontAwesomeIcon icon={faChartLine} className="text-gray-500" />
                     <div>
@@ -677,7 +677,7 @@ export default function CreateReportModal({
                   />
                 </label>
 
-                <label className="flex items-center justify-between p-4 rounded-xl border-2 border-gray-200 cursor-pointer hover:border-gray-300 transition-colors">
+                <label className="flex items-center justify-between p-4 rounded-xl border border-gray-200 cursor-pointer hover:border-gray-300 transition-colors">
                   <div className="flex items-center space-x-3">
                     <FontAwesomeIcon icon={faFilter} className="text-gray-500" />
                     <div>
@@ -704,7 +704,7 @@ export default function CreateReportModal({
             {step > 1 && (
               <button
                 onClick={() => setStep(step - 1)}
-                className="px-5 py-2.5 bg-white border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
+                className="px-5 py-2.5 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
               >
                 Previous
               </button>
@@ -714,7 +714,7 @@ export default function CreateReportModal({
           <div className="flex items-center space-x-3">
             <button
               onClick={onClose}
-              className="px-5 py-2.5 bg-white border-2 border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
+              className="px-5 py-2.5 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold rounded-xl transition-all"
             >
               Cancel
             </button>

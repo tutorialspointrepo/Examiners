@@ -2805,37 +2805,47 @@ async addViolation(
   // 🔥 QUESTION-LEVEL: Find the specific question response
   let questionResponse = attempt.responses.find(r => r.questionNo === violation.questionNo);
   
-  // ❌ CRITICAL FIX: DO NOT create placeholder responses for violations
-  // Violations should ONLY be added to existing responses or stored at attempt level
-  // Creating placeholders with fake questionIds breaks answer loading
+  // ✅ FIX: Create placeholder response if none exists for this question
+  // This ensures violations are never lost
   if (!questionResponse) {
-    console.warn(`⚠️ Violation for Q${violation.questionNo} but no response exists yet`);
-    console.warn(`⚠️ This should not happen if placeholder creation is working`);
-    console.warn(`⚠️ Skipping violation save to Firebase - will be saved when answer is submitted`);
-    // Violation remains in localStorage and will be saved when answer is submitted
-    return; // Exit early - violation will be saved from localStorage when answer submitted
+    console.log(`⚠️ No response for Q${violation.questionNo} - creating placeholder for violation`);
+    
+    // Create a minimal placeholder response
+    questionResponse = {
+      questionId: violation.questionId || `q_${violation.questionNo}`,
+      questionNo: violation.questionNo,
+      answer: null,
+      isAnswered: false,
+      violations: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    } as any;
+    
+    // Add to responses array
+    attempt.responses.push(questionResponse);
+    console.log(`✅ Created placeholder response for Q${violation.questionNo}`);
   } else {
     console.log(`✅ Found existing response for Q${violation.questionNo} - adding violation`);
-    
-    // ✅ Initialize violations array if it doesn't exist
-    if (!questionResponse.violations) {
-      questionResponse.violations = [];
-    }
-  
-    console.log(`✅ Q${violation.questionNo} has ${questionResponse.violations.length} violations before adding`);
-
-    // Store violation with ISO string timestamp
-    const violationWithTimestamp = {
-      ...violation,
-      timestamp: timestampToStore  // Store as ISO string
-    };
-    
-    // ✅ Add violation to question level
-    questionResponse.violations.push(violationWithTimestamp as any);
-    console.log(`🚨 Violation added to Q${violation.questionNo}:`, violation.type);
-    console.log(`   Timestamp stored: ${timestampToStore}`);
-    console.log(`   Total violations on Q${violation.questionNo}:`, questionResponse.violations.length);
   }
+  
+  // ✅ Initialize violations array if it doesn't exist
+  if (!questionResponse.violations) {
+    questionResponse.violations = [];
+  }
+
+  console.log(`✅ Q${violation.questionNo} has ${questionResponse.violations.length} violations before adding`);
+
+  // Store violation with ISO string timestamp
+  const violationWithTimestamp = {
+    ...violation,
+    timestamp: timestampToStore  // Store as ISO string
+  };
+  
+  // ✅ Add violation to question level
+  questionResponse.violations.push(violationWithTimestamp as any);
+  console.log(`🚨 Violation added to Q${violation.questionNo}:`, violation.type);
+  console.log(`   Timestamp stored: ${timestampToStore}`);
+  console.log(`   Total violations on Q${violation.questionNo}:`, questionResponse.violations.length);
   
   // ✅ Violations are stored at question level only
   console.log(`✅ Violation stored at question level for Q${violation.questionNo}`);
@@ -12265,6 +12275,55 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
     } catch (error) {
       console.error('Error fetching users by college paginated:', error);
       return { users: [], lastDoc: null, hasMore: false };
+    }
+  }
+
+  /**
+   * Upload violation proof (video/image) to Firebase Storage
+   * @param attemptId - The exam attempt ID
+   * @param proofBlob - The proof video/image Blob
+   * @returns Promise with download URL and success status
+   */
+  async uploadViolationProof(
+    attemptId: string,
+    proofBlob: Blob
+  ): Promise<{ url: string; success: boolean }> {
+    try {
+      // Generate unique filename with timestamp
+      const timestamp = Date.now();
+      const fileExtension = proofBlob.type.includes('video') ? 'webm' : 'jpg';
+      const fileName = `violation_proof_${timestamp}.${fileExtension}`;
+      
+      // Storage path: violations/{attemptId}/{fileName}
+      const user = this.auth.currentUser;
+      if (!user) {
+        console.error('❌ No authenticated user for violation proof upload');
+        return { url: '', success: false };
+      }
+      const storageRef = ref(this.storage, `proctoring_evidence/${attemptId}/${user.uid}/${fileName}`);
+      
+      console.log(`📤 Uploading violation proof: ${fileName} (${(proofBlob.size / 1024 / 1024).toFixed(2)}MB)`);
+      
+      // Upload blob with metadata
+      const snapshot = await uploadBytes(storageRef, proofBlob, {
+        contentType: proofBlob.type,
+      });
+      
+      // Get download URL
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      
+      console.log(`✅ Violation proof uploaded: ${downloadURL}`);
+      
+      return {
+        url: downloadURL,
+        success: true,
+      };
+    } catch (error) {
+      console.error('❌ Failed to upload violation proof:', error);
+      return {
+        url: '',
+        success: false,
+      };
     }
   }
 
