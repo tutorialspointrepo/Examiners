@@ -232,8 +232,8 @@ export default function Classes({ activeCollegeId, onClassSelect, selectedClass,
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-3">
-              <GraduationCap size={28} className="text-gray-900" />
-              <h2 className="text-2xl font-bold text-gray-900">Classes</h2>
+              <Users size={28} className="text-gray-900" />
+              <h2 className="text-2xl font-bold text-gray-900">Users</h2>
             </div>
             
             {/* Classes Dropdown - Local Filter */}
@@ -499,58 +499,35 @@ export default function Classes({ activeCollegeId, onClassSelect, selectedClass,
                     }
                   }}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-4 flex-1">
-                      <div 
-                        className="w-14 h-14 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md"
-                        style={{ background: brandTheme.gradients.primary }}
-                      >
-                        {classData.className.replace(/\D/g, '')}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <h3 className="text-xl font-bold text-gray-900 mb-1">
-                              Class {classData.className}
-                            </h3>
-                            <p className="text-sm text-gray-600">
-                              {classData.board} • {classData.academicYear}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Stats */}
-                        <div className="flex space-x-3">
-                          <div 
-                            className="flex-1 px-3 py-2 rounded-lg border"
-                            style={{
-                              background: `${brandTheme.colors.primary}10`,
-                              borderColor: `${brandTheme.colors.primary}30`
-                            }}
-                          >
-                            <div className="flex items-center space-x-2">
-                              <Users size={16} style={{ color: brandTheme.colors.primary }} />
-                              <span className="text-xs font-medium text-gray-600">Students</span>
-                            </div>
-                            <p className="text-xl font-bold text-gray-900 mt-1">{classData.totalStudents}</p>
-                          </div>
-
-                          <div 
-                            className="flex-1 px-3 py-2 rounded-lg border"
-                            style={{
-                              background: `${brandTheme.colors.secondary}10`,
-                              borderColor: `${brandTheme.colors.secondary}30`
-                            }}
-                          >
-                            <div className="flex items-center space-x-2">
-                              <UserPlus size={16} style={{ color: brandTheme.colors.secondary }} />
-                              <span className="text-xs font-medium text-gray-600">Teachers</span>
-                            </div>
-                            <p className="text-xl font-bold text-gray-900 mt-1">{classData.totalTeachers}</p>
-                          </div>
-                        </div>
+                  <div className="flex items-center space-x-4">
+                    <div 
+                      className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-2xl shadow-sm flex-shrink-0"
+                      style={{ 
+                        backgroundColor: `${brandTheme.colors.primary}15`,
+                        color: brandTheme.colors.primary
+                      }}
+                    >
+                      {classData.className.replace(/\D/g, '') || '#'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-xl font-bold text-gray-900">
+                        Class {classData.className}
+                      </h3>
+                      <div className="flex items-center gap-4 mt-1">
+                        <span className="text-sm">
+                          <span className="font-bold" style={{ color: brandTheme.colors.primary }}>{classData.totalStudents}</span>
+                          <span className="text-gray-500 ml-1">Students</span>
+                        </span>
+                        <span className="text-gray-300">|</span>
+                        <span className="text-sm">
+                          <span className="font-bold" style={{ color: brandTheme.colors.secondary }}>{classData.totalTeachers}</span>
+                          <span className="text-gray-500 ml-1">{classData.totalTeachers === 1 ? 'Teacher' : 'Teachers'}</span>
+                        </span>
+                        <span className="text-gray-300">|</span>
+                        <span className="text-xs text-gray-400">{classData.board} • {classData.academicYear}</span>
                       </div>
                     </div>
+                    <ChevronLeft size={20} className="text-gray-300 rotate-180 flex-shrink-0" />
                   </div>
                 </div>
               ))

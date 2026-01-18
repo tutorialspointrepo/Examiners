@@ -1413,6 +1413,505 @@ export const chatWithAI = functions
   });
 
 // ============================================
+// AI CODE ASSISTANT (CodingLab Integration)
+// Version: 1.2.0
+// Operations: explain, fix, suggest, tests, docs, optimize, assistant, format, autocomplete, inline
+// ============================================
+
+type AICodeOperation = 'explain' | 'fix' | 'suggest' | 'tests' | 'docs' | 'optimize' | 'assistant' | 'format' | 'autocomplete' | 'inline';
+
+const AI_CODE_SYSTEM_PROMPTS: Record<AICodeOperation, string> = {
+  assistant: 'You are a friendly and helpful AI coding assistant. Help users understand coding concepts, debug issues, and improve their code. Be concise but thorough.',
+  explain: 'You are a helpful coding tutor. Explain code clearly and concisely.',
+  fix: 'You are a code debugging expert. Return only fixed code.',
+  suggest: 'You are a code review expert. Provide actionable suggestions.',
+  tests: 'You are a testing expert. Generate comprehensive tests.',
+  docs: 'You are a documentation expert. Generate clear documentation.',
+  optimize: 'You are a performance optimization expert. Return optimized code.',
+  format: 'You are a code formatting expert. Return only formatted code without any markdown or explanation.',
+  autocomplete: 'You are a code completion assistant. Return only what is asked, no extra text.',
+  inline: 'You are a code completion assistant. Return only what is asked, no extra text.'
+};
+
+function buildAICodePrompt(
+  operation: AICodeOperation,
+  code: string,
+  language: string,
+  question?: string,
+  history?: Array<{role: string; content: string}>,
+  cursorLine?: number,
+  cursorColumn?: number,
+  prefix?: string
+): string {
+  const langUpper = language.charAt(0).toUpperCase() + language.slice(1);
+  
+  // Build history string for assistant
+  let historyStr = '';
+  if (operation === 'assistant' && history && history.length > 0) {
+    historyStr = "Previous conversation:\n";
+    const recentHistory = history.slice(-6);
+    for (const msg of recentHistory) {
+      const role = msg.role === 'user' ? 'User' : 'Assistant';
+      const content = (msg.content || '').substring(0, 500);
+      historyStr += `${role}: ${content}\n\n`;
+    }
+  }
+
+  const prompts: Record<AICodeOperation, string> = {
+    autocomplete: `You are an expert code autocomplete engine for ${langUpper}. Given the code context and cursor position, suggest completions.
+
+RULES:
+1. Return ONLY a JSON array of completion objects
+2. Each object has: label, insertText, detail, kind
+3. kind can be: keyword, function, variable, snippet, method, property
+4. Maximum 10 suggestions, sorted by relevance
+5. Focus on what makes sense at cursor position
+6. Include common patterns for ${langUpper}
+7. No explanations, ONLY valid JSON array
+
+Code context:
+\`\`\`${language}
+${code}
+\`\`\`
+
+Cursor at line ${cursorLine || 1}, column ${cursorColumn || 1}
+Text before cursor: "${prefix || ''}"
+
+Return JSON array:`,
+
+    inline: `You are a code completion AI for ${langUpper}. Complete the code at cursor position.
+
+RULES:
+1. Return ONLY the completion text (no explanation)
+2. Complete the current statement/expression logically
+3. Match the coding style in existing code
+4. Keep completion concise (1-3 lines max)
+5. Don't repeat what's already written
+
+Code before cursor:
+\`\`\`${language}
+${code}
+\`\`\`
+
+Current line prefix: "${prefix || ''}"
+
+Complete with:`,
+
+    assistant: `You are a helpful AI coding assistant specializing in ${langUpper}.
+
+${historyStr}
+
+USER'S CURRENT CODE (if any):
+\`\`\`${language}
+${code}
+\`\`\`
+
+USER'S QUESTION:
+${question || ''}
+
+RULES:
+- Be concise but thorough
+- Use markdown formatting for clarity
+- For code examples, use \`\`\`${language} blocks
+- If code is provided, reference it in your answer
+- Be encouraging and educational
+- Keep responses focused and practical`,
+
+    explain: `You are a ${langUpper} programming expert. Explain this code clearly.
+
+OUTPUT FORMAT (use this exact structure):
+## Summary
+Write 1-2 sentences describing what this code does.
+
+## How It Works
+1. **Step Name**: Brief explanation of first step
+2. **Step Name**: Brief explanation of second step
+3. **Step Name**: Brief explanation of third step
+(add more steps if needed, max 5)
+
+## Key Concepts
+- Concept 1 explanation
+- Concept 2 explanation
+
+## Complexity
+- **Time**: O(?) - brief reason
+- **Space**: O(?) - brief reason
+
+RULES:
+- Use proper markdown headers (##) and bold (**text**)
+- Use numbered lists for steps
+- Use bullet points for concepts
+- Keep each point concise (1 sentence)
+- Use \`backticks\` for code references like variable names
+- Total response under 200 words
+
+Code:
+\`\`\`${language}
+${code}
+\`\`\``,
+
+    fix: `You are a ${langUpper} debugging expert. Fix all issues in the provided code.
+
+OUTPUT FORMAT:
+Return ONLY the fixed code wrapped in a code block:
+
+\`\`\`${language}
+// Fixed code here
+// Add a comment like "// FIXED: description" where you made changes
+\`\`\`
+
+RULES:
+1. Identify and fix all syntax errors, bugs, and logical issues
+2. Add a brief comment (// FIXED: reason) next to each fix
+3. Maintain the original code intent and structure
+4. Follow ${langUpper} best practices
+5. If no issues found, return the original code unchanged
+6. Return ONLY the code block, no text before or after
+
+Code to fix:
+\`\`\`${language}
+${code}
+\`\`\`
+
+Return the fixed code:`,
+
+    suggest: `You are a ${langUpper} code review expert. Provide actionable improvement suggestions.
+
+OUTPUT FORMAT (use this exact structure):
+Start with a brief intro sentence about the code quality.
+
+Then provide numbered suggestions:
+
+1. **Suggestion Title**: Description of what to improve and why.
+
+\`\`\`${language}
+// Example code showing the improvement
+\`\`\`
+
+2. **Suggestion Title**: Description of what to improve and why.
+
+\`\`\`${language}
+// Example code showing the improvement
+\`\`\`
+
+(continue for each suggestion)
+
+RULES:
+- Provide 3-5 suggestions maximum
+- Each suggestion MUST have a bold title
+- Include a code example for EACH suggestion showing the fix
+- Use \`\`\`${language} for all code blocks
+- Use \`backticks\` for inline code references like \`variable_name\`
+- Focus on: best practices, performance, readability, error handling
+- Be specific and actionable
+
+Code to review:
+\`\`\`${language}
+${code}
+\`\`\`
+
+Provide suggestions:`,
+
+    tests: `You are a ${langUpper} testing expert. Generate comprehensive unit tests.
+
+OUTPUT FORMAT:
+\`\`\`${language}
+// Test file for the provided code
+// Include all necessary imports
+
+// Test 1: Description of what this tests
+// Test code here
+
+// Test 2: Description of what this tests  
+// Test code here
+
+// Continue with more tests...
+\`\`\`
+
+RULES:
+1. Create tests for all functions/methods in the code
+2. Include edge cases and boundary conditions
+3. Use appropriate testing framework for ${langUpper}:
+   - Python: pytest or unittest
+   - JavaScript: Jest or Mocha
+   - Java: JUnit
+   - C/C++: Simple assert statements or Google Test
+4. Add descriptive test names and comments
+5. Include both positive and negative test cases
+6. Return ONLY the test code wrapped in \`\`\`${language} block
+7. No explanations outside the code block
+
+Code to test:
+\`\`\`${language}
+${code}
+\`\`\`
+
+Generate tests:`,
+
+    docs: `You are a ${langUpper} documentation expert. Generate documentation for the provided code.
+
+OUTPUT FORMAT:
+\`\`\`${language}
+/**
+ * Function/Class description
+ * 
+ * @param paramName - Parameter description
+ * @param paramName - Parameter description
+ * @returns Description of return value
+ * 
+ * @example
+ * // Usage example
+ * functionName(arg1, arg2);
+ */
+
+// The documented code here...
+\`\`\`
+
+RULES:
+1. Create appropriate docstrings/comments for ${langUpper}:
+   - Python: Use docstrings with triple quotes
+   - JavaScript/TypeScript: Use JSDoc format
+   - Java: Use Javadoc format
+   - C/C++: Use Doxygen-style comments
+2. Document all functions, classes, and methods
+3. Include parameter descriptions and return types
+4. Add usage examples where helpful
+5. Return the COMPLETE code with documentation added
+6. Wrap everything in \`\`\`${language} block
+
+Code to document:
+\`\`\`${language}
+${code}
+\`\`\`
+
+Generate documentation:`,
+
+    optimize: `You are a ${langUpper} performance optimization expert. Optimize the provided code.
+
+OUTPUT FORMAT:
+First, provide a brief summary of optimizations made:
+
+## Optimizations Applied
+1. **Optimization Name**: Brief description
+2. **Optimization Name**: Brief description
+
+## Optimized Code
+\`\`\`${language}
+// Your optimized code here
+\`\`\`
+
+## Performance Improvement
+- **Time Complexity**: Before O(?) → After O(?)
+- **Space Complexity**: Before O(?) → After O(?)
+
+RULES:
+1. Improve time complexity where possible
+2. Reduce memory usage if applicable
+3. Apply ${langUpper}-specific optimizations
+4. Maintain code readability
+5. Always wrap code in \`\`\`${language} blocks
+
+Code to optimize:
+\`\`\`${language}
+${code}
+\`\`\`
+
+Return optimized code:`,
+
+    format: `Format this ${langUpper} code following standard conventions and best practices.
+
+RULES:
+1. Fix indentation (use 4 spaces for most languages, 2 for Ruby/YAML)
+2. Add proper spacing around operators
+3. Add spacing after commas
+4. Fix brace/bracket placement per language conventions
+5. Add blank lines between functions/methods
+6. Remove trailing whitespace
+7. Ensure consistent quote style
+8. DO NOT change any logic or functionality
+9. DO NOT add or remove any code
+10. Return ONLY the formatted code, no explanations or markdown
+
+Code to format:
+${code}`
+  };
+
+  return prompts[operation];
+}
+
+function cleanCodeBlockResponse(result: string, operation: AICodeOperation): string {
+  if (['fix', 'tests', 'docs', 'optimize', 'format'].includes(operation)) {
+    let cleaned = result.replace(/^```[\w]*\n?/, '');
+    cleaned = cleaned.replace(/\n?```$/, '');
+    return cleaned.trim();
+  }
+  return result;
+}
+
+export const aiCodeAssistant = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 60,
+    memory: '512MB'
+  })
+  .https.onCall(async (data, context) => {
+    try {
+      const { operation, code, language, question, history, cursorLine, cursorColumn, prefix } = data || {};
+
+      // Valid operations
+      const validOperations: AICodeOperation[] = ['explain', 'fix', 'suggest', 'tests', 'docs', 'optimize', 'assistant', 'format', 'autocomplete', 'inline'];
+      
+      if (!operation || !validOperations.includes(operation)) {
+        return {
+          success: false,
+          operation: operation || 'unknown',
+          result: '',
+          error: `Invalid operation. Use: ${validOperations.join(', ')}`
+        };
+      }
+
+      // Cast operation to correct type after validation
+      const validOperation = operation as AICodeOperation;
+
+      // Validate required fields based on operation
+      if (operation === 'assistant') {
+        if (!question) {
+          return {
+            success: false,
+            operation,
+            result: '',
+            error: 'Question is required for assistant operation'
+          };
+        }
+      } else if (operation !== 'autocomplete' && operation !== 'inline') {
+        if (!code || code.trim().length === 0) {
+          return {
+            success: false,
+            operation,
+            result: '',
+            error: 'Code is required for this operation'
+          };
+        }
+      }
+
+      if (!language) {
+        return {
+          success: false,
+          operation,
+          result: '',
+          error: 'Language is required'
+        };
+      }
+
+      // Validate lengths
+      if (code && code.length > 15000) {
+        return {
+          success: false,
+          operation,
+          result: '',
+          error: 'Code exceeds maximum length of 15000 characters'
+        };
+      }
+
+      if (question && question.length > 2000) {
+        return {
+          success: false,
+          operation,
+          result: '',
+          error: 'Question exceeds maximum length of 2000 characters'
+        };
+      }
+
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        throw new functions.https.HttpsError('failed-precondition', 'OpenAI API key not configured');
+      }
+
+      const client = new OpenAI({ apiKey });
+
+      // Build prompt
+      const prompt = buildAICodePrompt(
+        validOperation,
+        code || '',
+        language,
+        question,
+        history,
+        cursorLine,
+        cursorColumn,
+        prefix
+      );
+      const systemPrompt = AI_CODE_SYSTEM_PROMPTS[validOperation];
+
+      // Call OpenAI
+      const completion = await client.chat.completions.create({
+        model: AI_MODELS.GPT_4O_MINI,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt }
+        ],
+        temperature: validOperation === 'assistant' ? 0.7 : 0.3,
+        max_tokens: validOperation === 'autocomplete' || validOperation === 'inline' ? 500 : 4000
+      });
+
+      let result = completion.choices[0]?.message?.content || '';
+
+      // Handle autocomplete response
+      if (validOperation === 'autocomplete') {
+        let content = result.trim();
+        content = content.replace(/^```json?\s*/, '');
+        content = content.replace(/\s*```$/, '');
+        
+        try {
+          const suggestions = JSON.parse(content);
+          if (Array.isArray(suggestions)) {
+            return {
+              success: true,
+              operation: validOperation,
+              suggestions
+            };
+          }
+        } catch (e) {
+          return {
+            success: false,
+            operation: validOperation,
+            suggestions: [],
+            error: 'Failed to parse suggestions'
+          };
+        }
+        
+        return {
+          success: false,
+          operation: validOperation,
+          suggestions: [],
+          error: 'Invalid response format'
+        };
+      }
+
+      // Handle inline completion response
+      if (validOperation === 'inline') {
+        return {
+          success: true,
+          operation: validOperation,
+          completion: result.trim()
+        };
+      }
+
+      // Clean up code blocks for other operations
+      result = cleanCodeBlockResponse(result, validOperation);
+
+      return {
+        success: true,
+        operation: validOperation,
+        result: result.trim()
+      };
+
+    } catch (err: any) {
+      console.error('AI Code Assistant Error:', err);
+      throw new functions.https.HttpsError('internal', 'AI Code Assistant failed', err.message);
+    }
+  });
+
+// ============================================
 // EMAIL FUNCTIONS (Existing)
 // ============================================
 

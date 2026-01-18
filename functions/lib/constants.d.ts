@@ -244,6 +244,10 @@ export declare const CONNECTION_TYPES: {
 };
 export type ConnectionType = typeof CONNECTION_TYPES[keyof typeof CONNECTION_TYPES];
 /**
+ * Maximum violations allowed per exam attempt
+ */
+export declare const MAX_VIOLATIONS = 250;
+/**
  * Types of exam violations - Comprehensive list for proctoring
  */
 export declare const VIOLATION_TYPES: {
@@ -267,11 +271,23 @@ export declare const VIOLATION_TYPES: {
     readonly SHORTCUT_CTRLX: "SHORTCUT_CTRLX";
     readonly SHORTCUT_CTRLA: "SHORTCUT_CTRLA";
     readonly SHORTCUT_ALTTAB: "SHORTCUT_ALTTAB";
+    readonly SHORTCUT_CMDTAB: "SHORTCUT_CMDTAB";
     readonly SHORTCUT_CTRLSHIFTC: "SHORTCUT_CTRLSHIFTC";
     readonly SHORTCUT_F12: "SHORTCUT_F12";
     readonly SHORTCUT_CTRLP: "SHORTCUT_CTRLP";
     readonly SHORTCUT_CTRLS: "SHORTCUT_CTRLS";
     readonly SHORTCUT_DEVTOOLS: "SHORTCUT_DEVTOOLS";
+    readonly MULTIPLE_FACES: "MULTIPLE_FACES";
+    readonly NO_FACE: "NO_FACE";
+    readonly FACE_MISMATCH: "FACE_MISMATCH";
+    readonly HEAD_TURNED: "HEAD_TURNED";
+    readonly LOUD_NOISE: "LOUD_NOISE";
+    readonly HUMAN_VOICE_DETECTED: "HUMAN_VOICE_DETECTED";
+    readonly SUSPICIOUS_MOVEMENT: "SUSPICIOUS_MOVEMENT";
+    readonly PROHIBITED_OBJECT: "PROHIBITED_OBJECT";
+    readonly VIRTUAL_MACHINE: "VIRTUAL_MACHINE";
+    readonly DOM_TAMPERING: "DOM_TAMPERING";
+    readonly DEVICE_CHANGE: "DEVICE_CHANGE";
 };
 export type ViolationType = typeof VIOLATION_TYPES[keyof typeof VIOLATION_TYPES];
 /**
@@ -1000,11 +1016,23 @@ export declare const APP_CONSTANTS: {
         readonly SHORTCUT_CTRLX: "SHORTCUT_CTRLX";
         readonly SHORTCUT_CTRLA: "SHORTCUT_CTRLA";
         readonly SHORTCUT_ALTTAB: "SHORTCUT_ALTTAB";
+        readonly SHORTCUT_CMDTAB: "SHORTCUT_CMDTAB";
         readonly SHORTCUT_CTRLSHIFTC: "SHORTCUT_CTRLSHIFTC";
         readonly SHORTCUT_F12: "SHORTCUT_F12";
         readonly SHORTCUT_CTRLP: "SHORTCUT_CTRLP";
         readonly SHORTCUT_CTRLS: "SHORTCUT_CTRLS";
         readonly SHORTCUT_DEVTOOLS: "SHORTCUT_DEVTOOLS";
+        readonly MULTIPLE_FACES: "MULTIPLE_FACES";
+        readonly NO_FACE: "NO_FACE";
+        readonly FACE_MISMATCH: "FACE_MISMATCH";
+        readonly HEAD_TURNED: "HEAD_TURNED";
+        readonly LOUD_NOISE: "LOUD_NOISE";
+        readonly HUMAN_VOICE_DETECTED: "HUMAN_VOICE_DETECTED";
+        readonly SUSPICIOUS_MOVEMENT: "SUSPICIOUS_MOVEMENT";
+        readonly PROHIBITED_OBJECT: "PROHIBITED_OBJECT";
+        readonly VIRTUAL_MACHINE: "VIRTUAL_MACHINE";
+        readonly DOM_TAMPERING: "DOM_TAMPERING";
+        readonly DEVICE_CHANGE: "DEVICE_CHANGE";
     };
     readonly VIOLATION_SEVERITY_MAP: Record<ViolationType, SeverityLevel>;
     readonly VIOLATION_DESCRIPTIONS: Record<ViolationType, string>;

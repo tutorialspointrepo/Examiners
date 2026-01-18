@@ -121,7 +121,8 @@ import {
   faCheckCircle,
   faDoorOpen,
   faImage,
-  faClipboardCheck
+  faClipboardCheck,
+  faCode
 } from '@fortawesome/sharp-light-svg-icons';
 
 import { 
@@ -1727,6 +1728,11 @@ function App() {
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<any>(null);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [showLearning, setShowLearning] = useState(false);
+  const [learningActiveMenu, setLearningActiveMenu] = useState<string>('courses');
+  const [showProblemsListModal, setShowProblemsListModal] = useState(false);
+  const [selectedProblemSlug, setSelectedProblemSlug] = useState<string>('two-sum');
+  const [problemsSearchQuery, setProblemsSearchQuery] = useState('');
+  const [problemsCurrentPage, setProblemsCurrentPage] = useState(1);
   const [selectedSubject, setSelectedSubject] = useState<any | null>(null);
   const [selectedQuestionType, setSelectedQuestionType] = useState<'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code'>('all');
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
@@ -3335,15 +3341,42 @@ const fetchCounts = async () => {
         <div className="flex items-center justify-between px-6 py-2.5">
           <div className="flex items-center space-x-4">
             <Logo size="medium" showText={true} brand={brandTheme} collegeName={selectedCollege?.name || brandTheme.collegeName} />
-            {/* Only show Create button for non-students (teachers/admins) */}
-            {currentUser?.userType !== USER_TYPES.STUDENT && activeItem !== ACTIVE_ITEMS.CALENDAR && activeItem !== ACTIVE_ITEMS.LEADERBOARD && activeItem !== ACTIVE_ITEMS.REPORTS && activeItem !== ACTIVE_ITEMS.AUDIT && (
+            
+            {/* Show Practice header when Coding Lab is active */}
+            {showLearning && learningActiveMenu === 'codinglab' && (
+              <>
+                <div className="w-px h-8 bg-gray-200"></div>
+                <button 
+                  onClick={() => setShowProblemsListModal(true)}
+                  className="flex items-center space-x-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
+                >
+                  <div 
+                    className="w-9 h-9 rounded-full flex items-center justify-center shadow-md"
+                    style={{ background: brandTheme.gradients.primary }}
+                  >
+                    <FontAwesomeIcon icon={faCode} className="text-white" />  
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-gray-900">Practice</p>
+                    <p className="text-xs text-gray-500">Coding problems & exercises</p>
+                  </div>
+                </button>
+              </>
+            )}
+            
+            {/* Only show Create button for non-students (teachers/admins) - Hide when Coding Lab is active */}
+            {currentUser?.userType !== USER_TYPES.STUDENT && activeItem !== ACTIVE_ITEMS.CALENDAR && activeItem !== ACTIVE_ITEMS.LEADERBOARD && activeItem !== ACTIVE_ITEMS.REPORTS && activeItem !== ACTIVE_ITEMS.AUDIT && !(showLearning && learningActiveMenu === 'codinglab') && (
               <>
                 <div className="w-px h-8 bg-gray-200"></div>
                 <button 
                   onClick={() => {
                     if (showLearning) {
-                      // TODO: Open Create Course Modal
-                      console.log('Create Course clicked');
+                      if (learningActiveMenu === 'students') {
+                        setIsCreateUserModalOpen(true);
+                      } else {
+                        // TODO: Open Create Course Modal
+                        console.log('Create Course clicked');
+                      }
                     } else if (activeItem === ACTIVE_ITEMS.QUESTIONS) {
                       setIsCreateQuestionModalOpen(true);
                     } else if (activeItem === ACTIVE_ITEMS.USERS) {
@@ -3367,17 +3400,21 @@ const fetchCounts = async () => {
                   </div>
                   <div className="text-left">
                     <p className="text-sm font-semibold text-gray-900">
-                      {showLearning ? 'Create Course' :
+                      {showLearning ? (
+                        learningActiveMenu === 'students' ? 'Create User' : 'Create Course'
+                      ) :
                       activeItem === ACTIVE_ITEMS.QUESTIONS ? 'Create Questions' : 
-                      activeItem === ACTIVE_ITEMS.USERS ? 'Create Users' : 
+                      activeItem === ACTIVE_ITEMS.USERS ? 'Create User' : 
                       activeItem === ACTIVE_ITEMS.ROOMS ? 'Create Room' : 
                       activeItem === ACTIVE_ITEMS.HALLTICKETS ? 'Create Hall Ticket' :
                       'Create Exam'}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {showLearning ? 'Add new course' :
+                      {showLearning ? (
+                        learningActiveMenu === 'students' ? 'Add new user' : 'Add new course'
+                      ) :
                       activeItem === ACTIVE_ITEMS.QUESTIONS ? 'Add new questions' : 
-                      activeItem === ACTIVE_ITEMS.USERS ? 'Add new users' : 
+                      activeItem === ACTIVE_ITEMS.USERS ? 'Add new user' : 
                       activeItem === ACTIVE_ITEMS.ROOMS ? 'Add new room' : 
                       activeItem === ACTIVE_ITEMS.HALLTICKETS ? 'Generate hall ticket' :
                       'New Assessment'}
@@ -3462,7 +3499,8 @@ const fetchCounts = async () => {
               </div>
             ) : null}
             
-            {/* Academic Year Dropdown */}
+            {/* Academic Year Dropdown - Hidden when Coding Lab is active */}
+            {!(showLearning && learningActiveMenu === 'codinglab') && (
             <div className="relative year-dropdown-container">
               <button 
                 onClick={() => setIsYearDropdownOpen(!isYearDropdownOpen)}
@@ -3495,6 +3533,7 @@ const fetchCounts = async () => {
                 </div>
               )}
             </div>
+            )}
             {/* AI Assistant Button - Only for teachers and admins */}
             {currentUser?.userType !== 'student' && (
               <button
@@ -3785,6 +3824,9 @@ const fetchCounts = async () => {
             onClose={() => setShowLearning(false)}
             brandTheme={brandTheme}
             currentUser={currentUser}
+            selectedCollege={selectedCollege}
+            onActiveMenuChange={(menuItem) => setLearningActiveMenu(menuItem)}
+            selectedProblemSlug={selectedProblemSlug}
           />
         ) : (
         <>
@@ -3974,6 +4016,12 @@ const fetchCounts = async () => {
                     onClick={() => {
                       // Don't allow clicking on header items
                       if (isHeader) return;
+                      
+                      // Handle custom onClick if provided (like codinglab)
+                      if (item.onClick) {
+                        item.onClick();
+                        return;
+                      }
                       
                       setActiveItem(item.id);
                       
@@ -9069,6 +9117,287 @@ const fetchCounts = async () => {
       currentUser={currentUser}
       onUploadComplete={handleRoomAdded}
     />
+
+    {/* Problems List Modal - Slides from left */}
+    <div className={`fixed inset-0 z-[10000] flex items-start justify-start p-2 transition-opacity duration-300 ${
+      showProblemsListModal ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+    }`}>
+      {/* Overlay */}
+      <div 
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
+        onClick={() => setShowProblemsListModal(false)}
+      />
+      
+      {/* Panel - Slide in from left */}
+      <div 
+        className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[30rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+          showProblemsListModal ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div 
+          className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+          style={{ background: brandTheme.gradients.primary }}
+        >
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
+              <FontAwesomeIcon icon={faListCheck} className="text-white" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-white">Problems List</h2>
+              <p className="text-xs text-white/70">Select a problem to practice</p>
+            </div>
+          </div>
+          <button 
+            onClick={() => setShowProblemsListModal(false)}
+            className="w-9 h-9 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all hover:rotate-90 duration-300"
+          >
+            <FontAwesomeIcon icon={faXmark} className="text-white" />
+          </button>
+        </div>
+        
+        {/* Search Bar */}
+        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search problems..."
+              value={problemsSearchQuery}
+              onChange={(e) => {
+                setProblemsSearchQuery(e.target.value);
+                setProblemsCurrentPage(1);
+              }}
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 transition-all"
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        </div>
+        
+        {/* Problems List */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {(() => {
+            const allProblems = [
+              { id: 1, title: 'Two Sum', difficulty: 'Easy', slug: 'two-sum', solved: true },
+              { id: 2, title: 'Add Two Numbers', difficulty: 'Medium', slug: 'add-two-numbers', solved: true },
+              { id: 3, title: 'Longest Substring Without Repeating Characters', difficulty: 'Medium', slug: 'longest-substring', solved: false },
+              { id: 4, title: 'Median of Two Sorted Arrays', difficulty: 'Hard', slug: 'median-sorted-arrays', solved: false },
+              { id: 5, title: 'Longest Palindromic Substring', difficulty: 'Medium', slug: 'longest-palindrome', solved: true },
+              { id: 6, title: 'Zigzag Conversion', difficulty: 'Medium', slug: 'zigzag-conversion', solved: false },
+              { id: 7, title: 'Reverse Integer', difficulty: 'Medium', slug: 'reverse-integer', solved: false },
+              { id: 8, title: 'String to Integer (atoi)', difficulty: 'Medium', slug: 'string-to-integer', solved: false },
+              { id: 9, title: 'Palindrome Number', difficulty: 'Easy', slug: 'palindrome-number', solved: true },
+              { id: 10, title: 'Regular Expression Matching', difficulty: 'Hard', slug: 'regex-matching', solved: false },
+              { id: 11, title: 'Container With Most Water', difficulty: 'Medium', slug: 'container-water', solved: false },
+              { id: 12, title: 'Integer to Roman', difficulty: 'Medium', slug: 'integer-to-roman', solved: false },
+              { id: 13, title: 'Roman to Integer', difficulty: 'Easy', slug: 'roman-to-integer', solved: true },
+              { id: 14, title: 'Longest Common Prefix', difficulty: 'Easy', slug: 'longest-prefix', solved: false },
+              { id: 15, title: '3Sum', difficulty: 'Medium', slug: '3sum', solved: false },
+              { id: 16, title: '3Sum Closest', difficulty: 'Medium', slug: '3sum-closest', solved: false },
+              { id: 17, title: 'Letter Combinations of a Phone Number', difficulty: 'Medium', slug: 'phone-combinations', solved: false },
+              { id: 18, title: '4Sum', difficulty: 'Medium', slug: '4sum', solved: false },
+              { id: 19, title: 'Remove Nth Node From End of List', difficulty: 'Medium', slug: 'remove-nth-node', solved: false },
+              { id: 20, title: 'Valid Parentheses', difficulty: 'Easy', slug: 'valid-parentheses', solved: true },
+              { id: 21, title: 'Merge Two Sorted Lists', difficulty: 'Easy', slug: 'merge-two-lists', solved: false },
+              { id: 22, title: 'Generate Parentheses', difficulty: 'Medium', slug: 'generate-parentheses', solved: false },
+              { id: 23, title: 'Merge k Sorted Lists', difficulty: 'Hard', slug: 'merge-k-lists', solved: false },
+              { id: 24, title: 'Swap Nodes in Pairs', difficulty: 'Medium', slug: 'swap-nodes', solved: false },
+              { id: 25, title: 'Reverse Nodes in k-Group', difficulty: 'Hard', slug: 'reverse-k-group', solved: false },
+              { id: 26, title: 'Remove Duplicates from Sorted Array', difficulty: 'Easy', slug: 'remove-duplicates', solved: true },
+              { id: 27, title: 'Remove Element', difficulty: 'Easy', slug: 'remove-element', solved: false },
+              { id: 28, title: 'Find the Index of the First Occurrence', difficulty: 'Easy', slug: 'find-first-occurrence', solved: false },
+              { id: 29, title: 'Divide Two Integers', difficulty: 'Medium', slug: 'divide-integers', solved: false },
+              { id: 30, title: 'Substring with Concatenation', difficulty: 'Hard', slug: 'substring-concat', solved: false },
+            ];
+
+            const filteredProblems = allProblems.filter(p =>
+              p.title.toLowerCase().includes(problemsSearchQuery.toLowerCase())
+            );
+
+            const problemsPerPage = 10;
+            const totalPages = Math.ceil(filteredProblems.length / problemsPerPage);
+            const startIndex = (problemsCurrentPage - 1) * problemsPerPage;
+            const paginatedProblems = filteredProblems.slice(startIndex, startIndex + problemsPerPage);
+
+            return (
+              <>
+                {paginatedProblems.map((prob, index) => (
+                  <div
+                    key={prob.id}
+                    onClick={() => {
+                      setSelectedProblemSlug(prob.slug);
+                      setShowProblemsListModal(false);
+                    }}
+                    className={`flex items-center justify-between px-5 py-3.5 cursor-pointer transition-all duration-200 border-b border-gray-100 hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50 group ${
+                      prob.slug === selectedProblemSlug ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-l-green-500' : ''
+                    }`}
+                    style={{ 
+                      animationDelay: `${index * 30}ms`,
+                      animation: showProblemsListModal ? 'fadeSlideIn 0.3s ease-out forwards' : 'none'
+                    }}
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Solved indicator */}
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        prob.solved 
+                          ? 'bg-green-500 text-white' 
+                          : 'border-2 border-gray-300'
+                      }`}>
+                        {prob.solved && (
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className={`text-sm transition-colors ${
+                        prob.slug === selectedProblemSlug 
+                          ? 'font-semibold text-green-700' 
+                          : 'text-gray-700 group-hover:text-gray-900'
+                      }`}>
+                        {prob.id}. {prob.title}
+                      </span>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-transform group-hover:scale-105 ${
+                      prob.difficulty === 'Easy' ? 'bg-green-100 text-green-700' :
+                      prob.difficulty === 'Medium' ? 'bg-amber-100 text-amber-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      {prob.difficulty === 'Medium' ? 'MED.' : prob.difficulty.toUpperCase()}
+                    </span>
+                  </div>
+                ))}
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between py-3 px-4 border-t border-gray-100 bg-gray-50/30">
+                    <button
+                      onClick={() => setProblemsCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={problemsCurrentPage === 1}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+                    >
+                      <FontAwesomeIcon icon={faChevronLeft} className="w-3 h-3" />
+                      <span>Previous</span>
+                    </button>
+                    
+                    <div className="flex items-center gap-1">
+                      {/* First page */}
+                      <button
+                        onClick={() => setProblemsCurrentPage(1)}
+                        className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
+                          problemsCurrentPage === 1
+                            ? 'text-white shadow-md'
+                            : 'text-gray-600 hover:bg-gray-100'
+                        }`}
+                        style={problemsCurrentPage === 1 ? { background: brandTheme.gradients.primary } : {}}
+                      >
+                        1
+                      </button>
+                      
+                      {/* Left ellipsis */}
+                      {problemsCurrentPage > 3 && (
+                        <span className="px-1 text-gray-400">...</span>
+                      )}
+                      
+                      {/* Pages around current */}
+                      {Array.from({ length: 3 }, (_, i) => {
+                        const pageNum = problemsCurrentPage - 1 + i;
+                        if (pageNum <= 1 || pageNum >= totalPages) return null;
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => setProblemsCurrentPage(pageNum)}
+                            className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
+                              problemsCurrentPage === pageNum
+                                ? 'text-white shadow-md'
+                                : 'text-gray-600 hover:bg-gray-100'
+                            }`}
+                            style={problemsCurrentPage === pageNum ? { background: brandTheme.gradients.primary } : {}}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      })}
+                      
+                      {/* Right ellipsis */}
+                      {problemsCurrentPage < totalPages - 2 && (
+                        <span className="px-1 text-gray-400">...</span>
+                      )}
+                      
+                      {/* Last page */}
+                      {totalPages > 1 && (
+                        <button
+                          onClick={() => setProblemsCurrentPage(totalPages)}
+                          className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
+                            problemsCurrentPage === totalPages
+                              ? 'text-white shadow-md'
+                              : 'text-gray-600 hover:bg-gray-100'
+                          }`}
+                          style={problemsCurrentPage === totalPages ? { background: brandTheme.gradients.primary } : {}}
+                        >
+                          {totalPages}
+                        </button>
+                      )}
+                    </div>
+                    
+                    <button
+                      onClick={() => setProblemsCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={problemsCurrentPage === totalPages}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+                    >
+                      <span>Next</span>
+                      <FontAwesomeIcon icon={faChevronRight} className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </div>
+        
+        {/* Footer Stats */}
+        <div className="px-5 py-4 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100 flex-shrink-0">
+          <div className="flex items-center justify-around text-center">
+            <div className="group cursor-default">
+              <div className="text-2xl font-bold text-green-600 group-hover:scale-110 transition-transform">24</div>
+              <div className="text-xs text-gray-500 font-medium">SOLVED</div>
+            </div>
+            <div className="w-px h-10 bg-gray-300"></div>
+            <div className="group cursor-default">
+              <div className="text-2xl font-bold text-amber-500 group-hover:scale-110 transition-transform">8</div>
+              <div className="text-xs text-gray-500 font-medium">ATTEMPTED</div>
+            </div>
+            <div className="w-px h-10 bg-gray-300"></div>
+            <div className="group cursor-default">
+              <div className="text-2xl font-bold text-gray-600 group-hover:scale-110 transition-transform">380</div>
+              <div className="text-xs text-gray-500 font-medium">TOTAL</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    {/* Custom scrollbar styles and animations */}
+    <style>{`
+      .custom-scrollbar {
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+      }
+      .custom-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      @keyframes fadeSlideIn {
+        from {
+          opacity: 0;
+          transform: translateX(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+    `}</style>
     </BrandProvider>
   );
 }

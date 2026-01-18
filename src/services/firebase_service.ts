@@ -103,6 +103,59 @@ import type {
   CreateQuestionResult,
 } from '../types/question.types';
 
+// ==================== AI CODE ASSISTANT TYPES ====================
+
+/**
+ * Valid AI Code Assistant operations
+ */
+export type AICodeOperation = 'explain' | 'fix' | 'suggest' | 'tests' | 'docs' | 'optimize' | 'assistant' | 'format' | 'autocomplete' | 'inline';
+
+/**
+ * AI Code Assistant request parameters
+ */
+export interface AICodeAssistantRequest {
+  operation: AICodeOperation;
+  code: string;
+  language: string;
+  question?: string;  // Required for 'assistant' operation
+  history?: Array<{ role: string; content: string }>;  // For 'assistant' operation
+  stream?: boolean;
+  // Autocomplete specific
+  cursorLine?: number;
+  cursorColumn?: number;
+  prefix?: string;
+}
+
+/**
+ * AI Code Assistant response
+ */
+export interface AICodeAssistantResponse {
+  success: boolean;
+  operation: AICodeOperation;
+  result: string;
+  error?: string;
+}
+
+/**
+ * Autocomplete suggestion item
+ */
+export interface AutocompleteSuggestion {
+  label: string;
+  insertText: string;
+  detail: string;
+  kind: 'keyword' | 'function' | 'variable' | 'snippet' | 'method' | 'property';
+}
+
+/**
+ * Autocomplete response
+ */
+export interface AutocompleteResponse {
+  success: boolean;
+  suggestions?: AutocompleteSuggestion[];
+  completion?: string;  // For inline completion
+  error?: string;
+}
+
 // Transformation helper functions (inline definitions since types file is missing)
 function createQuestionInputToQuestion(input: CreateQuestionInput): Partial<QuestionBankItem> {
   return {
@@ -611,6 +664,7 @@ export interface UserModel {
   studentClass?: string;
   parentPhone?: string;
   studentHistory?: StudentHistoryEntry[];
+  enrollmentCount?: number;
   
   // Teacher-specific
   teacherClasses?: string[];
@@ -12349,6 +12403,749 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
     }
   }
 
+  // ==========================================
+  // STUDENT ENROLLMENTS
+  // ==========================================
+
+  /**
+   * Get all enrollments for a student
+   */
+  async getStudentEnrollments(userId: string): Promise<{
+    examId: string;
+    examName: string;
+    subjectName?: string;
+    enrolledAt: Date | null;
+    status: string;
+  }[]> {
+    try {
+      console.log('📚 Fetching enrollments for user:', userId);
+      
+      // Query exam_attempts collection for this student
+      const attemptsRef = collection(this.db, COLLECTIONS.EXAM_ATTEMPTS);
+      const q = query(
+        attemptsRef,
+        where('studentId', '==', userId),
+        orderBy('createdAt', 'desc')
+      );
+      
+      const snapshot = await getDocs(q);
+      const enrollments: {
+        examId: string;
+        examName: string;
+        subjectName?: string;
+        enrolledAt: Date | null;
+        status: string;
+      }[] = [];
+      
+      for (const docSnap of snapshot.docs) {
+        const data = docSnap.data();
+        
+        // Get exam details
+        let examName = data.examName || 'Unknown Exam';
+        let subjectName = data.subjectName || '';
+        
+        // If exam name not in attempt, fetch from exams collection
+        if (!data.examName && data.examId) {
+          try {
+            const examDoc = await getDoc(doc(this.db, COLLECTIONS.EXAMS, data.examId));
+            if (examDoc.exists()) {
+              const examData = examDoc.data();
+              examName = examData.title || examData.examName || 'Unknown Exam';
+              subjectName = examData.subjectName || examData.subject || '';
+            }
+          } catch (e) {
+            console.warn('Could not fetch exam details:', e);
+          }
+        }
+        
+        enrollments.push({
+          examId: data.examId || docSnap.id,
+          examName,
+          subjectName,
+          enrolledAt: data.createdAt?.toDate?.() || null,
+          status: data.status || 'enrolled'
+        });
+      }
+      
+      console.log('✅ Found', enrollments.length, 'enrollments');
+      return enrollments;
+    } catch (error) {
+      console.error('❌ Error fetching student enrollments:', error);
+      return [];
+    }
+  }
+
+  // ==========================================
+  // CODING LAB / PRACTICE PROBLEMS
+  // ==========================================
+
+  /**
+   * Generate a unique device ID for tracking views/likes
+   * Uses localStorage to persist across sessions
+   */
+  private getDeviceId(): string {
+    if (typeof window === 'undefined') return 'server';
+    
+    let deviceId = localStorage.getItem('tp_device_id');
+    if (!deviceId) {
+      deviceId = 'device_' + Math.random().toString(36).substring(2, 15) + 
+                 Math.random().toString(36).substring(2, 15) + 
+                 '_' + Date.now().toString(36);
+      localStorage.setItem('tp_device_id', deviceId);
+    }
+    return deviceId;
+  }
+
+  /**
+   * Get a single coding problem by slug/ID
+   * Automatically tracks view (one device = one view per 24 hours)
+   */
+  async getCodingProblem(slug: string): Promise<any | null> {
+    try {
+      if (!this.firestore) {
+        throw new Error('Firestore not initialized');
+      }
+
+      const docRef = doc(this.firestore, 'problems', slug);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        // Track view with device limiting
+        await this.trackProblemView(slug);
+        return { id: docSnap.id, ...docSnap.data() };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching coding problem:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Track problem view - one device counts as one view per 24 hours
+   */
+  async trackProblemView(slug: string): Promise<boolean> {
+    try {
+      if (!this.firestore) {
+        throw new Error('Firestore not initialized');
+      }
+
+      const deviceId = this.getDeviceId();
+      const viewKey = `tp_view_${slug}`;
+      const lastViewTime = localStorage.getItem(viewKey);
+      const now = Date.now();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+
+      // Check if this device has viewed within the last 24 hours
+      if (lastViewTime && (now - parseInt(lastViewTime)) < twentyFourHours) {
+        console.log('⏳ View already counted for this device within 24 hours');
+        return false;
+      }
+
+      // Record this view in Firestore
+      const problemRef = doc(this.firestore, 'problems', slug);
+      const viewsRef = doc(this.firestore, 'problem_views', `${slug}_${deviceId}`);
+
+      // Check if device has viewed before (server-side check)
+      const viewDoc = await getDoc(viewsRef);
+      
+      if (viewDoc.exists()) {
+        const viewData = viewDoc.data();
+        const lastServerView = viewData.lastViewedAt?.toDate?.()?.getTime() || 0;
+        
+        if ((now - lastServerView) < twentyFourHours) {
+          // Update local storage to sync with server
+          localStorage.setItem(viewKey, lastServerView.toString());
+          console.log('⏳ View already counted (server check)');
+          return false;
+        }
+      }
+
+      // Increment view count and record this device's view
+      await Promise.all([
+        updateDoc(problemRef, { 
+          views: increment(1),
+          'stats.views': increment(1)
+        }),
+        setDoc(viewsRef, {
+          deviceId,
+          problemSlug: slug,
+          lastViewedAt: serverTimestamp(),
+          viewCount: increment(1)
+        }, { merge: true })
+      ]);
+
+      // Update local storage
+      localStorage.setItem(viewKey, now.toString());
+      console.log('✅ View counted for problem:', slug);
+      return true;
+    } catch (error) {
+      console.error('Error tracking problem view:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Like a coding problem - one device can only like once
+   * Returns: { success: boolean, alreadyLiked: boolean, totalLikes: number }
+   */
+  async likeCodingProblem(slug: string): Promise<{ success: boolean; alreadyLiked: boolean; totalLikes: number }> {
+    try {
+      if (!this.firestore) {
+        throw new Error('Firestore not initialized');
+      }
+
+      const deviceId = this.getDeviceId();
+      const likeKey = `tp_like_${slug}`;
+      
+      // Check local storage first
+      if (localStorage.getItem(likeKey) === 'true') {
+        console.log('❤️ Already liked from this device (local check)');
+        const problemDoc = await getDoc(doc(this.firestore, 'problems', slug));
+        const currentLikes = problemDoc.data()?.stats?.likes || problemDoc.data()?.likes || 0;
+        return { success: false, alreadyLiked: true, totalLikes: currentLikes };
+      }
+
+      const problemRef = doc(this.firestore, 'problems', slug);
+      const likesRef = doc(this.firestore, 'problem_likes', `${slug}_${deviceId}`);
+
+      // Check server-side if device has already liked
+      const likeDoc = await getDoc(likesRef);
+      
+      if (likeDoc.exists()) {
+        // Device has already liked - sync local storage
+        localStorage.setItem(likeKey, 'true');
+        console.log('❤️ Already liked from this device (server check)');
+        const problemDoc = await getDoc(problemRef);
+        const currentLikes = problemDoc.data()?.stats?.likes || problemDoc.data()?.likes || 0;
+        return { success: false, alreadyLiked: true, totalLikes: currentLikes };
+      }
+
+      // Record the like
+      await Promise.all([
+        updateDoc(problemRef, { 
+          likes: increment(1),
+          'stats.likes': increment(1)
+        }),
+        setDoc(likesRef, {
+          deviceId,
+          problemSlug: slug,
+          likedAt: serverTimestamp()
+        })
+      ]);
+
+      // Update local storage
+      localStorage.setItem(likeKey, 'true');
+      
+      // Get updated like count
+      const updatedProblemDoc = await getDoc(problemRef);
+      const totalLikes = updatedProblemDoc.data()?.stats?.likes || updatedProblemDoc.data()?.likes || 0;
+      
+      console.log('✅ Like recorded for problem:', slug);
+      return { success: true, alreadyLiked: false, totalLikes };
+    } catch (error) {
+      console.error('Error liking coding problem:', error);
+      return { success: false, alreadyLiked: false, totalLikes: 0 };
+    }
+  }
+
+  /**
+   * Unlike a coding problem (remove like)
+   */
+  async unlikeCodingProblem(slug: string): Promise<{ success: boolean; totalLikes: number }> {
+    try {
+      if (!this.firestore) {
+        throw new Error('Firestore not initialized');
+      }
+
+      const deviceId = this.getDeviceId();
+      const likeKey = `tp_like_${slug}`;
+
+      const problemRef = doc(this.firestore, 'problems', slug);
+      const likesRef = doc(this.firestore, 'problem_likes', `${slug}_${deviceId}`);
+
+      // Check if device has liked
+      const likeDoc = await getDoc(likesRef);
+      
+      if (!likeDoc.exists()) {
+        console.log('⚠️ Cannot unlike - not previously liked');
+        const problemDoc = await getDoc(problemRef);
+        const currentLikes = problemDoc.data()?.stats?.likes || problemDoc.data()?.likes || 0;
+        return { success: false, totalLikes: currentLikes };
+      }
+
+      // Remove the like
+      await Promise.all([
+        updateDoc(problemRef, { 
+          likes: increment(-1),
+          'stats.likes': increment(-1)
+        }),
+        deleteDoc(likesRef)
+      ]);
+
+      // Update local storage
+      localStorage.removeItem(likeKey);
+      
+      // Get updated like count
+      const updatedProblemDoc = await getDoc(problemRef);
+      const totalLikes = updatedProblemDoc.data()?.stats?.likes || updatedProblemDoc.data()?.likes || 0;
+      
+      console.log('✅ Like removed for problem:', slug);
+      return { success: true, totalLikes: Math.max(0, totalLikes) };
+    } catch (error) {
+      console.error('Error unliking coding problem:', error);
+      return { success: false, totalLikes: 0 };
+    }
+  }
+
+  /**
+   * Check if device has liked a problem
+   */
+  async hasLikedProblem(slug: string): Promise<boolean> {
+    try {
+      // Check local storage first (faster)
+      const likeKey = `tp_like_${slug}`;
+      if (localStorage.getItem(likeKey) === 'true') {
+        return true;
+      }
+
+      if (!this.firestore) {
+        return false;
+      }
+
+      // Check server
+      const deviceId = this.getDeviceId();
+      const likesRef = doc(this.firestore, 'problem_likes', `${slug}_${deviceId}`);
+      const likeDoc = await getDoc(likesRef);
+      
+      if (likeDoc.exists()) {
+        // Sync local storage
+        localStorage.setItem(likeKey, 'true');
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error checking like status:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get problem stats (views, likes)
+   */
+  async getProblemStats(slug: string): Promise<{ views: number; likes: number; hasLiked: boolean }> {
+    try {
+      if (!this.firestore) {
+        throw new Error('Firestore not initialized');
+      }
+
+      const problemRef = doc(this.firestore, 'problems', slug);
+      const problemDoc = await getDoc(problemRef);
+      
+      if (!problemDoc.exists()) {
+        return { views: 0, likes: 0, hasLiked: false };
+      }
+
+      const data = problemDoc.data();
+      const views = data.stats?.views || data.views || 0;
+      const likes = data.stats?.likes || data.likes || 0;
+      const hasLiked = await this.hasLikedProblem(slug);
+
+      return { views, likes, hasLiked };
+    } catch (error) {
+      console.error('Error getting problem stats:', error);
+      return { views: 0, likes: 0, hasLiked: false };
+    }
+  }
+
+  /**
+   * Get list of coding problems with optional filters
+   */
+  async getCodingProblems(
+    filters?: {
+      category?: string;
+      difficulty?: string;
+      tags?: string[];
+    },
+    limitCount: number = 20,
+    lastDoc?: any
+  ): Promise<{ problems: any[]; lastDoc: any; hasMore: boolean }> {
+    try {
+      if (!this.firestore) {
+        throw new Error('Firestore not initialized');
+      }
+
+      let q = query(
+        collection(this.firestore, 'problems'),
+        orderBy('number', 'asc'),
+        limit(limitCount + 1)
+      );
+
+      // Apply filters
+      if (filters?.difficulty && filters.difficulty !== 'All') {
+        q = query(
+          collection(this.firestore, 'problems'),
+          where('difficulty', '==', filters.difficulty),
+          orderBy('number', 'asc'),
+          limit(limitCount + 1)
+        );
+      }
+
+      if (filters?.category && filters.category !== 'All') {
+        q = query(
+          collection(this.firestore, 'problems'),
+          where('category', '==', filters.category),
+          orderBy('number', 'asc'),
+          limit(limitCount + 1)
+        );
+      }
+
+      if (filters?.tags && filters.tags.length > 0) {
+        q = query(
+          collection(this.firestore, 'problems'),
+          where('tags', 'array-contains-any', filters.tags),
+          orderBy('number', 'asc'),
+          limit(limitCount + 1)
+        );
+      }
+
+      // Pagination
+      if (lastDoc) {
+        q = query(q, startAfter(lastDoc));
+      }
+
+      const snapshot = await getDocs(q);
+      const problems: any[] = [];
+      const hasMore = snapshot.docs.length > limitCount;
+      const docsToReturn = hasMore ? snapshot.docs.slice(0, limitCount) : snapshot.docs;
+
+      docsToReturn.forEach((docSnap) => {
+        problems.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
+      return {
+        problems,
+        lastDoc: docsToReturn[docsToReturn.length - 1] || null,
+        hasMore
+      };
+    } catch (error) {
+      console.error('Error fetching coding problems:', error);
+      return { problems: [], lastDoc: null, hasMore: false };
+    }
+  }
+
+  /**
+   * Search coding problems by title or tags
+   */
+  async searchCodingProblems(searchTerm: string, limitCount: number = 10): Promise<any[]> {
+    try {
+      if (!this.firestore) {
+        throw new Error('Firestore not initialized');
+      }
+
+      // Get all problems and filter client-side (Firestore doesn't support full-text search)
+      const snapshot = await getDocs(collection(this.firestore, 'problems'));
+      const problems: any[] = [];
+      const searchLower = searchTerm.toLowerCase();
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const title = (data.title || '').toLowerCase();
+        const tags = (data.tags || []).map((t: string) => t.toLowerCase());
+        
+        if (title.includes(searchLower) || tags.some((t: string) => t.includes(searchLower))) {
+          problems.push({ id: docSnap.id, ...data });
+        }
+      });
+
+      return problems.slice(0, limitCount);
+    } catch (error) {
+      console.error('Error searching coding problems:', error);
+      return [];
+    }
+  }
+
+  // ==========================================
+  // AI CHAT (Firebase Cloud Function)
+  // ==========================================
+
+  /**
+   * Chat with AI using Firebase Cloud Function
+   * @param message - The user's message
+   * @param conversationHistory - Previous messages for context
+   * @returns Promise with AI response
+   */
+  async chatWithAI(
+    message: string,
+    conversationHistory: Array<{ role: string; content: string }> = []
+  ): Promise<{ success: boolean; response: string }> {
+    try {
+      const chatWithAIFn = httpsCallable(this.functions, 'chatWithAI');
+      const result = await chatWithAIFn({ message, conversationHistory });
+      const data = result.data as { success: boolean; response: string };
+      return data;
+    } catch (error: any) {
+      console.error('Error calling chatWithAI:', error);
+      return {
+        success: false,
+        response: 'Sorry, the AI service is temporarily unavailable.'
+      };
+    }
+  }
+
+  // ==========================================
+  // AI CODE ASSISTANT (Firebase Cloud Function)
+  // Version: 1.1.0
+  // Operations: explain, fix, suggest, tests, docs, optimize, assistant, format
+  // ==========================================
+
+  /**
+   * AI Code Assistant - Performs various AI operations on code
+   * Operations: explain, fix, suggest, tests, docs, optimize, assistant, format
+   * @param request - AICodeAssistantRequest containing operation, code, language, etc.
+   * @returns Promise with AI response
+   */
+  async aiCodeAssistant(
+    request: AICodeAssistantRequest
+  ): Promise<AICodeAssistantResponse> {
+    try {
+      // Validate operation
+      const validOperations: AICodeOperation[] = ['explain', 'fix', 'suggest', 'tests', 'docs', 'optimize', 'assistant', 'format', 'autocomplete', 'inline'];
+      if (!validOperations.includes(request.operation)) {
+        return {
+          success: false,
+          operation: request.operation,
+          result: '',
+          error: `Invalid operation. Use: ${validOperations.join(', ')}`
+        };
+      }
+
+      // Validate required fields
+      if (request.operation === 'assistant') {
+        if (!request.question) {
+          return {
+            success: false,
+            operation: request.operation,
+            result: '',
+            error: 'Question is required for assistant operation'
+          };
+        }
+      } else if (request.operation === 'autocomplete' || request.operation === 'inline') {
+        // Autocomplete can work with partial code
+        if (!request.language) {
+          return {
+            success: false,
+            operation: request.operation,
+            result: '',
+            error: 'Language is required for autocomplete'
+          };
+        }
+      } else {
+        if (!request.code || request.code.trim().length === 0) {
+          return {
+            success: false,
+            operation: request.operation,
+            result: '',
+            error: 'Code is required for this operation'
+          };
+        }
+      }
+
+      if (!request.language) {
+        return {
+          success: false,
+          operation: request.operation,
+          result: '',
+          error: 'Language is required'
+        };
+      }
+
+      // Call Firebase Cloud Function
+      const aiCodeAssistantFn = httpsCallable(this.functions, 'aiCodeAssistant');
+      const result = await aiCodeAssistantFn({
+        operation: request.operation,
+        code: request.code || '',
+        language: request.language,
+        question: request.question || '',
+        history: request.history || [],
+        stream: request.stream || false,
+        cursorLine: request.cursorLine,
+        cursorColumn: request.cursorColumn,
+        prefix: request.prefix || ''
+      });
+
+      const data = result.data as AICodeAssistantResponse;
+      return data;
+    } catch (error: any) {
+      console.error('Error calling aiCodeAssistant:', error);
+      return {
+        success: false,
+        operation: request.operation,
+        result: '',
+        error: error.message || 'AI service is temporarily unavailable.'
+      };
+    }
+  }
+
+  /**
+   * Get autocomplete suggestions for code at cursor position
+   * @param code - Current code in editor
+   * @param language - Programming language
+   * @param cursorLine - Line number (1-indexed)
+   * @param cursorColumn - Column number (1-indexed)
+   * @param prefix - Text before cursor on current line
+   * @returns Promise with autocomplete suggestions
+   */
+  async getAutocompleteSuggestions(
+    code: string,
+    language: string,
+    cursorLine: number,
+    cursorColumn: number,
+    prefix: string
+  ): Promise<AutocompleteResponse> {
+    try {
+      const aiAutocompleteFn = httpsCallable(this.functions, 'aiCodeAssistant');
+      const result = await aiAutocompleteFn({
+        operation: 'autocomplete',
+        code,
+        language,
+        cursorLine,
+        cursorColumn,
+        prefix
+      });
+      
+      const data = result.data as any;
+      if (data.success && data.suggestions) {
+        return {
+          success: true,
+          suggestions: data.suggestions
+        };
+      }
+      return {
+        success: false,
+        suggestions: [],
+        error: data.error || 'Failed to get suggestions'
+      };
+    } catch (error: any) {
+      console.error('Error getting autocomplete suggestions:', error);
+      return {
+        success: false,
+        suggestions: [],
+        error: error.message || 'Autocomplete service unavailable'
+      };
+    }
+  }
+
+  /**
+   * Get inline code completion (ghost text)
+   * @param code - Code before cursor
+   * @param language - Programming language
+   * @param prefix - Current line text before cursor
+   * @returns Promise with inline completion
+   */
+  async getInlineCompletion(
+    code: string,
+    language: string,
+    prefix: string
+  ): Promise<AutocompleteResponse> {
+    try {
+      const aiAutocompleteFn = httpsCallable(this.functions, 'aiCodeAssistant');
+      const result = await aiAutocompleteFn({
+        operation: 'inline',
+        code,
+        language,
+        prefix
+      });
+      
+      const data = result.data as any;
+      if (data.success && data.completion) {
+        return {
+          success: true,
+          completion: data.completion
+        };
+      }
+      return {
+        success: false,
+        completion: '',
+        error: data.error || 'Failed to get completion'
+      };
+    } catch (error: any) {
+      console.error('Error getting inline completion:', error);
+      return {
+        success: false,
+        completion: '',
+        error: error.message || 'Inline completion service unavailable'
+      };
+    }
+  }
+
+  /**
+   * Explain code - Get a brief explanation of the code
+   */
+  async explainCode(code: string, language: string): Promise<AICodeAssistantResponse> {
+    return this.aiCodeAssistant({ operation: 'explain', code, language });
+  }
+
+  /**
+   * Fix code - Identify and fix bugs/issues in the code
+   */
+  async fixCode(code: string, language: string): Promise<AICodeAssistantResponse> {
+    return this.aiCodeAssistant({ operation: 'fix', code, language });
+  }
+
+  /**
+   * Suggest improvements - Get suggestions to improve the code
+   */
+  async suggestImprovements(code: string, language: string): Promise<AICodeAssistantResponse> {
+    return this.aiCodeAssistant({ operation: 'suggest', code, language });
+  }
+
+  /**
+   * Generate tests - Generate unit tests for the code
+   */
+  async generateTests(code: string, language: string): Promise<AICodeAssistantResponse> {
+    return this.aiCodeAssistant({ operation: 'tests', code, language });
+  }
+
+  /**
+   * Generate documentation - Generate docs/comments for the code
+   */
+  async generateDocs(code: string, language: string): Promise<AICodeAssistantResponse> {
+    return this.aiCodeAssistant({ operation: 'docs', code, language });
+  }
+
+  /**
+   * Optimize code - Optimize the code for better performance
+   */
+  async optimizeCode(code: string, language: string): Promise<AICodeAssistantResponse> {
+    return this.aiCodeAssistant({ operation: 'optimize', code, language });
+  }
+
+  /**
+   * Format code - Format the code following language conventions
+   */
+  async formatCode(code: string, language: string): Promise<AICodeAssistantResponse> {
+    return this.aiCodeAssistant({ operation: 'format', code, language });
+  }
+
+  /**
+   * AI Assistant - Ask questions about code with conversation history
+   */
+  async askAIAssistant(
+    question: string,
+    language: string,
+    code?: string,
+    history?: Array<{ role: string; content: string }>
+  ): Promise<AICodeAssistantResponse> {
+    return this.aiCodeAssistant({
+      operation: 'assistant',
+      code: code || '',
+      language,
+      question,
+      history
+    });
+  }
 }
 
 // Export singleton instance

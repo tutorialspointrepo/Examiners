@@ -8,6 +8,7 @@ export declare const submitAndGradeExam: functions.HttpsFunction & functions.Run
  */
 export declare const analyzeCodeWithAI: functions.HttpsFunction & functions.Runnable<any>;
 export declare const chatWithAI: functions.HttpsFunction & functions.Runnable<any>;
+export declare const aiCodeAssistant: functions.HttpsFunction & functions.Runnable<any>;
 export declare const sendWelcomeEmail: functions.HttpsFunction & functions.Runnable<any>;
 export declare const sendOTPEmail: functions.HttpsFunction & functions.Runnable<any>;
 /**

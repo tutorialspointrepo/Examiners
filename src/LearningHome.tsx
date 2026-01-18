@@ -26,11 +26,13 @@ interface LearningHomeProps {
     gradients: {
       primary: string;
     };
+    collegeName?: string;
   };
   currentUser: any;
+  selectedCollege?: { id: string; name: string } | null;
 }
 
-const LearningHome: React.FC<LearningHomeProps> = ({ brandTheme, currentUser }) => {
+const LearningHome: React.FC<LearningHomeProps> = ({ brandTheme, currentUser, selectedCollege }) => {
   // Check if user is a student
   const isStudent = currentUser?.userType === 'student';
 
@@ -90,7 +92,7 @@ const LearningHome: React.FC<LearningHomeProps> = ({ brandTheme, currentUser }) 
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50">
+    <div className="flex-1 overflow-y-auto scrollbar-hide bg-gray-50">
       {/* Banner */}
       <div className="relative mb-6 overflow-hidden rounded-2xl px-8 py-6 mt-5 mx-6" style={{ backgroundColor: '#eeeeee' }}>
         {/* Decorative elements */}
@@ -138,10 +140,10 @@ const LearningHome: React.FC<LearningHomeProps> = ({ brandTheme, currentUser }) 
               {/* Title */}
               <div className="flex-1 text-gray-800 min-w-0">
                 <h1 className="mb-2 font-bold text-2xl leading-tight">
-                  Build Your Dream Career with <span 
+                  <span 
                     className="bg-clip-text text-transparent"
                     style={{ backgroundImage: brandTheme.gradients.primary }}
-                  >Lovely Professional University®</span>
+                  >{selectedCollege?.name || brandTheme.collegeName || 'Your Institution'}®</span>
                 </h1>
                 <p className="text-gray-600 text-lg">Your journey to a successful career starts here...</p>
               </div>

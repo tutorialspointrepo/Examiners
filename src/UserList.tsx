@@ -1,8 +1,74 @@
 import { useState, useEffect, useRef } from 'react';
-import { Users, Mail, Phone, User, Calendar, Shield, BookOpen, GraduationCap, Search, ChevronLeft, ChevronRight, Layers, Edit, MoreVertical, UserX, AlertCircle } from 'lucide-react';
+import { Users, Mail, Phone, User, Calendar, Shield, BookOpen, GraduationCap, Search, ChevronLeft, ChevronRight, Layers, Edit, MoreVertical, UserX, AlertCircle, X, Clock, CheckCircle, FileText, TrendingUp, Award, BarChart3, Target } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { 
+  faCode,
+  faLaptopCode,
+  faDatabase,
+  faRobot,
+  faChartLine,
+  faFlask,
+  faAtom,
+  faDna,
+  faCalculator,
+  faGlobe,
+  faLanguage,
+  faLandmark,
+  faCoins,
+  faBriefcase,
+  faCloud,
+  faShieldHalved,
+  faNetworkWired,
+  faMobileScreen,
+  faServer,
+  faGear,
+  faBookOpen as faBookOpenFA,
+  faMicrochip,
+  faBrain,
+  faChartPie,
+  faTerminal,
+  faLayerGroup,
+  faCubes,
+  faFileCode,
+  faPalette,
+  faWrench,
+  faGraduationCap as faGraduationCapFA
+} from '@fortawesome/sharp-light-svg-icons';
 import { firebaseService, type UserModel } from './services/firebase_service';
 import CreateUserModal from './CreateUserModal';
 import { USER_TYPES, USER_STATUS, FILTER_VALUES } from './constants';
+
+// Enrollment interface
+interface EnrollmentInfo {
+  examId: string;
+  examName: string;
+  subjectName?: string;
+  enrolledAt: Date | null;
+  status: string;
+  progress?: number;
+  marks?: number;
+  duration?: string;
+  category?: string;
+  lectures?: number;
+  exercises?: number;
+  notes?: number;
+  quizzes?: number;
+  assessments?: number;
+}
+
+// User Profile Stats interface
+interface UserProfileStats {
+  coursesEnrolled: number;
+  coursesCompleted: number;
+  coursesInProgress: number;
+  averageMarks: number;
+  totalAssessments: number;
+  assessmentsCompleted: number;
+  assessmentAverageMarks: number;
+  totalLearningHours: number;
+  averageLearningPerDay: string;
+  enrollments: EnrollmentInfo[];
+}
 
 interface UserListProps {
   selectedClass: string;
@@ -31,6 +97,12 @@ export default function UserList({
   // Edit modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [userToEdit, setUserToEdit] = useState<UserModel | null>(null);
+  
+  // User Profile slide-out modal state
+  const [showUserProfileModal, setShowUserProfileModal] = useState(false);
+  const [selectedUserForProfile, setSelectedUserForProfile] = useState<UserModel | null>(null);
+  const [userProfileStats, setUserProfileStats] = useState<UserProfileStats | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   
   // 3-dot menu state
   const [openMenuUserId, setOpenMenuUserId] = useState<string | null>(null);
@@ -150,169 +222,118 @@ export default function UserList({
               collegeId: activeCollegeId,
               action: 'view_user_list',
               entityType: 'users',
-              entityId: selectedClass,
-              details: JSON.stringify({
-                className: selectedClass,
-                filterRole: filterRole,
-                page: currentPage,
-                usersPerPage: usersPerPage
-              })
+              details: { selectedClass, filterRole }
             });
           }
         } catch (logError) {
-          console.warn('⚠️ Failed to log user list view:', logError);
+          console.warn('Activity log failed:', logError);
         }
       })();
     }
-  }, [activeCollegeId, selectedClass, currentPage, filterRole]); // Added filterRole to dependencies
+  }, [activeCollegeId, selectedClass, currentPage, filterRole]);
 
-  // Fetch role counts independently (for filter buttons)
+  // Reset page when changing filters
   useEffect(() => {
-    const fetchRoleCounts = async () => {
+    setCurrentPage(1);
+  }, [filterRole, filterStatus, searchQuery]);
+
+  // Fetch role counts independently (active users only)
+  useEffect(() => {
+    const fetchCounts = async () => {
       if (!activeCollegeId || !selectedClass) {
-        setRoleCounts({
-          students: 0,
-          teachers: 0,
-          admins: 0,
-          principals: 0,
-          deans: 0,
-          total: 0
-        });
+        setRoleCounts({ students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, total: 0 });
         setTotalDisabledCount(0);
         return;
       }
 
       try {
         if (selectedClass === '_administrative') {
-          // Fetch counts for administrative users (active only)
-          const [adminResult, principalResult, deanResult, teacherResult] = await Promise.all([
-            firebaseService.getUsersByTypePaginated([USER_TYPES.ADMIN], activeCollegeId, 999, 1, USER_TYPES.ADMIN),
-            firebaseService.getUsersByTypePaginated([USER_TYPES.PRINCIPAL], activeCollegeId, 999, 1, USER_TYPES.PRINCIPAL),
-            firebaseService.getUsersByTypePaginated([USER_TYPES.DEAN], activeCollegeId, 999, 1, USER_TYPES.DEAN),
-            firebaseService.getUsersByTypePaginated([USER_TYPES.TEACHER], activeCollegeId, 999, 1, USER_TYPES.TEACHER)
-          ]);
-          
-          // Count only active users for each role
-          const activeAdmins = adminResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) !== USER_STATUS.DISABLED).length;
-          const activePrincipals = principalResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) !== USER_STATUS.DISABLED).length;
-          const activeDeans = deanResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) !== USER_STATUS.DISABLED).length;
-          const activeTeachers = teacherResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) !== USER_STATUS.DISABLED).length;
-          
-          // Count total disabled users across all roles
-          const totalDisabled = 
-            adminResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) === USER_STATUS.DISABLED).length +
-            principalResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) === USER_STATUS.DISABLED).length +
-            deanResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) === USER_STATUS.DISABLED).length +
-            teacherResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) === USER_STATUS.DISABLED).length;
-          
-          const total = activeAdmins + activePrincipals + activeDeans + activeTeachers;
-          
+          const counts = await firebaseService.getAdministrativeUserCounts(activeCollegeId);
           setRoleCounts({
             students: 0,
-            teachers: activeTeachers,
-            admins: activeAdmins,
-            principals: activePrincipals,
-            deans: activeDeans,
-            total: total
+            teachers: counts.teachers || 0,
+            admins: counts.admins || 0,
+            principals: counts.principals || 0,
+            deans: counts.deans || 0,
+            total: (counts.teachers || 0) + (counts.admins || 0) + (counts.principals || 0) + (counts.deans || 0)
           });
-          setTotalDisabledCount(totalDisabled);
+          setTotalDisabledCount(counts.disabled || 0);
         } else {
-          // Fetch counts for class users
           const [className, board, academicYear] = selectedClass.includes('|') 
             ? selectedClass.split('|')
             : [selectedClass, null, null];
-
-          const [studentResult, teacherResult] = await Promise.all([
-            firebaseService.getUsersByClassPaginated(className, board, academicYear, activeCollegeId, 999, 1, USER_TYPES.STUDENT),
-            firebaseService.getUsersByClassPaginated(className, board, academicYear, activeCollegeId, 999, 1, USER_TYPES.TEACHER)
-          ]);
           
-          // Count only active users for each role
-          const activeStudents = studentResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) !== USER_STATUS.DISABLED).length;
-          const activeTeachers = teacherResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) !== USER_STATUS.DISABLED).length;
-          
-          // Count total disabled users across all roles
-          const totalDisabled = 
-            studentResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) === USER_STATUS.DISABLED).length +
-            teacherResult.users.filter(u => (u.status || USER_STATUS.ACTIVE) === USER_STATUS.DISABLED).length;
-          
-          const total = activeStudents + activeTeachers;
-          
+          const counts = await firebaseService.getClassUserCounts(className, board, academicYear, activeCollegeId);
           setRoleCounts({
-            students: activeStudents,
-            teachers: activeTeachers,
+            students: counts.students || 0,
+            teachers: counts.teachers || 0,
             admins: 0,
             principals: 0,
             deans: 0,
-            total: total
+            total: (counts.students || 0) + (counts.teachers || 0)
           });
-          setTotalDisabledCount(totalDisabled);
+          setTotalDisabledCount(counts.disabled || 0);
         }
       } catch (error) {
-        console.error('❌ Error fetching role counts:', error);
+        console.error('Error fetching counts:', error);
       }
     };
 
-    fetchRoleCounts();
-  }, [activeCollegeId, selectedClass]); // Only when class/college changes, NOT filter
+    fetchCounts();
+  }, [activeCollegeId, selectedClass]);
 
-  // Reset pagination when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [selectedClass, filterRole, filterStatus, searchQuery]);
+  // Filter logic
+  const isAdministrativeView = selectedClass === '_administrative';
 
-  // Filter users based on search and status
+  // Filter users by search, role, and status
   const searchFilteredUsers = users.filter(user => {
     // Search filter
-    const matchesSearch = searchQuery
-      ? (user.fullName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-        (user.email?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-        (user.phone?.toLowerCase() || '').includes(searchQuery.toLowerCase())
-      : true;
+    const matchesSearch = !searchQuery || 
+      (user.fullName?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (user.email?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (user.phone?.includes(searchQuery));
     
-    // Status filter - treat missing/undefined status as 'active'
-    const userStatus = user.status || USER_STATUS.ACTIVE;
-    const matchesStatus = filterStatus === FILTER_VALUES.ALL
-      ? true 
-      : userStatus === filterStatus;
-    
+    // Status filter
+    const matchesStatus = filterStatus === FILTER_VALUES.ALL ||
+      (filterStatus === USER_STATUS.DISABLED && user.status === USER_STATUS.DISABLED) ||
+      (filterStatus === USER_STATUS.ACTIVE && user.status !== USER_STATUS.DISABLED);
+
     return matchesSearch && matchesStatus;
   });
 
-
-  const isAdministrativeView = selectedClass === '_administrative';
-  
-  // Helper function to check if current user can edit target user
+  // Check if current user can edit another user based on role hierarchy
   const canEditUser = (targetUserType: string): boolean => {
-    // Teachers and students cannot edit anyone
-    if (currentUserRole === USER_TYPES.TEACHER || currentUserRole === USER_TYPES.STUDENT) {
-      return false;
-    }
+    // Super users can edit anyone
+    if (isSuperUser) return true;
     
-    // Super Admin and System Admin can modify Admin, Dean, Principal, Teachers and Students
-    if (isSuperUser || currentUserRole === USER_TYPES.SYSTEM_ADMIN) {
-      return ([USER_TYPES.ADMIN, USER_TYPES.DEAN, USER_TYPES.PRINCIPAL, USER_TYPES.TEACHER, USER_TYPES.STUDENT] as string[]).includes(targetUserType);
-    }
+    // System admins can edit anyone
+    if (currentUserRole === USER_TYPES.SYSTEM_ADMIN) return true;
     
-    // Admin can modify Dean, Principal, Teachers and Students
+    // Admins can edit teachers and students
     if (currentUserRole === USER_TYPES.ADMIN) {
-      return ([USER_TYPES.DEAN, USER_TYPES.PRINCIPAL, USER_TYPES.TEACHER, USER_TYPES.STUDENT] as string[]).includes(targetUserType);
+      return [USER_TYPES.TEACHER, USER_TYPES.STUDENT].includes(targetUserType as any);
     }
     
-    // Dean can modify Principal, Teachers and Students
-    if (currentUserRole === USER_TYPES.DEAN) {
-      return ([USER_TYPES.PRINCIPAL, USER_TYPES.TEACHER, USER_TYPES.STUDENT] as string[]).includes(targetUserType);
-    }
-    
-    // Principal can modify Teachers and Students
+    // Principals can edit deans, teachers, and students
     if (currentUserRole === USER_TYPES.PRINCIPAL) {
-      return ([USER_TYPES.TEACHER, USER_TYPES.STUDENT] as string[]).includes(targetUserType);
+      return [USER_TYPES.DEAN, USER_TYPES.TEACHER, USER_TYPES.STUDENT].includes(targetUserType as any);
     }
     
+    // Deans can edit teachers and students
+    if (currentUserRole === USER_TYPES.DEAN) {
+      return [USER_TYPES.TEACHER, USER_TYPES.STUDENT].includes(targetUserType as any);
+    }
+    
+    // Teachers can only edit students
+    if (currentUserRole === USER_TYPES.TEACHER) {
+      return targetUserType === USER_TYPES.STUDENT;
+    }
+    
+    // Students cannot edit anyone
     return false;
   };
-  
-  // Handle edit button click
+
+  // Handle edit user
   const handleEditUser = (user: UserModel) => {
     setUserToEdit(user);
     setIsEditModalOpen(true);
@@ -330,6 +351,128 @@ export default function UserList({
     const page = currentPage;
     setCurrentPage(0);
     setTimeout(() => setCurrentPage(page), 10);
+  };
+  
+  // Handle User Card Click - Open Profile Modal
+  const handleUserCardClick = async (user: UserModel) => {
+    setSelectedUserForProfile(user);
+    setShowUserProfileModal(true);
+    setIsLoadingProfile(true);
+    
+    try {
+      // TODO: Replace with actual API call
+      // const profileStats = await firebaseService.getUserProfileStats(user.userId);
+      
+      // Dummy data for testing
+      const dummyEnrollments: EnrollmentInfo[] = [
+        {
+          examId: 'CRS001',
+          examName: 'Data Structure and Algorithm in C++',
+          subjectName: 'Computer Science',
+          enrolledAt: new Date('2025-01-10T09:30:00'),
+          status: 'completed',
+          progress: 100,
+          marks: 87,
+          duration: '12h 55m',
+          category: 'Coding',
+          lectures: 63,
+          exercises: 275,
+          notes: 63,
+          quizzes: 570,
+          assessments: 5
+        },
+        {
+          examId: 'CRS002',
+          examName: 'Advanced Java Programming',
+          subjectName: 'Programming',
+          enrolledAt: new Date('2025-01-12T14:15:00'),
+          status: 'completed',
+          progress: 100,
+          marks: 92,
+          duration: '10h 30m',
+          category: 'Coding',
+          lectures: 45,
+          exercises: 180,
+          notes: 45,
+          quizzes: 320,
+          assessments: 4
+        },
+        {
+          examId: 'CRS003',
+          examName: 'Python for Data Science',
+          subjectName: 'Data Science',
+          enrolledAt: new Date('2025-01-14T11:00:00'),
+          status: 'in_progress',
+          progress: 65,
+          duration: '15h 20m',
+          category: 'Data Science',
+          lectures: 58,
+          exercises: 200,
+          notes: 58,
+          quizzes: 420,
+          assessments: 6
+        },
+        {
+          examId: 'CRS004',
+          examName: 'Web Development with React',
+          subjectName: 'Web Development',
+          enrolledAt: new Date('2025-01-15T16:45:00'),
+          status: 'in_progress',
+          progress: 45,
+          duration: '18h 45m',
+          category: 'Web Dev',
+          lectures: 72,
+          exercises: 150,
+          notes: 72,
+          quizzes: 380,
+          assessments: 8
+        },
+        {
+          examId: 'CRS005',
+          examName: 'Machine Learning Fundamentals',
+          subjectName: 'AI/ML',
+          enrolledAt: new Date('2025-01-16T10:00:00'),
+          status: 'enrolled',
+          progress: 25,
+          duration: '14h 10m',
+          category: 'AI/ML',
+          lectures: 40,
+          exercises: 120,
+          notes: 40,
+          quizzes: 290,
+          assessments: 5
+        }
+      ];
+      
+      const dummyStats: UserProfileStats = {
+        coursesEnrolled: 5,
+        coursesCompleted: 2,
+        coursesInProgress: 3,
+        averageMarks: 78.5,
+        totalAssessments: 28,
+        assessmentsCompleted: 18,
+        assessmentAverageMarks: 82.3,
+        totalLearningHours: 72,
+        averageLearningPerDay: '2.5 Hrs',
+        enrollments: dummyEnrollments
+      };
+      
+      // Simulate loading delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setUserProfileStats(dummyStats);
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      setUserProfileStats(null);
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  };
+  
+  // Close user profile modal
+  const closeUserProfileModal = () => {
+    setShowUserProfileModal(false);
+    setSelectedUserForProfile(null);
+    setUserProfileStats(null);
   };
   
   // Handle 3-dot menu toggle
@@ -422,45 +565,57 @@ export default function UserList({
 
   return (
     <>
-    <div className="flex-1 overflow-y-auto h-[calc(100vh-80px)] user-list-container [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+    <div className="flex flex-col h-full bg-gray-50">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-6 py-5">
-        <div className="mb-4">
-          <div className="flex items-center space-x-3 mb-2">
+      <div 
+        className="px-6 py-4 border-b border-gray-200 flex-shrink-0"
+        style={{ background: brandTheme.gradients.card }}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
             <div 
-              className="w-10 h-10 rounded-xl flex items-center justify-center shadow-md"
+              className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg"
               style={{ background: brandTheme.gradients.primary }}
             >
-              {isAdministrativeView ? <Users size={24} className="text-white" /> : <GraduationCap size={24} className="text-white" />}
+              <Users size={24} className="text-white" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">
-                {isAdministrativeView ? 'Administrative & Faculty' : `Class ${displayClassName}`}
+              <h2 className="text-xl font-bold text-gray-900">
+                {isAdministrativeView ? 'Administrative & Faculty' : displayClassName}
               </h2>
               <p className="text-sm text-gray-600">
-                {roleCounts.total} Total User{roleCounts.total !== 1 ? 's' : ''}{displayBoard ? ` • ${displayBoard}` : ''}{displayYear ? ` • ${displayYear}` : ''}
+                {isAdministrativeView 
+                  ? 'Managing administrators, principals, deans & teachers'
+                  : `${displayBoard || 'All Boards'} • ${displayYear || 'All Years'}`
+                }
               </p>
             </div>
+          </div>
+          
+          {/* Total Count Badge */}
+          <div 
+            className="px-4 py-2 rounded-xl text-white font-bold text-lg shadow-lg"
+            style={{ background: brandTheme.gradients.primary }}
+          >
+            {totalUsers} Users
           </div>
         </div>
 
         {/* Search Bar */}
-        <div className="relative mb-3">
-          <Search size={18} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+        <div className="relative">
+          <Search size={18} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder={currentUserRole === USER_TYPES.STUDENT ? "Search by name..." : "Search by name, email, or phone..."}
+            placeholder="Search by name, email or phone..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none transition-all"
-            style={{
-              borderColor: searchQuery ? brandTheme.colors.primary : '#e5e7eb'
-            }}
+            className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:border-transparent shadow-sm"
+            style={{ '--tw-ring-color': brandTheme.colors.primary } as React.CSSProperties}
           />
         </div>
 
-        {/* Role Filter */}
-        <div className="flex items-center space-x-2 overflow-x-auto pb-2">
+        {/* Role Filter Pills */}
+        <div className="flex items-center gap-2 mt-4 overflow-x-auto pb-1">
           <button
             onClick={() => {
               setFilterRole(FILTER_VALUES.ALL);
@@ -640,7 +795,8 @@ export default function UserList({
                 <div
                   id={`user-card-${user.userId}`}
                   key={user.userId}
-                  className={`bg-white border rounded-xl p-4 hover:shadow-md transition-all ${
+                  onClick={() => handleUserCardClick(user)}
+                  className={`bg-white border rounded-xl p-4 hover:shadow-md transition-all cursor-pointer ${
                     isDisabled ? 'opacity-60' : ''
                   } ${
                     highlightUserId === user.userId 
@@ -678,8 +834,8 @@ export default function UserList({
                     {/* User Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1 flex items-center space-x-2">
-                          <h3 className="text-lg font-bold text-gray-900 mb-1 truncate">
+                        <div className="flex-1 flex items-center gap-2">
+                          <h3 className="text-lg font-bold text-gray-900 truncate">
                             {user.fullName || 'Unnamed User'}
                           </h3>
                           {isDisabled && (
@@ -693,7 +849,10 @@ export default function UserList({
                         {canEditUser(user.userType || USER_TYPES.STUDENT) && (
                           <div className="relative" ref={openMenuUserId === user.userId ? menuRef : null}>
                             <button
-                              onClick={() => handleMenuToggle(user.userId)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleMenuToggle(user.userId);
+                              }}
                               className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                             >
                               <MoreVertical size={18} className="text-gray-600" />
@@ -703,7 +862,8 @@ export default function UserList({
                             {openMenuUserId === user.userId && (
                               <div className="absolute right-0 top-8 mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50">
                                 <button
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     handleEditUser(user);
                                     setOpenMenuUserId(null);
                                   }}
@@ -714,7 +874,10 @@ export default function UserList({
                                 </button>
                                 {isDisabled ? (
                                   <button
-                                    onClick={() => handleEnableClick(user)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEnableClick(user);
+                                    }}
                                     className="w-full px-4 py-2 text-left text-sm text-green-600 hover:bg-green-50 flex items-center space-x-2"
                                   >
                                     <User size={14} />
@@ -722,7 +885,10 @@ export default function UserList({
                                   </button>
                                 ) : (
                                   <button
-                                    onClick={() => handleDisableClick(user)}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDisableClick(user);
+                                    }}
                                     className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"
                                   >
                                     <UserX size={14} />
@@ -735,91 +901,94 @@ export default function UserList({
                         )}
                       </div>
 
-                      {/* Contact Info */}
-                      <div className="space-y-1.5">
-                        {/* Email and Phone - Only visible to non-students */}
-                        {currentUserRole !== USER_TYPES.STUDENT && user.email && (
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <Mail size={14} className="text-gray-400 flex-shrink-0" />
-                            <span className="truncate">{user.email}</span>
+                      {/* Contact Info - New Layout */}
+                      <div className="space-y-2">
+                        {/* Row 1: Email & Phone */}
+                        {currentUserRole !== USER_TYPES.STUDENT && (user.email || user.phone) && (
+                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                            {user.email && (
+                              <div className="flex items-center gap-1.5">
+                                <Mail size={14} className="text-gray-400 flex-shrink-0" />
+                                <span className="truncate">{user.email}</span>
+                              </div>
+                            )}
+                            {user.phone && (
+                              <div className="flex items-center gap-1.5">
+                                <Phone size={14} className="text-gray-400 flex-shrink-0" />
+                                <span>{user.phone}</span>
+                              </div>
+                            )}
                           </div>
                         )}
-                        {currentUserRole !== USER_TYPES.STUDENT && user.phone && (
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <Phone size={14} className="text-gray-400 flex-shrink-0" />
-                            <span>{user.phone}</span>
-                          </div>
-                        )}
-                        {(user.userType === USER_TYPES.TEACHER || user.userType === USER_TYPES.DEAN || user.userType === USER_TYPES.PRINCIPAL) && user.teacherSubjects && user.teacherSubjects.length > 0 && (
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <BookOpen size={14} className="text-gray-400 flex-shrink-0" />
-                            <span className="text-xs text-gray-500 font-medium">Subjects:</span>
-                            <div className="flex flex-wrap gap-1">
-                              {user.teacherSubjects.map((subject, idx) => (
-                                <span key={idx} className="inline-block bg-purple-50 text-purple-700 text-xs px-2 py-0.5 rounded">
-                                  {subject}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {(user.userType === USER_TYPES.TEACHER || user.userType === USER_TYPES.DEAN || user.userType === USER_TYPES.PRINCIPAL) && user.teacherClasses && user.teacherClasses.length > 0 && (
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <GraduationCap size={14} className="text-gray-400 flex-shrink-0" />
-                            <span className="text-xs text-gray-500 font-medium">Classes:</span>
-                            <div className="flex flex-wrap gap-1">
-                              {user.teacherClasses.map((cls, idx) => (
-                                <span key={idx} className="inline-block bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded">
-                                  {cls}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {(user.userType === USER_TYPES.TEACHER || user.userType === USER_TYPES.DEAN || user.userType === USER_TYPES.PRINCIPAL) && user.board && (
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <Layers size={14} className="text-gray-400 flex-shrink-0" />
-                            <span className="text-xs text-gray-500 font-medium">Board:</span>
-                            <span className="inline-block bg-green-50 text-green-700 text-xs px-2 py-0.5 rounded">
-                              {user.board}
-                            </span>
-                          </div>
-                        )}
-                        {user.userType === USER_TYPES.STUDENT && user.studentClass && (
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <GraduationCap size={14} className="text-gray-400 flex-shrink-0" />
-                            <span className="text-xs text-gray-500 font-medium">Class:</span>
-                            <span className="inline-block bg-blue-50 text-blue-700 text-xs px-2 py-0.5 rounded">
-                              {user.studentClass}
-                            </span>
-                          </div>
-                        )}
-                        {user.userType === USER_TYPES.STUDENT && user.board && (
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <Layers size={14} className="text-gray-400 flex-shrink-0" />
-                            <span className="text-xs text-gray-500 font-medium">Board:</span>
-                            <span className="inline-block bg-green-50 text-green-700 text-xs px-2 py-0.5 rounded">
-                              {user.board}
-                            </span>
-                          </div>
-                        )}
-                        {user.userType === USER_TYPES.STUDENT && user.academicYear && (
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <Calendar size={14} className="text-gray-400 flex-shrink-0" />
-                            <span className="text-xs text-gray-500 font-medium">Academic Year:</span>
-                            <span className="inline-block bg-indigo-50 text-indigo-700 text-xs px-2 py-0.5 rounded">
-                              {user.academicYear}
-                            </span>
-                          </div>
-                        )}
-                      </div>
 
-                      {/* Role Badge */}
-                      <div className="mt-3">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${roleBadge.bg} ${roleBadge.text}`}>
-                          <Shield size={12} className="mr-1" />
-                          {(user.userType || USER_TYPES.STUDENT).toUpperCase()}
-                        </span>
+                        {/* Row 2: Subjects (for Teacher/Dean/Principal) */}
+                        {(user.userType === USER_TYPES.TEACHER || user.userType === USER_TYPES.DEAN || user.userType === USER_TYPES.PRINCIPAL) && user.teacherSubjects && user.teacherSubjects.length > 0 && (
+                          <div className="flex items-center text-xs text-gray-600">
+                            <BookOpen size={14} className="text-purple-500 flex-shrink-0 mr-2" />
+                            {user.teacherSubjects.map((subject, idx) => (
+                              <span key={idx} className="flex items-center">
+                                <span className="text-purple-600">{subject}</span>
+                                {idx < user.teacherSubjects.length - 1 && <span className="mx-2 text-gray-300">|</span>}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Row 3: Role + Classes (for Teacher/Dean/Principal) */}
+                        {(user.userType === USER_TYPES.TEACHER || user.userType === USER_TYPES.DEAN || user.userType === USER_TYPES.PRINCIPAL) && (
+                          <div className="flex items-center text-xs text-gray-600">
+                            <span className="text-purple-600 font-medium">
+                              {(user.userType || USER_TYPES.TEACHER).charAt(0).toUpperCase() + (user.userType || USER_TYPES.TEACHER).slice(1)}
+                            </span>
+                            {user.teacherClasses && user.teacherClasses.length > 0 && (
+                              <>
+                                {user.teacherClasses.map((cls, idx) => (
+                                  <span key={idx} className="flex items-center">
+                                    <span className="mx-2 text-gray-300">|</span>
+                                    <GraduationCap size={12} className="text-blue-500 mr-1" />
+                                    <span>{cls}</span>
+                                  </span>
+                                ))}
+                              </>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Row 2: Role + Class & Academic Year & Enrollments (for Students) */}
+                        {user.userType === USER_TYPES.STUDENT && (
+                          <div className="flex items-center text-xs text-gray-600">
+                            <span className="text-purple-600 font-medium">Student</span>
+                            {user.studentClass && (
+                              <>
+                                <span className="mx-2 text-gray-300">|</span>
+                                <span className="flex items-center gap-1">
+                                  <GraduationCap size={12} className="text-blue-500" />
+                                  <span>{user.studentClass}</span>
+                                </span>
+                              </>
+                            )}
+                            {user.academicYear && (
+                              <>
+                                <span className="mx-2 text-gray-300">|</span>
+                                <span className="flex items-center gap-1">
+                                  <Calendar size={12} className="text-indigo-500" />
+                                  <span>{user.academicYear}</span>
+                                </span>
+                              </>
+                            )}
+                            <span className="mx-2 text-gray-300">|</span>
+                            <span 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUserCardClick(user);
+                              }}
+                              className="flex items-center gap-1 cursor-pointer hover:text-green-700 transition-colors text-green-600"
+                            >
+                              <Layers size={12} />
+                              <span>Enrollments: {user.enrollmentCount ?? 5}</span>
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -832,89 +1001,83 @@ export default function UserList({
         {/* Pagination */}
         {!isLoading && searchFilteredUsers.length > 0 && (
           <div className="mt-6 flex items-center justify-center">
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => {
-                  if (currentPage > 1) {
-                    setCurrentPage(currentPage - 1);
-                    // Scroll to top of user list
-                    document.querySelector('.user-list-container')?.scrollTo({ top: 0, behavior: 'smooth' });
+            <div className="flex items-center gap-4">
+              {/* Showing X-Y of Z */}
+              <span className="text-sm text-gray-500">
+                Showing {((currentPage - 1) * usersPerPage) + 1}-{Math.min(currentPage * usersPerPage, totalUsers)} of {totalUsers}
+              </span>
+
+              <div className="flex items-center gap-1">
+                {/* Prev Button */}
+                <button
+                  onClick={() => {
+                    if (currentPage > 1) {
+                      setCurrentPage(currentPage - 1);
+                      document.querySelector('.user-list-container')?.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                  }}
+                  disabled={currentPage === 1}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    currentPage === 1
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Prev
+                </button>
+
+                {/* Page Numbers */}
+                {Array.from({ length: Math.min(3, Math.ceil(totalUsers / usersPerPage)) }, (_, i) => {
+                  const totalPages = Math.ceil(totalUsers / usersPerPage);
+                  let pageNum;
+                  if (totalPages <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 2) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 1) {
+                    pageNum = totalPages - 2 + i;
+                  } else {
+                    pageNum = currentPage - 1 + i;
                   }
-                }}
-                disabled={currentPage === 1}
-                className={`p-2 rounded-lg transition-all ${
-                  currentPage === 1
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
-                }`}
-                style={currentPage > 1 ? {
-                  borderColor: brandTheme.colors.primary + '40'
-                } : {}}
-              >
-                <ChevronLeft size={20} />
-              </button>
+                  return pageNum;
+                }).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => {
+                      setCurrentPage(page);
+                      document.querySelector('.user-list-container')?.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className={`min-w-[40px] h-10 rounded-lg font-semibold text-sm transition-all ${
+                      currentPage === page
+                        ? 'text-white shadow-md'
+                        : 'text-gray-700 bg-white border border-gray-200 hover:bg-gray-50'
+                    }`}
+                    style={currentPage === page ? {
+                      background: brandTheme.gradients.primary
+                    } : {}}
+                  >
+                    {page}
+                  </button>
+                ))}
 
-              <div className="flex items-center space-x-1">
-                {Array.from({ length: Math.ceil(totalUsers / usersPerPage) }, (_, i) => i + 1)
-                  .filter(page => {
-                    // Show first page, last page, current page, and pages around current
-                    const totalPages = Math.ceil(totalUsers / usersPerPage);
-                    return (
-                      page === 1 ||
-                      page === totalPages ||
-                      (page >= currentPage - 1 && page <= currentPage + 1)
-                    );
-                  })
-                  .map((page, index, array) => {
-                    // Add ellipsis
-                    const prevPage = array[index - 1];
-                    const showEllipsis = prevPage && page - prevPage > 1;
-
-                    return (
-                      <div key={page} className="flex items-center">
-                        {showEllipsis && (
-                          <span className="px-2 text-gray-400">...</span>
-                        )}
-                        <button
-                          onClick={() => {
-                            setCurrentPage(page);
-                            document.querySelector('.user-list-container')?.scrollTo({ top: 0, behavior: 'smooth' });
-                          }}
-                          className={`min-w-[40px] h-10 rounded-lg font-semibold transition-all ${
-                            currentPage === page
-                              ? 'text-white shadow-md'
-                              : 'text-gray-700 bg-white border border-gray-200 hover:border-gray-300 hover:shadow-md'
-                          }`}
-                          style={currentPage === page ? {
-                            background: brandTheme.gradients.primary
-                          } : {}}
-                        >
-                          {page}
-                        </button>
-                      </div>
-                    );
-                  })}
+                {/* Next Button */}
+                <button
+                  onClick={() => {
+                    if (currentPage < Math.ceil(totalUsers / usersPerPage)) {
+                      setCurrentPage(currentPage + 1);
+                      document.querySelector('.user-list-container')?.scrollTo({ top: 0, behavior: 'smooth' });
+                    }
+                  }}
+                  disabled={currentPage >= Math.ceil(totalUsers / usersPerPage)}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    currentPage >= Math.ceil(totalUsers / usersPerPage)
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Next
+                </button>
               </div>
-
-              <button
-                onClick={() => {
-                  if (currentPage < Math.ceil(totalUsers / usersPerPage)) {
-                    setCurrentPage(currentPage + 1);
-                    document.querySelector('.user-list-container')?.scrollTo({ top: 0, behavior: 'smooth' });
-                  }
-                }}
-                disabled={currentPage >= Math.ceil(totalUsers / usersPerPage)}
-                className={`p-2 rounded-lg transition-all ${
-                  currentPage >= Math.ceil(totalUsers / usersPerPage)
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-white border border-gray-200 text-gray-700 hover:border-gray-300 hover:shadow-md'
-                }`}
-                style={currentPage < Math.ceil(totalUsers / usersPerPage) ? {
-                  borderColor: brandTheme.colors.primary + '40'
-                } : {}}
-              >
-                <ChevronRight size={20} />
-              </button>
             </div>
           </div>
         )}
@@ -1022,6 +1185,610 @@ export default function UserList({
       editUser={userToEdit}
       currentUserRole={currentUserRole}
     />
+
+    {/* User Profile Slide-out Modal */}
+    {showUserProfileModal && (
+      <>
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9998] transition-opacity"
+          onClick={closeUserProfileModal}
+        />
+        
+        {/* Slide-out Panel */}
+        <div 
+          className="fixed inset-2 left-auto w-[600px] bg-white shadow-2xl z-[9999] flex flex-col rounded-2xl overflow-hidden"
+          style={{ animation: 'slideInRight 0.3s ease-out' }}
+        >
+          {/* Header - Gradient */}
+          <div 
+            className="px-5 py-4 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
+            style={{ background: brandTheme.gradients.primary }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center text-white font-bold text-xl">
+                {(selectedUserForProfile?.fullName || 'U').charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-lg">
+                  {selectedUserForProfile?.fullName || 'User'}
+                </h3>
+                <p className="text-sm text-white/80">
+                  {selectedUserForProfile?.userType === USER_TYPES.STUDENT 
+                    ? `${selectedUserForProfile?.studentClass || 'N/A'} | ${selectedUserForProfile?.academicYear || 'N/A'}`
+                    : `${(selectedUserForProfile?.userType || '').charAt(0).toUpperCase() + (selectedUserForProfile?.userType || '').slice(1)}`
+                  }
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={closeUserProfileModal}
+              className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 text-white transition-colors"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            {isLoadingProfile ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div 
+                  className="w-10 h-10 border-3 border-t-transparent rounded-full animate-spin mb-3"
+                  style={{ borderColor: brandTheme.colors.primary, borderTopColor: 'transparent' }}
+                />
+                <p className="text-sm text-gray-500">Loading profile...</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Common Contact Info for All Users */}
+                <div className="grid grid-cols-2 gap-3">
+                  {currentUserRole !== USER_TYPES.STUDENT && selectedUserForProfile?.email && (
+                    <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                        <Mail size={18} className="text-blue-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wide">Email</p>
+                        <p className="text-sm font-semibold text-gray-800 truncate">{selectedUserForProfile.email}</p>
+                      </div>
+                    </div>
+                  )}
+                  {selectedUserForProfile?.phone && (
+                    <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+                      <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+                        <Phone size={18} className="text-green-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wide">Phone</p>
+                        <p className="text-sm font-semibold text-gray-800">{selectedUserForProfile.phone}</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Student-specific: Class & Academic Year */}
+                  {selectedUserForProfile?.userType === USER_TYPES.STUDENT && selectedUserForProfile?.studentClass && (
+                    <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+                      <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+                        <GraduationCap size={18} className="text-purple-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wide">Class</p>
+                        <p className="text-sm font-semibold text-gray-800">{selectedUserForProfile.studentClass}</p>
+                      </div>
+                    </div>
+                  )}
+                  {selectedUserForProfile?.userType === USER_TYPES.STUDENT && selectedUserForProfile?.academicYear && (
+                    <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                        <Calendar size={18} className="text-indigo-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wide">Academic Year</p>
+                        <p className="text-sm font-semibold text-gray-800">{selectedUserForProfile.academicYear}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ===== TEACHER / PRINCIPAL / DEAN PROFILE ===== */}
+                {(selectedUserForProfile?.userType === USER_TYPES.TEACHER || 
+                  selectedUserForProfile?.userType === USER_TYPES.PRINCIPAL || 
+                  selectedUserForProfile?.userType === USER_TYPES.DEAN) && (
+                  <>
+                    {/* Subjects Taught Section */}
+                    {selectedUserForProfile?.teacherSubjects && selectedUserForProfile.teacherSubjects.length > 0 && (
+                      <>
+                        <div className="flex items-center gap-2 mt-4">
+                          <BookOpen size={18} style={{ color: brandTheme.colors.primary }} />
+                          <h4 className="text-base font-bold text-gray-800">Subjects Taught</h4>
+                          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-lg ml-auto">
+                            {selectedUserForProfile.teacherSubjects.length} Subject(s)
+                          </span>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                          {selectedUserForProfile.teacherSubjects.map((subject, idx) => {
+                            // Subject icon mapping using FontAwesome Sharp Light
+                            const getSubjectIcon = (subjectName: string): { icon: any; color: string; bg: string } => {
+                              const name = subjectName.toLowerCase();
+                              
+                              // Programming Languages
+                              if (name.includes('python')) return { icon: faCode, color: '#3776AB', bg: 'bg-blue-50' };
+                              if (name.includes('java') && !name.includes('javascript')) return { icon: faCode, color: '#ED8B00', bg: 'bg-orange-50' };
+                              if (name.includes('javascript') || name.includes('js')) return { icon: faFileCode, color: '#F7DF1E', bg: 'bg-yellow-50' };
+                              if (name.includes('typescript') || name.includes('ts')) return { icon: faFileCode, color: '#3178C6', bg: 'bg-blue-50' };
+                              if (name.includes('c++') || name.includes('cpp')) return { icon: faCode, color: '#00599C', bg: 'bg-blue-50' };
+                              if (name.includes('c programming') || name === 'c') return { icon: faCode, color: '#A8B9CC', bg: 'bg-gray-100' };
+                              if (name.includes('c#') || name.includes('csharp')) return { icon: faCode, color: '#68217A', bg: 'bg-purple-50' };
+                              if (name.includes('ruby')) return { icon: faCode, color: '#CC342D', bg: 'bg-red-50' };
+                              if (name.includes('php')) return { icon: faCode, color: '#777BB4', bg: 'bg-indigo-50' };
+                              if (name.includes('swift')) return { icon: faCode, color: '#FA7343', bg: 'bg-orange-50' };
+                              if (name.includes('kotlin')) return { icon: faCode, color: '#7F52FF', bg: 'bg-purple-50' };
+                              if (name.includes('go') || name.includes('golang')) return { icon: faCode, color: '#00ADD8', bg: 'bg-cyan-50' };
+                              if (name.includes('rust')) return { icon: faCode, color: '#DEA584', bg: 'bg-orange-50' };
+                              if (name.includes('r programming') || name === 'r') return { icon: faChartPie, color: '#276DC3', bg: 'bg-blue-50' };
+                              
+                              // Web Development
+                              if (name.includes('html')) return { icon: faFileCode, color: '#E34F26', bg: 'bg-orange-50' };
+                              if (name.includes('css')) return { icon: faPalette, color: '#1572B6', bg: 'bg-blue-50' };
+                              if (name.includes('react')) return { icon: faLaptopCode, color: '#61DAFB', bg: 'bg-cyan-50' };
+                              if (name.includes('angular')) return { icon: faLaptopCode, color: '#DD0031', bg: 'bg-red-50' };
+                              if (name.includes('vue')) return { icon: faLaptopCode, color: '#4FC08D', bg: 'bg-green-50' };
+                              if (name.includes('node')) return { icon: faServer, color: '#339933', bg: 'bg-green-50' };
+                              if (name.includes('web')) return { icon: faGlobe, color: '#4285F4', bg: 'bg-blue-50' };
+                              
+                              // Data & AI
+                              if (name.includes('data structure') || name.includes('dsa')) return { icon: faCubes, color: '#6366F1', bg: 'bg-indigo-50' };
+                              if (name.includes('algorithm')) return { icon: faGear, color: '#6B7280', bg: 'bg-gray-100' };
+                              if (name.includes('machine learning') || name.includes('ml')) return { icon: faBrain, color: '#8B5CF6', bg: 'bg-purple-50' };
+                              if (name.includes('artificial intelligence') || name.includes('ai')) return { icon: faRobot, color: '#EC4899', bg: 'bg-pink-50' };
+                              if (name.includes('deep learning')) return { icon: faBrain, color: '#7C3AED', bg: 'bg-purple-50' };
+                              if (name.includes('data science')) return { icon: faChartLine, color: '#10B981', bg: 'bg-green-50' };
+                              if (name.includes('big data')) return { icon: faDatabase, color: '#3B82F6', bg: 'bg-blue-50' };
+                              if (name.includes('database') || name.includes('sql')) return { icon: faDatabase, color: '#06B6D4', bg: 'bg-cyan-50' };
+                              if (name.includes('mongodb') || name.includes('nosql')) return { icon: faDatabase, color: '#47A248', bg: 'bg-green-50' };
+                              
+                              // Computer Science
+                              if (name.includes('operating system') || name.includes('os')) return { icon: faTerminal, color: '#1F2937', bg: 'bg-gray-100' };
+                              if (name.includes('network')) return { icon: faNetworkWired, color: '#3B82F6', bg: 'bg-blue-50' };
+                              if (name.includes('cyber') || name.includes('security')) return { icon: faShieldHalved, color: '#EF4444', bg: 'bg-red-50' };
+                              if (name.includes('cloud')) return { icon: faCloud, color: '#0EA5E9', bg: 'bg-sky-50' };
+                              if (name.includes('devops')) return { icon: faGear, color: '#6366F1', bg: 'bg-indigo-50' };
+                              if (name.includes('computer')) return { icon: faLaptopCode, color: '#6B7280', bg: 'bg-gray-100' };
+                              if (name.includes('software')) return { icon: faLayerGroup, color: '#3B82F6', bg: 'bg-blue-50' };
+                              
+                              // Mobile
+                              if (name.includes('android')) return { icon: faMobileScreen, color: '#3DDC84', bg: 'bg-green-50' };
+                              if (name.includes('ios')) return { icon: faMobileScreen, color: '#6B7280', bg: 'bg-gray-100' };
+                              if (name.includes('flutter')) return { icon: faMobileScreen, color: '#02569B', bg: 'bg-cyan-50' };
+                              if (name.includes('mobile')) return { icon: faMobileScreen, color: '#6366F1', bg: 'bg-indigo-50' };
+                              
+                              // Sciences
+                              if (name.includes('physics')) return { icon: faAtom, color: '#3B82F6', bg: 'bg-blue-50' };
+                              if (name.includes('chemistry')) return { icon: faFlask, color: '#10B981', bg: 'bg-green-50' };
+                              if (name.includes('biology')) return { icon: faDna, color: '#059669', bg: 'bg-emerald-50' };
+                              if (name.includes('math') || name.includes('calculus') || name.includes('algebra')) return { icon: faCalculator, color: '#6366F1', bg: 'bg-indigo-50' };
+                              if (name.includes('statistics')) return { icon: faChartPie, color: '#8B5CF6', bg: 'bg-purple-50' };
+                              
+                              // Languages & Arts
+                              if (name.includes('english')) return { icon: faLanguage, color: '#EF4444', bg: 'bg-red-50' };
+                              if (name.includes('hindi')) return { icon: faLanguage, color: '#F97316', bg: 'bg-orange-50' };
+                              if (name.includes('french')) return { icon: faLanguage, color: '#3B82F6', bg: 'bg-blue-50' };
+                              if (name.includes('spanish')) return { icon: faLanguage, color: '#EAB308', bg: 'bg-yellow-50' };
+                              if (name.includes('german')) return { icon: faLanguage, color: '#6B7280', bg: 'bg-gray-100' };
+                              if (name.includes('history')) return { icon: faLandmark, color: '#D97706', bg: 'bg-amber-50' };
+                              if (name.includes('geography')) return { icon: faGlobe, color: '#10B981', bg: 'bg-green-50' };
+                              if (name.includes('economics')) return { icon: faCoins, color: '#EAB308', bg: 'bg-yellow-50' };
+                              if (name.includes('commerce') || name.includes('business')) return { icon: faBriefcase, color: '#3B82F6', bg: 'bg-blue-50' };
+                              if (name.includes('account')) return { icon: faCalculator, color: '#10B981', bg: 'bg-green-50' };
+                              
+                              // Others
+                              if (name.includes('git')) return { icon: faCode, color: '#F05032', bg: 'bg-orange-50' };
+                              if (name.includes('linux') || name.includes('unix')) return { icon: faTerminal, color: '#FCC624', bg: 'bg-yellow-50' };
+                              if (name.includes('docker')) return { icon: faServer, color: '#2496ED', bg: 'bg-blue-50' };
+                              if (name.includes('api')) return { icon: faNetworkWired, color: '#8B5CF6', bg: 'bg-purple-50' };
+                              if (name.includes('testing')) return { icon: faWrench, color: '#10B981', bg: 'bg-green-50' };
+                              if (name.includes('design')) return { icon: faPalette, color: '#EC4899', bg: 'bg-pink-50' };
+                              if (name.includes('hardware') || name.includes('electronics')) return { icon: faMicrochip, color: '#6B7280', bg: 'bg-gray-100' };
+                              
+                              // Default
+                              return { icon: faBookOpenFA, color: brandTheme.colors.primary, bg: 'bg-purple-50' };
+                            };
+                            
+                            const { icon, color, bg } = getSubjectIcon(subject);
+                            
+                            return (
+                              <div 
+                                key={idx}
+                                className={`flex items-center gap-3 px-4 py-3 ${
+                                  idx !== selectedUserForProfile.teacherSubjects.length - 1 
+                                    ? 'border-b border-dashed border-gray-200' 
+                                    : ''
+                                }`}
+                              >
+                                <div className={`w-9 h-9 rounded-lg ${bg} flex items-center justify-center flex-shrink-0`}>
+                                  <FontAwesomeIcon icon={icon} className="text-base" style={{ color }} />
+                                </div>
+                                <span className="text-sm font-medium text-gray-800">{subject}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Classes Taught Section */}
+                    {selectedUserForProfile?.teacherClasses && selectedUserForProfile.teacherClasses.length > 0 && (
+                      <>
+                        <div className="flex items-center gap-2 mt-4">
+                          <GraduationCap size={18} style={{ color: brandTheme.colors.primary }} />
+                          <h4 className="text-base font-bold text-gray-800">Classes Taught</h4>
+                          <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-lg ml-auto">
+                            {selectedUserForProfile.teacherClasses.length} Class(es)
+                          </span>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                          {selectedUserForProfile.teacherClasses.map((cls, idx) => (
+                            <div 
+                              key={idx}
+                              className={`flex items-center gap-3 px-4 py-3 ${
+                                idx !== selectedUserForProfile.teacherClasses.length - 1 
+                                  ? 'border-b border-dashed border-gray-200' 
+                                  : ''
+                              }`}
+                            >
+                              <div className="w-9 h-9 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                                <FontAwesomeIcon icon={faGraduationCapFA} className="text-base text-purple-500" />
+                              </div>
+                              <span className="text-sm font-medium text-gray-800">{cls}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+
+                    {/* End of Profile for Teacher/Principal/Dean */}
+                    <div className="flex flex-col items-center justify-center py-6 text-center mt-4">
+                      <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mb-2 border-2 border-dashed border-gray-200">
+                        <span className="text-xl">
+                          {selectedUserForProfile?.userType === USER_TYPES.TEACHER ? '👨‍🏫' : 
+                           selectedUserForProfile?.userType === USER_TYPES.PRINCIPAL ? '🏆' : '👔'}
+                        </span>
+                      </div>
+                      <p className="font-medium text-gray-600 text-sm">End of Profile</p>
+                    </div>
+                  </>
+                )}
+
+                {/* ===== ADMIN PROFILE ===== */}
+                {selectedUserForProfile?.userType === USER_TYPES.ADMIN && (
+                  <>
+                    {/* Admin Info Card */}
+                    <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-5 border border-gray-100 shadow-sm mt-2">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">
+                          <Shield size={20} className="text-gray-600" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-gray-800">System Administrator</h4>
+                          <p className="text-xs text-gray-500">Full system access</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 mt-3">
+                        <div className="flex items-center gap-2 text-xs text-gray-600 bg-white rounded-lg px-3 py-2 border border-gray-100">
+                          <CheckCircle size={14} className="text-green-500" />
+                          <span>User Management</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-600 bg-white rounded-lg px-3 py-2 border border-gray-100">
+                          <CheckCircle size={14} className="text-green-500" />
+                          <span>Course Management</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-600 bg-white rounded-lg px-3 py-2 border border-gray-100">
+                          <CheckCircle size={14} className="text-green-500" />
+                          <span>Reports Access</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-gray-600 bg-white rounded-lg px-3 py-2 border border-gray-100">
+                          <CheckCircle size={14} className="text-green-500" />
+                          <span>Settings Control</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* End of Profile for Admin */}
+                    <div className="flex flex-col items-center justify-center py-6 text-center">
+                      <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mb-2 border-2 border-dashed border-gray-200">
+                        <span className="text-xl">⚙️</span>
+                      </div>
+                      <p className="font-medium text-gray-600 text-sm">End of Profile</p>
+                    </div>
+                  </>
+                )}
+
+                {/* ===== STUDENT PROFILE ===== */}
+                {selectedUserForProfile?.userType === USER_TYPES.STUDENT && userProfileStats && (
+                  <>
+                    {/* Assessment Stats - Section Header */}
+                    <div className="flex items-center gap-2 mt-4">
+                      <Target size={18} style={{ color: brandTheme.colors.primary }} />
+                      <h4 className="text-base font-bold text-gray-800">Assessments</h4>
+                    </div>
+
+                    {/* Assessment Stats Cards */}
+                    <div className="grid grid-cols-3 gap-3">
+                      {/* Total Assessments */}
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-100">
+                            <FileText size={20} className="text-blue-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Total</p>
+                            <p className="text-xl font-bold text-gray-900">{userProfileStats.totalAssessments}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Assessments Completed */}
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-100">
+                            <CheckCircle size={20} className="text-green-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Completed</p>
+                            <p className="text-xl font-bold text-gray-900">{userProfileStats.assessmentsCompleted}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Assessment Avg Marks */}
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100">
+                            <BarChart3 size={20} className="text-orange-500" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Avg. %</p>
+                            <p className="text-xl font-bold text-gray-900">{userProfileStats.assessmentAverageMarks}%</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Learning Stats - Section Header */}
+                    <div className="flex items-center gap-2 mt-4">
+                      <Clock size={18} style={{ color: brandTheme.colors.primary }} />
+                      <h4 className="text-base font-bold text-gray-800">Learning Activity</h4>
+                    </div>
+
+                    {/* Learning Stats Cards */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Total Learning Hours */}
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: `${brandTheme.colors.primary}15` }}
+                          >
+                            <Clock size={20} style={{ color: brandTheme.colors.primary }} />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Total Learning</p>
+                            <p className="text-xl font-bold text-gray-900">{userProfileStats.totalLearningHours} Hrs</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Average Learning Per Day */}
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-indigo-100">
+                            <TrendingUp size={20} className="text-indigo-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Avg/Day</p>
+                            <p className="text-xl font-bold text-gray-900">{userProfileStats.averageLearningPerDay}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Enrolled Courses Section Header */}
+                    <div className="flex items-center justify-between mt-4">
+                      <div className="flex items-center gap-2">
+                        <Layers size={18} style={{ color: brandTheme.colors.primary }} />
+                        <h4 className="text-base font-bold text-gray-800">Enrolled Courses</h4>
+                      </div>
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
+                        {userProfileStats.enrollments.length} Courses
+                      </span>
+                    </div>
+
+                    {/* Course Stats Cards */}
+                    <div className="grid grid-cols-3 gap-3">
+                      {/* Courses Enrolled */}
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: `${brandTheme.colors.primary}15` }}
+                          >
+                            <BookOpen size={20} style={{ color: brandTheme.colors.primary }} />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Enrolled</p>
+                            <p className="text-xl font-bold text-gray-900">{userProfileStats.coursesEnrolled}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Courses Completed */}
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-100">
+                            <CheckCircle size={20} className="text-green-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Completed</p>
+                            <p className="text-xl font-bold text-gray-900">{userProfileStats.coursesCompleted}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Average Marks */}
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-purple-100">
+                            <Award size={20} className="text-purple-600" />
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Avg. Marks</p>
+                            <p className="text-xl font-bold text-gray-900">{userProfileStats.averageMarks}%</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Enrolled Courses List */}
+                    {userProfileStats.enrollments.map((enrollment, index) => (
+                      <div 
+                        key={enrollment.examId || index}
+                        className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-all hover:border-gray-300"
+                      >
+                        {/* Header Row - Icon, Title & ID */}
+                        <div className="flex items-start gap-4 mb-4">
+                          {/* Thumbnail */}
+                          <div 
+                            className="w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0"
+                            style={{ backgroundColor: `${brandTheme.colors.primary}15` }}
+                          >
+                            <BookOpen size={24} style={{ color: brandTheme.colors.primary }} />
+                          </div>
+                          
+                          <div className="flex-1">
+                            <div className="flex items-start justify-between">
+                              <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                                {enrollment.examName || 'Unnamed Course'}
+                              </h3>
+                              <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md ml-2 flex-shrink-0">
+                                ID: {enrollment.examId.toUpperCase().slice(0, 8)}
+                              </span>
+                            </div>
+                            {/* Second row: Lectures | Duration | Category */}
+                            <p className="text-xs text-gray-600 flex items-center gap-3">
+                              <span className="flex items-center">
+                                <FileText size={12} className="mr-1" />
+                                <span className="font-medium">{enrollment.lectures || 12} Lectures</span>
+                              </span>
+                              <span className="flex items-center">
+                                <Clock size={12} className="mr-1" />
+                                <span>{enrollment.duration || '2h 30m'}</span>
+                              </span>
+                              <span className="flex items-center">
+                                <GraduationCap size={12} className="mr-1" />
+                                <span>{enrollment.category || 'General'}</span>
+                              </span>
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Stats Box - Exercises, Notes, Quizzes, Assessments */}
+                        <div 
+                          className="grid grid-cols-2 gap-3 mb-4 p-3 rounded-lg bg-gray-50"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <span className="text-gray-400 text-xl font-mono">&lt;/&gt;</span>
+                            <div>
+                              <p className="text-xs text-gray-500">Exercises</p>
+                              <p className="text-base font-semibold text-gray-900">{enrollment.exercises || 25}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-3">
+                            <FileText size={20} className="text-gray-400" />
+                            <div>
+                              <p className="text-xs text-gray-500">Notes</p>
+                              <p className="text-base font-semibold text-gray-900">{enrollment.notes || 8}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-3">
+                            <CheckCircle size={20} className="text-gray-400" />
+                            <div>
+                              <p className="text-xs text-gray-500">Quizzes</p>
+                              <p className="text-base font-semibold text-gray-900">{enrollment.quizzes || 15}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-3">
+                            <BookOpen size={20} className="text-gray-400" />
+                            <div>
+                              <p className="text-xs text-gray-500">Assessments</p>
+                              <p className="text-base font-semibold text-gray-900">{enrollment.assessments || 3}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Footer - Progress/Marks & Assigned Date */}
+                        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                          <div className="flex items-center gap-2">
+                            {/* Progress or Marks */}
+                            {(enrollment.progress || 0) >= 100 ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-3 py-1.5 rounded-lg shadow-sm text-green-700 bg-gradient-to-r from-green-50 to-green-100">
+                                <CheckCircle size={12} />
+                                {enrollment.marks || 85}% Marks
+                              </span>
+                            ) : (
+                              <span className={`inline-flex items-center text-[11px] font-semibold px-3 py-1.5 rounded-lg shadow-sm ${
+                                (enrollment.progress || 0) >= 50
+                                  ? 'text-purple-700 bg-gradient-to-r from-purple-50 to-purple-100'
+                                  : (enrollment.progress || 0) > 0
+                                  ? 'text-orange-700 bg-gradient-to-r from-orange-50 to-orange-100'
+                                  : 'text-gray-600 bg-gradient-to-r from-gray-50 to-gray-100'
+                              }`}>
+                                {enrollment.progress || 0}% Completed
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Assigned Date */}
+                          <div className="flex items-center text-xs text-gray-500">
+                            <Calendar size={12} className="mr-1.5" />
+                            <span>Assigned: {enrollment.enrolledAt ? new Date(enrollment.enrolledAt).toLocaleDateString('en-US', { 
+                              day: 'numeric',
+                              month: 'short', 
+                              year: 'numeric'
+                            }) : 'N/A'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* End of Profile for Student */}
+                    <div className="flex flex-col items-center justify-center py-6 text-center">
+                      <div className="w-12 h-12 bg-gray-100 rounded-xl flex items-center justify-center mb-2 border-2 border-dashed border-gray-200">
+                        <span className="text-xl">🎓</span>
+                      </div>
+                      <p className="font-medium text-gray-600 text-sm">End of Profile</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Animation keyframes */}
+        <style>{`
+          @keyframes slideInRight {
+            from {
+              transform: translateX(100%);
+            }
+            to {
+              transform: translateX(0);
+            }
+          }
+        `}</style>
+      </>
+    )}
+
     </>
   );
 }
