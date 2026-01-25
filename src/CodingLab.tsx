@@ -32,10 +32,7 @@ import {
   faPenToSquare,
   faCircleQuestion,
   faCopy,
-  faSliders,
   faExpand,
-  faMoon,
-  faGrid2,
   faTerminal,
   faKeyboard,
   faClipboardList,
@@ -51,15 +48,6 @@ import {
 
 // ==================== CONSTANTS ====================
 // Using judge0Service for code execution and firebaseService.chatWithAI for AI assistant
-
-const LANGUAGE_IDS: Record<string, number> = {
-  python: 71,
-  javascript: 63,
-  java: 62,
-  cpp: 54,
-  c: 50,
-  go: 60
-};
 
 const LANGUAGE_CONFIG = [
   { id: 'c', name: 'C', extension: 'c' },
@@ -168,7 +156,7 @@ interface TestResult {
 }
 
 // ==================== FIREBASE SERVICE ====================
-
+    
 /**
  * Transform Firebase problem data to CodingLab format
  */
@@ -177,7 +165,7 @@ function transformProblemData(data: any): ProblemData | null {
 
   try {
     // Transform examples from Firebase format
-    const examples: Example[] = (data.examples || []).map((ex: any, idx: number) => ({
+    const examples: Example[] = (data.examples || []).map((ex: any) => ({
       input: ex.input || {},
       output: ex.output || '',
       explanation: ex.explanation || ''
@@ -333,8 +321,6 @@ async function executeCode(
 // ==================== COMPONENT ====================
 const CodingLab: React.FC<CodingLabProps> = ({ 
   brandTheme,
-  currentUser,
-  onClose,
   problemSlug = 'two-sum'
 }) => {
   // Use problemSlug prop or default
@@ -393,7 +379,6 @@ const CodingLab: React.FC<CodingLabProps> = ({
   const [selectedSlashIndex, setSelectedSlashIndex] = useState(0);
   const [slashCommandLine, setSlashCommandLine] = useState<number | null>(null);
   
-  const editorRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const monacoEditorRef = useRef<any>(null); // Reference to Monaco editor instance
@@ -835,26 +820,26 @@ const CodingLab: React.FC<CodingLabProps> = ({
   const renderMarkdown = (text: string) => {
     if (!text) return null;
     
-    const elements: JSX.Element[] = [];
+    const elements: React.ReactElement[] = [];
     
     // First, extract all code blocks and replace with placeholders
     // Handle multiple formats: ```lang\ncode```, ```lang code```, ``` code ```
     const codeBlocks: { lang: string; code: string }[] = [];
     
     // Pattern 1: ```lang\ncode\n``` (standard)
-    let processedText = text.replace(/```(\w*)\n([\s\S]*?)\n```/g, (match, lang, code) => {
+    let processedText = text.replace(/```(\w*)\n([\s\S]*?)\n```/g, (_match, lang, code) => {
       codeBlocks.push({ lang: lang || '', code: code.trim() });
       return `\n__CODE_BLOCK_${codeBlocks.length - 1}__\n`;
     });
     
     // Pattern 2: ```lang\ncode``` (no trailing newline)
-    processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (match, lang, code) => {
+    processedText = processedText.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, lang, code) => {
       codeBlocks.push({ lang: lang || '', code: code.trim() });
       return `\n__CODE_BLOCK_${codeBlocks.length - 1}__\n`;
     });
     
     // Pattern 3: ```code``` (inline, no language)
-    processedText = processedText.replace(/```([\s\S]*?)```/g, (match, code) => {
+    processedText = processedText.replace(/```([\s\S]*?)```/g, (_match, code) => {
       codeBlocks.push({ lang: '', code: code.trim() });
       return `\n__CODE_BLOCK_${codeBlocks.length - 1}__\n`;
     });
@@ -1022,13 +1007,13 @@ const CodingLab: React.FC<CodingLabProps> = ({
     const inlineCodes: string[] = [];
     
     // Replace ``code`` first (double backticks)
-    processed = processed.replace(/``([^`]+)``/g, (match, code) => {
+    processed = processed.replace(/``([^`]+)``/g, (_match, code) => {
       inlineCodes.push(code);
       return `__INLINE_CODE_${inlineCodes.length - 1}__`;
     });
     
     // Then replace `code` (single backticks)
-    processed = processed.replace(/`([^`]+)`/g, (match, code) => {
+    processed = processed.replace(/`([^`]+)`/g, (_match, code) => {
       inlineCodes.push(code);
       return `__INLINE_CODE_${inlineCodes.length - 1}__`;
     });
@@ -1232,15 +1217,6 @@ const CodingLab: React.FC<CodingLabProps> = ({
   };
 
   // Helper functions
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty?.toLowerCase()) {
-      case 'easy': return 'bg-green-100 text-green-700 border border-green-200';
-      case 'medium': return 'bg-yellow-100 text-yellow-700 border border-yellow-200';
-      case 'hard': return 'bg-red-100 text-red-700 border border-red-200';
-      default: return 'bg-gray-100 text-gray-700 border border-gray-200';
-    }
-  };
-
   const getTagColor = (index: number) => {
     const colors = [
       'bg-green-50 text-green-700 border border-green-200',
@@ -1417,7 +1393,10 @@ const CodingLab: React.FC<CodingLabProps> = ({
 
   // ==================== RENDER FUNCTIONS ====================
   
-  const renderProblemPanel = () => (
+  const renderProblemPanel = () => {
+    if (!problem) return null;
+    
+    return (
     <div className="h-full flex flex-col overflow-hidden bg-white">
       <div className="flex-1 overflow-y-auto">
         {/* Problem Header - Title & Tags */}
@@ -1981,9 +1960,12 @@ const CodingLab: React.FC<CodingLabProps> = ({
         </button>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderSolutionPanel = () => {
+    if (!problem) return null;
+    
     const approaches = Object.entries(problem.approaches || {});
     const currentApproach = problem.approaches?.[selectedApproach];
 
@@ -1994,28 +1976,6 @@ const CodingLab: React.FC<CodingLabProps> = ({
       if (complexity.includes('log')) return 'medium';
       if (complexity.includes('²') || complexity.includes('^2') || complexity.includes('n²')) return 'bad';
       return 'medium';
-    };
-
-    const getComplexityBadge = (complexity: string, type: 'time' | 'space') => {
-      const level = getComplexityLevel(complexity);
-      if (type === 'time') {
-        if (level === 'good') return { text: 'Linear', color: 'bg-green-100 text-green-600' };
-        if (level === 'medium') return { text: 'Linearithmic', color: 'bg-yellow-100 text-yellow-600' };
-        return { text: 'Quadratic', color: 'bg-red-100 text-red-600' };
-      } else {
-        if (complexity === 'O(1)') return { text: 'Constant Space', color: 'bg-green-100 text-green-600' };
-        if (complexity.includes('n')) return { text: 'Linear Space', color: 'bg-yellow-100 text-yellow-600' };
-        return { text: 'Variable', color: 'bg-gray-100 text-gray-600' };
-      }
-    };
-
-    const getComplexityBarWidth = (complexity: string): number => {
-      if (complexity === 'O(1)') return 20;
-      if (complexity === 'O(log n)') return 35;
-      if (complexity === 'O(n)') return 50;
-      if (complexity.includes('log')) return 65;
-      if (complexity.includes('²') || complexity.includes('^2')) return 85;
-      return 50;
     };
 
     return (
@@ -2846,7 +2806,10 @@ const CodingLab: React.FC<CodingLabProps> = ({
     );
   };
 
-  const renderAnalogyPanel = () => (
+  const renderAnalogyPanel = () => {
+    if (!problem) return null;
+    
+    return (
     <div className="h-full overflow-y-auto bg-white p-6">
       <div className="flex items-center gap-3 mb-5">
         <span className="text-3xl">{problem.analogy?.icon || '🔍'}</span>
@@ -2873,7 +2836,8 @@ const CodingLab: React.FC<CodingLabProps> = ({
         </div>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderAIPanel = () => (
     <div className="h-full flex flex-col bg-white">
@@ -3217,7 +3181,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
               });
               
               // Detect slash commands
-              editor.onDidChangeModelContent((e) => {
+             editor.onDidChangeModelContent(() => {
                 const model = editor.getModel();
                 if (!model) return;
                 

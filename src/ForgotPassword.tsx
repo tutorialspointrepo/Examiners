@@ -121,7 +121,7 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
 
   return (
     <div 
-      className="min-h-screen flex items-center justify-center p-4"
+      className="min-h-screen flex items-center justify-center p-4 py-8 overflow-y-auto"
       style={{ background: brand.gradients.background }}
     >
       {/* Background decorative elements using brand colors */}
@@ -439,7 +439,7 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
         {/* Version Info */}
         <div className="text-center mt-6">
           <p className="text-xs text-gray-500">
-            EXAMINERS v1.0 • Powered by AI • © 2025 Tutorials Point India Pvt. Ltd.
+            EXAMINERS v1.0 • Powered by AI • © 2026 Tutorials Point India Pvt. Ltd.
           </p>
         </div>
       </div>

@@ -1479,5 +1479,15 @@ export declare const ROOM_PAGINATION: {
     readonly INCREMENT: 10;
     readonly STARTING_INDEX: 1;
 };
+export interface ColorTheme {
+    primary: string;
+    secondary: string;
+    accent: string;
+    text: string;
+    lightAccent: string;
+}
+export declare const COLOR_PALETTES: Record<string, ColorTheme>;
+export declare const DEFAULT_COLOR = "blue";
+export declare const getColorTheme: (colorKey: string) => ColorTheme;
 export default APP_CONSTANTS;
 //# sourceMappingURL=constants.d.ts.map

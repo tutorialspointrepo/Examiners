@@ -53,6 +53,7 @@
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^16.1.0",
+    "react-to-print": "^3.2.0",
     "readline-sync": "^1.4.10",
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",

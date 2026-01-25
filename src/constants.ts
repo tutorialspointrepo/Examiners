@@ -312,6 +312,7 @@ export const VIOLATION_TYPES = {
   TAB_SWITCH: 'TAB_SWITCH',
   WINDOW_MINIMIZE: 'WINDOW_MINIMIZE',
   FULLSCREEN_EXIT: 'FULLSCREEN_EXIT',
+  SCREEN_RESIZE: 'SCREEN_RESIZE',
   
   // Input Violations
   COPY_ATTEMPT: 'COPY_ATTEMPT',
@@ -366,6 +367,7 @@ export type ViolationType = typeof VIOLATION_TYPES[keyof typeof VIOLATION_TYPES]
  * Violation severity mapping
  */
 export const VIOLATION_SEVERITY_MAP: Record<ViolationType, SeverityLevel> = {
+  [VIOLATION_TYPES.SCREEN_RESIZE]: SEVERITY_LEVELS.MEDIUM,
   [VIOLATION_TYPES.DEVTOOLS_OPEN]: SEVERITY_LEVELS.CRITICAL,
   [VIOLATION_TYPES.CONSOLE_OPEN]: SEVERITY_LEVELS.CRITICAL,
   [VIOLATION_TYPES.SHORTCUT_F12]: SEVERITY_LEVELS.CRITICAL,
@@ -410,6 +412,7 @@ export const VIOLATION_SEVERITY_MAP: Record<ViolationType, SeverityLevel> = {
  * Violation descriptions for logging
  */
 export const VIOLATION_DESCRIPTIONS: Record<ViolationType, string> = {
+  [VIOLATION_TYPES.SCREEN_RESIZE]: 'Window was resized significantly',
   [VIOLATION_TYPES.WINDOW_BLUR]: 'Window lost focus',
   [VIOLATION_TYPES.TAB_SWITCH]: 'Switched to another tab',
   [VIOLATION_TYPES.WINDOW_MINIMIZE]: 'Window was minimized',
@@ -1393,6 +1396,116 @@ export const ROOM_PAGINATION = {
   STARTING_INDEX: 1,
 } as const;
 
+// ==================== RESUME BUILDER COLOR PALETTES ====================
 
+export interface ColorTheme {
+  primary: string;
+  secondary: string;
+  accent: string;
+  text: string;
+  lightAccent: string;
+}
+
+export const COLOR_PALETTES: Record<string, ColorTheme> = {
+  // Blues
+  blue: { 
+    primary: '#4f87c7', secondary: '#6ba3d6', accent: '#dbeafe', text: '#1f2937', lightAccent: '#f0f9ff'
+  },
+  navy: { 
+    primary: '#1e40af', secondary: '#1e3a8a', accent: '#dbeafe', text: '#1f2937', lightAccent: '#f0f9ff'
+  },
+  sky: { 
+    primary: '#0ea5e9', secondary: '#0284c7', accent: '#e0f2fe', text: '#1f2937', lightAccent: '#f0f9ff'
+  },
+  cyan: { 
+    primary: '#06b6d4', secondary: '#0891b2', accent: '#cffafe', text: '#1f2937', lightAccent: '#ecfeff'
+  },
+  
+  // Greens
+  emerald: { 
+    primary: '#10b981', secondary: '#059669', accent: '#d1fae5', text: '#1f2937', lightAccent: '#f0fdf4'
+  },
+  green: { 
+    primary: '#22c55e', secondary: '#16a34a', accent: '#dcfce7', text: '#1f2937', lightAccent: '#f0fdf4'
+  },
+  teal: { 
+    primary: '#14b8a6', secondary: '#0d9488', accent: '#ccfbf1', text: '#1f2937', lightAccent: '#f0fdfa'
+  },
+  lime: { 
+    primary: '#65a30d', secondary: '#4d7c0f', accent: '#ecfccb', text: '#1f2937', lightAccent: '#f7fee7'
+  },
+  
+  // Purples
+  purple: { 
+    primary: '#8b5cf6', secondary: '#7c3aed', accent: '#f3e8ff', text: '#1f2937', lightAccent: '#faf5ff'
+  },
+  violet: { 
+    primary: '#a855f7', secondary: '#9333ea', accent: '#f5f3ff', text: '#1f2937', lightAccent: '#faf5ff'
+  },
+  indigo: { 
+    primary: '#6366f1', secondary: '#4f46e5', accent: '#eef2ff', text: '#1f2937', lightAccent: '#f8fafc'
+  },
+  fuchsia: { 
+    primary: '#d946ef', secondary: '#c026d3', accent: '#fae8ff', text: '#1f2937', lightAccent: '#fdf4ff'
+  },
+  
+  // Pinks/Reds
+  pink: { 
+    primary: '#ec4899', secondary: '#be185d', accent: '#fdf2f8', text: '#1f2937', lightAccent: '#fef7f0'
+  },
+  rose: { 
+    primary: '#f43f5e', secondary: '#e11d48', accent: '#fff1f2', text: '#1f2937', lightAccent: '#fffbf0'
+  },
+  red: { 
+    primary: '#ef4444', secondary: '#dc2626', accent: '#fef2f2', text: '#1f2937', lightAccent: '#fffbf0'
+  },
+  crimson: { 
+    primary: '#dc2626', secondary: '#b91c1c', accent: '#fef2f2', text: '#1f2937', lightAccent: '#fffbf0'
+  },
+  
+  brown: { 
+    primary: '#8b4513', 
+    secondary: '#a0522d', 
+    accent: '#f5deb3', 
+    text: '#1f2937', 
+    lightAccent: '#faf7f2'
+  },
+  
+  // Oranges/Yellows
+  orange: { 
+    primary: '#f97316', secondary: '#ea580c', accent: '#fff7ed', text: '#1f2937', lightAccent: '#fffbf0'
+  },
+  amber: { 
+    primary: '#f59e0b', secondary: '#d97706', accent: '#fffbeb', text: '#1f2937', lightAccent: '#fffdf0'
+  },
+  yellow: { 
+    primary: '#eab308', secondary: '#ca8a04', accent: '#fefce8', text: '#1f2937', lightAccent: '#fffef0'
+  },
+  gold: { 
+    primary: '#ca8a04', secondary: '#a16207', accent: '#fefce8', text: '#1f2937', lightAccent: '#fffef0'
+  },
+  
+  // Neutrals
+  gray: { 
+    primary: '#6b7280', secondary: '#4b5563', accent: '#f9fafb', text: '#1f2937', lightAccent: '#fafafa'
+  },
+  slate: { 
+    primary: '#64748b', secondary: '#475569', accent: '#f8fafc', text: '#1f2937', lightAccent: '#fafafa'
+  },
+  zinc: { 
+    primary: '#71717a', secondary: '#52525b', accent: '#fafafa', text: '#1f2937', lightAccent: '#ffffff'
+  },
+  stone: { 
+    primary: '#78716c', secondary: '#57534e', accent: '#fafaf9', text: '#1f2937', lightAccent: '#fefefe'
+  },
+};
+
+// Default color key
+export const DEFAULT_COLOR = 'blue';
+
+// Helper function to get color theme
+export const getColorTheme = (colorKey: string): ColorTheme => {
+  return COLOR_PALETTES[colorKey] || COLOR_PALETTES[DEFAULT_COLOR];
+};
 
 export default APP_CONSTANTS;

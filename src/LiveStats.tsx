@@ -237,34 +237,6 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
     });
   };
 
-  // ✅ NEW: Network quality assessment
-  const getNetworkQuality = (student: Student): {
-    icon: string;
-    color: string;
-    label: string;
-  } => {
-    const disconnections = student.totalDisconnections || 0;
-    
-    // Updated thresholds based on disconnection count
-    if (disconnections === 0) {
-      return { icon: '🟢', color: 'text-green-700', label: 'Excellent' };
-    }
-    
-    if (disconnections <= 2) {
-      return { icon: '🟢', color: 'text-green-700', label: 'Excellent' };
-    }
-    
-    if (disconnections <= 5) {
-      return { icon: '🔵', color: 'text-blue-700', label: 'Good' };
-    }
-    
-    if (disconnections <= 8) {
-      return { icon: '🟡', color: 'text-amber-700', label: 'Fair' };
-    }
-    
-    return { icon: '🔴', color: 'text-red-700', label: 'Poor' };
-  };
-
   // Calculate exam start and end times
   useEffect(() => {
     if (exam.examTime) {

@@ -773,7 +773,7 @@ const MathFormulaToolbar: React.FC<MathFormulaToolbarProps> = ({
           <button
             key={category.id}
             onClick={() => setActiveCategory(category.id)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-r ${
+            className={`px-1.5 xl:px-3 py-1 xl:py-1.5 text-[10px] xl:text-xs font-medium transition-colors border-r ${
               activeCategory === category.id
                 ? darkMode
                   ? 'bg-gray-700 text-blue-400 border-gray-700'
@@ -793,19 +793,19 @@ const MathFormulaToolbar: React.FC<MathFormulaToolbarProps> = ({
         {/* Close Button - Rightmost */}
         <button
           onClick={onClose}
-          className={`px-3 py-2 border-l transition-colors ${
+          className={`px-2 xl:px-3 py-1.5 xl:py-2 border-l transition-colors ${
             darkMode
               ? 'text-gray-300 hover:bg-gray-700 border-gray-700'
               : 'text-gray-700 hover:bg-gray-100 border-gray-200'
           }`}
           title="Close Math Toolbar"
         >
-          <FontAwesomeIcon icon={faTimes} className="w-4 h-4" />
+          <FontAwesomeIcon icon={faTimes} className="w-3.5 h-3.5 xl:w-4 xl:h-4" />
         </button>
       </div>
 
       {/* Formula Buttons */}
-      <div className="p-2 flex flex-wrap gap-1 max-h-[160px] overflow-y-auto">
+      <div className="p-1.5 xl:p-2 flex flex-wrap gap-0.5 xl:gap-1 max-h-[120px] xl:max-h-[160px] overflow-y-auto">
         {formulas[activeCategory]?.map((formula, index) => {
           // Render LaTeX to HTML for button display
           let renderedHtml = formula.display;
@@ -835,7 +835,7 @@ const MathFormulaToolbar: React.FC<MathFormulaToolbarProps> = ({
                 e.preventDefault();
                 handleEditFormula(formula.latex);
               }}
-              className={`px-3 py-2 rounded text-xs transition-colors ${
+              className={`px-2 xl:px-3 py-1.5 xl:py-2 rounded text-[10px] xl:text-xs transition-colors ${
                 darkMode
                   ? 'text-gray-300 hover:bg-gray-700 bg-gray-800'
                   : 'text-gray-700 hover:bg-gray-100 bg-gray-50'

@@ -1,5 +1,10 @@
 import * as functions from 'firebase-functions';
 export { processReportInstance } from './reports';
+/**
+ * 📝 Resume Content Enhancement with AI
+ * Enhances resume summaries, job descriptions, and skills using GPT
+ */
+export declare const enhanceResumeContent: functions.HttpsFunction & functions.Runnable<any>;
 export declare const getExamForStudent: functions.HttpsFunction & functions.Runnable<any>;
 export declare const submitAndGradeExam: functions.HttpsFunction & functions.Runnable<any>;
 /**
@@ -40,4 +45,12 @@ export declare const manualAutoSubmitAndGrade: functions.HttpsFunction;
 export declare const completeExamWithGrading: functions.HttpsFunction;
 export declare const gradeAttemptWorker: functions.CloudFunction<functions.pubsub.Message>;
 export declare const checkGradingProgress: functions.HttpsFunction;
+export declare const changeUserPasswordAdmin: functions.HttpsFunction & functions.Runnable<any>;
+export declare const createUser: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * 🏫 Add College/University
+ * Creates a new college/university document in Firestore
+ * Only system_admin can add colleges
+ */
+export declare const addCollege: functions.HttpsFunction & functions.Runnable<any>;
 //# sourceMappingURL=index.d.ts.map

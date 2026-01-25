@@ -654,19 +654,25 @@ const timeToMinutes = (time: string): number => {
  * @param yearsBack - Number of past years to include (default: 2)
  * @param yearsForward - Number of future years to include (default: 1)
  */
-export const getAcademicYears = (yearsBack: number = 2, yearsForward: number = 1): string[] => {
+export const getAcademicYears = (startMonth: string, yearsBack: number = 2, yearsForward: number = 1): string[] => {
   const today = new Date();
-  const currentMonth = today.getMonth(); // 0-11
+  const currentMonth = today.getMonth() + 1; // 1-12
   const currentYear = today.getFullYear();
   
-  // Academic year starts in April (month 3)
-  // Jan-Mar: previous year's session
-  // Apr-Dec: current year's session
-  const currentAcademicStartYear = currentMonth < 3 ? currentYear - 1 : currentYear;
+  const monthMap: Record<string, number> = {
+    'january': 1, 'jan': 1, 'february': 2, 'feb': 2,
+    'march': 3, 'mar': 3, 'april': 4, 'apr': 4,
+    'may': 5, 'june': 6, 'jun': 6, 'july': 7, 'jul': 7,
+    'august': 8, 'aug': 8, 'september': 9, 'sep': 9, 'sept': 9,
+    'october': 10, 'oct': 10, 'november': 11, 'nov': 11,
+    'december': 12, 'dec': 12
+  };
+  
+  const startMonthNum = monthMap[startMonth.toLowerCase()] || 4;
+  const currentAcademicStartYear = currentMonth >= startMonthNum ? currentYear : currentYear - 1;
   
   const academicYears: string[] = [];
   
-  // Generate years from (current - yearsBack) to (current + yearsForward)
   for (let i = -yearsBack; i <= yearsForward; i++) {
     const startYear = currentAcademicStartYear + i;
     const endYear = startYear + 1;
@@ -677,24 +683,28 @@ export const getAcademicYears = (yearsBack: number = 2, yearsForward: number = 1
   return academicYears;
 };
 
-/**
- * Get current academic year
- * Returns format: "2025-26"
- */
-export const getCurrentAcademicYear = (): string => {
-  const today = new Date();
-  const currentMonth = today.getMonth(); // 0-11
-  const currentYear = today.getFullYear();
+// Get current academic year based on college's start month
+export const getCurrentAcademicYear = (startMonth: string): string => {
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentYear = now.getFullYear();
   
-  // Academic year starts in April (month 3)
-  // Jan-Mar: previous year's session
-  // Apr-Dec: current year's session
-  const startYear = currentMonth < 3 ? currentYear - 1 : currentYear;
+  const monthMap: Record<string, number> = {
+    'january': 1, 'jan': 1, 'february': 2, 'feb': 2,
+    'march': 3, 'mar': 3, 'april': 4, 'apr': 4,
+    'may': 5, 'june': 6, 'jun': 6, 'july': 7, 'jul': 7,
+    'august': 8, 'aug': 8, 'september': 9, 'sep': 9, 'sept': 9,
+    'october': 10, 'oct': 10, 'november': 11, 'nov': 11,
+    'december': 12, 'dec': 12
+  };
   
-  const endYear = startYear + 1;
-  const endYearShort = endYear.toString().slice(-2);
+  const startMonthNum = monthMap[startMonth.toLowerCase()] || 4;
   
-  return `${startYear}-${endYearShort}`;
+  if (currentMonth >= startMonthNum) {
+    return `${currentYear}-${(currentYear + 1).toString().slice(-2)}`;
+  } else {
+    return `${currentYear - 1}-${currentYear.toString().slice(-2)}`;
+  }
 };
 
 /**
@@ -823,6 +833,7 @@ export const getClassesByCollege = async (collegeId: string): Promise<Array<{
     
     const validClasses = collegeData.validClasses || [];
     const supportedBoards = collegeData.supportedBoards || ['CBSE'];
+    const collegeAcademicYearStartMonth = collegeData.academicYear || 'April';
     
     console.log('✅ [getClassesByCollege] validClasses:', validClasses);
     console.log('✅ [getClassesByCollege] supportedBoards:', supportedBoards);
@@ -832,8 +843,8 @@ export const getClassesByCollege = async (collegeId: string): Promise<Array<{
       return [];
     }
     
-    // Get current academic year
-    const currentAcademicYear = getCurrentAcademicYear();
+    // Get current academic year based on college's start month
+    const currentAcademicYear = getCurrentAcademicYear(collegeAcademicYearStartMonth);
     console.log('📅 [getClassesByCollege] Current academic year:', currentAcademicYear);
     
     // Query students to get counts for each class

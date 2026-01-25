@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Guide: Permanently Stop a Windows Process</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e4e4e7;
+            line-height: 1.7;
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+            padding: 40px;
+            background: linear-gradient(135deg, #0f3460 0%, #16213e 100%);
+            border-radius: 20px;
+            border: 1px solid #0f3460;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+        
+        .header-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+        }
+        
+        .header h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+        
+        .header .subtitle {
+            color: #94a3b8;
+            font-size: 1.1rem;
+        }
+        
+        .example-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            color: white;
+            padding: 8px 20px;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-top: 20px;
+        }
+        
+        .step-card {
+            background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 25px;
+            border: 1px solid #334155;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .step-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.3);
+        }
+        
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .step-number {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: white;
+            flex-shrink: 0;
+        }
+        
+        .step-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: #fff;
+        }
+        
+        .step-description {
+            color: #94a3b8;
+            margin-bottom: 20px;
+            font-size: 1rem;
+        }
+        
+        .code-block {
+            background: #0d1117;
+            border-radius: 12px;
+            overflow: hidden;
+            margin: 15px 0;
+            border: 1px solid #30363d;
+        }
+        
+        .code-header {
+            background: #161b22;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #30363d;
+        }
+        
+        .code-lang {
+            color: #7ee787;
+            font-size: 0.85rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .code-lang::before {
+            content: ">";
+            color: #e94560;
+        }
+        
+        .code-content {
+            padding: 20px;
+            overflow-x: auto;
+        }
+        
+        .code-content pre {
+            margin: 0;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            color: #c9d1d9;
+        }
+        
+        .output-block {
+            background: #0a0e14;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #7ee787;
+        }
+        
+        .output-label {
+            color: #7ee787;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .output-block pre {
+            margin: 0;
+            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            font-size: 0.85rem;
+            color: #8b949e;
+            line-height: 1.5;
+        }
+        
+        .highlight {
+            color: #ffa657;
+        }
+        
+        .info-box {
+            background: linear-gradient(135deg, #1e3a5f 0%, #0f2744 100%);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #58a6ff;
+        }
+        
+        .info-box-title {
+            color: #58a6ff;
+            font-weight: 600;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .warning-box {
+            background: linear-gradient(135deg, #3d2a1e 0%, #2d1f15 100%);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #f0883e;
+        }
+        
+        .warning-box-title {
+            color: #f0883e;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #161b22;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        th {
+            background: linear-gradient(135deg, #e94560, #ff6b6b);
+            color: white;
+            padding: 15px 20px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        td {
+            padding: 15px 20px;
+            border-bottom: 1px solid #30363d;
+            color: #c9d1d9;
+        }
+        
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        tr:hover td {
+            background: #1f2937;
+        }
+        
+        .quick-ref {
+            background: linear-gradient(145deg, #1a2744 0%, #0f172a 100%);
+            border-radius: 16px;
+            padding: 30px;
+            margin: 40px 0;
+            border: 1px solid #334155;
+        }
+        
+        .quick-ref h2 {
+            color: #fff;
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .quick-ref .code-content pre {
+            background: #0d1117;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 0.85rem;
+        }
+        
+        .restore-section {
+            background: linear-gradient(145deg, #1a3d2e 0%, #0f2a1f 100%);
+            border-radius: 16px;
+            padding: 30px;
+            margin: 40px 0;
+            border: 1px solid #2d5a40;
+        }
+        
+        .restore-section h2 {
+            color: #7ee787;
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+            font-size: 0.9rem;
+            border-top: 1px solid #334155;
+            margin-top: 50px;
+        }
+        
+        .comment {
+            color: #6e7681;
+        }
+        
+        @media (max-width: 600px) {
+            .header h1 {
+                font-size: 1.6rem;
+            }
+            
+            .step-header {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .step-card {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-icon">🛑</div>
+            <h1>Complete Guide: Permanently Stop a Windows Process</h1>
+            <p class="subtitle">Step-by-step instructions to identify, stop, and disable any process</p>
+            <div class="example-badge">📦 Example: msiexec.exe</div>
+        </div>
+
+        <!-- Prerequisites -->
+        <div class="step-card" style="border: 2px solid #e94560;">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #fbbf24, #f59e0b);">⚡</div>
+                <div class="step-title">Pre-requisite: Run as Administrator</div>
+            </div>
+            <p class="step-description">All commands in this guide require elevated privileges. You must run Command Prompt as Administrator.</p>
+            
+            <div class="info-box" style="background: linear-gradient(135deg, #3d2a1e 0%, #2d1f15 100%); border-left-color: #fbbf24;">
+                <div class="info-box-title" style="color: #fbbf24;">🔐 How to Open Admin Command Prompt</div>
+                <ol style="margin-left: 20px; margin-top: 10px; color: #d4a373;">
+                    <li style="margin-bottom: 8px;">Press <code>Win + S</code> to open search</li>
+                    <li style="margin-bottom: 8px;">Type <code>cmd</code></li>
+                    <li style="margin-bottom: 8px;">Right-click on <strong>Command Prompt</strong></li>
+                    <li style="margin-bottom: 8px;">Select <strong>"Run as administrator"</strong></li>
+                    <li>Click <strong>Yes</strong> on the UAC prompt</li>
+                </ol>
+            </div>
+            
+            <div class="output-block" style="border-left-color: #fbbf24;">
+                <div class="output-label" style="color: #fbbf24;">💡 Alternative Methods</div>
+                <pre>• Press <span class="highlight">Win + X</span> → Select "Terminal (Admin)" or "Command Prompt (Admin)"
+• Press <span class="highlight">Win + R</span> → Type <span class="highlight">cmd</span> → Press <span class="highlight">Ctrl + Shift + Enter</span></pre>
+            </div>
+        </div>
+
+        <!-- Step 1 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">1</div>
+                <div class="step-title">Identify the Process</div>
+            </div>
+            <p class="step-description">First, confirm the process is running and get its details.</p>
+            
+            <div class="info-box" style="background: linear-gradient(135deg, #1a3d2e 0%, #0f2a1f 100%); border-left-color: #10b981;">
+                <div class="info-box-title" style="color: #10b981;">📌 Example Process</div>
+                <p>For this guide, we will stop the process <code style="background: #0d1117; padding: 2px 8px; border-radius: 4px; color: #7ee787;">msiexec.exe</code> (Windows Installer) as our example.</p>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>tasklist /FI "IMAGENAME eq msiexec.exe"</pre>
+                </div>
+            </div>
+            
+            <div class="output-block">
+                <div class="output-label">📤 Output</div>
+                <pre>Image Name      PID     Session Name    Session#    Mem Usage
+msiexec.exe     <span class="highlight">4532</span>    Services        0           8,456 K</pre>
+            </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">2</div>
+                <div class="step-title">Find the Parent Process</div>
+            </div>
+            <p class="step-description">Identify what spawned this process to understand its origin.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>wmic process where name="msiexec.exe" get ProcessId,ParentProcessId,CommandLine</pre>
+                </div>
+            </div>
+            
+            <div class="output-block">
+                <div class="output-label">📤 Output</div>
+                <pre>CommandLine                                ProcessId    ParentProcessId
+C:\Windows\system32\msiexec.exe /V         <span class="highlight">4532</span>         <span class="highlight">672</span></pre>
+            </div>
+            
+            <p class="step-description" style="margin-top: 20px;">Now find the parent process (PID 672):</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>wmic process where ProcessId=672 get Name,CommandLine</pre>
+                </div>
+            </div>
+            
+            <div class="output-block">
+                <div class="output-label">📤 Output</div>
+                <pre>CommandLine    Name
+               <span class="highlight">services.exe</span></pre>
+            </div>
+            
+            <div class="info-box">
+                <div class="info-box-title">💡 What this tells us</div>
+                <p>The process is spawned by <strong>services.exe</strong> (Windows Services), meaning it's managed by a Windows Service.</p>
+            </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">3</div>
+                <div class="step-title">Identify the Associated Service</div>
+            </div>
+            <p class="step-description">Find which service owns this process.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>tasklist /SVC /FI "IMAGENAME eq msiexec.exe"</pre>
+                </div>
+            </div>
+            
+            <div class="output-block">
+                <div class="output-label">📤 Output</div>
+                <pre>Image Name      PID       Services
+msiexec.exe     4532      <span class="highlight">msiserver</span></pre>
+            </div>
+            
+            <div class="info-box">
+                <div class="info-box-title">🎯 Service Identified</div>
+                <p>The service name is <strong>msiserver</strong> (Windows Installer).</p>
+            </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">4</div>
+                <div class="step-title">Check Service Status</div>
+            </div>
+            <p class="step-description">Verify the current state of the service.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>sc query msiserver</pre>
+                </div>
+            </div>
+            
+            <div class="output-block">
+                <div class="output-label">📤 Output</div>
+                <pre>SERVICE_NAME: msiserver
+    TYPE               : 10  WIN32_OWN_PROCESS
+    STATE              : <span class="highlight">4  RUNNING</span>
+    WIN32_EXIT_CODE    : 0
+    CHECKPOINT         : 0
+    WAIT_HINT          : 0</pre>
+            </div>
+        </div>
+
+        <!-- Step 5 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">5</div>
+                <div class="step-title">Stop the Service</div>
+            </div>
+            <p class="step-description">Stop the service to terminate the process gracefully.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>net stop msiserver</pre>
+                </div>
+            </div>
+            
+            <div class="output-block">
+                <div class="output-label">📤 Output</div>
+                <pre>The Windows Installer service is stopping.
+The Windows Installer service was stopped successfully.</pre>
+            </div>
+        </div>
+
+        <!-- Step 6 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">6</div>
+                <div class="step-title">Disable the Service</div>
+            </div>
+            <p class="step-description">Prevent the service from auto-restarting on reboot.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>sc config msiserver start= disabled</pre>
+                </div>
+            </div>
+            
+            <div class="output-block">
+                <div class="output-label">📤 Output</div>
+                <pre>[SC] ChangeServiceConfig SUCCESS</pre>
+            </div>
+            
+            <div class="warning-box">
+                <div class="warning-box-title">⚠️ Important Note</div>
+                <p>The space after <code>start=</code> is required. The syntax is <code>start= disabled</code> not <code>start=disabled</code></p>
+            </div>
+        </div>
+
+        <!-- Step 7 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">7</div>
+                <div class="step-title">Kill Remaining Process Instances</div>
+            </div>
+            <p class="step-description">Force terminate any remaining process instances.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>taskkill /IM msiexec.exe /T /F</pre>
+                </div>
+            </div>
+            
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Flag</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>/IM</code></td>
+                            <td>Image name (process name)</td>
+                        </tr>
+                        <tr>
+                            <td><code>/T</code></td>
+                            <td>Kill entire process tree (parent + children)</td>
+                        </tr>
+                        <tr>
+                            <td><code>/F</code></td>
+                            <td>Force termination</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Step 8 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">8</div>
+                <div class="step-title">Verify Process is Gone</div>
+            </div>
+            <p class="step-description">Confirm the process has been completely terminated.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>tasklist /FI "IMAGENAME eq msiexec.exe"</pre>
+                </div>
+            </div>
+            
+            <div class="output-block">
+                <div class="output-label">📤 Expected Output</div>
+                <pre>INFO: No tasks are running which match the specified criteria.</pre>
+            </div>
+        </div>
+
+        <!-- Step 9 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">9</div>
+                <div class="step-title">Verify Service is Disabled</div>
+            </div>
+            <p class="step-description">Confirm the service is stopped and disabled.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>sc query msiserver</pre>
+                </div>
+            </div>
+            
+            <div class="output-block">
+                <div class="output-label">📤 Expected Output</div>
+                <pre>SERVICE_NAME: msiserver
+    STATE              : <span class="highlight">1  STOPPED</span></pre>
+            </div>
+            
+            <p class="step-description" style="margin-top: 20px;">Check startup type:</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Command Prompt (Admin)</span>
+                </div>
+                <div class="code-content">
+                    <pre>sc qc msiserver</pre>
+                </div>
+            </div>
+            
+            <div class="output-block">
+                <div class="output-label">📤 Look for</div>
+                <pre>START_TYPE         : <span class="highlight">4   DISABLED</span></pre>
+            </div>
+        </div>
+
+        <!-- Quick Reference -->
+        <div class="quick-ref">
+            <h2>📋 Quick Reference - Complete Sequence</h2>
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Complete Command Sequence</span>
+                </div>
+                <div class="code-content">
+                    <pre><span class="comment">:: ═══════════════════════════════════════════════════════════</span>
+<span class="comment">::  PERMANENTLY STOP msiexec.exe - Complete Sequence</span>
+<span class="comment">:: ═══════════════════════════════════════════════════════════</span>
+
+<span class="comment">:: Step 1-3: IDENTIFY</span>
+tasklist /FI "IMAGENAME eq msiexec.exe"
+wmic process where name="msiexec.exe" get ProcessId,ParentProcessId
+tasklist /SVC /FI "IMAGENAME eq msiexec.exe"
+
+<span class="comment">:: Step 4: CHECK STATUS</span>
+sc query msiserver
+
+<span class="comment">:: Step 5: STOP SERVICE</span>
+net stop msiserver
+
+<span class="comment">:: Step 6: DISABLE SERVICE</span>
+sc config msiserver start= disabled
+
+<span class="comment">:: Step 7: KILL REMAINING INSTANCES</span>
+taskkill /IM msiexec.exe /T /F
+
+<span class="comment">:: Step 8-9: VERIFY</span>
+tasklist /FI "IMAGENAME eq msiexec.exe"
+sc query msiserver</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Restore Section -->
+        <div class="restore-section">
+            <h2>🔄 To Re-Enable Later</h2>
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Restore Commands</span>
+                </div>
+                <div class="code-content">
+                    <pre><span class="comment">:: Enable the service</span>
+sc config msiserver start= demand
+
+<span class="comment">:: Start the service</span>
+net start msiserver</pre>
+                </div>
+            </div>
+            
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Start Type</th>
+                            <th>Value</th>
+                            <th>Meaning</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>auto</code></td>
+                            <td>2</td>
+                            <td>Starts automatically on boot</td>
+                        </tr>
+                        <tr>
+                            <td><code>demand</code></td>
+                            <td>3</td>
+                            <td>Manual start only</td>
+                        </tr>
+                        <tr>
+                            <td><code>disabled</code></td>
+                            <td>4</td>
+                            <td>Cannot start</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Common Processes Reference -->
+        <div class="step-card">
+            <h2 style="color: #fff; font-size: 1.5rem; margin-bottom: 20px;">📚 Common Self-Restarting Processes</h2>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Process</th>
+                            <th>Service to Stop</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><code>msiexec.exe</code></td>
+                            <td>msiserver</td>
+                        </tr>
+                        <tr>
+                            <td><code>svchost.exe</code></td>
+                            <td>Multiple (check with <code>tasklist /SVC</code>)</td>
+                        </tr>
+                        <tr>
+                            <td><code>WmiPrvSE.exe</code></td>
+                            <td>Winmgmt</td>
+                        </tr>
+                        <tr>
+                            <td><code>spoolsv.exe</code></td>
+                            <td>Spooler</td>
+                        </tr>
+                        <tr>
+                            <td><code>SearchIndexer.exe</code></td>
+                            <td>WSearch</td>
+                        </tr>
+                        <tr>
+                            <td><code>wuauserv</code></td>
+                            <td>Windows Update</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Process Respawn Sources -->
+        <div class="step-card" style="border: 2px solid #a855f7;">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #a855f7, #7c3aed);">🔄</div>
+                <div class="step-title">If Process Keeps Returning - Check All Respawn Sources</div>
+            </div>
+            <p class="step-description">Some stubborn processes have multiple sources that can restart them. Check all four locations systematically.</p>
+        </div>
+
+        <!-- Respawn Source 1: Services -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #06b6d4, #0891b2);">A</div>
+                <div class="step-title">Services</div>
+            </div>
+            <p class="step-description">Windows Services are the most common source of process respawning. A service can automatically restart its associated process.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Find service for a process</span>
+                </div>
+                <div class="code-content">
+                    <pre>tasklist /SVC /FI "IMAGENAME eq msiexec.exe"</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">List all running services</span>
+                </div>
+                <div class="code-content">
+                    <pre>sc query state= all</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Stop and disable a service</span>
+                </div>
+                <div class="code-content">
+                    <pre><span class="comment">:: Stop the service</span>
+net stop servicename
+
+<span class="comment">:: Disable the service permanently</span>
+sc config servicename start= disabled</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">GUI Method</span>
+                </div>
+                <div class="code-content">
+                    <pre><span class="comment">:: Open Services Manager</span>
+services.msc
+
+<span class="comment">:: Then: Find service → Right-click → Properties → Startup type: Disabled</span></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Respawn Source 2: Scheduled Tasks -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #10b981, #059669);">B</div>
+                <div class="step-title">Scheduled Tasks</div>
+            </div>
+            <p class="step-description">Scheduled Tasks can run processes at specific times, on startup, or triggered by events. They often restart processes periodically.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Search for scheduled tasks containing process name</span>
+                </div>
+                <div class="code-content">
+                    <pre>schtasks /query /fo LIST /v | findstr /i "msiexec"</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">List all scheduled tasks</span>
+                </div>
+                <div class="code-content">
+                    <pre>schtasks /query /fo TABLE</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Disable a scheduled task</span>
+                </div>
+                <div class="code-content">
+                    <pre>schtasks /change /tn "TaskName" /disable</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Delete a scheduled task</span>
+                </div>
+                <div class="code-content">
+                    <pre>schtasks /delete /tn "TaskName" /f</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">PowerShell - Find tasks running specific process</span>
+                </div>
+                <div class="code-content">
+                    <pre>Get-ScheduledTask | Where-Object {$_.Actions.Execute -like "*msiexec*"}</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">GUI Method</span>
+                </div>
+                <div class="code-content">
+                    <pre><span class="comment">:: Open Task Scheduler</span>
+taskschd.msc
+
+<span class="comment">:: Then: Browse Task Scheduler Library → Find task → Right-click → Disable/Delete</span></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Respawn Source 3: Startup Registry -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #f59e0b, #d97706);">C</div>
+                <div class="step-title">Startup Registry Entries</div>
+            </div>
+            <p class="step-description">Programs can register themselves in the Windows Registry to start automatically when Windows boots or a user logs in.</p>
+            
+            <div class="info-box">
+                <div class="info-box-title">📍 Key Registry Locations</div>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li style="margin-bottom: 5px;"><code>HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run</code> - All users</li>
+                    <li style="margin-bottom: 5px;"><code>HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run</code> - Current user</li>
+                    <li style="margin-bottom: 5px;"><code>HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce</code> - Run once (all users)</li>
+                    <li><code>HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce</code> - Run once (current user)</li>
+                </ul>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">View startup entries (All Users)</span>
+                </div>
+                <div class="code-content">
+                    <pre>reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">View startup entries (Current User)</span>
+                </div>
+                <div class="code-content">
+                    <pre>reg query HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Search for specific process in registry</span>
+                </div>
+                <div class="code-content">
+                    <pre>reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run /s | findstr /i "msiexec"
+reg query HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run /s | findstr /i "msiexec"</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Delete a startup entry</span>
+                </div>
+                <div class="code-content">
+                    <pre><span class="comment">:: Delete from All Users startup</span>
+reg delete HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run /v "EntryName" /f
+
+<span class="comment">:: Delete from Current User startup</span>
+reg delete HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run /v "EntryName" /f</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">GUI Methods</span>
+                </div>
+                <div class="code-content">
+                    <pre><span class="comment">:: Method 1: Task Manager</span>
+Ctrl + Shift + Esc → Startup tab → Select item → Disable
+
+<span class="comment">:: Method 2: MSConfig</span>
+msconfig → Startup tab → Uncheck items
+
+<span class="comment">:: Method 3: Registry Editor</span>
+regedit → Navigate to Run keys → Delete entry</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Respawn Source 4: Group Policy -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #ec4899, #db2777);">D</div>
+                <div class="step-title">Group Policy</div>
+            </div>
+            <p class="step-description">Group Policy can force programs to run at startup or login, especially in corporate/domain environments. These settings override local preferences.</p>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Open Group Policy Editor</span>
+                </div>
+                <div class="code-content">
+                    <pre>gpedit.msc</pre>
+                </div>
+            </div>
+            
+            <div class="info-box">
+                <div class="info-box-title">📍 Group Policy Startup Locations</div>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li style="margin-bottom: 8px;"><strong>Computer Configuration</strong> → Windows Settings → Scripts → Startup</li>
+                    <li style="margin-bottom: 8px;"><strong>User Configuration</strong> → Windows Settings → Scripts → Logon</li>
+                    <li style="margin-bottom: 8px;"><strong>Computer Configuration</strong> → Administrative Templates → System → Logon → Run these programs at user logon</li>
+                </ul>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">View applied Group Policies</span>
+                </div>
+                <div class="code-content">
+                    <pre><span class="comment">:: Generate full GP report</span>
+gpresult /h gpreport.html
+
+<span class="comment">:: View in console</span>
+gpresult /r</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Check GP startup scripts location</span>
+                </div>
+                <div class="code-content">
+                    <pre><span class="comment">:: Machine startup scripts</span>
+dir C:\Windows\System32\GroupPolicy\Machine\Scripts\Startup
+
+<span class="comment">:: User logon scripts</span>
+dir C:\Windows\System32\GroupPolicy\User\Scripts\Logon</pre>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Force Group Policy refresh after changes</span>
+                </div>
+                <div class="code-content">
+                    <pre>gpupdate /force</pre>
+                </div>
+            </div>
+            
+            <div class="warning-box">
+                <div class="warning-box-title">⚠️ Domain Environment Note</div>
+                <p>In corporate/domain environments, Group Policies are controlled by IT administrators. Local changes may be overwritten by domain policies. Contact your IT department for persistent changes.</p>
+            </div>
+        </div>
+
+        <!-- Systematic Checklist -->
+        <div class="quick-ref" style="border: 2px solid #a855f7;">
+            <h2 style="color: #a855f7;">✅ Systematic Checklist - Stop Stubborn Processes</h2>
+            <div class="code-block">
+                <div class="code-header">
+                    <span class="code-lang">Complete Respawn Source Check</span>
+                </div>
+                <div class="code-content">
+                    <pre><span class="comment">:: ═══════════════════════════════════════════════════════════</span>
+<span class="comment">::  CHECK ALL RESPAWN SOURCES FOR: [ProcessName]</span>
+<span class="comment">:: ═══════════════════════════════════════════════════════════</span>
+
+<span class="comment">:: [A] SERVICES</span>
+tasklist /SVC /FI "IMAGENAME eq processname.exe"
+sc query servicename
+net stop servicename
+sc config servicename start= disabled
+
+<span class="comment">:: [B] SCHEDULED TASKS</span>
+schtasks /query /fo LIST /v | findstr /i "processname"
+schtasks /change /tn "TaskName" /disable
+
+<span class="comment">:: [C] STARTUP REGISTRY</span>
+reg query HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run | findstr /i "processname"
+reg query HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Run | findstr /i "processname"
+reg delete HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run /v "EntryName" /f
+
+<span class="comment">:: [D] GROUP POLICY</span>
+gpresult /r
+gpedit.msc
+
+<span class="comment">:: [FINAL] KILL PROCESS</span>
+taskkill /IM processname.exe /T /F
+
+<span class="comment">:: [VERIFY] CONFIRM IT'S GONE</span>
+tasklist /FI "IMAGENAME eq processname.exe"</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Warning Box -->
+        <div class="warning-box">
+            <div class="warning-box-title">⚠️ Important Warnings</div>
+            <ul style="margin-left: 20px; margin-top: 10px; color: #d4a373;">
+                <li style="margin-bottom: 8px;"><strong>msiexec.exe is critical</strong> - Disabling it prevents software installations. Re-enable when needed.</li>
+                <li style="margin-bottom: 8px;"><strong>Always check all four sources</strong> if a process keeps coming back after termination.</li>
+                <li style="margin-bottom: 8px;"><strong>For extremely stubborn processes</strong>, boot into Safe Mode to disable services and registry entries.</li>
+                <li><strong>Create a System Restore point</strong> before making registry changes.</li>
+            </ul>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>This guide works for any Windows process — just replace <code>msiexec.exe</code> and <code>msiserver</code> with your target process and service names.</p>
+            <p style="margin-top: 10px;">Created with ❤️ for Windows Administrators</p>
+        </div>
+    </div>
+</body>
+</html>

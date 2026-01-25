@@ -94,8 +94,9 @@ interface Violation {
   timestamp: string;
   details?: string;
   severity: SeverityLevel;
-  questionNo: number;     // ✅ ADD: Current question number
-  questionId: string;     // ✅ ADD: Current question ID
+  questionNo: number;
+  questionId: string;
+  proofUrl?: string;
 }
 
 
@@ -525,7 +526,7 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
         // 🔥 CRITICAL DEBUG: Log raw questionsList
         if (exam.questionsList && exam.questionsList.length > 0) {
           console.log('\n📝 DETAILED QUESTIONS BREAKDOWN:');
-          exam.questionsList.forEach((q: any, idx: number) => {
+          (exam.questionsList || []).forEach((q: any, idx: number) => {
             console.log(`\n  Question ${idx + 1}:`);
             console.log('    - Raw question object keys:', Object.keys(q));
             console.log('    - id:', q.id);
@@ -538,19 +539,27 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
           });
         }
         
-        if (!exam.questionsList || exam.questionsList.length === 0) {
-          console.error('❌ No questions found in exam');
+        // Check if exam has any questions (either in questionsList OR questionPool OR both)
+        const hasQuestionsList = exam.questionsList && exam.questionsList.length > 0;
+        const hasPoolQuestions = (exam as any).questionPool && 
+                               Array.isArray((exam as any).questionPool) &&
+                               (exam as any).questionPool.length > 0 &&
+                               (exam as any).pickRandomCount &&
+                               (exam as any).pickRandomCount > 0;
+        
+        if (!hasQuestionsList && !hasPoolQuestions) {
+          console.error('❌ No questions found in exam (neither in questionsList nor questionPool)');
           setQuestionsLoading(false);
           return;
         }
         
         // 🚨 CHECK FOR DUPLICATES IN SOURCE DATA
         console.log('\n🔍 CHECKING FOR DUPLICATES IN SOURCE:');
-        const sourceIds = exam.questionsList.map((q: any) => q.id).filter(Boolean);
+        const sourceIds = (exam.questionsList || []).map((q: any) => q.id).filter(Boolean);
         const uniqueSourceIds = new Set(sourceIds);
         if (sourceIds.length !== uniqueSourceIds.size) {
           console.error('❌ DUPLICATE IDs FOUND IN FIREBASE DATA!');
-          console.error(`  Total questions: ${exam.questionsList.length}`);
+          console.error(`  Total questions: ${exam.questionsList?.length || 0}`);
           console.error(`  Unique IDs: ${uniqueSourceIds.size}`);
           console.error(`  Duplicates: ${sourceIds.length - uniqueSourceIds.size}`);
           
@@ -569,19 +578,19 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
         }
         
         // Check for duplicate content
-        const contentHashes = exam.questionsList.map((q: any) => 
+        const contentHashes = (exam.questionsList || []).map((q: any) => 
           `${q.questionText}_${q.description}_${q.type}`.toLowerCase()
         );
         const uniqueContentHashes = new Set(contentHashes);
         if (contentHashes.length !== uniqueContentHashes.size) {
           console.warn('⚠️ DUPLICATE CONTENT FOUND IN FIREBASE DATA!');
-          console.warn(`  Total questions: ${exam.questionsList.length}`);
+          console.warn(`  Total questions: ${exam.questionsList?.length || 0}`);
           console.warn(`  Unique content: ${uniqueContentHashes.size}`);
           console.warn(`  Same content appears multiple times: ${contentHashes.length - uniqueContentHashes.size}`);
           
           // Find duplicate content
           const contentCounts = new Map<string, {count: number, questionTexts: string[]}>();
-          exam.questionsList.forEach((q: any, idx: number) => {
+          (exam.questionsList || []).forEach((q: any, idx: number) => {
             const hash = `${q.questionText}_${q.description}_${q.type}`.toLowerCase();
             const existing = contentCounts.get(hash) || {count: 0, questionTexts: []};
             existing.count++;
@@ -629,7 +638,7 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
         console.log('='.repeat(80));
         
         // Map exam questions to Question interface
-        const examQuestions: Question[] = exam.questionsList.map((q: any, index: number) => {
+        const examQuestions: Question[] = (exam.questionsList || []).map((q: any, index: number) => {
           console.log(`\n  🔍 Raw Question ${index + 1} from backend:`, {
             id: q.id,
             type: q.type,
@@ -1141,7 +1150,7 @@ useEffect(() => {
   
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [lastSavedAnswers, setLastSavedAnswers] = useState<Record<string, any>>({}); // 🔥 DIRTY FLAG: Track last saved answers
+  const [, setLastSavedAnswers] = useState<Record<string, any>>({}); // 🔥 DIRTY FLAG: Track last saved answers
   const [answersInitialized, setAnswersInitialized] = useState(false); // 🔥 NEW: Track if initial answers are loaded
   const answersRef = useRef<Record<string, any>>({}); // ✅ NEW: Ref to always access latest answers
   const [bookmarkedQuestions, setBookmarkedQuestions] = useState<Set<string>>(() => {
@@ -1199,7 +1208,7 @@ useEffect(() => {
   const [baselineDescriptors, setBaselineDescriptors] = useState<Float32Array[]>([]);
   const [faceMonitoringEnabled, setFaceMonitoringEnabled] = useState(false);
   const [currentIpAddress, setCurrentIpAddress] = useState<string>('');
-  const violationTimeouts = useRef<Map<ViolationType, number>>(new Map());
+  const violationTimeouts = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const lastViolationLoggedTime = useRef<Map<ViolationType, number>>(new Map()); // ✅ Track cooldown per violation type
   const violationLimitReached = useRef<boolean>(false);
   const entryTimeRef = useRef<Date>(new Date());
@@ -1221,7 +1230,7 @@ useEffect(() => {
   }, [questions.length, currentQuestionIndex]);
   const monitoringStartTime = useRef<number>(0); // Track when monitoring actually starts
   const [isOnline, setIsOnline] = useState(true);
-  const connectivityCheckInterval = useRef<number | null>(null);
+  const connectivityCheckInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const offlineConfirmationTimeout = useRef<number | null>(null);
   
   // Connectivity tracking - using refs to prevent race conditions
@@ -2181,7 +2190,7 @@ useEffect(() => {
     requestFullscreenOnce();
     
     // Also listen for interactions in case immediate request fails
-    const handleInteraction = (e: Event) => {
+    const handleInteraction = (_e: Event) => {
       // ✅ Only request if not already in fullscreen
       const isCurrentlyFullscreen = !!(
         document.fullscreenElement ||
@@ -2246,7 +2255,7 @@ useEffect(() => {
       answer = editorRef.current ? editorRef.current.getValue() : codeInput;
       break;
     case QUESTION_TYPES.MCQ:
-      answer = mcqAnswer;
+      answer = mcqAnswerRef.current;
       console.log('🔍 MCQ Answer Debug:');
       console.log('  - mcqAnswer state:', mcqAnswer);
       console.log('  - Array?', Array.isArray(mcqAnswer));
@@ -2273,17 +2282,17 @@ useEffect(() => {
       }
       break;
     case QUESTION_TYPES.DESCRIPTIVE:
-      answer = descriptiveAnswer;
+      answer = descriptiveAnswerRef.current;
       console.log('📝 DESCRIPTIVE Answer Details:');
       console.log('  - Full HTML:', descriptiveAnswer);
       console.log('  - Contains <span data-latex:', descriptiveAnswer.includes('data-latex'));
       console.log('  - Contains <span class="math:', descriptiveAnswer.includes('class="math'));
       break;
     case QUESTION_TYPES.FITB:
-      answer = fillBlanksAnswers;
+      answer = fillBlanksAnswersRef.current;  // ✅ Use REF for latest value
       break;
     case QUESTION_TYPES.JUMBLED:
-      answer = jumbledAnswers;
+      answer = jumbledAnswersRef.current;
       break;
   }
   
@@ -2327,27 +2336,74 @@ useEffect(() => {
   }
   
   if (isEmptyAnswer) {
-    console.log('⚠️ Empty answer for Q' + currentQuestion.questionNo + ', not saving');
+    console.log('📭 Clearing answer for Q' + currentQuestion.questionNo);
+    
+    // ✅ Show saving state
+    setIsSavingAnswer(true);
+    
+    // ✅ Clear from local state
+    setAnswers(prev => {
+      if (prev[currentQuestion.id] !== undefined) {
+        const newAnswers = { ...prev };
+        delete newAnswers[currentQuestion.id];
+        return newAnswers;
+      }
+      return prev;
+    });
+    
+    // ✅ Also clear from Firebase if online
+    if (isOnline && attempt) {
+      try {
+        const questionData = questions.find(q => q.id === currentQuestion.id);
+        if (questionData) {
+          console.log(`🌐 Clearing answer for Q${currentQuestion.questionNo} from Firebase...`);
+          // ✅ Send empty value based on question type to clear the answer
+          const emptyAnswer = 
+            currentQuestion.type === QUESTION_TYPES.MCQ ? [] :
+            currentQuestion.type === QUESTION_TYPES.FITB ? [] :
+            currentQuestion.type === QUESTION_TYPES.JUMBLED ? [] :
+            '';  // For CODE and DESCRIPTIVE
+          
+          await offlineQueueService.queueAnswer(
+            attempt.attemptId,
+            currentQuestion.questionNo,
+            emptyAnswer,
+            {
+              id: questionData.id,
+              type: questionData.type,
+              questionText: questionData.questionText,
+              maximumMarks: questionData.maxMarks,
+              options: questionData.options,
+              correctAnswers: questionData.correctAnswers,
+              fromPool: questionData.fromPool || false,
+            } as any,
+            {
+              complexity: questionData.complexity || 'easy',
+              chapter: questionData.chapter,
+            } as any,
+            0,
+            bookmarkedQuestions.has(currentQuestion.id),
+            undefined,
+            []
+          );
+          console.log(`✅ Answer cleared for Q${currentQuestion.questionNo}`);
+        }
+      } catch (error) {
+        console.error(`❌ Error clearing answer:`, error);
+      }
+    }
+    
+    // ✅ Show visual feedback
+    setLastSavedQuestion(currentQuestion.id);
+    setTimeout(() => setLastSavedQuestion(null), 2000);
+    
+    setIsSavingAnswer(false);
     return;
   }
-  
+
   setIsSavingAnswer(true);
   
-  // Update local state immediately for responsive UI
   setAnswers(prev => {
-    // 🚨 DUPLICATE CHECK: Don't overwrite if exact same answer already exists
-    if (prev[currentQuestion.id] === answer) {
-      console.log(`⏭️ Skipping save for Q${currentQuestion.questionNo} - identical answer already saved`);
-      return prev;
-    }
-    
-    // 🚨 LOG: If overwriting previous answer
-    if (prev[currentQuestion.id] !== undefined && prev[currentQuestion.id] !== answer) {
-      console.log(`🔄 Updating answer for Q${currentQuestion.questionNo} (ID: ${currentQuestion.id})`);
-      console.log(`   Previous: ${typeof prev[currentQuestion.id] === 'string' ? prev[currentQuestion.id].substring(0, 50) : prev[currentQuestion.id]}`);
-      console.log(`   New: ${typeof answer === 'string' ? answer.substring(0, 50) : answer}`);
-    }
-    
     return { ...prev, [currentQuestion.id]: answer };
   });
   
@@ -2624,10 +2680,8 @@ useEffect(() => {
         return updated;
       });
     }
-  }
-  
-  saveCurrentAnswer();
-  
+  }  
+  await saveCurrentAnswer(true);
   // Get final answers including the current question
   const finalAnswers = { ...answers };
   if (currentQuestion) {
@@ -2637,16 +2691,16 @@ useEffect(() => {
         currentAnswer = editorRef.current ? editorRef.current.getValue() : codeInput;
         break;
       case QUESTION_TYPES.MCQ:
-        currentAnswer = mcqAnswer;
+        currentAnswer = mcqAnswerRef.current;  // ✅ Use REF for latest value
         break;
       case QUESTION_TYPES.DESCRIPTIVE:
-        currentAnswer = descriptiveAnswer;
+        currentAnswer = descriptiveAnswerRef.current;  // ✅ Use REF for latest value
         break;
       case QUESTION_TYPES.FITB:
-        currentAnswer = fillBlanksAnswers;
+        currentAnswer = fillBlanksAnswersRef.current;  // ✅ Use REF for latest value
         break;
       case QUESTION_TYPES.JUMBLED:
-        currentAnswer = jumbledAnswers;
+        currentAnswer = jumbledAnswersRef.current;  // ✅ Use REF for latest value
         break;
     }
     if (currentAnswer && (typeof currentAnswer === 'string' ? currentAnswer.trim() : true)) {
@@ -3831,10 +3885,19 @@ const formatTime = (seconds: number) => {
       return;
     }
     
-    // Grace period check (reduced to 2s)
+    // ✅ Skip violations during exam submission to prevent false fullscreen exit violations
+    if (isSubmittingFromOverlay) {
+      console.log(`⏭️ Skipping ${type} - exam submission in progress`);
+      return;
+    }
+    
+    // Grace period check - 60 seconds for fullscreen/blur violations at exam start, 2s for others
     const timeSinceMonitoringStart = Date.now() - monitoringStartTime.current;
-    if (timeSinceMonitoringStart < 2000) { 
-      console.log(`⏭️ Skipping ${type} violation - within grace period (${timeSinceMonitoringStart}ms)`);
+    const STARTUP_SENSITIVE_VIOLATIONS = ['FULLSCREEN_EXIT', 'WINDOW_BLUR', 'WINDOW_MINIMIZE', 'TAB_SWITCH'];
+    const gracePeriodMs = STARTUP_SENSITIVE_VIOLATIONS.includes(type) ? 60000 : 2000; // 60s for startup-sensitive, 2s for others
+    
+    if (timeSinceMonitoringStart < gracePeriodMs) { 
+      console.log(`⏭️ Skipping ${type} violation - within ${gracePeriodMs/1000}s grace period (${Math.round(timeSinceMonitoringStart/1000)}s elapsed)`);
       return;
     }
 
@@ -3848,13 +3911,26 @@ const formatTime = (seconds: number) => {
       return;
     }
 
-    // ✅ Cooldown check: Skip if same violation type was logged within last 20 seconds
-    const VIOLATION_COOLDOWN_MS = 20000; // 20 seconds
-    const lastLoggedTime = lastViolationLoggedTime.current.get(type);
-    if (lastLoggedTime && (Date.now() - lastLoggedTime) < VIOLATION_COOLDOWN_MS) {
-      console.log(`⏭️ Skipping ${type} - within cooldown period (${Math.round((Date.now() - lastLoggedTime) / 1000)}s < 20s)`);
-      return;
+    // ✅ IMPROVED: Cooldown check with grouped violations to prevent duplicates
+    // WINDOW_BLUR, TAB_SWITCH, WINDOW_MINIMIZE are related - if one fires, block others
+    const VIOLATION_COOLDOWN_MS = 30000; // 30 seconds
+    const FOCUS_RELATED_VIOLATIONS: ViolationType[] = ['WINDOW_BLUR', 'TAB_SWITCH', 'WINDOW_MINIMIZE'];
+    
+    // Check cooldown for this type AND related types
+    const typesToCheck = FOCUS_RELATED_VIOLATIONS.includes(type) 
+      ? FOCUS_RELATED_VIOLATIONS 
+      : [type];
+    
+    for (const checkType of typesToCheck) {
+      const lastLoggedTime = lastViolationLoggedTime.current.get(checkType);
+      if (lastLoggedTime && (Date.now() - lastLoggedTime) < VIOLATION_COOLDOWN_MS) {
+        console.log(`⏭️ Skipping ${type} - related violation ${checkType} within cooldown (${Math.round((Date.now() - lastLoggedTime) / 1000)}s < 30s)`);
+        return;
+      }
     }
+    
+    // ✅ FIX: Set cooldown IMMEDIATELY to prevent race conditions from async state updates
+    lastViolationLoggedTime.current.set(type, Date.now());
     
     console.log(`✅ ${type} passed checks - scheduling with ${debounceMs}ms debounce`);
 
@@ -3877,8 +3953,7 @@ const formatTime = (seconds: number) => {
       
       console.log(`🚨 Processing violation: ${type} on Q${currentQuestionNo}`);
       
-      // ✅ Update cooldown timestamp WHEN violation is actually logged
-      lastViolationLoggedTime.current.set(type, Date.now());
+      // Note: Cooldown timestamp already set BEFORE debounce to prevent race conditions
       
       // 3. Create Violation Object (Using Constants)
       const violation: Violation = {
@@ -3933,7 +4008,7 @@ const formatTime = (seconds: number) => {
     }, debounceMs);
 
     violationTimeouts.current.set(type, timeout);
-  }, [isMonitoringActive, questions, currentQuestionIndex, attempt, questionViolations, examId, userId, addViolationToAttempt]);
+  }, [isMonitoringActive, isSubmittingFromOverlay, questions, currentQuestionIndex, attempt, questionViolations, examId, userId, addViolationToAttempt]);
   
   // ✅ REMOVED: Old batch sync effects - now handled by violationQueueService
   // The service handles:
@@ -3987,22 +4062,15 @@ const formatTime = (seconds: number) => {
 
     let lastClipboardCheck = Date.now();
 
-    let isHandlingVisibilityChange = false;
-    
-    const handleBlur = () => {
-      setTimeout(() => {
-        if (!isHandlingVisibilityChange) {
-          logViolation('WINDOW_BLUR', undefined, 5000); // 5 second grace period
-        }
-      }, 50);
-    };
-
     const handleVisibilityChange = async () => {
-      isHandlingVisibilityChange = true;
-      setTimeout(() => {
-        isHandlingVisibilityChange = false;
-      }, 100);
       if (document.hidden) {
+        // Skip during grace period (first 60 seconds)
+        const timeSinceMonitoringStart = Date.now() - monitoringStartTime.current;
+        if (timeSinceMonitoringStart < 60000) {
+          console.log('⏭️ Skipping visibility change - within 60s grace period');
+          return;
+        }
+        
         console.log('👁️ Document hidden - checking for minimize');
         
         // Check multiple signals for minimize
@@ -4015,10 +4083,10 @@ const formatTime = (seconds: number) => {
         
         if (isLikelyMinimized) {
           console.log('🚨 WINDOW_MINIMIZE detected - calling logViolation...');
-          logViolation('WINDOW_MINIMIZE', 'Window minimized', 10000); // 10 second grace period
+          logViolation(VIOLATION_TYPES.WINDOW_MINIMIZE, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.WINDOW_MINIMIZE], 5000);
         } else {
           console.log('🚨 TAB_SWITCH detected - calling logViolation...');
-          logViolation('TAB_SWITCH', undefined, 5000); // 5 second grace period
+          logViolation(VIOLATION_TYPES.TAB_SWITCH, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.TAB_SWITCH], 5000);
         }
       } else {
         // When page becomes visible again, check clipboard for potential screenshot
@@ -4061,6 +4129,12 @@ const formatTime = (seconds: number) => {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // ✅ Allow Ctrl+Z (undo) and Ctrl+Y (redo) to work normally
+      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+        // Don't prevent default - let undo/redo work in inputs and Monaco editor
+        return;
+      }
+
       if (e.key === 'F12') {
         e.preventDefault();
         logViolation('SHORTCUT_F12');
@@ -4154,91 +4228,61 @@ const formatTime = (seconds: number) => {
       // ✅ Mac: Cmd+Tab (App switcher)
       if (e.metaKey && e.key === 'Tab') {
         e.preventDefault();
-        logViolation('SHORTCUT_CMDTAB', 'Cmd+Tab (Mac app switcher)');
+        logViolation(VIOLATION_TYPES.SHORTCUT_CMDTAB, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.SHORTCUT_CMDTAB]);
       }
     };
 
-    const handleFullscreenChange = () => {
-      const isFullscreen = !!(
-        document.fullscreenElement ||
-        (document as any).webkitFullscreenElement ||
-        (document as any).mozFullScreenElement ||
-        (document as any).msFullscreenElement
-      );
-      
-      console.log('🔍 Fullscreen change:', isFullscreen ? 'ENTERED' : 'EXITED');
-      
-      if (!isFullscreen) {
-        console.log('🚨 FULLSCREEN EXITED - Logging violation!');
-        logViolation(VIOLATION_TYPES.FULLSCREEN_EXIT, undefined, 10000); // 10 second grace period
-      }
-    };
-let previousSize = { width: window.innerWidth, height: window.innerHeight };
-    let wasInFullscreen = !!(
-      document.fullscreenElement ||
-      (document as any).webkitFullscreenElement ||
-      (document as any).mozFullScreenElement ||
-      (document as any).msFullscreenElement
-    );
+    // Store initial dimensions when monitoring starts
+    const initialWidth = window.innerWidth;
+    const initialHeight = window.innerHeight;
+    let screenResizeViolationLogged = false; // Only log once per resize event
     
     const handleResize = () => {
-      const currentSize = { width: window.innerWidth, height: window.innerHeight };
-      const isNowFullscreen = !!(
-        document.fullscreenElement ||
-        (document as any).webkitFullscreenElement ||
-        (document as any).mozFullScreenElement ||
-        (document as any).msFullscreenElement
-      );
+
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      
+      // Compare against initial dimensions
+      const widthDiff = Math.abs(width - initialWidth);
+      const heightDiff = Math.abs(height - initialHeight);
       
       console.log('📐 Window resized:', {
-        from: previousSize,
-        to: currentSize,
-        outerWidth: window.outerWidth,
-        outerHeight: window.outerHeight,
-        screenLeft: window.screenLeft,
-        screenTop: window.screenTop,
-        wasFullscreen: wasInFullscreen,
-        isNowFullscreen: isNowFullscreen
+        initial: { width: initialWidth, height: initialHeight },
+        current: { width, height },
+        diff: { widthDiff, heightDiff }
       });
-      
-      // 🔥 CRITICAL: ANY RESIZE = FULLSCREEN EXIT VIOLATION
-      // If not in fullscreen, ANY resize is a violation (user is manipulating window)
-      if (!isNowFullscreen) {
-        console.log('🚨 WINDOW RESIZED WHILE NOT IN FULLSCREEN - Logging as FULLSCREEN EXIT!');
-        logViolation(VIOLATION_TYPES.FULLSCREEN_EXIT, 'Window resized (not in fullscreen mode)', 2000);
-      }
-      
-      // 🔥 DETECT FULLSCREEN EXIT via resize (backup detection)
-      if (wasInFullscreen && !isNowFullscreen) {
-        console.log('🚨 FULLSCREEN EXITED (detected via resize) - Logging violation!');
-        logViolation(VIOLATION_TYPES.FULLSCREEN_EXIT, 'Exited fullscreen by resizing window', 0);
-      }
       
       // Detect minimize by checking multiple signals
       const isMinimized = 
-        (currentSize.width === 0 && currentSize.height === 0) ||
+        (width === 0 && height === 0) ||
         (window.outerWidth === 0 && window.outerHeight === 0) ||
         (window.screenLeft < -10000 || window.screenTop < -10000);
       
       if (isMinimized) {
         console.log('🚨 WINDOW MINIMIZED (via resize) - Logging violation!');
-        logViolation('WINDOW_MINIMIZE', 'Window minimized detected via resize');
+        logViolation(VIOLATION_TYPES.WINDOW_MINIMIZE, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.WINDOW_MINIMIZE]);
+        return;
       }
       
-      // Also detect significant shrinking (not in fullscreen)
-      const widthDrop = previousSize.width - currentSize.width;
-      const heightDrop = previousSize.height - currentSize.height;
-      if (!isNowFullscreen && widthDrop > 100 && heightDrop > 100) {
-        console.log('🚨 WINDOW SHRUNK SIGNIFICANTLY - Logging as FULLSCREEN EXIT!');
-        logViolation(VIOLATION_TYPES.FULLSCREEN_EXIT, 'Window size reduced significantly', 2000);
+      // Only trigger SCREEN_RESIZE if change is significant (> 150px)
+      if ((widthDiff > 150 || heightDiff > 150) && !screenResizeViolationLogged) {
+        const timeSinceMonitoringStart = Date.now() - monitoringStartTime.current;
+        // Check if grace period (1st minute) has passed
+        if (timeSinceMonitoringStart > 60000) {
+          console.log('🚨 SCREEN_RESIZE detected - Logging violation!');
+          logViolation(VIOLATION_TYPES.SCREEN_RESIZE, `Window resized to ${width}x${height}`, 5000);
+          screenResizeViolationLogged = true;
+        }
       }
       
-      previousSize = currentSize;
-      wasInFullscreen = isNowFullscreen;
+      // Reset flag if user returns to initial size
+      if (widthDiff <= 50 && heightDiff <= 50) {
+        screenResizeViolationLogged = false;
+      }
     };
 
     const handleOffline = () => {
-      logViolation('NETWORK_DISCONNECT', 'Internet connection lost', 0);
+      logViolation(VIOLATION_TYPES.NETWORK_DISCONNECT, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.NETWORK_DISCONNECT], 0);
     };
 
     const handleOnline = async () => {
@@ -4251,52 +4295,35 @@ let previousSize = { width: window.innerWidth, height: window.innerHeight };
       const heightThreshold = window.outerHeight - window.innerHeight > threshold;
       
       if (widthThreshold || heightThreshold) {
-        logViolation('DEVTOOLS_OPEN', undefined, 5000);
+        logViolation(VIOLATION_TYPES.DEVTOOLS_OPEN, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.DEVTOOLS_OPEN], 5000);
       }
     };
     
-    // 🔥 IMPROVED FULLSCREEN CHECK: Only log ONCE after 1 minute out of fullscreen
-    let fullscreenExitTime: number | null = null;
-    let fullscreenViolationLogged = false;
-    wasInFullscreen = true; // Assume starting in fullscreen
-    
     const checkFullscreenStatus = () => {
-      const isFullscreen = !!(
+      // Skip during grace period (first 60 seconds)
+      const timeSinceMonitoringStart = Date.now() - monitoringStartTime.current;
+      if (timeSinceMonitoringStart < 60000) {
+        return;
+      }
+      
+      // Check fullscreen API
+      const apiFullscreen = !!(
         document.fullscreenElement ||
         (document as any).webkitFullscreenElement ||
         (document as any).mozFullScreenElement ||
         (document as any).msFullscreenElement
       );
       
-      // User just exited fullscreen
-      if (wasInFullscreen && !isFullscreen) {
-        console.log('⚠️ User exited fullscreen - starting 1-minute timer');
-        fullscreenExitTime = Date.now();
-        fullscreenViolationLogged = false;
-        wasInFullscreen = false;
-      }
+      // Visual fallback: Check if window fills the screen (20px tolerance for taskbar/dock)
+      const isVisuallyFullscreen = 
+        Math.abs(window.screen.width - window.innerWidth) < 20 &&
+        Math.abs(window.screen.height - window.innerHeight) < 20;
       
-      // User re-entered fullscreen - reset
-      if (!wasInFullscreen && isFullscreen) {
-        console.log('✅ User re-entered fullscreen - timer reset');
-        fullscreenExitTime = null;
-        fullscreenViolationLogged = false;
-        wasInFullscreen = true;
-      }
+      const isFullscreen = apiFullscreen || isVisuallyFullscreen;
       
-      // Check if user has been out of fullscreen for 1 minute
-      if (!isFullscreen && fullscreenExitTime && !fullscreenViolationLogged) {
-        const timeOutOfFullscreen = Date.now() - fullscreenExitTime;
-        const oneMinute = 60 * 1000; // 60 seconds
-        
-        if (timeOutOfFullscreen >= oneMinute) {
-          const currentQ = questions[currentQuestionIndex];
-          if (currentQ) {
-            console.log(`🚨 Fullscreen violation logged (1 minute elapsed) on Q${currentQ.questionNo} (ID: ${currentQ.id})`);
-          }
-          logViolation(VIOLATION_TYPES.FULLSCREEN_EXIT, 'Not in fullscreen mode for 1 minute', 0);
-          fullscreenViolationLogged = true; // Only log once
-        }
+      // Not in fullscreen? Log violation (cooldown handled by logViolation)
+      if (!isFullscreen) {
+        logViolation(VIOLATION_TYPES.FULLSCREEN_EXIT, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.FULLSCREEN_EXIT], 5000);
       }
     };
 
@@ -4310,11 +4337,10 @@ let previousSize = { width: window.innerWidth, height: window.innerHeight };
     const checkMultipleTabs = () => {
       const tabs = (localStorage.getItem('activeExamTabs') || '').split(',').filter(Boolean);
       if (tabs.length > 1) {
-        logViolation('MULTIPLE_TABS', `${tabs.length} tabs detected`, 5000);
+        logViolation(VIOLATION_TYPES.MULTIPLE_TABS, `${tabs.length} tabs detected`, 5000);
       }
     };
 
-    window.addEventListener('blur', handleBlur);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     document.addEventListener('copy', handleCopy);
     document.addEventListener('cut', handleCut);
@@ -4323,13 +4349,6 @@ let previousSize = { width: window.innerWidth, height: window.innerHeight };
     document.addEventListener('keydown', handleKeyDown);
     
     // Add all browser-specific fullscreen change events
-    console.log('🎬 Adding fullscreen event listeners...');
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
-    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
-    console.log('✅ Fullscreen listeners attached');
-    
     window.addEventListener('resize', handleResize);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
@@ -4338,26 +4357,19 @@ let previousSize = { width: window.innerWidth, height: window.innerHeight };
 
     const devToolsInterval = setInterval(() => {
       detectDevTools();
-      checkFullscreenStatus(); // Check fullscreen status every second
-    }, 1000);
-    const multipleTabsInterval = setInterval(checkMultipleTabs, 2000);
+      checkFullscreenStatus(); // Check fullscreen status every 5 second
+    }, 5000);
+    const multipleTabsInterval = setInterval(checkMultipleTabs, 3000);
 
     return () => {
       console.log('🔓 Exam monitoring deactivated');
       
-      window.removeEventListener('blur', handleBlur);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('copy', handleCopy);
       document.removeEventListener('cut', handleCut);
       document.removeEventListener('paste', handlePaste);
       document.removeEventListener('contextmenu', handleContextMenu);
       document.removeEventListener('keydown', handleKeyDown);
-      
-      // Remove all browser-specific fullscreen change events
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
-      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
       
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('offline', handleOffline);
@@ -4379,7 +4391,7 @@ let previousSize = { width: window.innerWidth, height: window.innerHeight };
 
   const handlePrevious = () => {
     if (currentQuestionIndex > 0) {
-      saveCurrentAnswer();
+      saveCurrentAnswer(true);
       const newIndex = currentQuestionIndex - 1;
       setCurrentQuestionIndex(newIndex);
       // 🔥 UPDATE REF: Keep ref in sync
@@ -4393,7 +4405,7 @@ let previousSize = { width: window.innerWidth, height: window.innerHeight };
 
   const handleNext = () => {
     if (currentQuestionIndex < questions.length - 1) {
-      saveCurrentAnswer();
+      saveCurrentAnswer(true);
       const newIndex = currentQuestionIndex + 1;
       setCurrentQuestionIndex(newIndex);
       // 🔥 UPDATE REF: Keep ref in sync
@@ -4406,7 +4418,7 @@ let previousSize = { width: window.innerWidth, height: window.innerHeight };
   };
 
   const handleQuestionClick = (index: number) => {
-    //saveCurrentAnswer();
+    saveCurrentAnswer(true); // ✅ Save before navigating
     setCurrentQuestionIndex(index);
     // 🔥 UPDATE REF: Keep ref in sync
     currentQuestionRef.current = {
@@ -4525,6 +4537,7 @@ const calculateStudentEndTime = (
     const newAnswers = [...fillBlanksAnswers];
     newAnswers[index] = value;
     setFillBlanksAnswers(newAnswers);
+    fillBlanksAnswersRef.current = newAnswers; // ✅ Sync ref immediately
   };
 
   // Handle Jumbled drag and drop
@@ -4538,6 +4551,7 @@ const calculateStudentEndTime = (
     newItems.splice(hoverIndex, 0, draggedItem);
     
     setJumbledAnswers(newItems);
+    jumbledAnswersRef.current = newItems; // ✅ Sync ref immediately
   };
 
   // Run code (Mock Judge0 integration)
@@ -4952,13 +4966,16 @@ const calculateStudentEndTime = (
                       key={index}
                       onClick={() => {
                         // ✅ CHECKBOX MODE: Always allow multiple selections
+                        let newAnswer: string[];
                         if (isSelected) {
                           // Remove from selection
-                          setMcqAnswer(mcqAnswer.filter(ans => ans !== option));
+                          newAnswer = mcqAnswer.filter(ans => ans !== option);
                         } else {
                           // Add to selection
-                          setMcqAnswer([...mcqAnswer, option]);
+                          newAnswer = [...mcqAnswer, option];
                         }
+                        setMcqAnswer(newAnswer);
+                        mcqAnswerRef.current = newAnswer; // ✅ Sync ref immediately
                       }}
                       className={buttonClasses}
                     >
@@ -5069,7 +5086,10 @@ const calculateStudentEndTime = (
                     <RichTextEditor
                       key={`${currentQuestion.id}-v${answerLoadVersionRef.current[currentQuestion.id] || 0}`}
                       value={descriptiveAnswer}
-                      onChange={setDescriptiveAnswer}
+                      onChange={(value: string) => {
+                        setDescriptiveAnswer(value);
+                        descriptiveAnswerRef.current = value; // ✅ Sync ref immediately
+                      }}
                       darkMode={darkMode}
                       placeholder="Type your answer here... Use the toolbar to format text, add code blocks, images, and more."
                       height="100%"
@@ -5407,7 +5427,7 @@ const calculateStudentEndTime = (
       {faceMonitoringEnabled && baselineDescriptors.length > 0 && attempt?.attemptId && (
         <ExamMonitor
           baselineDescriptors={baselineDescriptors}
-          onViolation={logViolation}
+          onViolation={logViolation as (type: string, details?: string, proof?: Blob) => void}
           monitoringEnabled={isMonitoringActive}
           selectedAudioDeviceId={selectedAudioDeviceId}
           examId={examId}
@@ -5473,22 +5493,22 @@ const calculateStudentEndTime = (
               <div className="flex items-center justify-between gap-4">
                 {/* Question Info */}
                 <div className="flex-shrink-0">
-                  <h2 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    Question No {currentQuestion.questionNo} / {questions.length}
+                  <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    Question No {currentQuestion.questionNo}/{questions.length}
                   </h2>
                   <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                   {currentQuestion.type === QUESTION_TYPES.FITB ? 'FITB' : currentQuestion.type === QUESTION_TYPES.MCQ ? 'MCQ' : currentQuestion.type}, Marks: {currentQuestion.maxMarks}
+                   {currentQuestion.type === QUESTION_TYPES.FITB ? 'FITB' : currentQuestion.type === QUESTION_TYPES.MCQ ? 'MCQ' : currentQuestion.type === QUESTION_TYPES.CODE ? 'Code' : currentQuestion.type === QUESTION_TYPES.DESCRIPTIVE ? 'Descriptive' : currentQuestion.type}, Marks: {currentQuestion.maxMarks}
                   </p>
                 </div>
 
-                {/* Action Buttons - Scrollable on small screens */}
-                <div className="overflow-x-auto scrollbar-hide flex-shrink-0 max-w-[50%] sm:max-w-none scroll-smooth">
-                  <div className="flex items-center space-x-2 min-w-max pb-1 snap-x snap-mandatory">
+ {              /* Action Buttons - Scrollable on small screens */}
+                <div className="overflow-x-auto flex-shrink-0 max-w-[60%] sm:max-w-none scroll-smooth">
+                  <div className="flex items-center space-x-2 min-w-max pb-1">
                     <button
                       onClick={toggleBookmark}
-                      className={`p-3 rounded-lg border text-sm font-medium transition-all transform hover:scale-105 active:scale-95 flex items-center justify-center snap-start ${
+                      className={`p-2 rounded-lg border transition-all flex items-center justify-center ${
                         bookmarkedQuestions.has(currentQuestion.id)
-                          ? 'bg-purple-500 text-white border-purple-500 shadow-lg'
+                          ? 'bg-purple-500 text-white border-purple-500'
                           : darkMode
                           ? 'bg-gray-700 text-gray-300 border-gray-600 hover:bg-gray-600'
                           : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
@@ -5497,7 +5517,7 @@ const calculateStudentEndTime = (
                     >
                       <FontAwesomeIcon 
                         icon={faBookmark} 
-                        className={bookmarkedQuestions.has(currentQuestion.id) ? 'animate-pulse text-lg' : 'text-lg'}
+                        className="text-base"
                       />
                     </button>
 
@@ -5507,7 +5527,7 @@ const calculateStudentEndTime = (
                         setSubmitStatus(SUBMIT_STATUS.IDLE);
                         setSubmitMessage('');
                       }}
-                      className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-semibold transition-colors flex items-center space-x-2 shadow-md hover:shadow-lg snap-start"
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center space-x-2"
                     >
                       <FontAwesomeIcon icon={faCircleCheck} />
                       <span>Submit Exam</span>
@@ -5516,7 +5536,7 @@ const calculateStudentEndTime = (
                     <button
                       onClick={handlePrevious}
                       disabled={currentQuestionIndex === 0}
-                      className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors flex items-center space-x-2 snap-start ${
+                      className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors flex items-center space-x-2 ${
                         currentQuestionIndex === 0
                           ? darkMode
                             ? 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed'
@@ -5533,7 +5553,7 @@ const calculateStudentEndTime = (
                     <button
                       onClick={handleNext}
                       disabled={currentQuestionIndex === questions.length - 1}
-                      className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors flex items-center space-x-2 snap-start ${
+                      className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors flex items-center space-x-2 ${
                         currentQuestionIndex === questions.length - 1
                           ? darkMode
                             ? 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed'
@@ -6881,13 +6901,14 @@ const calculateStudentEndTime = (
                     console.log('⏰ Auto-submit already completed - Navigating to overview...');
                     await new Promise(resolve => setTimeout(resolve, 500));
                     
-                    // Use the stored attempt data if available
+                    // Use the stored attempt data if available, otherwise just call onSubmitExam with null
+                    // Never call onExitExam after auto-submit - exam is already submitted!
                     if (submittedAttemptData.current) {
                       console.log('✅ Using stored attempt data from auto-submit');
                       onSubmitExam(submittedAttemptData.current);
                     } else {
-                      console.log('⚠️ No stored attempt data, calling onExitExam');
-                      onExitExam();
+                      console.log('⚠️ No stored attempt data, but exam was auto-submitted - calling onSubmitExam with null');
+                      onSubmitExam(null);
                     }
                   }
                   // Otherwise submit exam when user clicks exit

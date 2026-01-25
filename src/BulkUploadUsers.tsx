@@ -4,6 +4,47 @@ import { useBrand } from './BrandContext';
 import * as XLSX from 'xlsx';
 import { firebaseService } from './services/firebase_service';
 
+/**
+ * Calculate academic year based on college's academic year start month
+ * @param startMonth - The month when academic year starts (e.g., "April", "January", "June")
+ *                     Defaults to "April" if not provided
+ */
+const calculateAcademicYear = (startMonth?: string): string => {
+  const today = new Date();
+  const currentMonth = today.getMonth() + 1; // 1-12
+  const currentYear = today.getFullYear();
+  
+  // Map month names to numbers
+  const monthMap: Record<string, number> = {
+    'january': 1, 'jan': 1,
+    'february': 2, 'feb': 2,
+    'march': 3, 'mar': 3,
+    'april': 4, 'apr': 4,
+    'may': 5,
+    'june': 6, 'jun': 6,
+    'july': 7, 'jul': 7,
+    'august': 8, 'aug': 8,
+    'september': 9, 'sep': 9, 'sept': 9,
+    'october': 10, 'oct': 10,
+    'november': 11, 'nov': 11,
+    'december': 12, 'dec': 12
+  };
+  
+  // Default to April (month 4) if not provided or invalid
+  const startMonthNum = startMonth 
+    ? (monthMap[startMonth.toLowerCase()] || 4)
+    : 4;
+  
+  // If current month >= start month, academic year is currentYear-(currentYear+1)
+  // If current month < start month, academic year is (currentYear-1)-currentYear
+  let startYear = currentMonth >= startMonthNum ? currentYear : currentYear - 1;
+  
+  const endYear = startYear + 1;
+  const endYearShort = endYear.toString().slice(-2);
+  
+  return `${startYear}-${endYearShort}`;
+};
+
 interface BulkUploadUsersProps {
   isOpen: boolean;
   onClose: () => void;
@@ -19,13 +60,9 @@ interface UserRow {
   user_type: string;
   college_id?: string;
   student_roll?: string;
-  academic_year?: string;
   student_class?: string;
   teacher_classes?: string;
   teacher_subjects?: string;
-  board?: string;
-  parent_phone?: string;
-  created_by?: string;
 }
 
 export default function BulkUploadUsers({
@@ -40,6 +77,9 @@ export default function BulkUploadUsers({
   const [uploadStep, setUploadStep] = useState<'select' | 'preview' | 'uploading' | 'complete'>('select');
   const [parsedUsers, setParsedUsers] = useState<UserRow[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [collegeAcademicYearStartMonth, setCollegeAcademicYearStartMonth] = useState<string>('April');
+  const [collegeValidClasses, setCollegeValidClasses] = useState<string[]>([]); // ✅ Valid classes from college
+  const [collegeSubjects, setCollegeSubjects] = useState<string[]>([]); // ✅ Valid subjects from college
   const [uploadResults, setUploadResults] = useState<{
     success: number;
     skipped: number;
@@ -57,6 +97,10 @@ export default function BulkUploadUsers({
   // Pagination state for results
   const [currentPage, setCurrentPage] = useState(1);
   const ITEMS_PER_PAGE = 10;
+  
+  // Pagination state for preview
+  const [previewPage, setPreviewPage] = useState(1);
+  const PREVIEW_ITEMS_PER_PAGE = 10;
   
   // Error/Warning display state
   const [notification, setNotification] = useState<{
@@ -88,9 +132,40 @@ export default function BulkUploadUsers({
     }
   }, [isOpen]);
 
-  // Download Excel template
+  // ✅ Load college data to get academic year start month, valid classes, and subjects
+  useEffect(() => {
+    const loadCollegeData = async () => {
+      if (!activeCollegeId) return;
+      
+      try {
+        const college = await firebaseService.getCollegeById(activeCollegeId);
+        if (college) {
+          if (college.academicYear) {
+            console.log('📅 College academic year starts in:', college.academicYear);
+            setCollegeAcademicYearStartMonth(college.academicYear);
+          }
+          if (college.validClasses && Array.isArray(college.validClasses)) {
+            console.log('📚 College valid classes:', college.validClasses);
+            setCollegeValidClasses(college.validClasses);
+          }
+          if (college.subjects && Array.isArray(college.subjects)) {
+            console.log('📖 College subjects:', college.subjects);
+            setCollegeSubjects(college.subjects);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading college data:', error);
+      }
+    };
+    
+    if (isOpen) {
+      loadCollegeData();
+    }
+  }, [isOpen, activeCollegeId]);
+
+  // Download Excel template - University friendly with valid classes and subjects
   const downloadTemplate = () => {
-    // Sample data rows
+    // Sample data rows - university friendly
     const template = [
       {
         full_name: 'Mr John Admin',
@@ -100,77 +175,69 @@ export default function BulkUploadUsers({
         user_type: 'admin',
         college_id: activeCollegeId,
         student_roll: '',
-        academic_year: '',
         student_class: '',
         teacher_classes: '',
-        teacher_subjects: '',
-        board: '',
-        parent_phone: '',
-        created_by: 'system'
+        teacher_subjects: ''
       },
       {
         full_name: 'Dr Sarah Principal',
-        title: 'School Principal',
+        title: 'Principal',
         email: 'sarah.principal@example.com',
         phone: '9876543214',
         user_type: 'principal',
         college_id: activeCollegeId,
         student_roll: '',
-        academic_year: '',
         student_class: '',
-        teacher_classes: '11th, 12th',
-        teacher_subjects: 'Mathematics',
-        board: 'CBSE',
-        parent_phone: '',
-        created_by: 'system'
+        teacher_classes: collegeValidClasses.slice(0, 2).join(', ') || 'MCA-1, MCA-2',
+        teacher_subjects: collegeSubjects.slice(0, 1).join(', ') || 'Python'
       },
       {
         full_name: 'Prof Michael Dean',
-        title: 'Academic Dean',
+        title: 'Dean - Computer Science',
         email: 'michael.dean@example.com',
         phone: '9876543215',
         user_type: 'dean',
         college_id: activeCollegeId,
         student_roll: '',
-        academic_year: '',
         student_class: '',
-        teacher_classes: '10th, 11th',
-        teacher_subjects: 'Physics, Chemistry',
-        board: 'CBSE',
-        parent_phone: '',
-        created_by: 'system'
+        teacher_classes: collegeValidClasses.slice(0, 2).join(', ') || 'MCA-1, MCA-2',
+        teacher_subjects: collegeSubjects.slice(0, 2).join(', ') || 'Java, Python'
       },
       {
-        full_name: 'Ms Jane Teacher',
-        title: 'Mathematics Teacher',
-        email: 'jane.teacher@example.com',
+        full_name: 'Ms Jane Faculty',
+        title: 'Assistant Professor',
+        email: 'jane.faculty@example.com',
         phone: '9876543211',
         user_type: 'teacher',
         college_id: activeCollegeId,
         student_roll: '',
-        academic_year: '',
         student_class: '',
-        teacher_classes: '10th, 11th, 12th',
-        teacher_subjects: 'Mathematics, Physics',
-        board: 'CBSE',
-        parent_phone: '',
-        created_by: 'system'
+        teacher_classes: collegeValidClasses.slice(0, 3).join(', ') || 'MCA-1, MCA-2, MCA-3',
+        teacher_subjects: collegeSubjects.slice(0, 2).join(', ') || 'C Programming, DSA'
       },
       {
-        full_name: 'Master Ram Student',
+        full_name: 'Rahul Kumar',
         title: 'Student',
-        email: 'ram.student@example.com',
+        email: 'rahul.kumar@example.com',
         phone: '9876543212',
         user_type: 'student',
         college_id: activeCollegeId,
-        student_roll: 'STU001',
-        academic_year: '2024-25',
-        student_class: '10th',
+        student_roll: '2024MCA001',
+        student_class: collegeValidClasses[0] || 'MCA-1',
         teacher_classes: '',
-        teacher_subjects: '',
-        board: 'CBSE',
-        parent_phone: '9876543213',
-        created_by: 'system'
+        teacher_subjects: ''
+      },
+      {
+        full_name: 'Priya Sharma',
+        title: 'Student',
+        email: 'priya.sharma@example.com',
+        phone: '9876543213',
+        user_type: 'student',
+        college_id: activeCollegeId,
+        student_roll: '2024BEC001',
+        student_class: collegeValidClasses[3] || 'BEC-1',
+        teacher_classes: '',
+        teacher_subjects: ''
       }
     ];
 
@@ -179,114 +246,118 @@ export default function BulkUploadUsers({
 
     // Set column widths for better readability
     ws['!cols'] = [
-      { wch: 20 }, // full_name
-      { wch: 20 }, // title
-      { wch: 25 }, // email
+      { wch: 22 }, // full_name
+      { wch: 25 }, // title
+      { wch: 28 }, // email
       { wch: 15 }, // phone
-      { wch: 15 }, // user_type
+      { wch: 12 }, // user_type
       { wch: 20 }, // college_id
       { wch: 15 }, // student_roll
-      { wch: 15 }, // academic_year
       { wch: 15 }, // student_class
-      { wch: 25 }, // teacher_classes
-      { wch: 25 }, // teacher_subjects
-      { wch: 12 }, // board
-      { wch: 15 }, // parent_phone
-      { wch: 15 }  // created_by
+      { wch: 30 }, // teacher_classes
+      { wch: 35 }  // teacher_subjects
     ];
 
     // Create workbook and add worksheet
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Users');
     
-    // Create Reference sheet with allowed values
-    const referenceData = [
-      ['ALLOWED VALUES FOR DROPDOWNS'],
+    // Create Reference sheet with allowed values - Include college's valid classes and subjects
+    const referenceData: any[][] = [
+      ['ALLOWED VALUES FOR THIS COLLEGE'],
       [''],
-      ['User Types (Select from these):'],
-      ['system_admin'],
+      ['User Types:'],
       ['admin'],
       ['principal'],
       ['dean'],
       ['teacher'],
       ['student'],
       [''],
-      ['IMPORTANT VALIDATION RULES:'],
+      ['VALID CLASSES (Use exact values):'],
+      ...(collegeValidClasses.length > 0 
+        ? collegeValidClasses.map(cls => [cls])
+        : [['(No classes configured - contact admin)']]),
+      [''],
+      ['VALID SUBJECTS (Use exact values):'],
+      ...(collegeSubjects.length > 0 
+        ? collegeSubjects.map(sub => [sub])
+        : [['(No subjects configured - contact admin)']]),
+      [''],
+      ['VALIDATION RULES:'],
       [''],
       ['Phone Number:'],
       ['- Must be exactly 10 digits'],
       ['- Example: 9876543210'],
-      ['- No country code, spaces, or special characters'],
       [''],
-      ['Email:'],
-      ['- Optional but recommended'],
-      ['- Must be unique if provided'],
+      ['Student Roll Number:'],
+      ['- Required for students'],
+      ['- Must be unique per class and academic year'],
+      ['- Example: 2024MCA001, 2024BEC001'],
       [''],
-      ['Academic Year Format:'],
-      ['- YYYY-YY (e.g., 2024-25, 2025-26)'],
-      ['- Required for students only'],
+      ['Student Class:'],
+      ['- Must match one of the VALID CLASSES listed above'],
+      ['- Required for students'],
+      [''],
+      ['Teacher Classes:'],
+      ['- Comma-separated list from VALID CLASSES'],
+      ['- Example: MCA-1, MCA-2, MCA-3'],
+      [''],
+      ['Teacher Subjects:'],
+      ['- Comma-separated list from VALID SUBJECTS'],
+      ['- Example: Python, Java, DSA'],
       [''],
       ['DUPLICATE HANDLING:'],
-      ['Users with existing phone OR email will be SKIPPED']
+      ['- Users with existing phone OR email will be SKIPPED'],
+      ['- Students with existing roll number in same class will be SKIPPED']
     ];
 
     const wsReference = XLSX.utils.aoa_to_sheet(referenceData);
-    wsReference['!cols'] = [{ wch: 50 }];
+    wsReference['!cols'] = [{ wch: 55 }];
     XLSX.utils.book_append_sheet(wb, wsReference, 'Reference');
     
     // Add instructions sheet
     const instructions = [
-      ['INSTRUCTIONS FOR BULK USER UPLOAD'],
+      ['BULK USER UPLOAD - INSTRUCTIONS'],
       [''],
-      ['IMPORTANT: Check the "Reference" sheet for allowed values and validation rules'],
+      ['⚠️ IMPORTANT: Check the "Reference" sheet for valid classes and subjects for your college'],
       [''],
       ['Column Descriptions:'],
-      ['full_name', 'REQUIRED - User\'s full name (e.g., Mr John Doe, Ms Jane Teacher)'],
-      ['title', 'Optional - Designation/Title (e.g., Senior Admin, Mathematics Teacher)'],
+      ['full_name', 'REQUIRED - Full name (e.g., Dr. John Smith, Prof. Jane Doe)'],
+      ['title', 'Optional - Designation (e.g., Assistant Professor, Associate Professor, Student)'],
       ['email', 'Optional - Email address (must be unique)'],
       ['phone', 'REQUIRED - 10-digit mobile number (e.g., 9876543210)'],
-      ['user_type', 'REQUIRED - Copy from Reference sheet: system_admin, admin, principal, dean, teacher, student'],
-      ['college_id', 'REQUIRED (except system_admin) - College identifier'],
-      ['student_roll', 'REQUIRED for students - Student roll number'],
-      ['academic_year', 'REQUIRED for students - Format: YYYY-YY (e.g., 2024-25)'],
-      ['student_class', 'REQUIRED for students - Class (e.g., 10th, 11th, 12th)'],
-      ['teacher_classes', 'Optional for teachers/principals/deans - Comma-separated classes (e.g., 10th, 11th, 12th)'],
-      ['teacher_subjects', 'Optional for teachers/principals/deans - Comma-separated subjects (e.g., Mathematics, Physics)'],
-      ['board', 'Optional - Board name (e.g., CBSE, ICSE)'],
-      ['parent_phone', 'Optional for students - Parent contact number'],
-      ['created_by', 'Optional - Creator identifier (default: system)'],
+      ['user_type', 'REQUIRED - One of: admin, principal, dean, teacher, student'],
+      ['college_id', 'Pre-filled - Do not change'],
+      ['student_roll', 'REQUIRED for students - Unique roll number (e.g., 2024MCA001)'],
+      ['student_class', 'REQUIRED for students - Must match a class from Reference sheet'],
+      ['teacher_classes', 'For faculty - Comma-separated classes from Reference sheet'],
+      ['teacher_subjects', 'For faculty - Comma-separated subjects from Reference sheet'],
+      [''],
+      ['AUTOMATICALLY SET FIELDS:'],
+      ['board', 'Set from college configuration'],
+      ['academic_year', 'Calculated based on college academic year settings'],
+      ['created_by', 'Set to the user uploading the file'],
       [''],
       ['User Type Requirements:'],
-      ['system_admin', 'No college_id required - System-wide administrator'],
-      ['admin', 'Requires college_id - College-level administrator'],
-      ['principal', 'Requires college_id - College principal (can have teacher_classes, teacher_subjects, board)'],
-      ['dean', 'Requires college_id - Department dean (can have teacher_classes, teacher_subjects, board)'],
-      ['teacher', 'Requires college_id - Faculty member (can have teacher_classes, teacher_subjects, board)'],
-      ['student', 'Requires college_id, student_roll, academic_year, student_class'],
+      ['admin', 'College administrator - no class/subject assignment needed'],
+      ['principal', 'Can optionally have teacher_classes and teacher_subjects'],
+      ['dean', 'Can optionally have teacher_classes and teacher_subjects'],
+      ['teacher', 'Should have teacher_classes and teacher_subjects assigned'],
+      ['student', 'MUST have student_roll and student_class'],
       [''],
-      ['Validation Rules:'],
-      ['- Phone must be exactly 10 digits'],
-      ['- Email must be unique (if provided)'],
-      ['- Users with existing phone OR email will be SKIPPED'],
-      ['- Academic year must be in YYYY-YY format'],
-      ['- Student fields are mandatory for user_type=student'],
-      [''],
-      ['Tips:'],
-      ['- Check the "Reference" sheet for all allowed user types'],
-      ['- Copy exact values from Reference sheet to avoid errors'],
-      ['- Use comma to separate multiple classes/subjects for teachers/principals/deans'],
-      ['- Principals and Deans can also teach - add their classes, subjects, and board'],
-      ['- Fill all REQUIRED columns for the user type you\'re creating'],
-      ['- Test with a few users first before uploading large batches'],
-      ['- Duplicate phone/email users will be automatically skipped']
+      ['TIPS:'],
+      ['- Copy exact class/subject names from Reference sheet'],
+      ['- Test with a few users first'],
+      ['- Invalid classes/subjects will cause the row to fail'],
+      ['- Duplicate phone/email/roll numbers will be skipped']
     ];
 
     const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
-    wsInstructions['!cols'] = [{ wch: 20 }, { wch: 80 }];
+    wsInstructions['!cols'] = [{ wch: 20 }, { wch: 70 }];
     XLSX.utils.book_append_sheet(wb, wsInstructions, 'Instructions');
 
     // Download the file
-    XLSX.writeFile(wb, 'users_template.xlsx');
+    XLSX.writeFile(wb, 'users_upload_template.xlsx');
   };
 
   // Handle file selection
@@ -320,6 +391,7 @@ export default function BulkUploadUsers({
         
         console.log(`📊 Parsed ${users.length} users from Excel`);
         setParsedUsers(users);
+        setPreviewPage(1); // Reset preview pagination
         setUploadStep('preview');
         
       } catch (error: any) {
@@ -372,13 +444,7 @@ export default function BulkUploadUsers({
   };
 
   // Validate academic year format
-  const isValidAcademicYear = (year: string): boolean => {
-    if (!year) return false;
-    const pattern = /^\d{4}-\d{2}$/;
-    return pattern.test(year);
-  };
-
-  // Upload users to Firebase
+  // Upload users to Firebase - UPDATED: board from collegeId, createdBy from current user
   const uploadUsers = async () => {
     setUploadStep('uploading');
     setUploadProgress(0);
@@ -398,6 +464,7 @@ export default function BulkUploadUsers({
     };
 
     try {
+      // ✅ Get current user for createdBy field
       const currentUser = await firebaseService.getCurrentUserProfile();
       const createdBy = currentUser?.userId || 'system';
 
@@ -436,11 +503,7 @@ export default function BulkUploadUsers({
           // Validate student-specific fields
           if (userType === 'student') {
             if (!user.student_roll) throw new Error('student_roll is required for students');
-            if (!user.academic_year) throw new Error('academic_year is required for students');
             if (!user.student_class) throw new Error('student_class is required for students');
-            if (!isValidAcademicYear(user.academic_year)) {
-              throw new Error(`Invalid academic_year format: ${user.academic_year}. Must be YYYY-YY`);
-            }
           }
 
           // Normalize phone number
@@ -463,7 +526,66 @@ export default function BulkUploadUsers({
             continue;
           }
 
-          // Prepare user data
+          // ✅ Calculate academic year based on college settings
+          const academicYear = calculateAcademicYear(collegeAcademicYearStartMonth);
+
+          // ✅ Validate student class against college's valid classes
+          if (userType === 'student') {
+            const studentClass = user.student_class!.trim();
+            if (collegeValidClasses.length > 0 && !collegeValidClasses.includes(studentClass)) {
+              throw new Error(`Invalid class '${studentClass}'. Valid classes: ${collegeValidClasses.join(', ')}`);
+            }
+          }
+
+          // ✅ Validate teacher/principal/dean classes and subjects
+          if (userType === 'teacher' || userType === 'principal' || userType === 'dean') {
+            // Validate classes
+            if (user.teacher_classes) {
+              const classes = user.teacher_classes.split(',').map((c: string) => c.trim()).filter(Boolean);
+              if (collegeValidClasses.length > 0) {
+                const invalidClasses = classes.filter(cls => !collegeValidClasses.includes(cls));
+                if (invalidClasses.length > 0) {
+                  throw new Error(`Invalid class(es): ${invalidClasses.join(', ')}. Valid: ${collegeValidClasses.join(', ')}`);
+                }
+              }
+            }
+            
+            // Validate subjects
+            if (user.teacher_subjects) {
+              const subjects = user.teacher_subjects.split(',').map((s: string) => s.trim()).filter(Boolean);
+              if (collegeSubjects.length > 0) {
+                const invalidSubjects = subjects.filter(sub => !collegeSubjects.includes(sub));
+                if (invalidSubjects.length > 0) {
+                  throw new Error(`Invalid subject(s): ${invalidSubjects.join(', ')}. Valid: ${collegeSubjects.join(', ')}`);
+                }
+              }
+            }
+          }
+
+          // ✅ Check if student roll number already exists (for students only)
+          if (userType === 'student') {
+            const rollExists = await firebaseService.checkStudentRollExists(
+              collegeId,
+              user.student_class!.trim(),
+              academicYear,
+              user.student_roll!.trim()
+            );
+            
+            if (rollExists) {
+              console.log(`⏭️  Skipped: ${user.full_name} - Roll number already exists`);
+              results.skipped++;
+              results.details.push({
+                rowNumber,
+                fullName: user.full_name,
+                userType: user.user_type,
+                status: 'skipped',
+                reason: `Roll number '${user.student_roll}' already exists for class ${user.student_class} in ${academicYear}`
+              });
+              continue;
+            }
+          }
+
+          // Prepare user data - UPDATED: board = collegeId, createdBy = current user
           const userData: any = {
             fullName: user.full_name.trim(),
             title: user.title ? user.title.trim() : '',
@@ -472,22 +594,22 @@ export default function BulkUploadUsers({
             phoneRaw: normalizedPhone.replace('+91', ''),
             userType: userType,
             collegeId: collegeId,
-            board: user.board ? user.board.trim() : 'Not Specified',
+            board: collegeId, // ✅ Use collegeId as board
+            academicYear: academicYear, // ✅ Add academic year for all users
             status: 'active',
-            createdBy: user.created_by || createdBy
+            createdBy: createdBy // ✅ Set to current user who is uploading
           };
 
           // Add student-specific fields
           if (userType === 'student') {
             userData.studentRoll = user.student_roll!.trim();
-            userData.academicYear = user.academic_year!.trim();
             userData.studentClass = user.student_class!.trim();
-            userData.parentPhone = user.parent_phone ? user.parent_phone.trim() : '';
+            userData.parentPhone = ''; // No parent phone in bulk upload
             userData.studentHistory = [{
-              academicYear: user.academic_year!.trim(),
+              academicYear: academicYear,
               class: user.student_class!.trim(),
               rollNumber: user.student_roll!.trim(),
-              board: user.board ? user.board.trim() : 'Not Specified',
+              board: collegeId, // ✅ Use collegeId as board
               collegeId: collegeId
             }];
           }
@@ -572,7 +694,7 @@ export default function BulkUploadUsers({
         isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
       }`}>
         <div 
-          className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
+          className="absolute inset-0 bg-black/30 z-0"
           onClick={handleClose}
         />
         
@@ -604,286 +726,277 @@ export default function BulkUploadUsers({
               onClick={downloadTemplate}
               className="px-3 py-1.5 text-white/90 font-medium text-sm rounded-lg transition-all duration-200 flex items-center space-x-2 hover:bg-white/20"
             >
-              <Download size={14} className="text-white" />
-              <span>Download template</span>
+              <Download size={16} />
+              <span>Template</span>
             </button>
             <button
               onClick={handleClose}
-              className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
+              className="p-2 rounded-lg hover:bg-white/20 text-white transition-colors"
             >
-              <X size={16} className="text-white" />
+              <X size={20} />
             </button>
           </div>
         </div>
 
-        {/* Inline Notification */}
+        {/* Notification Banner */}
         {notification.visible && (
           <div 
-            className={`mx-8 mt-6 p-4 rounded-lg border-l-4 flex items-start space-x-3 transition-all duration-500 ease-in-out ${
-              notification.type === 'error' 
-                ? 'bg-red-50 border-red-500' 
-                : notification.type === 'warning'
-                ? 'bg-amber-50 border-amber-500'
-                : ''
+            className={`mx-4 mt-4 px-4 py-3 rounded-lg flex items-center space-x-3 ${
+              notification.type === 'error' ? 'bg-red-50 border border-red-200 text-red-800' :
+              notification.type === 'warning' ? 'bg-amber-50 border border-amber-200 text-amber-800' :
+              'bg-blue-50 border border-blue-200 text-blue-800'
             }`}
-            style={notification.type === 'info' ? {
-              backgroundColor: brandTheme.colors.primary + '10',
-              borderLeftColor: brandTheme.colors.primary
-            } : {}}
           >
-            <div className="flex-shrink-0 mt-0.5">
-              {notification.type === 'error' && (
-                <AlertCircle size={20} className="text-red-600" />
-              )}
-              {notification.type === 'warning' && (
-                <AlertCircle size={20} className="text-amber-600" />
-              )}
-              {notification.type === 'info' && (
-                <CheckCircle size={20} style={{ color: brandTheme.colors.primary }} />
-              )}
-            </div>
-            <div className="flex-1">
-              <p className={`text-sm font-medium ${
-                notification.type === 'error' 
-                  ? 'text-red-800' 
-                  : notification.type === 'warning'
-                  ? 'text-amber-800'
-                  : ''
-              }`}
-              style={notification.type === 'info' ? { color: brandTheme.colors.primary } : {}}>
-                {notification.message}
-              </p>
-            </div>
-            <button
+            <AlertCircle size={18} />
+            <p className="text-sm font-medium flex-1">{notification.message}</p>
+            <button 
               onClick={() => setNotification(prev => ({ ...prev, visible: false }))}
-              className="flex-shrink-0 p-1 hover:bg-white rounded transition-colors"
+              className="p-1 hover:opacity-70"
             >
-              <X size={16} className={
-                notification.type === 'error' 
-                  ? 'text-red-600' 
-                  : notification.type === 'warning'
-                  ? 'text-amber-600'
-                  : ''
-              }
-              style={notification.type === 'info' ? { color: brandTheme.colors.primary } : {}} />
+              <X size={16} />
             </button>
           </div>
         )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
           {uploadStep === 'select' && (
             <div className="space-y-6">
-              {/* Drag and Drop Upload Area */}
+              {/* Upload Area */}
               <div
+                className={`border-2 border-dashed rounded-xl p-10 text-center transition-all duration-300 ${
+                  isDragging 
+                    ? 'border-indigo-500 bg-indigo-50' 
+                    : 'border-gray-300 hover:border-indigo-400 hover:bg-indigo-50/50'
+                }`}
                 onDragEnter={handleDragEnter}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`relative border border-dashed rounded-xl transition-all duration-300 ${
-                  isDragging
-                    ? 'scale-[1.02]'
-                    : 'border-gray-300 hover:border-gray-400'
-                }`}
-                style={isDragging ? {
-                  borderColor: brandTheme.colors.primary,
-                  backgroundColor: brandTheme.colors.primary + '10'
-                } : {
-                  background: `linear-gradient(135deg, ${brandTheme.colors.primary}05 0%, ${brandTheme.colors.secondary}05 100%)`
-                }}
               >
-                <div className="p-8 text-center">
-                  {/* Upload Icon */}
-                  <div className="mb-4 flex justify-center">
-                    <div className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 ${
-                      isDragging 
-                        ? 'scale-110' 
-                        : ''
-                    }`}
-                    style={{ background: brandTheme.gradients.primary }}>
-                      <Upload size={32} className="text-white" />
-                    </div>
-                  </div>
-
-                  {/* Text */}
-                  <h3 className="text-base font-semibold text-gray-900 mb-2">
-                    {isDragging ? 'Drop your file here' : 'Upload Excel File'}
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-6">
-                    Drag and drop your Excel file here, or click to browse
-                  </p>
-
-                  {/* Upload Button */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-6 py-3 text-white font-semibold rounded-lg transition-all duration-200 flex items-center space-x-2 mx-auto shadow-lg hover:shadow-xl transform hover:scale-105"
-                    style={{ background: brandTheme.gradients.primary }}
-                  >
-                    <FileSpreadsheet size={20} />
-                    <span>Choose Excel File</span>
-                  </button>
-
-                  {/* Supported Formats */}
-                  <p className="text-xs text-gray-500 mt-4">
-                    Supported formats: .xlsx, .xls
-                  </p>
+                <div 
+                  className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-5"
+                  style={{ backgroundColor: brandTheme.colors.primary + '15' }}
+                >
+                  <FileSpreadsheet size={40} style={{ color: brandTheme.colors.primary }} />
                 </div>
-
-                {/* Decorative elements */}
-                <div className="absolute top-4 left-4 w-8 h-8 border-t-2 border-l-2 rounded-tl-lg opacity-50"
-                  style={{ borderColor: brandTheme.colors.primary }}></div>
-                <div className="absolute top-4 right-4 w-8 h-8 border-t-2 border-r-2 rounded-tr-lg opacity-50"
-                  style={{ borderColor: brandTheme.colors.primary }}></div>
-                <div className="absolute bottom-4 left-4 w-8 h-8 border-b-2 border-l-2 rounded-bl-lg opacity-50"
-                  style={{ borderColor: brandTheme.colors.primary }}></div>
-                <div className="absolute bottom-4 right-4 w-8 h-8 border-b-2 border-r-2 rounded-br-lg opacity-50"
-                  style={{ borderColor: brandTheme.colors.primary }}></div>
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  Drop your Excel file here
+                </h3>
+                <p className="text-gray-500 mb-5">
+                  or click to browse from your computer
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-6 py-2.5 text-white font-medium rounded-lg transition-all shadow-md hover:shadow-lg"
+                  style={{ background: brandTheme.gradients.primary }}
+                >
+                  Select File
+                </button>
               </div>
 
               {/* Instructions */}
-              <div className="border rounded-xl p-5 shadow-sm"
-                style={{ 
-                  background: `linear-gradient(to right, ${brandTheme.colors.accent}10, ${brandTheme.colors.accent}15)`,
-                  borderColor: brandTheme.colors.accent + '40'
-                }}>
-                <div className="flex items-start space-x-3">
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-                    style={{ backgroundColor: brandTheme.colors.accent }}>
-                    <FileText size={18} className="text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-sm font-bold mb-3" style={{ color: brandTheme.colors.accent }}>Important Instructions</h4>
-                    <ul className="space-y-2 text-xs" style={{ color: brandTheme.colors.accent }}>
-                      <li className="flex items-start">
-                        <span className="mr-2">•</span>
-                        <span>Check the <strong>"Reference"</strong> sheet for all allowed values for user_type and validation rules</span>
-                      </li>
-                      <li className="flex items-start">
-                        <span className="mr-2">•</span>
-                        <span><strong>Required columns:</strong> full_name, phone, user_type</span>
-                      </li>
-                      <li className="flex items-start">
-                        <span className="mr-2">•</span>
-                        <span><strong>Phone format:</strong> Must be exactly 10 digits (no spaces or special characters)</span>
-                      </li>
-                      <li className="flex items-start">
-                        <span className="mr-2">•</span>
-                        <span><strong>Duplicates:</strong> Users with existing phone OR email will be skipped</span>
-                      </li>
-                    </ul>
-                  </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-5">
+                <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
+                  <FileText size={18} className="mr-2" style={{ color: brandTheme.colors.primary }} />
+                  Instructions
+                </h4>
+                <ol className="text-sm text-gray-600 space-y-2 list-decimal list-inside">
+                  <li>Download the template by clicking the "Template" button above</li>
+                  <li>Fill in user details in the Excel file (Users sheet)</li>
+                  <li>Check the Reference sheet for allowed values</li>
+                  <li>Upload the filled Excel file</li>
+                  <li>Review and confirm the upload</li>
+                </ol>
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <strong>Note:</strong> Board, Academic Year, and Created By are automatically set based on college settings and the uploading user.
+                  </p>
                 </div>
               </div>
             </div>
           )}
 
           {uploadStep === 'preview' && (
-            <div className="space-y-4">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-center space-x-3">
-                <CheckCircle size={24} className="text-green-600" />
+            <div className="space-y-6">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-semibold text-green-900">File parsed successfully!</p>
-                  <p className="text-sm text-green-700">Found {parsedUsers.length} users ready to upload</p>
+                  <h3 className="text-lg font-bold text-gray-900">Preview Users</h3>
+                  <p className="text-sm text-gray-500">{parsedUsers.length} users found in file</p>
                 </div>
-              </div>
-
-              {/* Preview */}
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                  <h3 className="font-semibold text-gray-900">Users Preview</h3>
-                </div>
-                <div className="max-h-96 overflow-y-auto">
-                  {parsedUsers.slice(0, 10).map((u, idx) => (
-                    <div key={idx} className="p-4 border-b border-gray-100 hover:bg-gray-50">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          <span className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold">
-                            {idx + 1}
-                          </span>
-                          <span className="text-xs font-semibold px-2 py-1 rounded"
-                            style={{ 
-                              backgroundColor: brandTheme.colors.primary + '20',
-                              color: brandTheme.colors.primary
-                            }}>
-                            {u.user_type}
-                          </span>
-                          {u.board && (
-                            <span className="text-xs font-semibold px-2 py-1 rounded"
-                              style={{ 
-                                backgroundColor: brandTheme.colors.secondary + '20',
-                                color: brandTheme.colors.secondary
-                              }}>
-                              {u.board}
-                            </span>
-                          )}
-                          {u.student_class && (
-                            <span className="text-xs font-semibold px-2 py-1 rounded"
-                              style={{ 
-                                backgroundColor: brandTheme.colors.accent + '20',
-                                color: brandTheme.colors.accent
-                              }}>
-                              Class {u.student_class}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-xs text-gray-500">{u.phone}</span>
-                      </div>
-                      <p className="text-sm font-medium text-gray-900">{u.full_name}</p>
-                      {u.email && (
-                        <p className="text-xs text-gray-600">{u.email}</p>
-                      )}
-                    </div>
-                  ))}
-                  {parsedUsers.length > 10 && (
-                    <div className="p-4 text-center text-sm text-gray-500">
-                      ... and {parsedUsers.length - 10} more users
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex space-x-3">
                 <button
-                  onClick={() => setUploadStep('select')}
-                  className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors"
+                  onClick={() => {
+                    setUploadStep('select');
+                    setParsedUsers([]);
+                    setPreviewPage(1);
+                  }}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 font-medium text-sm rounded-lg hover:bg-gray-50 transition-colors"
                 >
-                  Choose Different File
+                  Change File
+                </button>
+              </div>
+
+              {/* Auto-set fields notice */}
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800">
+                  <strong>Auto-set:</strong> Board = College ID, Academic Year = {calculateAcademicYear(collegeAcademicYearStartMonth)}, Created By = Current User
+                </p>
+              </div>
+
+              {/* Preview Table with Pagination */}
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-100 border-b border-gray-200">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">#</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Name</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Phone</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Class/Roll</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {parsedUsers
+                        .slice((previewPage - 1) * PREVIEW_ITEMS_PER_PAGE, previewPage * PREVIEW_ITEMS_PER_PAGE)
+                        .map((user, idx) => {
+                          const actualIndex = (previewPage - 1) * PREVIEW_ITEMS_PER_PAGE + idx;
+                          const userTypeLower = user.user_type?.toLowerCase().trim();
+                          return (
+                            <tr key={actualIndex} className="hover:bg-gray-50 transition-colors">
+                              <td className="px-4 py-3 text-sm text-gray-600">{actualIndex + 1}</td>
+                              <td className="px-4 py-3 text-sm text-gray-900 font-medium">{user.full_name}</td>
+                              <td className="px-4 py-3 text-sm text-gray-600">{user.phone}</td>
+                              <td className="px-4 py-3 text-sm">
+                                <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium">
+                                  {user.user_type}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                {userTypeLower === 'student' 
+                                  ? `${user.student_class || '—'} / ${user.student_roll || '—'}`
+                                  : user.teacher_classes || '—'
+                                }
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Preview Pagination */}
+                {parsedUsers.length > PREVIEW_ITEMS_PER_PAGE && (
+                  <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      Showing {((previewPage - 1) * PREVIEW_ITEMS_PER_PAGE) + 1} to {Math.min(previewPage * PREVIEW_ITEMS_PER_PAGE, parsedUsers.length)} of {parsedUsers.length} users
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => setPreviewPage(prev => Math.max(1, prev - 1))}
+                        disabled={previewPage === 1}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Previous
+                      </button>
+                      
+                      {/* Page numbers */}
+                      {Array.from({ length: Math.ceil(parsedUsers.length / PREVIEW_ITEMS_PER_PAGE) }, (_, i) => i + 1)
+                        .filter(page => {
+                          const totalPages = Math.ceil(parsedUsers.length / PREVIEW_ITEMS_PER_PAGE);
+                          return page === 1 || 
+                                 page === totalPages || 
+                                 page === previewPage || 
+                                 page === previewPage - 1 || 
+                                 page === previewPage + 1;
+                        })
+                        .map((page, idx, arr) => {
+                          const showEllipsis = idx > 0 && page - arr[idx - 1] > 1;
+                          return (
+                            <div key={page} className="flex items-center">
+                              {showEllipsis && <span className="px-2 text-gray-500">...</span>}
+                              <button
+                                onClick={() => setPreviewPage(page)}
+                                className={`px-3 py-1 border rounded-md text-sm font-medium transition-colors ${
+                                  previewPage === page
+                                    ? 'border-indigo-500 bg-indigo-50 text-indigo-600'
+                                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      
+                      <button
+                        onClick={() => setPreviewPage(prev => Math.min(Math.ceil(parsedUsers.length / PREVIEW_ITEMS_PER_PAGE), prev + 1))}
+                        disabled={previewPage === Math.ceil(parsedUsers.length / PREVIEW_ITEMS_PER_PAGE)}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex space-x-4">
+                <button
+                  onClick={() => {
+                    setUploadStep('select');
+                    setParsedUsers([]);
+                    setPreviewPage(1);
+                  }}
+                  className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
                 </button>
                 <button
                   onClick={uploadUsers}
-                  className="flex-1 px-4 py-3 text-white font-medium rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center space-x-2"
+                  className="flex-1 px-4 py-3 text-white font-medium rounded-lg transition-all shadow-md hover:shadow-lg"
                   style={{ background: brandTheme.gradients.primary }}
                 >
-                  <Upload size={18} />
-                  <span>Upload {parsedUsers.length} Users</span>
+                  Upload {parsedUsers.length} Users
                 </button>
               </div>
             </div>
           )}
 
           {uploadStep === 'uploading' && (
-            <div className="flex flex-col items-center justify-center py-12">
-              <Loader2 size={64} className="animate-spin mb-6" style={{ color: brandTheme.colors.primary }} />
-              <h3 className="text-base font-semibold text-gray-900 mb-2">Uploading Users...</h3>
-              <p className="text-gray-600 mb-6">Please wait while we process your users</p>
+            <div className="flex flex-col items-center justify-center py-20">
+              <div 
+                className="w-24 h-24 rounded-full flex items-center justify-center mb-6"
+                style={{ backgroundColor: brandTheme.colors.primary + '15' }}
+              >
+                <Loader2 size={48} className="animate-spin" style={{ color: brandTheme.colors.primary }} />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Uploading Users...</h3>
+              <p className="text-gray-500 mb-6">Please wait while we process your file</p>
+              
+              {/* Progress Bar */}
               <div className="w-full max-w-md">
-                <div className="bg-gray-200 rounded-full h-4 overflow-hidden">
-                  <div
-                    className="h-full transition-all duration-300"
-                    style={{
+                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                  <span>Progress</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{ 
                       width: `${uploadProgress}%`,
                       background: brandTheme.gradients.primary
                     }}
                   />
                 </div>
-                <p className="text-center mt-2 text-sm font-medium text-gray-700">{uploadProgress}%</p>
               </div>
             </div>
           )}

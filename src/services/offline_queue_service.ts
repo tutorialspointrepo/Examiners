@@ -37,7 +37,7 @@ class OfflineQueueService {
   private readonly STORAGE_KEY = 'exam_answer_queue';
   private readonly MAX_RETRY_COUNT = 3;
   private readonly SYNC_INTERVAL = 5000; // 5 seconds
-  private syncTimer: number | null = null;
+  private syncTimer: ReturnType<typeof setInterval> | null = null;
 
   // Singleton pattern
   static getInstance(): OfflineQueueService {

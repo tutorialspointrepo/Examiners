@@ -1,0 +1,19 @@
+{
+  "name": "upload_data",
+  "version": "1.0.0",
+  "description": "",
+  "main": "load_data.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "firebase-admin": "^13.5.0",
+    "readline-sync": "^1.4.10",
+    "xlsx": "^0.18.5"
+  }
+}

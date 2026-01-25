@@ -705,6 +705,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
     return null;
   }
 
+ // ✅ Responsive Toolbar Button - smaller on 14" screens
   const ToolbarButton = ({
     onClick,
     active = false,
@@ -727,7 +728,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
       }}
       disabled={disabled}
       title={title}
-      className={`p-2 rounded transition-colors text-sm ${
+      className={`p-1 xl:p-1.5 rounded transition-colors text-sm ${
         active
           ? darkMode
             ? 'bg-blue-600 text-white'
@@ -737,16 +738,18 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
           : 'text-gray-700 hover:bg-gray-200'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
     >
-      <FontAwesomeIcon icon={icon} className="w-4 h-4" />
+      <FontAwesomeIcon icon={icon} className="w-3 h-3 xl:w-3.5 xl:h-3.5" />
     </button>
   );
 
+  // ✅ Responsive Divider
   const Divider = () => (
     <div
-      className={`w-px h-6 mx-1 ${darkMode ? 'bg-gray-600' : 'bg-gray-300'}`}
+      className={`w-px h-4 xl:h-5 mx-0.5 ${darkMode ? 'bg-gray-600' : 'bg-gray-300'}`}
     />
   );
 
+  // ✅ Responsive Dropdown Button
   const DropdownButton = ({
     onClick,
     icon,
@@ -764,7 +767,7 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
         onClick();
       }}
       title={title}
-      className={`flex items-center space-x-1 px-2 py-2 rounded transition-colors text-sm ${
+      className={`flex items-center space-x-0.5 px-1 xl:px-1.5 py-1 xl:py-1.5 rounded transition-colors text-sm ${
         active
           ? darkMode
             ? 'bg-blue-600 text-white'
@@ -774,8 +777,8 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
           : 'text-gray-700 hover:bg-gray-200'
       }`}
     >
-      <FontAwesomeIcon icon={icon} className="w-4 h-4" />
-      <FontAwesomeIcon icon={faChevronDown} className="w-3 h-3" />
+      <FontAwesomeIcon icon={icon} className="w-3 h-3 xl:w-3.5 xl:h-3.5" />
+      <FontAwesomeIcon icon={faChevronDown} className="w-2 h-2 xl:w-2.5 xl:h-2.5" />
     </button>
   );
 

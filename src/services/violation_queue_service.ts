@@ -39,7 +39,6 @@ class ViolationQueueService {
   private readonly MAX_RETRY_COUNT = 5; // More retries for violations
   private readonly SYNC_INTERVAL = 12000; // ✅ 12 seconds (offset from answer sync at 5s)
   private readonly MAX_QUEUE_AGE = 48 * 60 * 60 * 1000; // 48 hours
-  private syncTimer: number | null = null;
   private syncCallback: ((violation: QueuedViolation) => Promise<boolean>) | null = null;
 
   // Singleton pattern
@@ -268,11 +267,11 @@ class ViolationQueueService {
    * Start automatic sync timer
    */
   private startAutoSync(): void {
-    this.syncTimer = window.setInterval(() => {
-      if (this.isOnline && this.queue.length > 0 && !this.syncInProgress) {
-        this.syncQueue();
-      }
-    }, this.SYNC_INTERVAL);
+      window.setInterval(() => {
+        if (this.isOnline && this.queue.length > 0 && !this.syncInProgress) {
+          this.syncQueue();
+        }
+      }, this.SYNC_INTERVAL);
   }
 
   // ==================== QUEUE OPERATIONS ====================

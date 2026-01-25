@@ -5,6 +5,34 @@ import BulkUploadUsers from './BulkUploadUsers';
 import { useBrand } from './BrandContext';
 import { firebaseService } from './services/firebase_service';
 
+// Get academic year from database for a college (same as CreateExamModal)
+const getCurrentAcademicYear = async (collegeId?: string): Promise<string> => {
+  if (collegeId) {
+    return await firebaseService.getAcademicYear(collegeId);
+  }
+  // Fallback: calculate based on April start
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  if (currentMonth >= 4) {
+    return `${currentYear}-${(currentYear + 1).toString().slice(-2)}`;
+  } else {
+    return `${currentYear - 1}-${currentYear.toString().slice(-2)}`;
+  }
+};
+
+// Generate list of academic years based on current academic year
+const generateAcademicYears = (currentAcademicYear: string): string[] => {
+  const startYear = parseInt(currentAcademicYear.split('-')[0]);
+  
+  const years: string[] = [];
+  for (let i = 0; i < 5; i++) {
+    const year = startYear + i;
+    years.push(`${year}-${(year + 1).toString().slice(-2)}`);
+  }
+  return years;
+};
+
 interface CreateUserModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -214,9 +242,10 @@ const [isSubmitting, setIsSubmitting] = useState(false);
         ? college.subjects
         : ['Mathematics', 'Science', 'English', 'Hindi', 'Social Science', 'Physics', 'Chemistry', 'Biology'];
       
-      const academicYears = ['2024-25', '2025-26', '2026-27', '2027-28', '2028-29', '2029-30'];
+      // Get academic year from database (same approach as CreateExamModal)
+      const currentAcademicYear = await getCurrentAcademicYear(activeCollegeId);
+      const academicYears = generateAcademicYears(currentAcademicYear);
       
-      console.log('Setting college data:', { boards, classes, subjects, academicYears });
       setCollegeData({ boards, classes, subjects, academicYears });
       
       // Set initial form values when switching to manual view
@@ -225,7 +254,7 @@ const [isSubmitting, setIsSubmitting] = useState(false);
           ...prev,
           board: boards[0] || '',
           studentClass: classes[0] || '',
-          academicYear: academicYears[0] || ''
+          academicYear: currentAcademicYear
         }));
       }
     } catch (error) {
@@ -233,11 +262,13 @@ const [isSubmitting, setIsSubmitting] = useState(false);
       setError('Failed to load college data. Using default values.');
       
       // Set fallback values even on error
+      const fallbackCurrentYear = await getCurrentAcademicYear();
+      const fallbackAcademicYears = generateAcademicYears(fallbackCurrentYear);
       const fallbackData = {
         boards: ['CBSE', 'ICSE', 'State Board'],
         classes: ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'],
         subjects: ['Mathematics', 'Science', 'English', 'Hindi', 'Social Science', 'Physics', 'Chemistry', 'Biology'],
-        academicYears: ['2025-26', '2026-27', '2027-28', '2028-29', '2029-30']
+        academicYears: fallbackAcademicYears
       };
       setCollegeData(fallbackData);
       
@@ -246,7 +277,7 @@ const [isSubmitting, setIsSubmitting] = useState(false);
           ...prev,
           board: fallbackData.boards[0],
           studentClass: fallbackData.classes[0],
-          academicYear: fallbackData.academicYears[0]
+          academicYear: fallbackCurrentYear
         }));
       }
     } finally {
@@ -850,39 +881,6 @@ const [isSubmitting, setIsSubmitting] = useState(false);
 
                       <div className="dropdown-container">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Academic Year <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <button
-                            onClick={() => setOpenDropdown(openDropdown === 'academicYear' ? null : 'academicYear')}
-                            className="w-full px-3 py-3 border rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm focus:ring-2 focus:border-transparent border-gray-300 hover:border-gray-400 bg-white"
-                          >
-                            <span className="text-gray-900">{formData.academicYear || 'Select Academic Year'}</span>
-                            <ChevronDown size={16} className="text-gray-500" />
-                          </button>
-                          {openDropdown === 'academicYear' && (
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto">
-                              {collegeData.academicYears.map((year) => (
-                                <button
-                                  key={year}
-                                  onClick={() => {
-                                    handleInputChange('academicYear', year);
-                                    setOpenDropdown(null);
-                                  }}
-                                  className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors font-medium text-gray-900 text-sm"
-                                >
-                                  {year}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="dropdown-container">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
                           Class <span className="text-red-500">*</span>
                         </label>
                         <div className="relative">
@@ -905,37 +903,6 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                                   className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors font-medium text-gray-900 text-sm"
                                 >
                                   {cls}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="dropdown-container">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Board <span className="text-red-500">*</span>
-                        </label>
-                        <div className="relative">
-                          <button
-                            onClick={() => setOpenDropdown(openDropdown === 'studentBoard' ? null : 'studentBoard')}
-                            className="w-full px-3 py-3 border rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm focus:ring-2 focus:border-transparent border-gray-300 hover:border-gray-400 bg-white"
-                          >
-                            <span className="text-gray-900">{formData.board || 'Select Board'}</span>
-                            <ChevronDown size={16} className="text-gray-500" />
-                          </button>
-                          {openDropdown === 'studentBoard' && (
-                            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto">
-                              {collegeData.boards.map((board) => (
-                                <button
-                                  key={board}
-                                  onClick={() => {
-                                    handleInputChange('board', board);
-                                    setOpenDropdown(null);
-                                  }}
-                                  className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors font-medium text-gray-900 text-sm"
-                                >
-                                  {board}
                                 </button>
                               ))}
                             </div>
@@ -1074,22 +1041,6 @@ const [isSubmitting, setIsSubmitting] = useState(false);
                       <p className="text-xs text-gray-500 mt-1">
                         Selected: {formData.teacherSubjects.length} subject(s)
                       </p>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Board <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        value={formData.board}
-                        onChange={(e) => handleInputChange('board', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:border-transparent text-sm bg-white"
-                      >
-                        <option value="">Select Board</option>
-                        {collegeData.boards.map(board => (
-                          <option key={board} value={board}>{board}</option>
-                        ))}
-                      </select>
                     </div>
                   </div>
                 )}

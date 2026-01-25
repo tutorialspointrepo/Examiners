@@ -43,6 +43,208 @@ interface ExamData {
 }
 
 // ============================================
+// RESUME AI ENHANCEMENT FUNCTION
+// Add this to your index.ts file (after the imports section)
+// ============================================
+
+/**
+ * 📝 Resume Content Enhancement with AI
+ * Enhances resume summaries, job descriptions, and skills using GPT
+ */
+export const enhanceResumeContent = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 60,
+    memory: '512MB'
+  })
+  .https.onCall(async (data, context) => {
+    // Check authentication
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'User must be authenticated to use AI enhancement'
+      );
+    }
+
+    const { type, content, context: requestContext, userId, organizationId } = data;
+
+    // Validate required fields
+    if (!type || !content) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Missing required fields: type and content'
+      );
+    }
+
+    // Validate content length
+    if (content.length > 5000) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Content exceeds maximum length of 5000 characters'
+      );
+    }
+
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'OpenAI API key not configured'
+      );
+    }
+
+    try {
+      const client = new OpenAI({ apiKey });
+
+      let systemPrompt = '';
+      let userPrompt = '';
+
+      switch (type) {
+        case 'summary':
+          systemPrompt = `You are an expert resume writer and career coach. Your task is to enhance professional summaries to be compelling, concise, and ATS-friendly.`;
+          
+          const personalInfo = requestContext?.personalInfo || {};
+          userPrompt = `Enhance this professional summary for a resume. Make it:
+- Compelling and attention-grabbing
+- Concise (2-4 sentences, max 100 words)
+- ATS-friendly with relevant keywords
+- Professional yet personable
+- Focused on value proposition
+
+${personalInfo.title ? `Job Title: ${personalInfo.title}` : ''}
+${personalInfo.fullName ? `Name: ${personalInfo.fullName}` : ''}
+
+Current Summary:
+"${content}"
+
+Return ONLY the enhanced summary text, no quotes, no explanation.`;
+          break;
+
+        case 'experience':
+          systemPrompt = `You are an expert resume writer specializing in crafting impactful job descriptions. Transform job responsibilities into achievement-focused bullet points.`;
+          
+          const position = requestContext?.position || 'Professional';
+          const company = requestContext?.company || '';
+          
+          userPrompt = `Transform this job description into 3-5 powerful resume bullet points. Make each point:
+- Start with a strong action verb
+- Include quantifiable achievements where possible
+- Be ATS-friendly with relevant keywords
+- Focus on impact and results
+- Be concise (one line each)
+
+Position: ${position}
+${company ? `Company: ${company}` : ''}
+
+Current Description:
+"${content}"
+
+Return ONLY the bullet points as a JSON array of strings. Example format:
+["Achieved X by doing Y, resulting in Z", "Led team of N to accomplish X"]`;
+          break;
+
+        case 'skills':
+          systemPrompt = `You are an expert career advisor who helps identify and articulate professional skills for resumes.`;
+          
+          userPrompt = `Based on this content, suggest relevant skills to add to a resume. Categorize them into:
+- Technical Skills
+- Soft Skills
+
+Content:
+"${content}"
+
+Return as JSON: {"technical": ["skill1", "skill2"], "soft": ["skill1", "skill2"]}`;
+          break;
+
+        case 'optimize':
+          systemPrompt = `You are an ATS (Applicant Tracking System) optimization expert who helps make resumes more discoverable.`;
+          
+          userPrompt = `Optimize this resume content for ATS systems while maintaining readability:
+
+"${content}"
+
+Return the optimized version with improved keyword usage.`;
+          break;
+
+        default:
+          throw new functions.https.HttpsError(
+            'invalid-argument',
+            `Invalid enhancement type: ${type}`
+          );
+      }
+
+      // Call OpenAI
+      const completion = await client.chat.completions.create({
+        model: AI_MODELS.GPT_4O_MINI,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 1000
+      });
+
+      let result = completion.choices[0]?.message?.content || '';
+
+      // Parse response based on type
+      let enhanced: string | string[] = result.trim();
+
+      if (type === 'experience') {
+        // Parse JSON array for experience bullet points
+        try {
+          // Clean up the response
+          let cleanResult = result.trim();
+          cleanResult = cleanResult.replace(/^```json?\s*/, '');
+          cleanResult = cleanResult.replace(/\s*```$/, '');
+          
+          const parsed = JSON.parse(cleanResult);
+          if (Array.isArray(parsed)) {
+            enhanced = parsed;
+          } else {
+            enhanced = [result.trim()];
+          }
+        } catch (parseError) {
+          // If JSON parsing fails, split by newlines
+          enhanced = result
+            .split('\n')
+            .map(line => line.replace(/^[-•*]\s*/, '').trim())
+            .filter(line => line.length > 0);
+        }
+      } else if (type === 'skills') {
+        // Parse JSON for skills
+        try {
+          let cleanResult = result.trim();
+          cleanResult = cleanResult.replace(/^```json?\s*/, '');
+          cleanResult = cleanResult.replace(/\s*```$/, '');
+          enhanced = cleanResult;
+        } catch {
+          enhanced = result.trim();
+        }
+      }
+
+      // Log usage for monitoring
+      console.log(`📝 Resume AI Enhancement - Type: ${type}, User: ${userId}, Org: ${organizationId}`);
+
+      return {
+        enhanced,
+        suggestions: [],
+        metadata: {
+          type,
+          timestamp: new Date().toISOString(),
+          model: AI_MODELS.GPT_4O_MINI
+        }
+      };
+
+    } catch (error: any) {
+      console.error('Resume AI Enhancement Error:', error);
+      throw new functions.https.HttpsError(
+        'internal',
+        'Failed to enhance content',
+        error.message
+      );
+    }
+  });
+
+// ============================================
 // SECURITY: SANITIZATION HELPER FUNCTIONS
 // ============================================
 
@@ -2019,14 +2221,14 @@ export const sendWelcomeEmail = functions
         password,
         userType,
         collegeName,
-        loginUrl: 'https://your-app-url.com/login', // TODO: Update this
+        loginUrl: process.env.LOGIN_URL || 'https://www.examiners.app/login',
       });
 
       // ============================================
       // SEND EMAIL
       // ============================================
       const mailOptions = {
-        from: `EXAMINERS System <noreply@tutorialspoint.com>`,
+        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
         to: email,
         subject: `Welcome to EXAMINERS - Your Account is Ready!`,
         html: emailHtml,
@@ -2150,7 +2352,7 @@ export const sendOTPEmail = functions
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
             
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
-              © 2025 Tutorials Point India Private Limited. All rights reserved.<br>
+              © ${new Date().getFullYear()} EXAMINERS. All rights reserved.<br>
               EXAMINERS - AI-Powered Educational Technology Platform
             </p>
           </div>
@@ -2161,7 +2363,7 @@ export const sendOTPEmail = functions
       // SEND EMAIL
       // ============================================
       const mailOptions = {
-        from: `EXAMINERS System <noreply@tutorialspoint.com>`,
+        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
         to: email,
         subject: 'EXAMINERS - Password Reset OTP',
         html: emailHtml,
@@ -2235,7 +2437,7 @@ export const resetPasswordSecurely = functions
       const auth = admin.auth();
 
       // 4. Verify OTP
-      const encodedEmail = email.toLowerCase().replace(/\./g, '_');
+      const encodedEmail = email.toLowerCase().replace(/\./g, '_dot_').replace(/@/g, '_at_');
       const otpDoc = await db.collection(COLLECTIONS.PASSWORD_RESET_OTPS).doc(encodedEmail).get();
 
       if (!otpDoc.exists) {
@@ -2485,6 +2687,8 @@ function generateWelcomeEmailHTML(data: {
     }
     .content {
       padding: 40px 30px;
+      background: #fcfbfb;
+      border: 1px solid #eee;
     }
     .credentials-box {
       background: #f7fafc;
@@ -2580,7 +2784,7 @@ function generateWelcomeEmailHTML(data: {
       text-align: center;
       font-size: 12px;
       color: #666;
-      border-top: 1px solid #e2e8f0;
+      border: 1px solid #e2e8f0;
     }
     .footer p {
       margin: 5px 0;
@@ -2595,32 +2799,6 @@ function generateWelcomeEmailHTML(data: {
 <body>
   <div class="email-container">
     <div class="header">
-      <!-- Logo -->
-      <div class="logo-container">
-        <svg width="96" height="96" viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
-          <defs>
-            <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" style="stop-color:#5B9FED;stop-opacity:1" />
-              <stop offset="100%" style="stop-color:#3DD8E8;stop-opacity:1" />
-            </linearGradient>
-          </defs>
-          <rect x="4" y="4" width="88" height="88" rx="20" fill="url(#bgGradient)"/>
-          <rect x="4" y="4" width="88" height="88" rx="20" fill="black" opacity="0.05"/>
-          <rect x="28" y="32" width="36" height="32" rx="3" fill="white"/>
-          <rect x="34" y="40" width="20" height="3" rx="1.5" fill="#8B7FED"/>
-          <rect x="34" y="47" width="16" height="3" rx="1.5" fill="#EE6FA4"/>
-          <rect x="34" y="54" width="18" height="3" rx="1.5" fill="#FF9966"/>
-          <circle cx="60" cy="28" r="11" fill="#10B981"/>
-          <circle cx="60" cy="28" r="11" fill="white" opacity="0.2"/>
-          <path d="M 55 28 L 58.5 31.5 L 65 24" stroke="white" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-          <circle cx="20" cy="20" r="3" fill="#5B9FED" opacity="0.6"/>
-          <circle cx="76" cy="18" r="2.5" fill="#3DD8E8" opacity="0.5"/>
-          <circle cx="72" cy="76" r="3.5" fill="#A78BFA" opacity="0.5"/>
-          <circle cx="24" cy="74" r="2" fill="#EE6FA4" opacity="0.4"/>
-          <circle cx="78" cy="50" r="2" fill="#8B7FED" opacity="0.3"/>
-        </svg>
-      </div>
-      
       <h1>Welcome to EXAMINERS!</h1>
       <p>Your account has been successfully created</p>
     </div>
@@ -2644,7 +2822,7 @@ function generateWelcomeEmailHTML(data: {
       <div class="warning-box">
         <strong>⚠️ Important Security Notice</strong>
         <ul>
-          <li>This is a <strong>temporary password</strong></li>
+          <li>This is a temporary password</li>
           <li>You will be required to change it on your first login</li>
           <li>Never share your password with anyone</li>
           <li>Keep this email secure and delete it after changing your password</li>
@@ -2670,8 +2848,7 @@ function generateWelcomeEmailHTML(data: {
       <h3 style="color: #667eea;">Need Help? 🆘</h3>
       <p>If you have any questions or need assistance getting started:</p>
       <ul>
-        <li>📧 Email: <a href="mailto:lpu@tutorialspoint.com" style="color: #667eea;">lpu@tutorialspoint.com</a></li>
-        <li>📞 Phone: +91 88883 70983</li>
+        <li>📧 Email: <a href="mailto:support@examiners.app" style="color: #667eea;">support@examiners.app</a></li>
         <li>💬 Contact your system administrator</li>
       </ul>
     </div>
@@ -2754,7 +2931,7 @@ export const sendPasswordResetEmail = functions
 
       // Send email
       const mailOptions = {
-        from: `EXAMINERS System <noreply@tutorialspoint.com>`,
+        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
         to: email,
         subject: `🔒 Password Reset Request - EXAMINERS`,
         html: emailHtml,
@@ -2837,7 +3014,7 @@ export const sendPasswordResetEmail = functions
       <div class="divider"></div>
       <h3 style="color: #667eea;">Need Help? 🆘</h3>
       <p>If you're having trouble resetting your password or need assistance:</p>
-      <ul><li>📧 Email: <a href="mailto:lpu@tutorialspoint.com" style="color: #667eea;">lpu@tutorialspoint.com</a></li><li>📞 Phone: +91 88883 70983</li><li>💬 Contact your system administrator</li></ul>
+      <ul><li>📧 Email: <a href="mailto:support@examiners.app" style="color: #667eea;">support@examiners.app</a></li><li>💬 Contact your system administrator</li></ul>
     </div>
     <div class="footer">
       <p><strong>EXAMINERS</strong> - AI-Powered Secure Exams Management Application</p>
@@ -4051,5 +4228,619 @@ export const checkGradingProgress = functions
       
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+// ============================================
+// CHANGE USER PASSWORD (Admin Function)
+// Allows admins to change another user's password
+// ============================================
+export const changeUserPasswordAdmin = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 30,
+    memory: '256MB'
+  })
+  .https.onCall(async (data, context) => {
+    // Verify caller is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'Must be logged in to change passwords'
+      );
+    }
+
+    const { targetUserId, newPassword, performedBy, performedByRole } = data;
+
+    // Validate inputs
+    if (!targetUserId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Target user ID is required'
+      );
+    }
+
+    if (!newPassword) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'New password is required'
+      );
+    }
+
+    if (newPassword.length < 6) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Password must be at least 6 characters'
+      );
+    }
+
+    try {
+      const db = admin.firestore();
+      
+      // Get the performer's user document to verify role
+      const performerDoc = await db.collection(COLLECTIONS.USERS).doc(performedBy).get();
+      if (!performerDoc.exists) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Performer user not found'
+        );
+      }
+      
+      // Get the target user document
+      const targetDoc = await db.collection(COLLECTIONS.USERS).doc(targetUserId).get();
+      if (!targetDoc.exists) {
+        throw new functions.https.HttpsError(
+          'not-found',
+          'Target user not found'
+        );
+      }
+      
+      const targetUserData = targetDoc.data();
+      const targetUserType = targetUserData?.userType || 'student';
+      
+      // Permission check:
+      // - system_admin can change anyone's password
+      // - admin can change anyone's password EXCEPT other admins
+      // - principal, dean, teacher can only change student passwords
+      // - students cannot change anyone's password
+      const allowedRoles = ['system_admin', 'admin', 'principal', 'dean', 'teacher'];
+      
+      if (!allowedRoles.includes(performedByRole)) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'You do not have permission to change passwords'
+        );
+      }
+      
+      // Admin cannot change other admin's password
+      if (performedByRole === 'admin' && (targetUserType === 'admin' || targetUserType === 'system_admin')) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Admins cannot change other admin passwords'
+        );
+      }
+      
+      // Non-admin roles can only change student passwords
+      if (['principal', 'dean', 'teacher'].includes(performedByRole) && targetUserType !== 'student') {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'You can only change student passwords'
+        );
+      }
+
+      // Change the password using Admin SDK
+      await admin.auth().updateUser(targetUserId, {
+        password: newPassword
+      });
+
+      // Update Firestore user document
+      await db.collection(COLLECTIONS.USERS).doc(targetUserId).update({
+        passwordChangedAt: admin.firestore.FieldValue.serverTimestamp(),
+        passwordChangedBy: performedBy,
+        passwordChangedByRole: performedByRole,
+        mustChangePassword: false,
+        temporaryPassword: false,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      console.log(`✅ Password changed for user ${targetUserId} by ${performedBy} (${performedByRole})`);
+
+      return { 
+        success: true,
+        message: 'Password changed successfully'
+      };
+      
+    } catch (error: any) {
+      console.error('❌ Error changing user password:', error);
+      
+      // If it's already a HttpsError, re-throw it
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+      
+      throw new functions.https.HttpsError(
+        'internal',
+        error.message || 'Failed to change password'
+      );
+    }
+  });
+
+// ============================================
+// CREATE USER (Server-side with Admin SDK)
+// Creates Firebase Auth user without logging out the caller
+// ============================================
+export const createUser = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 60,
+    memory: '256MB'
+  })
+  .https.onCall(async (data, context) => {
+    // Verify caller is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'Must be logged in to create users'
+      );
+    }
+
+    const { 
+      fullName, 
+      title,
+      email, 
+      phone, 
+      userType, 
+      collegeId, 
+      board,
+      studentRoll,
+      academicYear,
+      studentClass,
+      teacherClasses,
+      teacherSubjects,
+      createdBy,
+      createdByRole
+    } = data;
+
+    // Validate required fields
+    if (!fullName || !phone || !userType || !collegeId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Missing required fields: fullName, phone, userType, collegeId'
+      );
+    }
+
+    // Permission check - only these roles can create users
+    const allowedRoles = ['system_admin', 'admin', 'principal', 'dean', 'teacher'];
+    if (!allowedRoles.includes(createdByRole)) {
+      throw new functions.https.HttpsError(
+        'permission-denied',
+        'You do not have permission to create users'
+      );
+    }
+
+    try {
+      const db = admin.firestore();
+      
+      // Normalize phone number
+      const normalizePhone = (phoneNum: string): string => {
+        if (!phoneNum) return '';
+        const cleaned = phoneNum.replace(/\D/g, '');
+        if (cleaned.length === 10) {
+          return `+91${cleaned}`;
+        }
+        return phoneNum.startsWith('+') ? phoneNum : `+${phoneNum}`;
+      };
+
+      const normalizedPhone = normalizePhone(phone);
+      const phoneRaw = normalizedPhone.replace('+91', '');
+
+      // Check if user already exists by phone
+      const phoneQuery = await db.collection(COLLECTIONS.USERS)
+        .where('phone', '==', normalizedPhone)
+        .limit(1)
+        .get();
+      
+      if (!phoneQuery.empty) {
+        throw new functions.https.HttpsError(
+          'already-exists',
+          'A user with this phone number already exists'
+        );
+      }
+
+      // Check if user already exists by email
+      if (email) {
+        const emailQuery = await db.collection(COLLECTIONS.USERS)
+          .where('email', '==', email.toLowerCase())
+          .limit(1)
+          .get();
+        
+        if (!emailQuery.empty) {
+          throw new functions.https.HttpsError(
+            'already-exists',
+            'A user with this email already exists'
+          );
+        }
+      }
+
+      // Check if student roll number already exists (for students only)
+      if (userType === 'student' && studentRoll && studentRoll.trim()) {
+        const rollQuery = await db.collection(COLLECTIONS.USERS)
+          .where('collegeId', '==', collegeId)
+          .where('studentRoll', '==', studentRoll.trim())
+          .limit(1)
+          .get();
+        
+        if (!rollQuery.empty) {
+          throw new functions.https.HttpsError(
+            'already-exists',
+            'A student with this roll number already exists in this college'
+          );
+        }
+      }
+
+      let userId: string;
+      let temporaryPassword: string | undefined;
+      let authAccountCreated = false;
+
+      // Generate random password
+      const generatePassword = (): string => {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%';
+        let password = '';
+        for (let i = 0; i < 8; i++) {
+          password += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return password;
+      };
+
+      // Create Firebase Auth user if email provided
+      if (email && email.trim()) {
+        temporaryPassword = generatePassword();
+        
+        try {
+          // Admin SDK creates user WITHOUT signing them in
+          const userRecord = await admin.auth().createUser({
+            email: email.toLowerCase(),
+            password: temporaryPassword,
+            displayName: fullName
+          });
+          
+          userId = userRecord.uid;
+          authAccountCreated = true;
+          console.log(`✅ Auth user created: ${userId}`);
+          
+        } catch (authError: any) {
+          if (authError.code === 'auth/email-already-exists') {
+            throw new functions.https.HttpsError(
+              'already-exists',
+              'This email address is already registered in Firebase Auth'
+            );
+          }
+          throw authError;
+        }
+      } else {
+        // Generate unique ID for users without auth account
+        const newUserRef = db.collection(COLLECTIONS.USERS).doc();
+        userId = newUserRef.id;
+      }
+
+      // Generate permissions based on user type
+      const getPermissions = (type: string) => {
+        const permissionMap: Record<string, string[]> = {
+          'student': ['view_exams', 'attempt_exams', 'view_results'],
+          'teacher': ['view_exams', 'create_exams', 'grade_exams', 'view_results', 'view_students'],
+          'dean': ['view_exams', 'create_exams', 'grade_exams', 'view_results', 'view_students', 'manage_teachers'],
+          'principal': ['view_exams', 'create_exams', 'grade_exams', 'view_results', 'view_students', 'manage_teachers', 'manage_college'],
+          'admin': ['all']
+        };
+        return permissionMap[type] || [];
+      };
+
+      // Create user document
+      const userDoc: any = {
+        userId,
+        fullName,
+        title: title || '',
+        email: email ? email.toLowerCase() : '',
+        phone: normalizedPhone,
+        phoneRaw,
+        userType,
+        collegeId,
+        board: board || 'Not Specified',
+        status: 'active',
+        createdBy,
+        createdByRole,
+        permissions: getPermissions(userType),
+        mustChangePassword: true,
+        firstLogin: true,
+        passwordChangedAt: null,
+        temporaryPassword: authAccountCreated,
+        accountLocked: false,
+        failedLoginAttempts: 0,
+        lastLoginAt: null,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      // Add student-specific fields
+      if (userType === 'student') {
+        userDoc.studentRoll = studentRoll || '';
+        userDoc.academicYear = academicYear || '';
+        userDoc.studentClass = studentClass || '';
+        userDoc.studentHistory = [{
+          academicYear: academicYear || '',
+          className: studentClass || '',
+          rollNumber: studentRoll || '',
+          board: board || 'Not Specified',
+          collegeId
+        }];
+      }
+
+      // Add teacher/principal/dean-specific fields
+      if (['teacher', 'principal', 'dean'].includes(userType)) {
+        userDoc.teacherClasses = teacherClasses || [];
+        userDoc.teacherSubjects = teacherSubjects || [];
+      }
+
+      // Save user document
+      await db.collection(COLLECTIONS.USERS).doc(userId).set(userDoc);
+      console.log(`✅ User document saved: ${userId}`);
+
+      // Save temporary credentials if auth account created
+      if (authAccountCreated && temporaryPassword) {
+        await db.collection('pending_user_credentials').doc(userId).set({
+          email: email.toLowerCase(),
+          fullName,
+          userType,
+          temporaryPassword,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          shared: false
+        });
+      }
+
+      // Update college counts
+      try {
+        const collegeRef = db.collection(COLLECTIONS.COLLEGES).doc(collegeId);
+        const updates: any = {
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        
+        updates[`roleCounts.${userType}`] = admin.firestore.FieldValue.increment(1);
+        
+        if (['teacher', 'principal', 'dean'].includes(userType)) {
+          updates.totalTeachers = admin.firestore.FieldValue.increment(1);
+          if (board && board !== 'Not Specified') {
+            updates[`boardWiseCounts.${board}.totalTeachers`] = admin.firestore.FieldValue.increment(1);
+          }
+        } else if (userType === 'student') {
+          updates.totalStudents = admin.firestore.FieldValue.increment(1);
+          if (board && board !== 'Not Specified') {
+            updates[`boardWiseCounts.${board}.totalStudents`] = admin.firestore.FieldValue.increment(1);
+          }
+        }
+        
+        await collegeRef.update(updates);
+      } catch (countError) {
+        console.warn('⚠️ Failed to update college counts:', countError);
+      }
+
+      // ✅ Send welcome email if auth account was created with email
+      if (authAccountCreated && email && temporaryPassword) {
+        try {
+          console.log('📧 Sending welcome email to:', email);
+          
+          // Fetch email credentials from Firestore
+          const emailCredsDoc = await db.doc(FIRESTORE_PATHS.EMAIL_CREDENTIALS).get();
+          
+          if (emailCredsDoc.exists) {
+            const emailCreds = emailCredsDoc.data();
+            
+            if (emailCreds?.MAIL_HOST && emailCreds?.MAIL_USERNAME && emailCreds?.MAIL_PASSWORD && emailCreds?.MAIL_PORT) {
+              // Create transporter
+              const transporter = nodemailer.createTransport({
+                host: emailCreds.MAIL_HOST,
+                port: parseInt(emailCreds.MAIL_PORT),
+                secure: false,
+                auth: {
+                  user: emailCreds.MAIL_USERNAME,
+                  pass: emailCreds.MAIL_PASSWORD,
+                },
+              });
+
+              // Get college name from database
+              let collegeName = '';
+              if (collegeId) {
+                const collegeDoc = await db.doc(`${COLLECTIONS.COLLEGES}/${collegeId}`).get();
+                if (collegeDoc.exists) {
+                  collegeName = collegeDoc.data()?.collegeName || '';
+                }
+              }
+
+              // Generate and send email
+              const emailHtml = generateWelcomeEmailHTML({
+                name: fullName,
+                email: email.toLowerCase(),
+                password: temporaryPassword,
+                userType,
+                collegeName,
+                loginUrl: process.env.LOGIN_URL || 'https://www.examiners.app/login',
+              });
+
+              await transporter.sendMail({
+                from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+                to: email.toLowerCase(),
+                subject: `Welcome to EXAMINERS - Your Account is Ready!`,
+                html: emailHtml,
+              });
+
+              console.log('✅ Welcome email sent successfully to:', email);
+            } else {
+              console.warn('⚠️ Incomplete email credentials, skipping welcome email');
+            }
+          } else {
+            console.warn('⚠️ Email credentials not found, skipping welcome email');
+          }
+        } catch (emailError: any) {
+          // Don't fail user creation if email fails
+          console.error('⚠️ Failed to send welcome email:', emailError.message);
+        }
+      }
+
+      console.log(`✅ User created successfully: ${fullName} (${userType})`);
+
+      return {
+        success: true,
+        userId,
+        temporaryPassword: authAccountCreated ? temporaryPassword : undefined,
+        message: 'User created successfully'
+      };
+
+    } catch (error: any) {
+      console.error('❌ Error creating user:', error);
+      
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+      
+      throw new functions.https.HttpsError(
+        'internal',
+        error.message || 'Failed to create user'
+      );
+    }
+  });
+
+// ============================================
+// ADD COLLEGE FUNCTION
+// ============================================
+
+/**
+ * 🏫 Add College/University
+ * Creates a new college/university document in Firestore
+ * Only system_admin can add colleges
+ */
+export const addCollege = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 30,
+    memory: '256MB'
+  })
+  .https.onCall(async (data, context) => {
+    // Check authentication
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'User must be authenticated to add colleges'
+      );
+    }
+
+    const {
+      collegeId,
+      collegeName,
+      academicYear,
+      address,
+      city,
+      state,
+      pincode,
+      phone,
+      email,
+      website,
+      establishedYear,
+      collegeType,
+      supportedBoards,
+      subjects,
+      validClasses,
+      examTypes,
+      features,
+      createdBy
+    } = data;
+
+    // Validate required fields
+    if (!collegeId || !collegeName) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Missing required fields: collegeId, collegeName'
+      );
+    }
+
+    try {
+      const db = admin.firestore();
+
+      // Check if college already exists
+      const existingCollege = await db.collection(COLLECTIONS.COLLEGES).doc(collegeId).get();
+      if (existingCollege.exists) {
+        throw new functions.https.HttpsError(
+          'already-exists',
+          `College with ID "${collegeId}" already exists`
+        );
+      }
+
+      // Initialize board-wise counts
+      const boardWiseCounts: Record<string, { totalStudents: number; totalTeachers: number }> = {};
+      if (supportedBoards && Array.isArray(supportedBoards)) {
+        supportedBoards.forEach((board: string) => {
+          boardWiseCounts[board] = {
+            totalStudents: 0,
+            totalTeachers: 0
+          };
+        });
+      }
+
+      // Prepare college document
+      const collegeDoc = {
+        collegeId,
+        collegeName,
+        academicYear: academicYear || 'April',
+        address: address || '',
+        city: city || '',
+        state: state || '',
+        pincode: pincode || '',
+        phone: phone || '',
+        email: email || '',
+        website: website || '',
+        establishedYear: establishedYear || null,
+        collegeType: collegeType || 'school',
+        supportedBoards: supportedBoards || [],
+        subjects: subjects || [],
+        validClasses: validClasses || [],
+        examTypes: examTypes || [],
+        features: features || [],
+        boardWiseCounts,
+        roleCounts: {
+          system_admin: 0,
+          admin: 0,
+          principal: 0,
+          dean: 0,
+          teacher: 0,
+          student: 0
+        },
+        totalTeachers: 0,
+        totalStudents: 0,
+        totalRooms: 0,
+        status: 'active',
+        createdBy: createdBy || context.auth.uid,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      // Save college document
+      await db.collection(COLLECTIONS.COLLEGES).doc(collegeId).set(collegeDoc);
+      console.log(`✅ College created: ${collegeName} (${collegeId})`);
+
+      return {
+        success: true,
+        collegeId,
+        message: 'College created successfully'
+      };
+
+    } catch (error: any) {
+      console.error('❌ Error creating college:', error);
+      
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+      
+      throw new functions.https.HttpsError(
+        'internal',
+        error.message || 'Failed to create college'
+      );
     }
   });

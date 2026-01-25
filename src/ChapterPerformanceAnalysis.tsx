@@ -14,8 +14,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faBook,
   faTrophy,
-  faCheckCircle,
-  faChartBar,
   faPercentage,
   faQuestionCircle,
   faChartLine
@@ -179,27 +177,7 @@ const ChapterPerformanceAnalysis: React.FC<ChapterPerformanceAnalysisProps> = ({
                     </div>
                   </div>
 
-                  {/* Stats Row */}
-                  <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                    <div className="flex items-center space-x-1.5">
-                      <FontAwesomeIcon 
-                        icon={performance.score === performance.maxScore ? faCheckCircle : faChartBar} 
-                        className="text-xs"
-                        style={{ color: performance.score === performance.maxScore ? gradeInfo.color : brandTheme.colors.primary }}
-                      />
-                      <span className="text-xs font-medium text-gray-600">
-                        {performance.score === performance.maxScore ? 'Perfect Score!' : 'In Progress'}
-                      </span>
-                    </div>
-                    {performance.score > 0 && (
-                      <div className="flex items-center space-x-1">
-                        <FontAwesomeIcon icon={faTrophy} className="text-xs" style={{ color: gradeInfo.color }} />
-                        <span className="text-xs font-medium" style={{ color: gradeInfo.color }}>
-                          {performance.score} pts
-                        </span>
-                      </div>
-                    )}
-                  </div>
+
 
                   {/* Hover Effect Overlay */}
                   <div 

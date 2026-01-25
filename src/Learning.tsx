@@ -9,7 +9,6 @@ import {
   faFileLines,
   faBriefcase,
   faCode,
-  faUser,
   faRobot,
   faChevronLeft,
   faChevronDown,
@@ -23,12 +22,14 @@ import {
   faLayerGroup,
   faBookBookmark,
   faBullseye,
+  faAddressCard,
 } from '@fortawesome/sharp-light-svg-icons';
 import Courses from './Courses';
 import LearningHome from './LearningHome';
 import Classes from './Classes';
 import UserList from './UserList';
 import CodingLab from './CodingLab';
+import ResumeBuilderApp from './ResumeBuilderApp';
 import { firebaseService } from './services/firebase_service';
 
 // Course interface
@@ -71,7 +72,7 @@ interface LearningProps {
   selectedProblemSlug?: string;
 }
 
-const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, selectedCollege, onActiveMenuChange, selectedProblemSlug }) => {
+const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCollege, onActiveMenuChange, selectedProblemSlug }) => {
   const [activeMenuItem, setActiveMenuItem] = useState('courses');
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -91,7 +92,6 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
   const [selectedClassFilter, setSelectedClassFilter] = useState('all');
   const [selectedSectionFilter, setSelectedSectionFilter] = useState('all');
   const [enrollCurrentPage, setEnrollCurrentPage] = useState(1);
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
   const enrollUsersPerPage = 5;
   
   // Curriculum Modal States
@@ -158,7 +158,6 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
     setSelectedClassFilter('all');
     setSelectedSectionFilter('all');
     setEnrollCurrentPage(1);
-    setIsSearchExpanded(false);
     
     try {
       // TODO: Replace with actual API call
@@ -320,7 +319,6 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
 
   // Get unique classes and sections for filters
   const uniqueClasses = [...new Set(availableUsers.map(u => u.className))];
-  const uniqueSections = [...new Set(availableUsers.map(u => u.section))];
 
   const filteredUsers = availableUsers.filter(user => {
     const matchesSearch = user.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
@@ -361,12 +359,13 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
     { id: 'marksheet', name: 'Marksheet', icon: faFileLines, description: 'View marksheets' },
     { id: 'jobs', name: 'Job Listing', icon: faBriefcase, description: 'Browse job opportunities' },
     { id: 'jdlearning', name: 'JD Based Learning', icon: faChartLine, description: 'Job description based learning' },
+    { id: 'resumebuilder', name: 'Resume Builder', icon: faAddressCard, description: 'Build your professional resume' },
   ];
 
   // Bottom quick action icons
   const bottomIcons = [
     { id: 'code', icon: faCode, label: 'Coding Lab' },
-    { id: 'profile', icon: faUser, label: 'Profile' },
+    { id: 'resumebuilder', icon: faAddressCard, label: 'Resume Builder' },
     { id: 'ai', icon: faRobot, label: 'AI Assistant' },
   ];
 
@@ -499,14 +498,18 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
                     setActiveMenuItem('codinglab');
                     setIsLeftCollapsed(true);
                     if (onActiveMenuChange) onActiveMenuChange('codinglab');
+                  } else if (item.id === 'resumebuilder') {
+                    setActiveMenuItem('resumebuilder');
+                    setIsLeftCollapsed(true);
+                    if (onActiveMenuChange) onActiveMenuChange('resumebuilder');
                   }
                 }}
                 className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                  item.id === 'code' && activeMenuItem === 'codinglab'
+                  (item.id === 'code' && activeMenuItem === 'codinglab') || (item.id === 'resumebuilder' && activeMenuItem === 'resumebuilder')
                     ? 'text-white'
                     : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
                 }`}
-                style={item.id === 'code' && activeMenuItem === 'codinglab' ? { background: brandTheme.gradients.primary } : {}}
+                style={(item.id === 'code' && activeMenuItem === 'codinglab') || (item.id === 'resumebuilder' && activeMenuItem === 'resumebuilder') ? { background: brandTheme.gradients.primary } : {}}
                 title={item.label}
               >
                 <FontAwesomeIcon icon={item.icon} />
@@ -542,7 +545,6 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
             brandTheme={brandTheme}
             onCourseSelect={setSelectedCourse}
             selectedCourse={selectedCourse}
-            isMainCollapsed={isCoursesCollapsed}
             onCollapse={() => setIsCoursesCollapsed(true)}
             currentUser={currentUser}
           />
@@ -806,7 +808,7 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
                 setSelectedClassForUsers(className);
               }}
               selectedClass={selectedClassForUsers}
-              brandTheme={brandTheme}
+              brandTheme={brandTheme as any}
               onCollapse={() => {}}
               refreshTrigger={usersRefreshTrigger}
             />
@@ -850,8 +852,27 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
         </div>
       )}
 
+      {/* Resume Builder Section - Always mounted to preserve state */}
+      <div 
+        className="flex-1 overflow-hidden bg-gray-50" 
+        style={{ 
+          display: activeMenuItem === 'resumebuilder' ? 'flex' : 'none', 
+          flexDirection: 'column' 
+        }}
+      >
+        <ResumeBuilderApp
+          isOpen={activeMenuItem === 'resumebuilder'}
+          onClose={() => {
+            setActiveMenuItem('courses');
+            setIsLeftCollapsed(false);
+            if (onActiveMenuChange) onActiveMenuChange('courses');
+          }}
+          currentUser={currentUser}
+        />
+      </div>
+
       {/* Other menu items - placeholder */}
-      {activeMenuItem !== 'courses' && activeMenuItem !== 'students' && activeMenuItem !== 'codinglab' && (
+      {activeMenuItem !== 'courses' && activeMenuItem !== 'students' && activeMenuItem !== 'codinglab' && activeMenuItem !== 'resumebuilder' && (
         <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
             <FontAwesomeIcon 
@@ -1146,7 +1167,7 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
               </div>
               <div className="flex items-center gap-2">
                 <FontAwesomeIcon icon={faBullseye} className="text-gray-500" />
-                <span className="text-sm text-gray-600"><strong>{curriculumData.reduce((acc, sec) => acc + sec.chapters.reduce((a, ch) => a + ch.items.length, 0), 0)}</strong> Items</span>
+                <span className="text-sm text-gray-600"><strong>{curriculumData.reduce((acc: number, sec: any) => acc + sec.chapters.reduce((a: number, ch: any) => a + ch.items.length, 0), 0)}</strong> Items</span>
               </div>
             </div>
             
@@ -1219,7 +1240,7 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
                           {/* Items */}
                           {expandedChapters.includes(chapter.id) && (
                             <div className="mt-1 space-y-0.5">
-                              {chapter.items.map((item) => (
+                              {chapter.items.map((item: any) => (
                                 <div 
                                   key={item.id}
                                   className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-all cursor-pointer group"
@@ -1748,47 +1769,227 @@ const Learning: React.FC<LearningProps> = ({ onClose, brandTheme, currentUser, s
             {/* Scrollable Content - Course List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               
-              {/* Overall Stats Cards */}
-              <div className="grid grid-cols-3 gap-4">
-                {/* Completion Rate */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex items-center gap-3">
-                  <div 
-                    className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: `${brandTheme.colors.primary}15` }}
-                  >
-                    <svg className="w-6 h-6" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              {/* Contact Info Cards - 2x2 Grid */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Email */}
+                <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-[18px] h-[18px] text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Completion Rate</p>
-                    <p className="text-lg font-bold text-gray-900">75%</p>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Email</p>
+                    <p className="text-sm font-semibold text-gray-800 truncate">{selectedStudentForProgress.email}</p>
                   </div>
                 </div>
 
-                {/* Total Learning */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-100">
-                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                {/* Phone */}
+                <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+                  <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-[18px] h-[18px] text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                     </svg>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Total Learning</p>
-                    <p className="text-lg font-bold text-gray-900">38 Hrs</p>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Phone</p>
+                    <p className="text-sm font-semibold text-gray-800">+91 9876543210</p>
                   </div>
                 </div>
 
-                {/* Average Learning */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100">
-                    <svg className="w-6 h-6 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                {/* Class */}
+                <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+                  <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-[18px] h-[18px] text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 14l9-5-9-5-9 5 9 5z" />
+                      <path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
                     </svg>
                   </div>
-                  <div>
-                    <p className="text-sm text-gray-600">Average Learning</p>
-                    <p className="text-lg font-bold text-gray-900">2.5 Hrs/Day</p>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Class</p>
+                    <p className="text-sm font-semibold text-gray-800">{selectedStudentForProgress.className}</p>
+                  </div>
+                </div>
+
+                {/* Academic Year */}
+                <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-[18px] h-[18px] text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Academic Year</p>
+                    <p className="text-sm font-semibold text-gray-800">2025-26</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Assessment Stats - Section Header */}
+              <div className="flex items-center gap-2 mt-4">
+                <svg className="w-[18px] h-[18px]" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                </svg>
+                <h4 className="text-base font-bold text-gray-800">Assessments</h4>
+              </div>
+
+              {/* Assessment Stats Cards */}
+              <div className="grid grid-cols-3 gap-3">
+                {/* Total Assessments */}
+                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-100">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Total</p>
+                      <p className="text-xl font-bold text-gray-900">{studentEnrolledCourses.reduce((sum, c) => sum + (c.assessments || 0), 0)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Assessments Completed */}
+                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-100">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Completed</p>
+                      <p className="text-xl font-bold text-gray-900">{studentEnrolledCourses.filter(c => c.status === 'completed').reduce((sum, c) => sum + (c.assessments || 0), 0)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Assessment Avg Marks */}
+                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100">
+                      <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Avg. %</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {Math.round(studentEnrolledCourses.filter(c => c.marks).reduce((sum, c) => sum + (c.marks || 0), 0) / Math.max(studentEnrolledCourses.filter(c => c.marks).length, 1) * 10) / 10}%
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Learning Stats - Section Header */}
+              <div className="flex items-center gap-2 mt-4">
+                <svg className="w-[18px] h-[18px]" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h4 className="text-base font-bold text-gray-800">Learning Activity</h4>
+              </div>
+
+              {/* Learning Stats Cards */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Total Learning Hours */}
+                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${brandTheme.colors.primary}15` }}
+                    >
+                      <svg className="w-5 h-5" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Total Learning</p>
+                      <p className="text-xl font-bold text-gray-900">38 Hrs</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Average Learning Per Day */}
+                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-indigo-100">
+                      <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Avg/Day</p>
+                      <p className="text-xl font-bold text-gray-900">2.5 Hrs</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Enrolled Courses Section Header */}
+              <div className="flex items-center justify-between mt-4">
+                <div className="flex items-center gap-2">
+                  <svg className="w-[18px] h-[18px]" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  <h4 className="text-base font-bold text-gray-800">Enrolled Courses</h4>
+                </div>
+                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
+                  {studentEnrolledCourses.length} Courses
+                </span>
+              </div>
+
+              {/* Course Stats Cards */}
+              <div className="grid grid-cols-3 gap-3">
+                {/* Courses Enrolled */}
+                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${brandTheme.colors.primary}15` }}
+                    >
+                      <svg className="w-5 h-5" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Enrolled</p>
+                      <p className="text-xl font-bold text-gray-900">{studentEnrolledCourses.length}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Courses Completed */}
+                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-100">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Completed</p>
+                      <p className="text-xl font-bold text-gray-900">{studentEnrolledCourses.filter(c => c.status === 'completed').length}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Average Marks */}
+                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-purple-100">
+                      <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Avg. Marks</p>
+                      <p className="text-xl font-bold text-gray-900">
+                        {Math.round(studentEnrolledCourses.filter(c => c.marks).reduce((sum, c) => sum + (c.marks || 0), 0) / Math.max(studentEnrolledCourses.filter(c => c.marks).length, 1) * 10) / 10}%
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>

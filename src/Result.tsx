@@ -187,10 +187,12 @@ function Result({
   const [isExamTypeDropdownOpen, setIsExamTypeDropdownOpen] = useState(false);
   
   // College data
-  const [classes, setClasses] = useState<string[]>(['all']);
-  const [boards, setBoards] = useState<string[]>(['all']);
-  const [examTypes, setExamTypes] = useState<string[]>(['all']);
+  const [classes, setClasses] = useState<string[]>([]);
+  const [boards, setBoards] = useState<string[]>([]);
+  const [examTypes, setExamTypes] = useState<string[]>([]);
   const [showBoardFilter, setShowBoardFilter] = useState(false);
+  const [showClassFilter, setShowClassFilter] = useState(false);
+  const [showExamTypeFilter, setShowExamTypeFilter] = useState(false);
   
   // Refs
   const classDropdownRef = useRef<HTMLDivElement>(null);
@@ -308,6 +310,36 @@ function Result({
       setLastExamDoc(result.lastDoc); // ✅ ADDED: Store last document
       setHasMoreExams(result.hasMore); // ✅ ADDED: Store hasMore flag
       
+      // ✅ Extract unique filter values from completed exams
+      const uniqueClasses = [...new Set(completedExams.map(e => e.class).filter(Boolean))];
+      const uniqueBoards = [...new Set(completedExams.map(e => e.board).filter(Boolean))];
+      const uniqueExamTypes = [...new Set(completedExams.map(e => e.type).filter(Boolean))];
+      
+      // Only show filters if there are options to filter
+      if (uniqueClasses.length > 0) {
+        setClasses(['all', ...uniqueClasses.sort()]);
+        setShowClassFilter(uniqueClasses.length >= 1);
+      } else {
+        setClasses([]);
+        setShowClassFilter(false);
+      }
+      
+      if (uniqueBoards.length > 1) {
+        setBoards(['all', ...uniqueBoards.sort()]);
+        setShowBoardFilter(true);
+      } else {
+        setBoards([]);
+        setShowBoardFilter(false);
+      }
+      
+      if (uniqueExamTypes.length > 0) {
+        setExamTypes(['all', ...uniqueExamTypes.sort()]);
+        setShowExamTypeFilter(uniqueExamTypes.length >= 1);
+      } else {
+        setExamTypes([]);
+        setShowExamTypeFilter(false);
+      }
+      
       // Notify parent of results list
       if (onResultsListChange) {
         onResultsListChange(completedExams as unknown as Exam[]);
@@ -342,12 +374,32 @@ function Result({
       
       console.log('📊 [RESULT.TSX] More exams fetched:', completedExams.length);
       
-      setExams(prevExams => [...prevExams, ...completedExams as unknown as Exam[]]);
+      const updatedExams = [...exams, ...completedExams as unknown as Exam[]];
+      setExams(updatedExams);
       setLastExamDoc(result.lastDoc);
       setHasMoreExams(result.hasMore);
       
+      // ✅ Update filter options with new exams
+      const uniqueClasses = [...new Set(updatedExams.map(e => e.class).filter(Boolean))];
+      const uniqueBoards = [...new Set(updatedExams.map(e => e.board).filter(Boolean))];
+      const uniqueExamTypes = [...new Set(updatedExams.map(e => e.type).filter(Boolean))];
+      
+      if (uniqueClasses.length > 0) {
+        setClasses(['all', ...uniqueClasses.sort()]);
+        setShowClassFilter(uniqueClasses.length >= 1);
+      }
+      
+      if (uniqueBoards.length > 1) {
+        setBoards(['all', ...uniqueBoards.sort()]);
+        setShowBoardFilter(true);
+      }
+      
+      if (uniqueExamTypes.length > 0) {
+        setExamTypes(['all', ...uniqueExamTypes.sort()]);
+        setShowExamTypeFilter(uniqueExamTypes.length >= 1);
+      }
+      
       // Notify parent
-      const updatedExams = [...exams, ...completedExams];
       if (onResultsListChange) {
         onResultsListChange(updatedExams as unknown as Exam[]);
       }
@@ -682,14 +734,16 @@ function Result({
     }
   }, [activeCollegeId, selectedYear, loadInitialExams]);
 
-  // Load college data (classes, boards, exam types)
+  // Load college data - filters are now populated from exam data dynamically
   useEffect(() => {
     const loadCollegeData = async () => {
       if (!activeCollegeId) {
-        setClasses(['all']);
-        setBoards(['all']);
-        setExamTypes(['all']);
+        setClasses([]);
+        setBoards([]);
+        setExamTypes([]);
         setShowBoardFilter(false);
+        setShowClassFilter(false);
+        setShowExamTypeFilter(false);
         return;
       }
 
@@ -697,33 +751,9 @@ function Result({
         const college = await firebaseService.getCollegeById(activeCollegeId);
         
         if (college) {
-          // Load classes
-          if (college.validClasses && college.validClasses.length > 0) {
-            setClasses(['all', ...college.validClasses]);
-          } else {
-            setClasses(['all']);
-          }
-          
-          // Load boards
-          if (college.supportedBoards) {
-            setBoards(['all', ...college.supportedBoards]);
-            setShowBoardFilter(college.supportedBoards.length > 1);
-            
-            // If only one board, automatically select it
-            if (college.supportedBoards.length === 1) {
-              setSelectedBoard(college.supportedBoards[0]);
-            }
-          } else {
-            setBoards(['all']);
-            setShowBoardFilter(false);
-          }
-          
-          // Load exam types
-          if (college.examTypes && college.examTypes.length > 0) {
-            setExamTypes(['all', ...college.examTypes]);
-          } else {
-            setExamTypes(['all']);
-          }
+          console.log('📊 [RESULT.TSX] College data loaded:', college.collegeName);
+          // Filters are now dynamically populated from exam data
+          // No need to load from college config
         }
       } catch (error) {
         console.error('Error loading college data:', error);
@@ -905,7 +935,8 @@ function Result({
                     <FontAwesomeIcon icon={faTrophy} style={{ fontSize: '28px' }} className="text-gray-900" />
                     <h2 className="text-2xl font-bold text-gray-900">Exam Results</h2>
                     
-                    {/* Class Dropdown */}
+                    {/* Class Dropdown - Only show if there are classes in exams */}
+                    {showClassFilter && (
                     <div ref={classDropdownRef} className="relative class-dropdown-container z-[200]">
                       <button 
                         onClick={() => setIsClassDropdownOpen(!isClassDropdownOpen)}
@@ -941,6 +972,7 @@ function Result({
                         </div>
                       )}
                     </div>
+                    )}
                     
                     {/* Board Dropdown */}
                     {showBoardFilter && (
@@ -981,7 +1013,8 @@ function Result({
                       </div>
                     )}
                     
-                    {/* Exam Type Dropdown */}
+                    {/* Exam Type Dropdown - Only show if there are exam types in exams */}
+                    {showExamTypeFilter && (
                     <div ref={examTypeDropdownRef} className="relative exam-type-dropdown-container z-[200]">
                       <button 
                         onClick={() => setIsExamTypeDropdownOpen(!isExamTypeDropdownOpen)}
@@ -1019,6 +1052,7 @@ function Result({
                         </div>
                       )}
                     </div>
+                    )}
                   </div>
                   
                   <button 
@@ -1625,7 +1659,7 @@ function Result({
             ) : (
               // ========== EXAMS VIEW ==========
               <>
-              <p className="text-sm text-gray-600 mb-6 font-medium">{filteredExams.length} examination{filteredExams.length !== 1 ? 's' : ''}</p>
+              <p className="text-sm text-gray-600 mb-6 font-medium">{filteredExams.length} result{filteredExams.length !== 1 ? 's' : ''}</p>
 
                 {/* Loading State */}
                 {isLoadingExams ? (

@@ -5,7 +5,6 @@ import {
   faVideo,
   faClipboardList,
   faRobot,
-  faFileAlt,
   faBookOpen,
   faChartLine,
   faTrophy,

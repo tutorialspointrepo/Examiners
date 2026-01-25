@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useBrand } from './BrandContext';
-import { type UserModel } from './services/firebase_service';
+import { firebaseService, type UserModel } from './services/firebase_service';
 import { 
   checkSlotConflict, 
   createRoomBooking,
@@ -180,20 +180,20 @@ const CreateHallTicketModal: React.FC<CreateHallTicketModalProps> = ({
     try {
       setLoading(true);
       
-      // Set current academic year
-      const currentYear = getCurrentAcademicYear();
+      // Fetch college to get academicYear start month
+      const college = await firebaseService.getCollege(activeCollegeId);
+      const startMonth = college?.academicYear || 'April';
+      
+      // Set current academic year based on college's start month
+      const currentYear = getCurrentAcademicYear(startMonth);
       setAcademicYear(currentYear);
       
       // Load classes from college document
-      console.log('📚 Loading classes for college:', activeCollegeId);
       const classesData = await getClassesByCollege(activeCollegeId);
-      console.log('✅ Classes loaded:', classesData.length);
       setClasses(classesData);
       
       // Load exam types from college document
-      console.log('📋 Loading exam types for college:', activeCollegeId);
       const examTypesData = await getExamTypesByCollege(activeCollegeId);
-      console.log('✅ Exam types loaded:', examTypesData.length);
       setExamTypes(examTypesData);
       
     } catch (err) {

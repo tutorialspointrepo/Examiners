@@ -507,7 +507,7 @@ export default function Classes({ activeCollegeId, onClassSelect, selectedClass,
                         color: brandTheme.colors.primary
                       }}
                     >
-                      {classData.className.replace(/\D/g, '') || '#'}
+                      {index + 1}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-xl font-bold text-gray-900">

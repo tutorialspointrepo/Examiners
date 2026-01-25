@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Users, Mail, Phone, User, Calendar, Shield, BookOpen, GraduationCap, Search, ChevronLeft, ChevronRight, Layers, Edit, MoreVertical, UserX, AlertCircle, X, Clock, CheckCircle, FileText, TrendingUp, Award, BarChart3, Target } from 'lucide-react';
+import { Users, Mail, Phone, User, Calendar, Shield, BookOpen, GraduationCap, Search, Layers, Edit, MoreVertical, UserX, AlertCircle, X, Clock, CheckCircle, FileText, TrendingUp, Award, BarChart3, Target, Key, Eye, EyeOff } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faCode,
@@ -102,7 +102,7 @@ export default function UserList({
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
   const [selectedUserForProfile, setSelectedUserForProfile] = useState<UserModel | null>(null);
   const [userProfileStats, setUserProfileStats] = useState<UserProfileStats | null>(null);
-  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [isLoadingProfile, _setIsLoadingProfile] = useState(false);
   
   // 3-dot menu state
   const [openMenuUserId, setOpenMenuUserId] = useState<string | null>(null);
@@ -116,10 +116,22 @@ export default function UserList({
   // Status filter state
   const [filterStatus, setFilterStatus] = useState<typeof USER_STATUS.ACTIVE | typeof USER_STATUS.DISABLED | typeof FILTER_VALUES.ALL>(FILTER_VALUES.ALL);
   
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState(1);
+  // Change Password modal state
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [userForPasswordChange, setUserForPasswordChange] = useState<UserModel | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  
+  // Pagination state - cursor-based
+  const [lastDoc, setLastDoc] = useState<any>(null);
   const [totalUsers, setTotalUsers] = useState(0);
-  const usersPerPage = 10;
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const usersPerPage = 20;
   
   // Role counts - independent of current filter (active users only)
   // Auto-scroll to highlighted user
@@ -147,68 +159,125 @@ export default function UserList({
   const [totalDisabledCount, setTotalDisabledCount] = useState(0);
   const hasLoggedView = useRef(false); // Track if we've logged this view
 
-  // Fetch users from Firebase with pagination
-  useEffect(() => {
-    const fetchUsers = async () => {
-      if (!activeCollegeId || !selectedClass) {
-        setUsers([]);
-        setTotalUsers(0);
-        setIsLoading(false);
-        return;
-      }
+  // Fetch users from Firebase with cursor-based pagination
+  const fetchUsers = async (loadMore: boolean = false) => {
+    if (!activeCollegeId || !selectedClass) {
+      setUsers([]);
+      setTotalUsers(0);
+      setIsLoading(false);
+      return;
+    }
 
-      try {
+    try {
+      if (loadMore) {
+        setIsLoadingMore(true);
+      } else {
         setIsLoading(true);
-        console.log('🔍 Fetching page', currentPage, 'for class:', selectedClass, 'with filter:', filterRole);
-
-        // Check if it's the administrative/faculty selection
-        if (selectedClass === '_administrative') {
-          // Fetch administrative users with pagination and role filter
-          const userTypes: (typeof USER_TYPES.ADMIN | typeof USER_TYPES.PRINCIPAL | typeof USER_TYPES.DEAN | typeof USER_TYPES.TEACHER)[] = [USER_TYPES.ADMIN, USER_TYPES.PRINCIPAL, USER_TYPES.DEAN, USER_TYPES.TEACHER];
-          const result = await firebaseService.getUsersByTypePaginated(
-            userTypes,
-            activeCollegeId,
-            usersPerPage,
-            currentPage,
-            filterRole as typeof FILTER_VALUES.ALL | typeof USER_TYPES.ADMIN | typeof USER_TYPES.PRINCIPAL | typeof USER_TYPES.DEAN | typeof USER_TYPES.TEACHER
-          );
-
-          setUsers(result.users);
-          setTotalUsers(result.total);
-          
-          console.log('✅ Administrative & Faculty users loaded:', result.users.length, 'of', result.total);
-        } else {
-          // Parse class selection (format: "className|board|academicYear" or just "className")
-          const [className, board, academicYear] = selectedClass.includes('|') 
-            ? selectedClass.split('|')
-            : [selectedClass, null, null];
-
-          // Fetch class users with pagination and role filter
-          const result = await firebaseService.getUsersByClassPaginated(
-            className,
-            board,
-            academicYear,
-            activeCollegeId,
-            usersPerPage,
-            currentPage,
-            filterRole as typeof FILTER_VALUES.ALL | typeof USER_TYPES.STUDENT | typeof USER_TYPES.TEACHER
-          );
-
-          setUsers(result.users);
-          setTotalUsers(result.total);
-
-          console.log('✅ Users loaded:', result.users.length, 'of', result.total);
-        }
-      } catch (error) {
-        console.error('❌ Error fetching users:', error);
-        setUsers([]);
-        setTotalUsers(0);
-      } finally {
-        setIsLoading(false);
+        setLastDoc(null); // Reset cursor for fresh fetch
       }
-    };
+      
+      const cursorDoc = loadMore ? lastDoc : null;
+      console.log('🔍 Fetching users for class:', selectedClass, 'with filter:', filterRole, 'loadMore:', loadMore);
 
-    fetchUsers();
+      // Check if it's the administrative/faculty selection
+      if (selectedClass === '_administrative') {
+        // Fetch administrative users with pagination and role filter
+        const userTypes: (typeof USER_TYPES.ADMIN | typeof USER_TYPES.PRINCIPAL | typeof USER_TYPES.DEAN | typeof USER_TYPES.TEACHER)[] = [USER_TYPES.ADMIN, USER_TYPES.PRINCIPAL, USER_TYPES.DEAN, USER_TYPES.TEACHER];
+        const result = await firebaseService.getUsersByTypePaginated(
+          userTypes,
+          activeCollegeId,
+          usersPerPage,
+          cursorDoc,
+          filterRole as typeof FILTER_VALUES.ALL | typeof USER_TYPES.ADMIN | typeof USER_TYPES.PRINCIPAL | typeof USER_TYPES.DEAN | typeof USER_TYPES.TEACHER
+        );
+
+        if (loadMore) {
+          // Filter out duplicates when loading more
+          setUsers(prev => {
+            const existingIds = new Set(prev.map(u => u.userId));
+            const newUsers = result.users.filter(u => !existingIds.has(u.userId));
+            return [...prev, ...newUsers];
+          });
+        } else {
+          setUsers(result.users);
+        }
+        setTotalUsers(result.total);
+        setLastDoc(result.lastDoc);
+        setHasMore(result.hasMore);
+        
+        // Update role counts from backend
+        if (result.roleCounts) {
+          setRoleCounts({
+            students: result.roleCounts.students,
+            teachers: result.roleCounts.teachers,
+            admins: result.roleCounts.admins,
+            principals: result.roleCounts.principals,
+            deans: result.roleCounts.deans,
+            total: result.roleCounts.admins + result.roleCounts.principals + result.roleCounts.deans + result.roleCounts.teachers + result.roleCounts.disabled
+          });
+          setTotalDisabledCount(result.roleCounts.disabled);
+        }
+        
+        console.log('✅ Administrative & Faculty users loaded:', result.users.length, 'of', result.total);
+      } else {
+        // Parse class selection (format: "className|board|academicYear" or just "className")
+        const [className, board, academicYear] = selectedClass.includes('|') 
+          ? selectedClass.split('|')
+          : [selectedClass, null, null];
+
+        // Fetch class users with pagination and role filter
+        const result = await firebaseService.getUsersByClassPaginated(
+          className,
+          board,
+          academicYear,
+          activeCollegeId,
+          usersPerPage,
+          cursorDoc,
+          filterRole as typeof FILTER_VALUES.ALL | typeof USER_TYPES.STUDENT | typeof USER_TYPES.TEACHER
+        );
+
+        if (loadMore) {
+          // Filter out duplicates when loading more
+          setUsers(prev => {
+            const existingIds = new Set(prev.map(u => u.userId));
+            const newUsers = result.users.filter(u => !existingIds.has(u.userId));
+            return [...prev, ...newUsers];
+          });
+        } else {
+          setUsers(result.users);
+        }
+        setTotalUsers(result.total);
+        setLastDoc(result.lastDoc);
+        setHasMore(result.hasMore);
+        
+        // Update role counts from backend
+        if (result.roleCounts) {
+          setRoleCounts({
+            students: result.roleCounts.students,
+            teachers: result.roleCounts.teachers,
+            admins: result.roleCounts.admins,
+            principals: result.roleCounts.principals,
+            deans: result.roleCounts.deans,
+            total: result.roleCounts.students + result.roleCounts.teachers + result.roleCounts.disabled
+          });
+          setTotalDisabledCount(result.roleCounts.disabled);
+        }
+
+        console.log('✅ Users loaded:', result.users.length, 'of', result.total);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching users:', error);
+      setUsers([]);
+      setTotalUsers(0);
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  };
+
+  // Initial fetch when class/filter changes
+  useEffect(() => {
+    fetchUsers(false);
     
     // Log view activity (non-blocking) - ONLY ONCE per class selection
     if (activeCollegeId && selectedClass && !hasLoggedView.current) {
@@ -222,7 +291,8 @@ export default function UserList({
               collegeId: activeCollegeId,
               action: 'view_user_list',
               entityType: 'users',
-              details: { selectedClass, filterRole }
+              entityId: selectedClass || 'all',
+              details: JSON.stringify({ selectedClass, filterRole })
             });
           }
         } catch (logError) {
@@ -230,57 +300,8 @@ export default function UserList({
         }
       })();
     }
-  }, [activeCollegeId, selectedClass, currentPage, filterRole]);
-
-  // Reset page when changing filters
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [filterRole, filterStatus, searchQuery]);
-
-  // Fetch role counts independently (active users only)
-  useEffect(() => {
-    const fetchCounts = async () => {
-      if (!activeCollegeId || !selectedClass) {
-        setRoleCounts({ students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, total: 0 });
-        setTotalDisabledCount(0);
-        return;
-      }
-
-      try {
-        if (selectedClass === '_administrative') {
-          const counts = await firebaseService.getAdministrativeUserCounts(activeCollegeId);
-          setRoleCounts({
-            students: 0,
-            teachers: counts.teachers || 0,
-            admins: counts.admins || 0,
-            principals: counts.principals || 0,
-            deans: counts.deans || 0,
-            total: (counts.teachers || 0) + (counts.admins || 0) + (counts.principals || 0) + (counts.deans || 0)
-          });
-          setTotalDisabledCount(counts.disabled || 0);
-        } else {
-          const [className, board, academicYear] = selectedClass.includes('|') 
-            ? selectedClass.split('|')
-            : [selectedClass, null, null];
-          
-          const counts = await firebaseService.getClassUserCounts(className, board, academicYear, activeCollegeId);
-          setRoleCounts({
-            students: counts.students || 0,
-            teachers: counts.teachers || 0,
-            admins: 0,
-            principals: 0,
-            deans: 0,
-            total: (counts.students || 0) + (counts.teachers || 0)
-          });
-          setTotalDisabledCount(counts.disabled || 0);
-        }
-      } catch (error) {
-        console.error('Error fetching counts:', error);
-      }
-    };
-
-    fetchCounts();
-  }, [activeCollegeId, selectedClass]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCollegeId, selectedClass, filterRole]);
 
   // Filter logic
   const isAdministrativeView = selectedClass === '_administrative';
@@ -333,6 +354,32 @@ export default function UserList({
     return false;
   };
 
+  // Check if current user can change password for another user
+  // Rules: 
+  // - Only Admin can change password for any user except Admin
+  // - Anyone can change password for Students except Students themselves
+  const canChangePassword = (targetUserType: string): boolean => {
+    // Super users can change anyone's password
+    if (isSuperUser) return true;
+    
+    // System admins can change anyone's password
+    if (currentUserRole === USER_TYPES.SYSTEM_ADMIN) return true;
+    
+    // Admins can change password for anyone EXCEPT other Admins
+    if (currentUserRole === USER_TYPES.ADMIN) {
+      return targetUserType !== USER_TYPES.ADMIN && targetUserType !== USER_TYPES.SYSTEM_ADMIN;
+    }
+    
+    // Anyone (Principal, Dean, Teacher) can change password for Students
+    if (targetUserType === USER_TYPES.STUDENT) {
+      // But Students cannot change their own or other students' passwords via this menu
+      return currentUserRole !== USER_TYPES.STUDENT;
+    }
+    
+    // No one else can change passwords for non-students
+    return false;
+  };
+
   // Handle edit user
   const handleEditUser = (user: UserModel) => {
     setUserToEdit(user);
@@ -347,12 +394,11 @@ export default function UserList({
   
   // Handle user updated - refresh the list
   const handleUserUpdated = () => {
-    // Trigger refresh by changing currentPage briefly
-    const page = currentPage;
-    setCurrentPage(0);
-    setTimeout(() => setCurrentPage(page), 10);
+    // Refresh the user list
+    fetchUsers(false);
   };
   
+  /* TODO: Uncomment when course enrollment functionality is implemented
   // Handle User Card Click - Open Profile Modal
   const handleUserCardClick = async (user: UserModel) => {
     setSelectedUserForProfile(user);
@@ -467,6 +513,7 @@ export default function UserList({
       setIsLoadingProfile(false);
     }
   };
+  */
   
   // Close user profile modal
   const closeUserProfileModal = () => {
@@ -504,6 +551,78 @@ export default function UserList({
     setUserToDisable(user);
     setShowDisableConfirm(true);
     setOpenMenuUserId(null); // Close menu
+  };
+  
+  // Handle change password click
+  const handleChangePasswordClick = (user: UserModel) => {
+    setUserForPasswordChange(user);
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordError(null);
+    setShowChangePasswordModal(true);
+    setOpenMenuUserId(null); // Close menu
+  };
+  
+  // Handle change password submit
+  const handleChangePasswordSubmit = async () => {
+    if (!userForPasswordChange) return;
+    
+    // Validation
+    if (!newPassword) {
+      setPasswordError('Please enter a new password');
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      setPasswordError('Password must be at least 6 characters');
+      return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+      setPasswordError('Passwords do not match');
+      return;
+    }
+    
+    setIsChangingPassword(true);
+    setPasswordError(null);
+    
+    try {
+      // Get current user for audit logging
+      const currentUser = await firebaseService.getCurrentUserProfile();
+      if (!currentUser) {
+        throw new Error('You must be logged in to change passwords');
+      }
+      
+      // Call Firebase service to change password
+      const result = await firebaseService.changeUserPassword(userForPasswordChange.userId, newPassword, currentUser);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to change password');
+      }
+      
+      // Close modal on success
+      setShowChangePasswordModal(false);
+      setUserForPasswordChange(null);
+      setNewPassword('');
+      setConfirmPassword('');
+      
+      // Show success (optional - you could add a toast notification here)
+      alert('Password changed successfully!');
+    } catch (error) {
+      console.error('Error changing password:', error);
+      setPasswordError(error instanceof Error ? error.message : 'Failed to change password. Please try again.');
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+  
+  // Close change password modal
+  const closeChangePasswordModal = () => {
+    setShowChangePasswordModal(false);
+    setUserForPasswordChange(null);
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordError(null);
   };
   
   // Confirm disable/enable user
@@ -544,24 +663,6 @@ export default function UserList({
     ? selectedClass.split('|')
     : [selectedClass, null, null];
 
-  const getRoleBadgeColor = (userType: string) => {
-    switch (userType) {
-      case USER_TYPES.STUDENT:
-        return { bg: 'bg-blue-100', text: 'text-blue-700' };
-      case USER_TYPES.TEACHER:
-        return { bg: 'bg-purple-100', text: 'text-purple-700' };
-      case USER_TYPES.PRINCIPAL:
-        return { bg: 'bg-red-100', text: 'text-red-700' };
-      case USER_TYPES.DEAN:
-        return { bg: 'bg-indigo-100', text: 'text-indigo-700' };
-      case USER_TYPES.ADMIN:
-        return { bg: 'bg-orange-100', text: 'text-orange-700' };
-      case USER_TYPES.SYSTEM_ADMIN:
-        return { bg: 'bg-pink-100', text: 'text-pink-700' };
-      default:
-        return { bg: 'bg-gray-100', text: 'text-gray-700' };
-    }
-  };
 
   return (
     <>
@@ -759,7 +860,7 @@ export default function UserList({
       </div>
 
       {/* Users List */}
-      <div className="px-6 py-4">
+      <div className="px-6 py-4 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         {isLoading ? (
           <div className="flex items-center justify-center py-16">
             <div className="text-center">
@@ -788,15 +889,15 @@ export default function UserList({
         ) : (
           <div className="space-y-3">
             {searchFilteredUsers.map((user) => {
-              const roleBadge = getRoleBadgeColor(user.userType || USER_TYPES.STUDENT);
               const isDisabled = user.status === USER_STATUS.DISABLED;
               
               return (
                 <div
                   id={`user-card-${user.userId}`}
                   key={user.userId}
-                  onClick={() => handleUserCardClick(user)}
-                  className={`bg-white border rounded-xl p-4 hover:shadow-md transition-all cursor-pointer ${
+                  // TODO: Uncomment when course enrollment functionality is implemented
+                  // onClick={() => handleUserCardClick(user)}
+                  className={`bg-white border rounded-xl p-4 hover:shadow-md transition-all ${
                     isDisabled ? 'opacity-60' : ''
                   } ${
                     highlightUserId === user.userId 
@@ -860,7 +961,7 @@ export default function UserList({
                             
                             {/* Dropdown Menu */}
                             {openMenuUserId === user.userId && (
-                              <div className="absolute right-0 top-8 mt-1 w-40 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50">
+                              <div className="absolute right-0 top-8 mt-1 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50">
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -872,6 +973,18 @@ export default function UserList({
                                   <Edit size={14} />
                                   <span>Edit User</span>
                                 </button>
+                                {canChangePassword(user.userType || USER_TYPES.STUDENT) && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleChangePasswordClick(user);
+                                    }}
+                                    className="w-full px-4 py-2 text-left text-sm text-blue-600 hover:bg-blue-50 flex items-center space-x-2"
+                                  >
+                                    <Key size={14} />
+                                    <span>Change Password</span>
+                                  </button>
+                                )}
                                 {isDisabled ? (
                                   <button
                                     onClick={(e) => {
@@ -903,9 +1016,16 @@ export default function UserList({
 
                       {/* Contact Info - New Layout */}
                       <div className="space-y-2">
-                        {/* Row 1: Email & Phone */}
-                        {currentUserRole !== USER_TYPES.STUDENT && (user.email || user.phone) && (
+                        {/* Row 1: Roll Number (for Students), Email & Phone */}
+                        {currentUserRole !== USER_TYPES.STUDENT && (user.studentRoll || user.email || user.phone) && (
                           <div className="flex items-center gap-4 text-sm text-gray-600">
+                            {/* Show Roll Number for students */}
+                            {user.userType === USER_TYPES.STUDENT && user.studentRoll && (
+                              <div className="flex items-center gap-1.5">
+                                <Shield size={14} className="text-purple-400 flex-shrink-0" />
+                                <span className="font-medium text-purple-600">{user.studentRoll}</span>
+                              </div>
+                            )}
                             {user.email && (
                               <div className="flex items-center gap-1.5">
                                 <Mail size={14} className="text-gray-400 flex-shrink-0" />
@@ -928,7 +1048,7 @@ export default function UserList({
                             {user.teacherSubjects.map((subject, idx) => (
                               <span key={idx} className="flex items-center">
                                 <span className="text-purple-600">{subject}</span>
-                                {idx < user.teacherSubjects.length - 1 && <span className="mx-2 text-gray-300">|</span>}
+                                {idx < (user.teacherSubjects?.length ?? 0) - 1 && <span className="mx-2 text-gray-300">|</span>}
                               </span>
                             ))}
                           </div>
@@ -976,17 +1096,19 @@ export default function UserList({
                                 </span>
                               </>
                             )}
+                            {/* TODO: Uncomment when course enrollment functionality is implemented
                             <span className="mx-2 text-gray-300">|</span>
                             <span 
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleUserCardClick(user);
+                                _handleUserCardClick(user);
                               }}
                               className="flex items-center gap-1 cursor-pointer hover:text-green-700 transition-colors text-green-600"
                             >
                               <Layers size={12} />
                               <span>Enrollments: {user.enrollmentCount ?? 5}</span>
                             </span>
+                            */}
                           </div>
                         )}
                       </div>
@@ -997,91 +1119,136 @@ export default function UserList({
             })}
           </div>
         )}
-
-        {/* Pagination */}
-        {!isLoading && searchFilteredUsers.length > 0 && (
-          <div className="mt-6 flex items-center justify-center">
+      </div>
+      
+      {/* Sticky Pagination Toolbar */}
+      {!isLoading && users.length > 0 && (
+        <div 
+          className="sticky bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-3 shadow-lg z-10"
+          style={{ 
+            background: 'linear-gradient(to top, white 0%, white 85%, rgba(255,255,255,0.95) 100%)',
+            boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.08)'
+          }}
+        >
+          <div className="flex items-center justify-between">
+            {/* Left: Stats */}
             <div className="flex items-center gap-4">
-              {/* Showing X-Y of Z */}
-              <span className="text-sm text-gray-500">
-                Showing {((currentPage - 1) * usersPerPage) + 1}-{Math.min(currentPage * usersPerPage, totalUsers)} of {totalUsers}
-              </span>
-
-              <div className="flex items-center gap-1">
-                {/* Prev Button */}
-                <button
-                  onClick={() => {
-                    if (currentPage > 1) {
-                      setCurrentPage(currentPage - 1);
-                      document.querySelector('.user-list-container')?.scrollTo({ top: 0, behavior: 'smooth' });
-                    }
-                  }}
-                  disabled={currentPage === 1}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    currentPage === 1
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
-                  }`}
+              <div className="flex items-center gap-2">
+                <div 
+                  className="w-8 h-8 rounded-lg flex items-center justify-center"
+                  style={{ backgroundColor: `${brandTheme.colors.primary}15` }}
                 >
-                  Prev
-                </button>
-
-                {/* Page Numbers */}
-                {Array.from({ length: Math.min(3, Math.ceil(totalUsers / usersPerPage)) }, (_, i) => {
-                  const totalPages = Math.ceil(totalUsers / usersPerPage);
-                  let pageNum;
-                  if (totalPages <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 2) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 1) {
-                    pageNum = totalPages - 2 + i;
-                  } else {
-                    pageNum = currentPage - 1 + i;
-                  }
-                  return pageNum;
-                }).map((page) => (
-                  <button
-                    key={page}
-                    onClick={() => {
-                      setCurrentPage(page);
-                      document.querySelector('.user-list-container')?.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    className={`min-w-[40px] h-10 rounded-lg font-semibold text-sm transition-all ${
-                      currentPage === page
-                        ? 'text-white shadow-md'
-                        : 'text-gray-700 bg-white border border-gray-200 hover:bg-gray-50'
-                    }`}
-                    style={currentPage === page ? {
+                  <Users size={16} style={{ color: brandTheme.colors.primary }} />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500">Loaded</p>
+                  <p className="text-sm font-bold text-gray-900">{users.length} <span className="font-normal text-gray-500">/ {totalUsers}</span></p>
+                </div>
+              </div>
+              
+              {/* Progress bar */}
+              <div className="hidden sm:flex items-center gap-2">
+                <div className="w-32 h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{ 
+                      width: `${totalUsers > 0 ? (users.length / totalUsers) * 100 : 0}%`,
                       background: brandTheme.gradients.primary
-                    } : {}}
-                  >
-                    {page}
-                  </button>
-                ))}
-
-                {/* Next Button */}
-                <button
-                  onClick={() => {
-                    if (currentPage < Math.ceil(totalUsers / usersPerPage)) {
-                      setCurrentPage(currentPage + 1);
-                      document.querySelector('.user-list-container')?.scrollTo({ top: 0, behavior: 'smooth' });
-                    }
-                  }}
-                  disabled={currentPage >= Math.ceil(totalUsers / usersPerPage)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                    currentPage >= Math.ceil(totalUsers / usersPerPage)
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  Next
-                </button>
+                    }}
+                  />
+                </div>
+                <span className="text-xs text-gray-500">
+                  {totalUsers > 0 ? Math.round((users.length / totalUsers) * 100) : 0}%
+                </span>
               </div>
             </div>
+
+            {/* Center: Quick Stats (hidden on mobile) */}
+            <div className="hidden md:flex items-center gap-3">
+              {isAdministrativeView ? (
+                <>
+                  {roleCounts.admins > 0 && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium">
+                      <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                      {roleCounts.admins} Admins
+                    </span>
+                  )}
+                  {roleCounts.principals > 0 && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-lg text-xs font-medium">
+                      <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
+                      {roleCounts.principals} Principals
+                    </span>
+                  )}
+                  {roleCounts.deans > 0 && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium">
+                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                      {roleCounts.deans} Deans
+                    </span>
+                  )}
+                  {roleCounts.teachers > 0 && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-lg text-xs font-medium">
+                      <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                      {roleCounts.teachers} Teachers
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  {roleCounts.teachers > 0 && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium">
+                      <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                      {roleCounts.teachers} Teachers
+                    </span>
+                  )}
+                  {roleCounts.students > 0 && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium">
+                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                      {roleCounts.students} Students
+                    </span>
+                  )}
+                </>
+              )}
+              {totalDisabledCount > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-50 text-red-700 rounded-lg text-xs font-medium">
+                  <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                  {totalDisabledCount} Disabled
+                </span>
+              )}
+            </div>
+
+            {/* Right: Load More Button */}
+            <div className="flex items-center gap-3">
+              {hasMore ? (
+                <button
+                  onClick={() => fetchUsers(true)}
+                  disabled={isLoadingMore}
+                  className="px-5 py-2.5 rounded-xl font-semibold text-sm transition-all text-white shadow-md hover:shadow-lg disabled:opacity-70 disabled:cursor-not-allowed flex items-center gap-2"
+                  style={{ background: brandTheme.gradients.primary }}
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span>Loading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Load More</span>
+                      <span className="bg-white/20 px-2 py-0.5 rounded-md text-xs">
+                        +{Math.min(usersPerPage, totalUsers - users.length)}
+                      </span>
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-xl">
+                  <CheckCircle size={16} />
+                  <span className="text-sm font-medium">All Loaded</span>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
 
     {/* Disable/Enable User Confirmation Modal */}
@@ -1215,7 +1382,7 @@ export default function UserList({
                 </h3>
                 <p className="text-sm text-white/80">
                   {selectedUserForProfile?.userType === USER_TYPES.STUDENT 
-                    ? `${selectedUserForProfile?.studentClass || 'N/A'} | ${selectedUserForProfile?.academicYear || 'N/A'}`
+                    ? `${selectedUserForProfile?.studentRoll ? `${selectedUserForProfile.studentRoll} | ` : ''}${selectedUserForProfile?.studentClass || 'N/A'} | ${selectedUserForProfile?.academicYear || 'N/A'}`
                     : `${(selectedUserForProfile?.userType || '').charAt(0).toUpperCase() + (selectedUserForProfile?.userType || '').slice(1)}`
                   }
                 </p>
@@ -1242,6 +1409,11 @@ export default function UserList({
             ) : (
               <div className="space-y-4">
                 {/* Common Contact Info for All Users */}
+                <div className="bg-gradient-to-r from-gray-50 to-slate-100 rounded-xl p-4 border border-gray-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <User size={22} className="text-gray-600" />
+                    <h4 className="text-lg font-bold text-gray-800">Profile Information</h4>
+                  </div>
                 <div className="grid grid-cols-2 gap-3">
                   {currentUserRole !== USER_TYPES.STUDENT && selectedUserForProfile?.email && (
                     <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
@@ -1289,6 +1461,7 @@ export default function UserList({
                       </div>
                     </div>
                   )}
+                </div>
                 </div>
 
                 {/* ===== TEACHER / PRINCIPAL / DEAN PROFILE ===== */}
@@ -1401,7 +1574,7 @@ export default function UserList({
                               <div 
                                 key={idx}
                                 className={`flex items-center gap-3 px-4 py-3 ${
-                                  idx !== selectedUserForProfile.teacherSubjects.length - 1 
+                                  idx !== (selectedUserForProfile.teacherSubjects?.length ?? 0) - 1 
                                     ? 'border-b border-dashed border-gray-200' 
                                     : ''
                                 }`}
@@ -1432,7 +1605,7 @@ export default function UserList({
                             <div 
                               key={idx}
                               className={`flex items-center gap-3 px-4 py-3 ${
-                                idx !== selectedUserForProfile.teacherClasses.length - 1 
+                                idx !== (selectedUserForProfile.teacherClasses?.length ?? 0) - 1 
                                   ? 'border-b border-dashed border-gray-200' 
                                   : ''
                               }`}
@@ -1508,10 +1681,11 @@ export default function UserList({
                 {selectedUserForProfile?.userType === USER_TYPES.STUDENT && userProfileStats && (
                   <>
                     {/* Assessment Stats - Section Header */}
-                    <div className="flex items-center gap-2 mt-4">
-                      <Target size={18} style={{ color: brandTheme.colors.primary }} />
-                      <h4 className="text-base font-bold text-gray-800">Assessments</h4>
-                    </div>
+                    <div className="bg-gradient-to-r from-blue-50 to-blue-100 rounded-xl p-4 mt-4 border border-blue-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Target size={22} className="text-blue-600" />
+                        <h4 className="text-lg font-bold text-blue-800">Assessments</h4>
+                      </div>
 
                     {/* Assessment Stats Cards */}
                     <div className="grid grid-cols-3 gap-3">
@@ -1554,12 +1728,14 @@ export default function UserList({
                         </div>
                       </div>
                     </div>
+                    </div>
 
                     {/* Learning Stats - Section Header */}
-                    <div className="flex items-center gap-2 mt-4">
-                      <Clock size={18} style={{ color: brandTheme.colors.primary }} />
-                      <h4 className="text-base font-bold text-gray-800">Learning Activity</h4>
-                    </div>
+                    <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl p-4 mt-4 border border-purple-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Clock size={22} className="text-purple-600" />
+                        <h4 className="text-lg font-bold text-purple-800">Learning Activity</h4>
+                      </div>
 
                     {/* Learning Stats Cards */}
                     <div className="grid grid-cols-2 gap-3">
@@ -1592,17 +1768,19 @@ export default function UserList({
                         </div>
                       </div>
                     </div>
+                    </div>
 
                     {/* Enrolled Courses Section Header */}
-                    <div className="flex items-center justify-between mt-4">
-                      <div className="flex items-center gap-2">
-                        <Layers size={18} style={{ color: brandTheme.colors.primary }} />
-                        <h4 className="text-base font-bold text-gray-800">Enrolled Courses</h4>
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-100 rounded-xl p-4 mt-4 border border-green-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <Layers size={22} className="text-green-600" />
+                          <h4 className="text-lg font-bold text-green-800">Enrolled Courses</h4>
+                        </div>
+                        <span className="text-xs font-semibold text-green-700 bg-white px-2.5 py-1 rounded-lg border border-green-200">
+                          {userProfileStats.enrollments.length} Courses
+                        </span>
                       </div>
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
-                        {userProfileStats.enrollments.length} Courses
-                      </span>
-                    </div>
 
                     {/* Course Stats Cards */}
                     <div className="grid grid-cols-3 gap-3">
@@ -1647,6 +1825,7 @@ export default function UserList({
                           </div>
                         </div>
                       </div>
+                    </div>
                     </div>
 
                     {/* Enrolled Courses List */}
@@ -1786,6 +1965,183 @@ export default function UserList({
             }
           }
         `}</style>
+      </>
+    )}
+
+    {/* Change Password Slide-out Modal */}
+    {showChangePasswordModal && userForPasswordChange && (
+      <>
+        {/* Backdrop */}
+        <div 
+          className="fixed inset-0 bg-black/50 z-[9999]"
+          onClick={closeChangePasswordModal}
+        />
+        
+        {/* Slide-out Panel from Right */}
+        <div 
+          className="fixed right-2 top-2 bottom-2 w-[calc(100%-16px)] sm:w-[35rem] bg-white shadow-2xl z-[10000] overflow-hidden rounded-2xl"
+          style={{ animation: 'slideInRight 0.3s ease-out' }}
+        >
+          {/* Header */}
+          <div 
+            className="px-6 py-5 border-b border-gray-200"
+            style={{ background: brandTheme.gradients.card }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div 
+                  className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg"
+                  style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #6366f1 100%)' }}
+                >
+                  <Key size={24} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Change Password</h2>
+                  <p className="text-sm text-gray-600">Set a new password for this user</p>
+                </div>
+              </div>
+              <button
+                onClick={closeChangePasswordModal}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+          </div>
+
+          {/* Content */}
+          <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 180px)' }}>
+            {/* User Info Card */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4 mb-6">
+              <div className="flex items-center space-x-3">
+                <div 
+                  className="w-12 h-12 rounded-xl flex items-center justify-center text-lg font-bold text-white shadow-md"
+                  style={{ background: brandTheme.gradients.primary }}
+                >
+                  {(userForPasswordChange.fullName || 'U').charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">{userForPasswordChange.fullName || 'Unnamed User'}</h3>
+                  <p className="text-sm text-gray-600">{userForPasswordChange.email}</p>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-blue-100 text-blue-700 mt-1">
+                    {(userForPasswordChange.userType || 'student').charAt(0).toUpperCase() + (userForPasswordChange.userType || 'student').slice(1)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Password Form */}
+            <div className="space-y-5">
+              {/* New Password */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => {
+                      setNewPassword(e.target.value);
+                      setPasswordError(null);
+                    }}
+                    placeholder="Enter new password"
+                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent text-gray-900"
+                    style={{ '--tw-ring-color': brandTheme.colors.primary } as React.CSSProperties}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showNewPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm Password */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Re-enter New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => {
+                      setConfirmPassword(e.target.value);
+                      setPasswordError(null);
+                    }}
+                    placeholder="Re-enter new password"
+                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent text-gray-900"
+                    style={{ '--tw-ring-color': brandTheme.colors.primary } as React.CSSProperties}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Error Message */}
+              {passwordError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-center space-x-2">
+                  <AlertCircle size={16} />
+                  <span>{passwordError}</span>
+                </div>
+              )}
+
+              {/* Password Requirements */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <p className="text-xs font-semibold text-gray-600 mb-2">Password Requirements:</p>
+                <ul className="text-xs text-gray-500 space-y-1">
+                  <li className={`flex items-center space-x-2 ${newPassword.length >= 6 ? 'text-green-600' : ''}`}>
+                    <span>{newPassword.length >= 6 ? '✓' : '•'}</span>
+                    <span>At least 6 characters</span>
+                  </li>
+                  <li className={`flex items-center space-x-2 ${newPassword && confirmPassword && newPassword === confirmPassword ? 'text-green-600' : ''}`}>
+                    <span>{newPassword && confirmPassword && newPassword === confirmPassword ? '✓' : '•'}</span>
+                    <span>Passwords must match</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer with Buttons */}
+          <div className="absolute bottom-0 left-0 right-0 px-6 py-4 bg-white border-t border-gray-200">
+            <div className="flex space-x-3">
+              <button
+                onClick={closeChangePasswordModal}
+                disabled={isChangingPassword}
+                className="flex-1 px-4 py-3 rounded-xl border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-all disabled:opacity-50"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleChangePasswordSubmit}
+                disabled={isChangingPassword || !newPassword || !confirmPassword}
+                className="flex-1 px-4 py-3 rounded-xl text-white font-semibold flex items-center justify-center space-x-2 transition-all shadow-md hover:shadow-lg disabled:opacity-50"
+                style={{ background: brandTheme.gradients.primary }}
+              >
+                {isChangingPassword ? (
+                  <>
+                    <Clock size={18} className="animate-spin" />
+                    <span>Changing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Key size={18} />
+                    <span>Change Password</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       </>
     )}
 

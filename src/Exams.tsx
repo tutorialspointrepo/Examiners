@@ -76,6 +76,7 @@ export interface Exam {
   createdAt: string;
   createdBy: string;
   createdById: string;
+  createdByName?: string;
   createdByRole: string;
 }
 
@@ -257,7 +258,6 @@ function Exams({
     
     try {
       const result = await firebaseService.getExamsPaginated(activeCollegeId, selectedYear, 25);
-      console.log('📊 Initial exams fetched:', result.exams.length);
       
       const formattedExams = result.exams.map(exam => ({
         id: exam.id,
@@ -293,17 +293,6 @@ function Exams({
         createdByRole: exam.createdByRole
       }));
       
-      // 🔥 DEBUG: Verify questionPool fields are preserved after formatting
-      if (formattedExams.length > 0) {
-        console.log('🔥🔥🔥 [EXAMS.TSX] First formatted exam:', {
-          examId: formattedExams[0].id,
-          hasQuestionPool: !!formattedExams[0].questionPool,
-          questionPoolLength: Array.isArray(formattedExams[0].questionPool) ? formattedExams[0].questionPool.length : 'not array',
-          pickRandomCount: formattedExams[0].pickRandomCount,
-          poolQuestionMarks: formattedExams[0].poolQuestionMarks
-        });
-      }
-      
       setExams(formattedExams as Exam[]);
       setLastDoc(result.lastDoc);
       setHasMore(result.hasMore);
@@ -318,24 +307,6 @@ function Exams({
         await onCountsChange();
       }
       
-      // Debug: Check for exams with invalid status
-      const invalidStatusExams = formattedExams.filter(exam => 
-        exam.status !== EXAM_STATUS.UPCOMING && exam.status !== EXAM_STATUS.ACTIVE && exam.status !== EXAM_STATUS.ONGOING && exam.status !== EXAM_STATUS.COMPLETED
-      );
-      if (invalidStatusExams.length > 0) {
-        console.warn('⚠️ Exams with invalid status found:', invalidStatusExams.map(e => ({
-          id: e.id,
-          title: e.title,
-          status: e.status,
-          statusType: typeof e.status,
-          examDate: e.examDate
-        })));
-      }
-      
-      console.log('✅ Initial load complete:', {
-        loaded: formattedExams.length,
-        hasMore: result.hasMore
-      });
     } catch (error) {
       console.error('Error loading exams:', error);
     } finally {
@@ -350,29 +321,15 @@ function Exams({
   useEffect(() => {
     const checkSubmissions = async () => {
       if (!userId || exams.length === 0) {
-        console.log('⏭️ Skipping submission check:', { hasUserId: !!userId, examCount: exams.length });
         return;
       }
-      
-      console.log('🔍 [EXAMS.TSX] Checking submission status for exams:', {
-        userId,
-        examCount: exams.length,
-        examIds: exams.map(e => e.id)
-      });
       
       try {
         const examIds = exams.map(e => e.id);
         const submittedMap = await firebaseService.checkSubmittedExams(examIds, userId);
-        
-        console.log('✅ [EXAMS.TSX] Submission check complete:', submittedMap);
         setSubmittedExams(submittedMap);
-        
-        // Log which exams are submitted
-        const submittedCount = Object.values(submittedMap).filter(Boolean).length;
-        console.log(`📊 [EXAMS.TSX] ${submittedCount}/${exams.length} exams already submitted by this student`);
-        
       } catch (error) {
-        console.error('❌ [EXAMS.TSX] Error checking submissions:', error);
+        console.error('Error checking submissions:', error);
       }
     };
     
@@ -384,7 +341,6 @@ function Exams({
       return;
     }
     
-    console.log('📊 Loading more exams...');
     setIsLoadingMore(true);
     
     try {
@@ -394,8 +350,6 @@ function Exams({
         25, 
         lastDoc
       );
-      
-      console.log('📊 More exams fetched:', result.exams.length);
       
       const formattedExams = result.exams.map(exam => ({
         id: exam.id,
@@ -439,12 +393,6 @@ function Exams({
       if (onExamsListChange) {
         onExamsListChange(updatedExams as Exam[]);
       }
-      
-      console.log('✅ Load more complete:', {
-        newExams: formattedExams.length,
-        totalExams: updatedExams.length,
-        hasMore: result.hasMore
-      });
     } catch (error) {
       console.error('Error loading more exams:', error);
     } finally {
@@ -465,7 +413,6 @@ function Exams({
     observerRef.current = new IntersectionObserver((entries) => {
       const firstEntry = entries[0];
       if (firstEntry.isIntersecting && hasMore && !isLoadingMore && !isLoadingExams) {
-        console.log('🔄 Sentinel intersecting, loading more exams...');
         loadMoreExams();
       }
     }, options);
@@ -485,22 +432,9 @@ function Exams({
     }
   }, [activeCollegeId, selectedYear, loadInitialExams]);
 
-/*   // Auto-refresh exams every 30 seconds for real-time updates
-  useEffect(() => {
-    if (!activeCollegeId) return;
-
-    const refreshInterval = setInterval(() => {
-      console.log('🔄 Auto-refreshing exams...');
-      loadInitialExams();
-    }, 30000); // Refresh every 30 seconds
-
-    return () => clearInterval(refreshInterval);
-  }, [activeCollegeId, selectedYear, loadInitialExams]); */
-
-
   // Auto-select and scroll to newly created exam
   useEffect(() => {
-    let highlightTimer: number | null = null;
+    let highlightTimer: ReturnType<typeof setTimeout>;
     
     if (newlyCreatedExamId && exams.length > 0) {
       const newExam = exams.find(exam => exam.id === newlyCreatedExamId);
@@ -532,12 +466,10 @@ function Exams({
         }, 10000);
       } else {
         // If newly created exam not found, refresh the list
-        console.log('🔄 Newly created exam not found in list, refreshing...');
         loadInitialExams();
       }
     } else if (newlyCreatedExamId && exams.length === 0) {
       // If exam list is empty but we have a new exam ID, load the exams
-      console.log('🔄 Loading exams to show newly created exam...');
       loadInitialExams();
     }
     
@@ -620,7 +552,7 @@ function Exams({
 
   // Filter exams by year, class, board, and exam type (without status filter)
   const baseFilteredExams = useMemo(() => {
-    return exams.filter(exam => {
+    const filtered = exams.filter(exam => {
       // ALWAYS include the highlighted (newly created) exam, regardless of filters
       if (highlightedExamId && exam.id === highlightedExamId) {
         return true;
@@ -630,18 +562,6 @@ function Exams({
       if (currentUserType === 'student') {
         const studentClassMatch = studentClass ? exam.class === studentClass : true;
         const studentBoardMatch = studentBoard ? exam.board === studentBoard : true;
-        
-        console.log('👨‍🎓 [STUDENT FILTER] Exam:', {
-          examId: exam.id,
-          examClass: exam.class,
-          examBoard: exam.board,
-          studentClass,
-          studentBoard,
-          classMatch: studentClassMatch,
-          boardMatch: studentBoardMatch,
-          finalMatch: studentClassMatch && studentBoardMatch
-        });
-        
         return studentClassMatch && studentBoardMatch;
       }
       
@@ -652,6 +572,8 @@ function Exams({
       const examTypeMatch = selectedExamType === FILTER_VALUES.ALL || exam.type === selectedExamType;
       return yearMatch && classMatch && boardMatch && examTypeMatch;
     });
+    
+    return filtered;
   }, [exams, selectedYear, selectedClass, selectedBoard, selectedExamType, currentUserType, studentClass, studentBoard, highlightedExamId]);
 
   // Filter exams including status filter and sort by priority
@@ -698,30 +620,12 @@ function Exams({
     // CRITICAL: Move highlighted exam to the top
     if (highlightedExamId) {
       const highlightedIndex = sorted.findIndex(exam => exam.id === highlightedExamId);
-      console.log('🎯 Highlighting exam:', {
-        highlightedExamId,
-        foundAtIndex: highlightedIndex,
-        totalExams: sorted.length,
-        examIds: sorted.map(e => e.id)
-      });
-      
       if (highlightedIndex >= 0) {
         const [highlightedExam] = sorted.splice(highlightedIndex, 1);
         sorted.unshift(highlightedExam);
-        console.log('✅ Moved exam to top');
-      } else {
-        console.log('❌ Highlighted exam not found in filtered list!');
       }
     }
     
-    console.log('🔍 Filtered exams:', {
-      total: exams.length,
-      baseFiltered: baseFilteredExams.length,
-      finalFiltered: sorted.length,
-      examFilter: examFilter,
-      highlightedExamId: highlightedExamId,
-      firstExamId: sorted[0]?.id
-    });
     return sorted;
   }, [baseFilteredExams, examFilter, exams.length, highlightedExamId]);
 
@@ -732,17 +636,11 @@ function Exams({
     }
   }, [filteredExams, onExamsListChange]);
 
-  // Auto-select first exam when filtered exams change
+  // Auto-select first exam when filtered exams change (only if no exam selected)
   useEffect(() => {
-    if (filteredExams.length > 0) {
-      // If no exam is selected, select the first one
-      if (!selectedExam) {
-        onExamSelect(filteredExams[0]);
-      } 
-      // If selected exam is not in filtered list, select the first visible one
-      else if (!filteredExams.find(exam => exam.id === selectedExam.id)) {
-        onExamSelect(filteredExams[0]);
-      }
+    if (filteredExams.length > 0 && !selectedExam) {
+      // Only auto-select if NO exam is currently selected
+      onExamSelect(filteredExams[0]);
     }
   }, [filteredExams, selectedExam, onExamSelect]);
 
@@ -982,38 +880,19 @@ function Exams({
               /* Exams Grid */
               <div className="grid grid-cols-1 gap-4 pb-20">
                 {filteredExams.map((exam) => {
-                  // Debug attendance
-                  console.log(`📋 ${exam.id}: mode=${exam.mode}, attendance=${exam.attendance}, show=${exam.mode === EXAM_MODES.ONLINE && exam.attendance}`);
-
                   return (
                     <div 
                       key={exam.id}
                       ref={(el) => { examCardsRef.current[exam.id] = el; }}
                       onClick={() => {
-                        // ✅ CHECK: Prevent click if exam is already submitted
+                        // Check if exam is already submitted
                         const isSubmitted = submittedExams[exam.id];
                         
-                        console.log('🔍 [EXAMS.TSX] Exam card clicked:', {
-                          examId: exam.id,
-                          examTitle: exam.title,
-                          isSubmitted,
-                          submittedExams
-                        });
-                        
                         if (isSubmitted) {
-                          console.log('🚫 [EXAMS.TSX] Exam already submitted - preventing selection');
                           alert('❌ Exam Already Submitted\n\nYou have already submitted this exam and cannot re-enter it.\n\nPlease check the Results section to view your submission.');
-                          return; // Don't select the exam
+                          return;
                         }
                         
-                        console.log('✅ [EXAMS.TSX] Sending exam to parent:', {
-                          examId: exam.id,
-                          examTitle: exam.title,
-                          createdBy: exam.createdBy,
-                          createdById: exam.createdById,
-                          hasCreatedById: 'createdById' in exam,
-                          examKeys: Object.keys(exam)
-                        });
                         onExamSelect(exam);
                       }}
                       className={`relative rounded-xl shadow-sm border p-5 transition-all duration-500 ${
@@ -1092,8 +971,16 @@ function Exams({
                             </span>
                           </p>
                         </div>
-                        <div className="flex flex-col items-end">
-                          <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md">ID: {exam.id}</span>
+                        <div className="flex items-center">
+                          <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md flex items-center gap-1.5">
+                            {/* Status Icon */}
+                            {exam.status === EXAM_STATUS.COMPLETED ? (
+                              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                            ) : (
+                              <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                            )}
+                            ID: {exam.id}
+                          </span>
                         </div>
                       </div>
                       

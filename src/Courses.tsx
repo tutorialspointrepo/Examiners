@@ -30,7 +30,6 @@ interface CoursesProps {
   };
   onCourseSelect: (course: Course | null) => void;
   selectedCourse: Course | null;
-  isMainCollapsed?: boolean;
   onCollapse?: () => void;
   currentUser?: any;
 }
@@ -39,11 +38,10 @@ const Courses: React.FC<CoursesProps> = ({
   brandTheme,
   onCourseSelect,
   selectedCourse,
-  isMainCollapsed = false,
   onCollapse,
   currentUser,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, _setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'topRated' | 'recentlyAdded'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
@@ -208,8 +206,6 @@ const Courses: React.FC<CoursesProps> = ({
     return result;
   }, [searchQuery, selectedFilter, selectedCategory]);
 
-  const topRatedCount = courses.filter(c => (c.rating || 0) >= 4.5).length;
-  const recentlyAddedCount = courses.length; // All courses can be sorted by recent
 
   return (
     <div className="h-full flex flex-col bg-white border-r border-gray-200" style={{ minWidth: '600px', maxWidth: '600px', width: '600px' }}>
@@ -446,7 +442,7 @@ const Courses: React.FC<CoursesProps> = ({
                           </span>
                           <span className="mx-2 text-gray-300">|</span>
                           <span className="text-purple-600">
-                            {course.avgMarks || Math.round(70 + Math.random() * 20)}% Avg Marks
+                            {(course as any).avgMarks || Math.round(70 + Math.random() * 20)}% Avg Marks
                           </span>
                         </>
                       )}

@@ -35,11 +35,7 @@ import {
   faPlus,
   faTrash,
   faCheck,
-  faShield,
-  faShieldSlash,
   faLaptop,
-  faFileArrowUp,
-  faSparkles,
   faImage,
   faBookBookmark,
   faClipboardList,
@@ -310,23 +306,18 @@ const getProgrammingLanguageIcon = (language: string): any => {
   return iconMap[language] || faLaptop;
 };
 
-/**
- * Calculate current academic year based on current date
- * Academic year runs from April to March
- * Example: April 2025 - March 2026 = "2025-26"
- */
-const getCurrentAcademicYear = (): string => {
+// Get academic year from database for a college
+const getCurrentAcademicYear = async (collegeId?: string): Promise<string> => {
+  if (collegeId) {
+    return await firebaseService.getAcademicYear(collegeId);
+  }
+  // Fallback: calculate based on April start
   const now = new Date();
   const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1; // JavaScript months are 0-indexed
-  
-  // If current month is April (4) or later, academic year is current-next
-  // If current month is before April, academic year is previous-current
+  const currentMonth = now.getMonth() + 1;
   if (currentMonth >= 4) {
-    // April 2025 onwards → 2025-26
     return `${currentYear}-${(currentYear + 1).toString().slice(-2)}`;
   } else {
-    // January-March 2026 → 2025-26
     return `${currentYear - 1}-${currentYear.toString().slice(-2)}`;
   }
 };
@@ -342,7 +333,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [attendance, setAttendance] = useState<boolean>(false);
   const [avProctoring, setAvProctoring] = useState<boolean>(false);
   const [completionPolicy, setCompletionPolicy] = useState<'strict' | 'flexible'>('strict');
-  const [academicYear, setAcademicYear] = useState('2025-26');
+  const [academicYear, setAcademicYear] = useState('');
   const [examType, setExamType] = useState('');
   const [className, setClassName] = useState('');
   const [subject, setSubject] = useState('');
@@ -419,7 +410,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [classes, setClasses] = useState<string[]>([]);
   const [subjects, setSubjects] = useState<string[]>([]);
   const [boards, setBoards] = useState<string[]>([]);
-  const [academicYears, setAcademicYears] = useState<string[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
   const [totalStudents, setTotalStudents] = useState(0);
@@ -717,14 +707,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
             ? college.supportedBoards
             : ['CBSE', 'ICSE', 'State Board'];
           
-        
-          const loadedAcademicYears = ['2024-25', '2025-26', '2026-27', '2027-28', '2028-29', '2029-30'];
-
           setExamTypes(loadedExamTypes);
           setClasses(loadedClasses);
           setSubjects(loadedSubjects);
           setBoards(loadedBoards);
-          setAcademicYears(loadedAcademicYears);
 
           if (!examType && loadedExamTypes.length > 0) {
             setExamType(loadedExamTypes[0]);
@@ -735,12 +721,13 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           if (!subject && loadedSubjects.length > 0) {
             setSubject(loadedSubjects[0]);
           }
-          if (!board && loadedBoards.length > 0) {
+          // Set board and academicYear from college data by default
+          if (loadedBoards.length > 0) {
             setBoard(loadedBoards[0]);
           }
-          if (!academicYear && loadedAcademicYears.length > 0) {
-            setAcademicYear(loadedAcademicYears[0]);
-          }
+          // Set academicYear from college data
+          const year = await getCurrentAcademicYear(activeCollegeId);
+          setAcademicYear(year);
         }
       } catch (error) {
         console.error('Error loading college data:', error);
@@ -748,7 +735,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         setClasses(['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th']);
         setSubjects(['Mathematics', 'Science', 'English', 'Hindi', 'Social Science']);
         setBoards(['CBSE', 'ICSE', 'State Board']);
-        setAcademicYears(['2024-25', '2025-26', '2026-27', '2027-28', '2028-29', '2029-30']);
       } finally {
         setIsLoadingData(false);
       }
@@ -827,7 +813,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         setAttendance(false);
         setAvProctoring(false);
         setCompletionPolicy('strict');
-        setAcademicYear(getCurrentAcademicYear());
+        getCurrentAcademicYear().then(year => setAcademicYear(year));
         setMaximumMarks(100);
         setExamDate('');
         setExamTime('');
@@ -910,9 +896,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     if (!duration || duration <= 0) {
       newErrors.duration = 'Duration must be greater than 0';
     }
-    if (!academicYear) {
-      newErrors.academicYear = 'Academic year is required';
-    }
+    
     if (!examType) {
       newErrors.examType = 'Exam type is required';
     }
@@ -922,10 +906,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     if (!subject) {
       newErrors.subject = 'Subject is required';
     }
-    if (!board) {
-      newErrors.board = 'Board is required';
-    }
-    
+  
     if (examMode === EXAM_MODES.OFFLINE) {
       if (questionPaperImages.length === 0) {
         newErrors.questionPaperImages = 'Please upload at least one question paper image';
@@ -2771,45 +2752,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  {/* Academic Year */}
-                  <div className="dropdown-container">
-                    <label className="block text-xs font-semibold text-gray-900 mb-1.5">
-                      Academic Year <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <button
-                        onClick={() => setOpenDropdown(openDropdown === 'year' ? null : 'year')}
-                        className={`w-full px-3 py-3 border rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm focus:ring-2 focus:border-transparent ${
-                          errors.academicYear && showErrors 
-                            ? 'border-red-300 bg-red-50' 
-                            : 'border-gray-300 hover:border-gray-400 bg-white'
-                        }`}
-                      >
-                        <span className="text-gray-900">{academicYear}</span>
-                        <FontAwesomeIcon icon={faChevronDown} className="text-gray-500" />
-                      </button>
-                      {openDropdown === 'year' && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto custom-scrollbar">
-                          {academicYears.map((year) => (
-                            <button
-                              key={year}
-                              onClick={() => {
-                                setAcademicYear(year);
-                                setOpenDropdown(null);
-                              }}
-                              className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors font-medium text-gray-900 text-sm"
-                            >
-                              {year}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {errors.academicYear && showErrors && (
-                      <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.academicYear}</p>
-                    )}
-                  </div>
-
                   {/* Exam Type */}
                   <div className="dropdown-container">
                     <label className="block text-xs font-semibold text-gray-900 mb-1.5">
@@ -2945,45 +2887,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     </div>
                     {errors.subject && showErrors && (
                       <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.subject}</p>
-                    )}
-                  </div>
-
-                  {/* Board */}
-                  <div className="dropdown-container">
-                    <label className="block text-xs font-semibold text-gray-900 mb-1.5">
-                      Board <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <button
-                        onClick={() => setOpenDropdown(openDropdown === 'board' ? null : 'board')}
-                        className={`w-full px-3 py-3 border rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm focus:ring-2 focus:border-transparent ${
-                          errors.board && showErrors 
-                            ? 'border-red-300 bg-red-50' 
-                            : 'border-gray-300 hover:border-gray-400 bg-white'
-                        }`}
-                      >
-                        <span className="text-gray-900">{board || 'Select Board'}</span>
-                        <FontAwesomeIcon icon={faChevronDown} className="text-gray-500" />
-                      </button>
-                      {openDropdown === 'board' && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto custom-scrollbar">
-                          {boards.map((brd) => (
-                            <button
-                              key={brd}
-                              onClick={() => {
-                                setBoard(brd);
-                                setOpenDropdown(null);
-                              }}
-                              className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors font-medium text-gray-900 text-sm"
-                            >
-                              {brd}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {errors.board && showErrors && (
-                      <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.board}</p>
                     )}
                   </div>
 

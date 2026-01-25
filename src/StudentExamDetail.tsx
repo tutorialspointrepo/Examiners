@@ -39,8 +39,6 @@ import {
   faBook,
   faTrophy,
   faCheckCircle,
-  faChartBar,
-  faPercentage,
   faChevronDown,
   faChevronUp,
   faInfoCircle,
@@ -530,19 +528,19 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
   };
 
   const getComplexityStyle = (complexity?: string) => {
-    if (!complexity) return { className: 'bg-gray-100 text-gray-700', label: 'N/A' };
+    if (!complexity) return { className: 'bg-gray-50 text-gray-700 border-gray-200', label: 'N/A' };
     
     const normalizedComplexity = complexity.toLowerCase();
     
     if (normalizedComplexity === COMPLEXITY_LEVELS.EASY) {
-      return { className: 'bg-green-100 text-green-700', label: COMPLEXITY_LABELS.easy };
+      return { className: 'bg-green-50 text-green-700 border-green-200', label: COMPLEXITY_LABELS.easy };
     } else if (normalizedComplexity === COMPLEXITY_LEVELS.MEDIUM) {
-      return { className: 'bg-yellow-100 text-yellow-700', label: COMPLEXITY_LABELS.medium };
+      return { className: 'bg-yellow-50 text-yellow-700 border-yellow-200', label: COMPLEXITY_LABELS.medium };
     } else if (normalizedComplexity === COMPLEXITY_LEVELS.HARD) {
-      return { className: 'bg-cyan-100 text-cyan-700', label: COMPLEXITY_LABELS.hard };
+      return { className: 'bg-red-50 text-red-700 border-red-200', label: COMPLEXITY_LABELS.hard };
     }
     
-    return { className: 'bg-gray-100 text-gray-700', label: complexity };
+    return { className: 'bg-gray-50 text-gray-700 border-gray-200', label: complexity };
   };
 
   const isQuestionType = (questionType: string | undefined, type: string) => {
@@ -999,10 +997,10 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                         </div>
 
                         {/* Middle Section: Score Display */}
-                        <div className="flex items-center gap-6 flex-shrink-0">
+                        <div className="flex items-center gap-8">
                           {/* Marks */}
-                          <div className="text-center">
-                            <div className="flex items-baseline gap-1">
+                          <div className="text-center min-w-[100px]">
+                            <div className="flex items-baseline justify-center gap-1">
                               <span className="text-2xl font-bold text-gray-900">
                                 {performance.score.toFixed(2)}
                               </span>
@@ -1012,9 +1010,8 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                           </div>
 
                           {/* Percentage */}
-                          <div className="text-center">
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg" style={{ backgroundColor: `${gradeInfo.color}15` }}>
-                              <FontAwesomeIcon icon={faPercentage} className="text-xs" style={{ color: gradeInfo.color }} />
+                          <div className="text-center min-w-[80px]">
+                            <div className="flex items-center justify-center px-3 py-1.5 rounded-lg" style={{ backgroundColor: `${gradeInfo.color}15` }}>
                               <span className="text-xl font-bold" style={{ color: gradeInfo.color }}>
                                 {percentage}%
                               </span>
@@ -1023,49 +1020,6 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                           </div>
                         </div>
 
-                        {/* Right Section: Progress Bar & Status */}
-                        <div className="flex-1 min-w-[200px] max-w-[300px]">
-                          {/* Progress Bar */}
-                          <div className="mb-2">
-                            <div 
-                              className="relative w-full h-3 rounded-full overflow-hidden"
-                              style={{ 
-                                backgroundColor: `${themeColor.accent}15`
-                              }}
-                            >
-                              <div
-                                className="absolute top-0 left-0 h-full rounded-full transition-all duration-700 ease-out"
-                                style={{
-                                  width: `${percentage}%`,
-                                  background: `linear-gradient(90deg, ${gradeInfo.color} 0%, ${gradeInfo.color}cc 100%)`,
-                                  boxShadow: `0 0 10px ${gradeInfo.color}30`
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Status & Points */}
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-1.5">
-                              <FontAwesomeIcon 
-                                icon={performance.score === performance.maxScore ? faCheckCircle : faChartBar} 
-                                className="text-xs"
-                                style={{ color: performance.score === performance.maxScore ? gradeInfo.color : themeColor.accent }}
-                              />
-                              <span className="text-xs font-medium text-gray-600">
-                                {performance.score === performance.maxScore ? 'Perfect!' : 'In Progress'}
-                              </span>
-                            </div>
-                            {performance.score > 0 && (
-                              <div className="flex items-center gap-1">
-                                <FontAwesomeIcon icon={faTrophy} className="text-xs" style={{ color: gradeInfo.color }} />
-                                <span className="text-xs font-semibold" style={{ color: gradeInfo.color }}>
-                                  {performance.score} pts
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
                       </div>
 
                       {/* Subtle Hover Effect Overlay */}
@@ -1168,7 +1122,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                     <p className="text-2xl font-bold text-gray-900">
                       {chapters.reduce((sum, [, perf]) => sum + perf.score, 0)}
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">Total Points</p>
+                    <p className="text-xs text-gray-500 mt-1">Total Marks</p>
                   </div>
 
                   {/* Average Performance */}
@@ -1215,323 +1169,313 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
           </div>
         </div>
 
-        {/* Grade Criteria Modal */}
-        {showGradeModal && (
+        {/* Grade Criteria Modal - Slide from Right */}
+        <div className={`fixed inset-0 z-[9999] flex items-start justify-end p-2 transition-opacity duration-300 ${
+          showGradeModal ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}>
           <div 
-            className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm"
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
             onClick={() => setShowGradeModal(false)}
+          />
+          
+          <div 
+            className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[35rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+              showGradeModal ? 'translate-x-0' : 'translate-x-[calc(100%+1rem)]'
+            }`}
+            onClick={(e) => e.stopPropagation()}
           >
+            {/* Header with Gradient - Primary Color */}
             <div 
-              className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto scrollbar-hide"
-              onClick={(e) => e.stopPropagation()}
-              style={{
-                scrollbarWidth: 'none', // Firefox
-                msOverflowStyle: 'none' // IE and Edge
-              }}
+              className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+              style={{ background: `linear-gradient(135deg, ${brandTheme.colors.primary} 0%, ${brandTheme.colors.primary}dd 100%)` }}
             >
-              {/* Modal Header */}
-              <div 
-                className="sticky top-0 px-6 py-5 border-b border-gray-200 bg-white rounded-t-2xl z-10"
-                style={{ background: `linear-gradient(135deg, ${brandTheme.colors.primary}08 0%, ${brandTheme.colors.primary}03 100%)` }}
+              <div className="flex items-center space-x-3">
+                <div 
+                  className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{ background: 'rgba(255,255,255,0.2)' }}
+                >
+                  <FontAwesomeIcon icon={faTrophy} className="text-white" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Grade Criteria</h2>
+                  <p className="text-xs text-white/80">Performance evaluation standards</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowGradeModal(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:bg-white/20"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <FontAwesomeIcon icon={faTimes} className="text-white" />
+              </button>
+            </div>
+            
+            {/* Modal Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <div className="space-y-3">
+                {/* A+ Grade */}
+                <div 
+                  className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                  style={{ border: '2px solid #d1fae5' }}
+                >
+                  <div className="flex items-center gap-4">
                     <div 
-                      className="w-12 h-12 rounded-xl flex items-center justify-center"
+                      className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-xl flex-shrink-0"
                       style={{ 
-                        backgroundColor: `${brandTheme.colors.primary}15`,
-                        border: `2px solid ${brandTheme.colors.primary}30`
+                        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                        color: '#10b981',
+                        border: '2px solid #d1fae5'
                       }}
                     >
-                      <FontAwesomeIcon 
-                        icon={faTrophy} 
-                        className="text-xl" 
-                        style={{ color: brandTheme.colors.primary }}
-                      />
+                      A+
                     </div>
-                    <div>
-                      <h2 className="text-xl font-bold text-gray-900">Grade Criteria</h2>
-                      <p className="text-sm text-gray-600 mt-0.5">Performance evaluation standards</p>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-bold text-gray-900">Excellent</h3>
+                        <span 
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ 
+                            color: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.15)'
+                          }}
+                        >
+                          90% - 100%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600">Outstanding performance with comprehensive understanding</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setShowGradeModal(false)}
-                    className="w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200 hover:bg-gray-100"
-                    style={{ color: brandTheme.colors.primary }}
-                  >
-                    <FontAwesomeIcon icon={faTimes} className="text-xl" />
-                  </button>
+                </div>
+
+                {/* A Grade */}
+                <div 
+                  className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                  style={{ border: '2px solid #bbf7d0' }}
+                >
+                  <div className="flex items-center gap-4">
+                    <div 
+                      className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-xl flex-shrink-0"
+                      style={{ 
+                        backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                        color: '#22c55e',
+                        border: '2px solid #bbf7d0'
+                      }}
+                    >
+                      A
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-bold text-gray-900">Very Good</h3>
+                        <span 
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ 
+                            color: '#22c55e',
+                            backgroundColor: 'rgba(34, 197, 94, 0.15)'
+                          }}
+                        >
+                          80% - 89%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600">Very good performance with strong understanding</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* B+ Grade */}
+                <div 
+                  className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                  style={{ border: '2px solid #bfdbfe' }}
+                >
+                  <div className="flex items-center gap-4">
+                    <div 
+                      className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-xl flex-shrink-0"
+                      style={{ 
+                        backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                        color: '#3b82f6',
+                        border: '2px solid #bfdbfe'
+                      }}
+                    >
+                      B+
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-bold text-gray-900">Good</h3>
+                        <span 
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ 
+                            color: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.15)'
+                          }}
+                        >
+                          70% - 79%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600">Good performance with solid understanding</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* B Grade */}
+                <div 
+                  className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                  style={{ border: '2px solid #dbeafe' }}
+                >
+                  <div className="flex items-center gap-4">
+                    <div 
+                      className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-xl flex-shrink-0"
+                      style={{ 
+                        backgroundColor: 'rgba(96, 165, 250, 0.15)',
+                        color: '#60a5fa',
+                        border: '2px solid #dbeafe'
+                      }}
+                    >
+                      B
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-bold text-gray-900">Above Average</h3>
+                        <span 
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ 
+                            color: '#60a5fa',
+                            backgroundColor: 'rgba(96, 165, 250, 0.15)'
+                          }}
+                        >
+                          60% - 69%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600">Above average performance with good grasp of concepts</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* C Grade */}
+                <div 
+                  className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                  style={{ border: '2px solid #fde68a' }}
+                >
+                  <div className="flex items-center gap-4">
+                    <div 
+                      className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-xl flex-shrink-0"
+                      style={{ 
+                        backgroundColor: 'rgba(234, 179, 8, 0.15)',
+                        color: '#eab308',
+                        border: '2px solid #fde68a'
+                      }}
+                    >
+                      C
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-bold text-gray-900">Average</h3>
+                        <span 
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ 
+                            color: '#eab308',
+                            backgroundColor: 'rgba(234, 179, 8, 0.15)'
+                          }}
+                        >
+                          50% - 59%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600">Average performance with basic understanding</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* D Grade */}
+                <div 
+                  className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                  style={{ border: '2px solid #fed7aa' }}
+                >
+                  <div className="flex items-center gap-4">
+                    <div 
+                      className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-xl flex-shrink-0"
+                      style={{ 
+                        backgroundColor: 'rgba(249, 115, 22, 0.15)',
+                        color: '#f97316',
+                        border: '2px solid #fed7aa'
+                      }}
+                    >
+                      D
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-bold text-gray-900">Below Average</h3>
+                        <span 
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ 
+                            color: '#f97316',
+                            backgroundColor: 'rgba(249, 115, 22, 0.15)'
+                          }}
+                        >
+                          40% - 49%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600">Below average performance, needs improvement</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* F Grade */}
+                <div 
+                  className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
+                  style={{ border: '2px solid #fecaca' }}
+                >
+                  <div className="flex items-center gap-4">
+                    <div 
+                      className="w-14 h-14 rounded-xl flex items-center justify-center font-bold text-xl flex-shrink-0"
+                      style={{ 
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                        color: '#ef4444',
+                        border: '2px solid #fecaca'
+                      }}
+                    >
+                      F
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-base font-bold text-gray-900">Needs Significant Improvement</h3>
+                        <span 
+                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ 
+                            color: '#ef4444',
+                            backgroundColor: 'rgba(239, 68, 68, 0.15)'
+                          }}
+                        >
+                          0% - 39%
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600">Unsatisfactory performance, requires significant improvement</p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Modal Content */}
-              <div className="px-6 py-6">
-                <div className="space-y-3">
-                  {/* A+ Grade */}
-                  <div 
-                    className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #d1fae5' }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div 
-                        className="w-16 h-16 rounded-xl flex items-center justify-center font-bold text-2xl flex-shrink-0"
-                        style={{ 
-                          backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                          color: '#10b981',
-                          border: '2px solid #d1fae5'
-                        }}
-                      >
-                        A+
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-bold text-gray-900">Excellent</h3>
-                          <span 
-                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                            style={{ 
-                              color: '#10b981',
-                              backgroundColor: 'rgba(16, 185, 129, 0.15)'
-                            }}
-                          >
-                            90% - 100%
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">Outstanding performance with comprehensive understanding</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* A Grade */}
-                  <div 
-                    className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #bbf7d0' }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div 
-                        className="w-16 h-16 rounded-xl flex items-center justify-center font-bold text-2xl flex-shrink-0"
-                        style={{ 
-                          backgroundColor: 'rgba(34, 197, 94, 0.15)',
-                          color: '#22c55e',
-                          border: '2px solid #bbf7d0'
-                        }}
-                      >
-                        A
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-bold text-gray-900">Very Good</h3>
-                          <span 
-                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                            style={{ 
-                              color: '#22c55e',
-                              backgroundColor: 'rgba(34, 197, 94, 0.15)'
-                            }}
-                          >
-                            80% - 89%
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">Very good performance with strong understanding</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* B+ Grade */}
-                  <div 
-                    className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #bfdbfe' }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div 
-                        className="w-16 h-16 rounded-xl flex items-center justify-center font-bold text-2xl flex-shrink-0"
-                        style={{ 
-                          backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                          color: '#3b82f6',
-                          border: '2px solid #bfdbfe'
-                        }}
-                      >
-                        B+
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-bold text-gray-900">Good</h3>
-                          <span 
-                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                            style={{ 
-                              color: '#3b82f6',
-                              backgroundColor: 'rgba(59, 130, 246, 0.15)'
-                            }}
-                          >
-                            70% - 79%
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">Good performance with solid understanding</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* B Grade */}
-                  <div 
-                    className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #dbeafe' }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div 
-                        className="w-16 h-16 rounded-xl flex items-center justify-center font-bold text-2xl flex-shrink-0"
-                        style={{ 
-                          backgroundColor: 'rgba(96, 165, 250, 0.15)',
-                          color: '#60a5fa',
-                          border: '2px solid #dbeafe'
-                        }}
-                      >
-                        B
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-bold text-gray-900">Above Average</h3>
-                          <span 
-                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                            style={{ 
-                              color: '#60a5fa',
-                              backgroundColor: 'rgba(96, 165, 250, 0.15)'
-                            }}
-                          >
-                            60% - 69%
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">Above average performance with good grasp of concepts</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* C Grade */}
-                  <div 
-                    className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #fde68a' }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div 
-                        className="w-16 h-16 rounded-xl flex items-center justify-center font-bold text-2xl flex-shrink-0"
-                        style={{ 
-                          backgroundColor: 'rgba(234, 179, 8, 0.15)',
-                          color: '#eab308',
-                          border: '2px solid #fde68a'
-                        }}
-                      >
-                        C
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-bold text-gray-900">Average</h3>
-                          <span 
-                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                            style={{ 
-                              color: '#eab308',
-                              backgroundColor: 'rgba(234, 179, 8, 0.15)'
-                            }}
-                          >
-                            50% - 59%
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">Average performance with basic understanding</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* D Grade */}
-                  <div 
-                    className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #fed7aa' }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div 
-                        className="w-16 h-16 rounded-xl flex items-center justify-center font-bold text-2xl flex-shrink-0"
-                        style={{ 
-                          backgroundColor: 'rgba(249, 115, 22, 0.15)',
-                          color: '#f97316',
-                          border: '2px solid #fed7aa'
-                        }}
-                      >
-                        D
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-bold text-gray-900">Below Average</h3>
-                          <span 
-                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                            style={{ 
-                              color: '#f97316',
-                              backgroundColor: 'rgba(249, 115, 22, 0.15)'
-                            }}
-                          >
-                            40% - 49%
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">Below average performance, needs improvement</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* F Grade */}
-                  <div 
-                    className="group bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md"
-                    style={{ border: '2px solid #fecaca' }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div 
-                        className="w-16 h-16 rounded-xl flex items-center justify-center font-bold text-2xl flex-shrink-0"
-                        style={{ 
-                          backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                          color: '#ef4444',
-                          border: '2px solid #fecaca'
-                        }}
-                      >
-                        F
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="text-lg font-bold text-gray-900">Needs Significant Improvement</h3>
-                          <span 
-                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                            style={{ 
-                              color: '#ef4444',
-                              backgroundColor: 'rgba(239, 68, 68, 0.15)'
-                            }}
-                          >
-                            0% - 39%
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-600">Unsatisfactory performance, requires significant improvement</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Info Footer */}
-                <div 
-                  className="mt-6 p-4 rounded-xl"
-                  style={{ 
-                    backgroundColor: `${brandTheme.colors.primary}08`,
-                    border: `1px solid ${brandTheme.colors.primary}20`
-                  }}
-                >
-                  <div className="flex items-start gap-3">
-                    <FontAwesomeIcon 
-                      icon={faInfoCircle} 
-                      className="text-lg mt-0.5" 
-                      style={{ color: brandTheme.colors.primary }}
-                    />
-                    <div className="flex-1">
-                      <p className="text-sm font-semibold text-gray-900 mb-1">How Grades Are Calculated</p>
-                      <p className="text-xs text-gray-600">
-                        Grades are automatically calculated based on the percentage of marks obtained out of the total marks available for each chapter. Click on any grade badge in the chapter performance section to view this information.
-                      </p>
-                    </div>
+              {/* Info Footer */}
+              <div 
+                className="mt-4 p-4 rounded-xl"
+                style={{ 
+                  backgroundColor: `${brandTheme.colors.primary}08`,
+                  border: `1px solid ${brandTheme.colors.primary}20`
+                }}
+              >
+                <div className="flex items-start gap-3">
+                  <FontAwesomeIcon 
+                    icon={faInfoCircle} 
+                    className="text-base mt-0.5" 
+                    style={{ color: brandTheme.colors.primary }}
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-gray-900 mb-1">How Grades Are Calculated</p>
+                    <p className="text-xs text-gray-600">
+                      Grades are automatically calculated based on the percentage of marks obtained out of the total marks available for each chapter.
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        )}
+        </div>
 
         <style>{`
           @keyframes fadeInUp {
@@ -1870,21 +1814,21 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                       </div>
                       
                       {/* Type badge */}
-                      <span className="text-xs px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 font-semibold uppercase tracking-wide">
+                      <span className="h-12 px-4 rounded-xl bg-blue-50 text-blue-700 font-semibold uppercase tracking-wide flex items-center justify-center text-sm border border-blue-200">
                         {QUESTION_TYPE_LABELS[question.questionType as keyof typeof QUESTION_TYPE_LABELS] || question.questionType}
                       </span>
                       
                       {/* Complexity badge */}
                       {question.complexity && (
-                        <span className={`text-xs px-3 py-1.5 rounded-lg font-semibold uppercase tracking-wide ${getComplexityStyle(question.complexity).className}`}>
+                        <span className={`h-12 px-4 rounded-xl font-semibold uppercase tracking-wide flex items-center justify-center text-sm border ${getComplexityStyle(question.complexity).className}`}>
                           {getComplexityStyle(question.complexity).label}
                         </span>
                       )}
                       
                       {/* Question Pool badge */}
                       {isQuestionFromPool(question.questionId) && (
-                        <span className="text-xs px-3 py-1.5 rounded-lg bg-purple-100 text-purple-700 font-semibold uppercase tracking-wide flex items-center gap-1.5">
-                          <FontAwesomeIcon icon={faLayerGroup} className="text-xs" />
+                        <span className="h-12 px-4 rounded-xl bg-purple-50 text-purple-700 font-semibold uppercase tracking-wide flex items-center justify-center gap-1.5 text-sm border border-purple-200">
+                          <FontAwesomeIcon icon={faLayerGroup} className="text-sm" />
                           Pool
                         </span>
                       )}

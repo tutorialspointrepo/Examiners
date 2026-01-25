@@ -15,7 +15,8 @@ import {
   updatePassword,
   reauthenticateWithCredential,
   EmailAuthProvider,
-  createUserWithEmailAndPassword,
+  browserSessionPersistence,
+  setPersistence,
   type User,
   type UserCredential,
   type Auth
@@ -29,6 +30,7 @@ import {
   getDoc, 
   getDocs,
   getDocsFromServer,
+  getCountFromServer,
   setDoc, 
   updateDoc, 
   deleteDoc,
@@ -73,7 +75,6 @@ import {
   ACTIVITY_TYPES,
   ATTENDANCE_STATUS,
   CONNECTION_STATUS,
-  VIOLATION_TYPES,
   type QuestionType,
   type UserType,
   type UserStatus,
@@ -730,6 +731,14 @@ export interface PaginatedUsersResult {
   lastDoc: DocumentSnapshot | null;
   hasMore: boolean;
   total: number;
+  roleCounts?: {
+    students: number;
+    teachers: number;
+    admins: number;
+    principals: number;
+    deans: number;
+    disabled: number;
+  };
 }
 
 export interface CollegeModel {
@@ -744,6 +753,7 @@ export interface CollegeModel {
   website: string;
   establishedYear?: number;
   collegeType: string;
+  academicYear?: string;
   supportedBoards: string[];
   subjects: string[];
   validClasses: string[];
@@ -2876,18 +2886,18 @@ async addViolation(
     } as any;
     
     // Add to responses array
-    attempt.responses.push(questionResponse);
+    attempt.responses.push(questionResponse!);
     console.log(`✅ Created placeholder response for Q${violation.questionNo}`);
   } else {
     console.log(`✅ Found existing response for Q${violation.questionNo} - adding violation`);
   }
   
   // ✅ Initialize violations array if it doesn't exist
-  if (!questionResponse.violations) {
-    questionResponse.violations = [];
+  if (!questionResponse!.violations) {
+    questionResponse!.violations = [];
   }
 
-  console.log(`✅ Q${violation.questionNo} has ${questionResponse.violations.length} violations before adding`);
+  console.log(`✅ Q${violation.questionNo} has ${questionResponse!.violations.length} violations before adding`);
 
   // Store violation with ISO string timestamp
   const violationWithTimestamp = {
@@ -2896,10 +2906,10 @@ async addViolation(
   };
   
   // ✅ Add violation to question level
-  questionResponse.violations.push(violationWithTimestamp as any);
+  questionResponse!.violations.push(violationWithTimestamp as any);
   console.log(`🚨 Violation added to Q${violation.questionNo}:`, violation.type);
   console.log(`   Timestamp stored: ${timestampToStore}`);
-  console.log(`   Total violations on Q${violation.questionNo}:`, questionResponse.violations.length);
+  console.log(`   Total violations on Q${violation.questionNo}:`, questionResponse!.violations.length);
   
   // ✅ Violations are stored at question level only
   console.log(`✅ Violation stored at question level for Q${violation.questionNo}`);
@@ -3992,7 +4002,7 @@ private calculateStatistics(numbers: number[]): {
       this.auth = getAuth(this.app);
       this.firestore = getFirestore(this.app);
       this.storage = getStorage(this.app);
-      this.functions = getFunctions(this.app);
+      this.functions = getFunctions(this.app, 'us-central1');
       console.log('✅ Functions initialized');
       console.log('✅ Firebase initialized successfully');
     } catch (error) {
@@ -4024,43 +4034,19 @@ private calculateStatistics(numbers: number[]): {
     return onAuthStateChanged(this.auth, callback);
   }
   
-
-  private async sendWelcomeEmail(
-  email: string,
-  name: string,
-  password: string,
-  userType: string,
-  collegeId?: string
-): Promise<void> {
-  try {
-    if (!this.functions) {
-      console.warn('⚠️ Firebase Functions not initialized, skipping email');
-      return;
-    }
-
-    console.log('📧 Calling Cloud Function to send welcome email...');
-    
-    const sendWelcomeEmailFn = httpsCallable(this.functions, 'sendWelcomeEmail');
-    
-    const result = await sendWelcomeEmailFn({
-      email,
-      name,
-      password,
-      userType,
-      collegeId,
+  // Wait for auth to be ready and return current user (for session restore on refresh)
+  waitForAuthReady(): Promise<User | null> {
+    return new Promise((resolve) => {
+      if (!this.auth) {
+        resolve(null);
+        return;
+      }
+      const unsubscribe = onAuthStateChanged(this.auth, (user) => {
+        unsubscribe();
+        resolve(user);
+      });
     });
-
-    const response = result.data as any;
-    
-    if (response.success) {
-      console.log('✅ Welcome email sent successfully to:', email);
-    } else {
-      console.warn('⚠️ Email sending failed:', response.message);
-    }
-  } catch (error: any) {
-    console.error('❌ Error calling sendWelcomeEmail function:', error);
   }
-}
 
   /**
    * Fetch GEO API key from Firestore settings
@@ -4191,6 +4177,9 @@ private calculateStatistics(numbers: number[]): {
       if (!this.auth || !this.firestore) {
         throw new Error('Firebase not initialized');
       }
+      
+      // ✅ Set session persistence - clears on browser close
+      await setPersistence(this.auth, browserSessionPersistence);
       
       // Sign in with Firebase Auth
       const userCredential: UserCredential = await signInWithEmailAndPassword(
@@ -4412,13 +4401,87 @@ private calculateStatistics(numbers: number[]): {
       console.error('Change password error:', error);
       let errorMessage = 'Failed to change password';
       
-      if (error.code === 'auth/wrong-password') {
+      if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         errorMessage = 'Current password is incorrect';
       } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'New password is too weak';
+        errorMessage = 'New password is too weak. Please use at least 6 characters';
+      } else if (error.code === 'auth/requires-recent-login') {
+        errorMessage = 'Please log out and log in again before changing your password';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many failed attempts. Please try again later';
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = 'Network error. Please check your internet connection';
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = 'User not found. Please log in again';
       }
       
       return { success: false, error: errorMessage };
+    }
+  }
+  
+  /**
+   * Change another user's password (Admin function)
+   * This requires a Cloud Function with Admin SDK as Firebase Auth 
+   * doesn't allow changing another user's password from client-side
+   * 
+   * @param targetUserId - The user ID whose password will be changed
+   * @param newPassword - The new password to set
+   * @param currentUser - The current logged-in user performing the action
+   * @returns Promise with success status
+   */
+  async changeUserPassword(
+    targetUserId: string,
+    newPassword: string,
+    currentUser: UserModel
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!this.functions || !this.firestore) {
+        throw new Error('Firebase not initialized');
+      }
+      
+      // Validate password
+      if (!newPassword || newPassword.length < 6) {
+        throw new Error('Password must be at least 6 characters');
+      }
+      
+      // Call Cloud Function to change password (requires Admin SDK)
+      const changeUserPasswordFn = httpsCallable(this.functions, 'changeUserPasswordAdmin');
+      const result = await changeUserPasswordFn({
+        targetUserId,
+        newPassword,
+        performedBy: currentUser.userId,
+        performedByRole: currentUser.userType
+      });
+      
+      const data = result.data as { success: boolean; error?: string };
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to change password');
+      }
+      
+      // Log the activity
+      await this.addActivityLog({
+        userId: currentUser.userId,
+        collegeId: currentUser.collegeId || '',
+        action: 'password_changed',
+        entityType: 'user',
+        entityId: targetUserId,
+        details: JSON.stringify({
+          targetUserId,
+          changedBy: currentUser.userId,
+          changedByName: currentUser.fullName,
+          changedByRole: currentUser.userType
+        })
+      });
+      
+      return { success: true };
+      
+    } catch (error: any) {
+      console.error('Change user password error:', error);
+      return { 
+        success: false, 
+        error: error.message || 'Failed to change password' 
+      };
     }
   }
   
@@ -4791,82 +4854,175 @@ const targetUserId = userId || currentUser?.uid;
     userTypes: UserType[],
     collegeId: string,
     pageSize: number = 10,
-    currentPage: number = 1,
+    lastDocument: DocumentSnapshot | null = null,
     roleFilter: 'all' | 'admin' | 'principal' | 'dean' | 'teacher' = 'all'
   ): Promise<PaginatedUsersResult> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        console.warn('⚠️ Firebase not initialized');
         return {
           users: [],
           lastDoc: null,
           hasMore: false,
-          total: 0
+          total: 0,
+          roleCounts: { students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, disabled: 0 }
         };
       }
       
-      // Filter userTypes based on roleFilter
-      const typesToFetch = roleFilter === 'all' 
-        ? userTypes 
-        : userTypes.filter(type => type === roleFilter);
+      // Determine which user type to fetch based on roleFilter
+      const userTypeToFetch = roleFilter === 'all' ? null : roleFilter;
       
-      // Fetch users for each type and combine
-      const allUsers: UserModel[] = [];
+      // Build the query for fetching users
+      let usersQuery;
       
-      for (const userType of typesToFetch) {
-        let usersQuery = query(
+      if (userTypeToFetch) {
+        // Fetch specific role
+        usersQuery = query(
           collection(this.firestore, COLLECTIONS.USERS),
-          where('userType', '==', userType),
           where('collegeId', '==', collegeId),
-          // Removed status filter - let client handle filtering by status
+          where('userType', '==', userTypeToFetch),
           orderBy('fullName'),
-          limit(500) // Reasonable limit per type
+          limit(pageSize)
         );
-        
-        const snapshot = await getDocs(usersQuery);
-        const users = snapshot.docs.map(doc => this.parseUserFromFirestore(doc));
-        allUsers.push(...users);
+      } else {
+        // Fetch all administrative types (admin, principal, dean, teacher)
+        usersQuery = query(
+          collection(this.firestore, COLLECTIONS.USERS),
+          where('collegeId', '==', collegeId),
+          where('userType', 'in', userTypes),
+          orderBy('fullName'),
+          limit(pageSize)
+        );
       }
       
-      // Sort all users by role hierarchy then name
-      allUsers.sort((a, b) => {
-        const roleOrder: Record<string, number> = {
-          'admin': 1,
-          'principal': 2,
-          'dean': 3,
-          'teacher': 4
-        };
-        const aOrder = roleOrder[a.userType] || 999;
-        const bOrder = roleOrder[b.userType] || 999;
-        
-        if (aOrder !== bOrder) return aOrder - bOrder;
-        return (a.fullName || '').localeCompare(b.fullName || '');
-      });
+      // Apply cursor if we have a lastDocument
+      if (lastDocument) {
+        if (userTypeToFetch) {
+          usersQuery = query(
+            collection(this.firestore, COLLECTIONS.USERS),
+            where('collegeId', '==', collegeId),
+            where('userType', '==', userTypeToFetch),
+            orderBy('fullName'),
+            startAfter(lastDocument),
+            limit(pageSize)
+          );
+        } else {
+          usersQuery = query(
+            collection(this.firestore, COLLECTIONS.USERS),
+            where('collegeId', '==', collegeId),
+            where('userType', 'in', userTypes),
+            orderBy('fullName'),
+            startAfter(lastDocument),
+            limit(pageSize)
+          );
+        }
+      }
       
-      // Calculate pagination
-      const startIndex = (currentPage - 1) * pageSize;
-      const endIndex = startIndex + pageSize;
-      const paginatedUsers = allUsers.slice(startIndex, endIndex);
-      const hasMore = endIndex < allUsers.length;
+      // Execute query
+      const snapshot = await getDocs(usersQuery);
+      const users = snapshot.docs.map(doc => this.parseUserFromFirestore(doc));
+      const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+      
+      // Get counts for each role (using getCountFromServer for efficiency)
+      const roleCounts = await this.getAdministrativeUserCounts(collegeId, userTypes);
+      
+      // Calculate total based on roleFilter (include disabled in total)
+      let total = 0;
+      if (roleFilter === 'all') {
+        total = roleCounts.admins + roleCounts.principals + roleCounts.deans + roleCounts.teachers + roleCounts.disabled;
+      } else if (roleFilter === 'admin') {
+        total = roleCounts.admins;
+      } else if (roleFilter === 'principal') {
+        total = roleCounts.principals;
+      } else if (roleFilter === 'dean') {
+        total = roleCounts.deans;
+      } else if (roleFilter === 'teacher') {
+        total = roleCounts.teachers;
+      }
+      
+      // Check if there are more results
+      const hasMore = snapshot.docs.length === pageSize;
       
       return {
-        users: paginatedUsers,
-        lastDoc: null,
+        users,
+        lastDoc: newLastDoc,
         hasMore,
-        total: allUsers.length
+        total,
+        roleCounts
       };
       
     } catch (error) {
       console.error('Error fetching paginated users by type:', error);
-      return { users: [], lastDoc: null, hasMore: false, total: 0 };
+      return { 
+        users: [], 
+        lastDoc: null, 
+        hasMore: false, 
+        total: 0,
+        roleCounts: { students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, disabled: 0 }
+      };
+    }
+  }
+
+  /**
+   * Get counts for administrative users by role (efficient count-only queries)
+   */
+  async getAdministrativeUserCounts(
+    collegeId: string,
+    userTypes: UserType[]
+  ): Promise<{ students: number; teachers: number; admins: number; principals: number; deans: number; disabled: number }> {
+    try {
+      if (!this.isInitialized() || !this.firestore) {
+        return { students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, disabled: 0 };
+      }
+
+      const counts = { students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, disabled: 0 };
+
+      // Count each role type - use simple queries without != operator
+      for (const userType of userTypes) {
+        try {
+          // Count ALL users of this type (simpler query, no != operator)
+          const allQuery = query(
+            collection(this.firestore, COLLECTIONS.USERS),
+            where('collegeId', '==', collegeId),
+            where('userType', '==', userType)
+          );
+          const allSnapshot = await getCountFromServer(allQuery);
+          const totalCount = allSnapshot.data().count;
+          
+          // Count disabled users separately
+          const disabledQuery = query(
+            collection(this.firestore, COLLECTIONS.USERS),
+            where('collegeId', '==', collegeId),
+            where('userType', '==', userType),
+            where('status', '==', USER_STATUS.DISABLED)
+          );
+          const disabledSnapshot = await getCountFromServer(disabledQuery);
+          const disabledCount = disabledSnapshot.data().count;
+          
+          // Active = Total - Disabled
+          const activeCount = totalCount - disabledCount;
+          counts.disabled += disabledCount;
+
+          if (userType === USER_TYPES.ADMIN) counts.admins = activeCount;
+          else if (userType === USER_TYPES.PRINCIPAL) counts.principals = activeCount;
+          else if (userType === USER_TYPES.DEAN) counts.deans = activeCount;
+          else if (userType === USER_TYPES.TEACHER) counts.teachers = activeCount;
+        } catch (typeError) {
+          console.warn(`Error counting ${userType} users:`, typeError);
+        }
+      }
+
+      console.log('📊 Administrative user counts:', counts);
+      return counts;
+    } catch (error) {
+      console.error('Error getting administrative user counts:', error);
+      return { students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, disabled: 0 };
     }
   }
 
   /**
    * Get paginated users by class, board, and academic year
-   * NOTE: This implementation fetches all matching users and paginates in memory
-   * due to Firestore's limitations with complex queries across multiple user types.
-   * For truly large datasets (10000+), consider restructuring data model.
+   * Uses proper Firestore cursor-based pagination
    */
   async getUsersByClassPaginated(
     className: string,
@@ -4874,99 +5030,287 @@ const targetUserId = userId || currentUser?.uid;
     academicYear: string | null,
     collegeId: string,
     pageSize: number = 10,
-    currentPage: number = 1,
+    lastDocument: DocumentSnapshot | null = null,
     roleFilter: 'all' | 'student' | 'teacher' = 'all'
   ): Promise<PaginatedUsersResult> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        console.warn('⚠️ Firebase not initialized');
         return {
           users: [],
           lastDoc: null,
           hasMore: false,
-          total: 0
+          total: 0,
+          roleCounts: { students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, disabled: 0 }
         };
       }
       
-      let allUsers: UserModel[] = [];
+      let users: UserModel[] = [];
+      let newLastDoc: DocumentSnapshot | null = null;
       
-      // Fetch based on role filter
-      if (roleFilter === 'all' || roleFilter === 'student') {
-        // Build query for students
-        let studentQuery = query(
-          collection(this.firestore, COLLECTIONS.USERS),
-          where('userType', '==', USER_TYPES.STUDENT),
+      // Build query based on roleFilter
+      if (roleFilter === 'student' || roleFilter === 'all') {
+        // Query for students
+        let studentQueryConstraints = [
           where('collegeId', '==', collegeId),
-          where('studentClass', '==', className),
-          // Removed status filter - let client handle filtering by status
-          orderBy('fullName'),
-          limit(1000)
-        );
+          where('userType', '==', USER_TYPES.STUDENT),
+          where('studentClass', '==', className)
+        ];
         
         if (board) {
+          studentQueryConstraints.push(where('board', '==', board));
+        }
+        
+        if (academicYear) {
+          studentQueryConstraints.push(where('academicYear', '==', academicYear));
+        }
+        
+        let studentQuery = query(
+          collection(this.firestore, COLLECTIONS.USERS),
+          ...studentQueryConstraints,
+          orderBy('fullName'),
+          limit(pageSize)
+        );
+        
+        if (lastDocument && roleFilter === 'student') {
           studentQuery = query(
             collection(this.firestore, COLLECTIONS.USERS),
-            where('userType', '==', USER_TYPES.STUDENT),
-            where('collegeId', '==', collegeId),
-            where('studentClass', '==', className),
-            where('board', '==', board),
-            // Removed status filter - let client handle filtering by status
+            ...studentQueryConstraints,
             orderBy('fullName'),
-            limit(1000)
+            startAfter(lastDocument),
+            limit(pageSize)
           );
         }
         
-        const studentSnapshot = await getDocs(studentQuery);
-        let students = studentSnapshot.docs.map(doc => this.parseUserFromFirestore(doc));
-        
-        // Filter by academic year if provided
-        if (academicYear) {
-          students = students.filter(s => s.academicYear === academicYear);
+        if (roleFilter === 'student') {
+          const snapshot = await getDocs(studentQuery);
+          users = snapshot.docs.map(doc => this.parseUserFromFirestore(doc));
+          newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
         }
-        
-        allUsers = [...students];
       }
       
-      if (roleFilter === 'all' || roleFilter === 'teacher') {
-        // Build query for teachers
+      if (roleFilter === 'teacher') {
+        // Query for teachers who teach this class
+        // Note: Firestore doesn't support array-contains with other where clauses efficiently
+        // So we fetch teachers and filter
+        let teacherQuery = query(
+          collection(this.firestore, COLLECTIONS.USERS),
+          where('collegeId', '==', collegeId),
+          where('userType', '==', USER_TYPES.TEACHER),
+          where('teacherClasses', 'array-contains', className),
+          orderBy('fullName'),
+          limit(pageSize)
+        );
+        
+        if (lastDocument) {
+          teacherQuery = query(
+            collection(this.firestore, COLLECTIONS.USERS),
+            where('collegeId', '==', collegeId),
+            where('userType', '==', USER_TYPES.TEACHER),
+            where('teacherClasses', 'array-contains', className),
+            orderBy('fullName'),
+            startAfter(lastDocument),
+            limit(pageSize)
+          );
+        }
+        
+        const snapshot = await getDocs(teacherQuery);
+        users = snapshot.docs.map(doc => this.parseUserFromFirestore(doc));
+        newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+      }
+      
+      if (roleFilter === 'all') {
+        // For 'all', we need to fetch both teachers and students
+        // Teachers first, then students
         const teacherQuery = query(
           collection(this.firestore, COLLECTIONS.USERS),
-          where('userType', '==', USER_TYPES.TEACHER),
           where('collegeId', '==', collegeId),
-          // Removed status filter - let client handle filtering by status
+          where('userType', '==', USER_TYPES.TEACHER),
+          where('teacherClasses', 'array-contains', className),
           orderBy('fullName'),
-          limit(100)
+          limit(pageSize)
         );
         
         const teacherSnapshot = await getDocs(teacherQuery);
-        const allTeachers = teacherSnapshot.docs.map(doc => this.parseUserFromFirestore(doc));
+        const teachers = teacherSnapshot.docs.map(doc => this.parseUserFromFirestore(doc));
         
-        // Filter teachers who teach this class
-        const teachers = allTeachers.filter(t => {
-          const teacherClasses = t.teacherClasses || [];
-          return teacherClasses.includes(className);
-        });
+        // Calculate remaining slots for students
+        const remainingSlots = pageSize - teachers.length;
         
-        // If showing all, teachers go first; otherwise just teachers
-        allUsers = roleFilter === 'all' ? [...teachers, ...allUsers] : teachers;
+        if (remainingSlots > 0) {
+          let studentQueryConstraints = [
+            where('collegeId', '==', collegeId),
+            where('userType', '==', USER_TYPES.STUDENT),
+            where('studentClass', '==', className)
+          ];
+          
+          if (board) {
+            studentQueryConstraints.push(where('board', '==', board));
+          }
+          
+          if (academicYear) {
+            studentQueryConstraints.push(where('academicYear', '==', academicYear));
+          }
+          
+          let studentQuery = query(
+            collection(this.firestore, COLLECTIONS.USERS),
+            ...studentQueryConstraints,
+            orderBy('fullName'),
+            limit(remainingSlots)
+          );
+          
+          if (lastDocument) {
+            studentQuery = query(
+              collection(this.firestore, COLLECTIONS.USERS),
+              ...studentQueryConstraints,
+              orderBy('fullName'),
+              startAfter(lastDocument),
+              limit(remainingSlots)
+            );
+          }
+          
+          const studentSnapshot = await getDocs(studentQuery);
+          const students = studentSnapshot.docs.map(doc => this.parseUserFromFirestore(doc));
+          
+          users = [...teachers, ...students];
+          newLastDoc = studentSnapshot.docs.length > 0 
+            ? studentSnapshot.docs[studentSnapshot.docs.length - 1] 
+            : (teacherSnapshot.docs.length > 0 ? teacherSnapshot.docs[teacherSnapshot.docs.length - 1] : null);
+        } else {
+          users = teachers;
+          newLastDoc = teacherSnapshot.docs.length > 0 ? teacherSnapshot.docs[teacherSnapshot.docs.length - 1] : null;
+        }
       }
       
-      // Calculate pagination
-      const startIndex = (currentPage - 1) * pageSize;
-      const endIndex = startIndex + pageSize;
-      const paginatedUsers = allUsers.slice(startIndex, endIndex);
-      const hasMore = endIndex < allUsers.length;
+      // Get counts
+      const roleCounts = await this.getClassUserCounts(className, board, academicYear, collegeId);
+      
+      // Calculate total based on roleFilter (include disabled users in total)
+      let total = 0;
+      if (roleFilter === 'all') {
+        total = roleCounts.students + roleCounts.teachers + roleCounts.disabled;
+      } else if (roleFilter === 'student') {
+        // For student filter, add student portion of disabled
+        total = roleCounts.students + roleCounts.disabled; // Note: disabled count includes both student and teacher disabled
+      } else if (roleFilter === 'teacher') {
+        total = roleCounts.teachers;
+      }
+      
+      const hasMore = users.length === pageSize;
       
       return {
-        users: paginatedUsers,
-        lastDoc: null,
+        users,
+        lastDoc: newLastDoc,
         hasMore,
-        total: allUsers.length
+        total,
+        roleCounts
       };
       
     } catch (error) {
       console.error('Error fetching paginated users by class:', error);
-      return { users: [], lastDoc: null, hasMore: false, total: 0 };
+      return { 
+        users: [], 
+        lastDoc: null, 
+        hasMore: false, 
+        total: 0,
+        roleCounts: { students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, disabled: 0 }
+      };
+    }
+  }
+
+  /**
+   * Get counts for class users by role (efficient count-only queries)
+   */
+  async getClassUserCounts(
+    className: string,
+    board: string | null,
+    academicYear: string | null,
+    collegeId: string
+  ): Promise<{ students: number; teachers: number; admins: number; principals: number; deans: number; disabled: number }> {
+    try {
+      if (!this.isInitialized() || !this.firestore) {
+        return { students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, disabled: 0 };
+      }
+
+      const counts = { students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, disabled: 0 };
+
+      // Count ALL students (simpler query without != operator)
+      let allStudentConstraints: any[] = [
+        where('collegeId', '==', collegeId),
+        where('userType', '==', USER_TYPES.STUDENT),
+        where('studentClass', '==', className)
+      ];
+      
+      if (board) {
+        allStudentConstraints.push(where('board', '==', board));
+      }
+      
+      if (academicYear) {
+        allStudentConstraints.push(where('academicYear', '==', academicYear));
+      }
+
+      const allStudentQuery = query(
+        collection(this.firestore, COLLECTIONS.USERS),
+        ...allStudentConstraints
+      );
+      const allStudentSnapshot = await getCountFromServer(allStudentQuery);
+      const totalStudents = allStudentSnapshot.data().count;
+
+      // Count disabled students
+      let disabledStudentConstraints: any[] = [
+        where('collegeId', '==', collegeId),
+        where('userType', '==', USER_TYPES.STUDENT),
+        where('studentClass', '==', className),
+        where('status', '==', USER_STATUS.DISABLED)
+      ];
+      
+      if (board) {
+        disabledStudentConstraints.push(where('board', '==', board));
+      }
+      
+      if (academicYear) {
+        disabledStudentConstraints.push(where('academicYear', '==', academicYear));
+      }
+
+      const disabledStudentQuery = query(
+        collection(this.firestore, COLLECTIONS.USERS),
+        ...disabledStudentConstraints
+      );
+      const disabledStudentSnapshot = await getCountFromServer(disabledStudentQuery);
+      const disabledStudents = disabledStudentSnapshot.data().count;
+      
+      counts.students = totalStudents - disabledStudents;
+      counts.disabled = disabledStudents;
+
+      // Count ALL teachers for this class
+      const allTeacherQuery = query(
+        collection(this.firestore, COLLECTIONS.USERS),
+        where('collegeId', '==', collegeId),
+        where('userType', '==', USER_TYPES.TEACHER),
+        where('teacherClasses', 'array-contains', className)
+      );
+      const allTeacherSnapshot = await getCountFromServer(allTeacherQuery);
+      const totalTeachers = allTeacherSnapshot.data().count;
+
+      // Count disabled teachers for this class
+      const disabledTeacherQuery = query(
+        collection(this.firestore, COLLECTIONS.USERS),
+        where('collegeId', '==', collegeId),
+        where('userType', '==', USER_TYPES.TEACHER),
+        where('teacherClasses', 'array-contains', className),
+        where('status', '==', USER_STATUS.DISABLED)
+      );
+      const disabledTeacherSnapshot = await getCountFromServer(disabledTeacherQuery);
+      const disabledTeachers = disabledTeacherSnapshot.data().count;
+      
+      counts.teachers = totalTeachers - disabledTeachers;
+      counts.disabled += disabledTeachers;
+
+      console.log('📊 Class user counts:', counts);
+      return counts;
+    } catch (error) {
+      console.error('Error getting class user counts:', error);
+      return { students: 0, teachers: 0, admins: 0, principals: 0, deans: 0, disabled: 0 };
     }
   }
   
@@ -5336,10 +5680,42 @@ const targetUserId = userId || currentUser?.uid;
   async getCollegeById(collegeId: string): Promise<CollegeModel | null> {
     return this.getCollege(collegeId);
   }
-  
+
   /**
-   * Get all active colleges
+   * Get calculated academic year for a college based on its start month
    */
+  async getAcademicYear(collegeId: string): Promise<string> {
+    try {
+      const college = await this.getCollege(collegeId);
+      const startMonth = college?.academicYear || 'April';
+      
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+      
+      const monthMap: Record<string, number> = {
+        'january': 1, 'jan': 1, 'february': 2, 'feb': 2,
+        'march': 3, 'mar': 3, 'april': 4, 'apr': 4,
+        'may': 5, 'june': 6, 'jun': 6, 'july': 7, 'jul': 7,
+        'august': 8, 'aug': 8, 'september': 9, 'sep': 9, 'sept': 9,
+        'october': 10, 'oct': 10, 'november': 11, 'nov': 11,
+        'december': 12, 'dec': 12
+      };
+      
+      const startMonthNum = monthMap[startMonth.toLowerCase()] || 4;
+      
+      if (currentMonth >= startMonthNum) {
+        return `${currentYear}-${(currentYear + 1).toString().slice(-2)}`;
+      } else {
+        return `${currentYear - 1}-${currentYear.toString().slice(-2)}`;
+      }
+    } catch (error) {
+      console.error('Error getting academic year:', error);
+      const now = new Date();
+      const year = now.getFullYear();
+      return `${year}-${(year + 1).toString().slice(-2)}`;
+    }
+  }
   async getAllColleges(): Promise<CollegeModel[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
@@ -9098,6 +9474,49 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   }
 
   /**
+   * Check if student roll number already exists for the same college, class, and academic year
+   * @param collegeId - College ID
+   * @param studentClass - Student's class
+   * @param academicYear - Academic year (e.g., "2024-25")
+   * @param studentRoll - Student roll number to check
+   * @returns Promise<boolean> - true if roll number exists, false otherwise
+   */
+  async checkStudentRollExists(
+    collegeId: string,
+    studentClass: string,
+    academicYear: string,
+    studentRoll: string
+  ): Promise<boolean> {
+    try {
+      if (!this.isInitialized() || !this.firestore) {
+        console.warn('⚠️ Firebase not initialized');
+        return false;
+      }
+      
+      if (!collegeId || !studentClass || !academicYear || !studentRoll) {
+        return false;
+      }
+      
+      const usersRef = collection(this.firestore, COLLECTIONS.USERS);
+      const q = query(
+        usersRef,
+        where('collegeId', '==', collegeId),
+        where('studentClass', '==', studentClass),
+        where('academicYear', '==', academicYear),
+        where('studentRoll', '==', studentRoll.trim()),
+        where('userType', '==', 'student'),
+        limit(1)
+      );
+      const snapshot = await getDocs(q);
+      
+      return !snapshot.empty;
+    } catch (error) {
+      console.error('Error checking student roll:', error);
+      return false; // Return false on error to allow the upload to proceed
+    }
+  }
+
+  /**
    * Get permissions based on user type
    */
   private getPermissions(userType: UserType): UserPermissions {
@@ -9205,334 +9624,41 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
     return permissions[userType] || permissions.student;
   }
 
-  /**
-   * Create bulk user (for bulk upload)
-   * Note: This creates the Firestore document directly
-   * For production, you should use a Cloud Function with Firebase Admin SDK
-   * to create the Firebase Auth user first
-   */
-  /**
-   * UNIFIED BASE FUNCTION for creating users
-   * Used by both manual and bulk creation to ensure consistency
-   */
-  private async createUserBase(userData: {
-    fullName: string;
-    title?: string;
-    email?: string;
-    phone: string;
-    userType: UserType;
-    collegeId: string;
-    board?: string;
-    createdBy: string;
-    studentRoll?: string;
-    academicYear?: string;
-    studentClass?: string;
-    parentPhone?: string;
-    teacherClasses?: string[];
-    teacherSubjects?: string[];
-    shouldCreateAuthAccount?: boolean;
-    shouldSendWelcomeEmail?: boolean;
-  }): Promise<{ userId: string; temporaryPassword?: string }> {
-    let createdAuthUser: User | null = null;
-    let authAccountCreated = false;
-    let temporaryPassword: string | undefined;
-    
-    try {
-      if (!this.isInitialized() || !this.firestore) {
-        throw new Error('Firebase not initialized');
-      }
-      
-      // Normalize phone number (add +91 if just 10 digits)
-      const normalizePhone = (phone: string): string => {
-        if (!phone) return '';
-        const cleaned = phone.replace(/\D/g, '');
-        if (cleaned.length === 10) {
-          return `+91${cleaned}`;
-        }
-        return phone.startsWith('+') ? phone : `+${phone}`;
-      };
-
-      const normalizedPhone = normalizePhone(userData.phone);
-      const phoneRaw = normalizedPhone.replace('+91', '');
-      
-      // Check if user already exists
-      if (normalizedPhone) {
-        const phoneExists = await this.checkUserExistsByPhone(normalizedPhone);
-        if (phoneExists) {
-          throw new Error('A user with this phone number already exists.');
-        }
-      }
-      
-      if (userData.email) {
-        const emailExists = await this.checkUserExistsByEmail(userData.email);
-        if (emailExists) {
-          throw new Error('A user with this email address already exists.');
-        }
-      }
-
-      // Generate userId and optionally create auth account
-      let userId: string;
-      
-      if (userData.shouldCreateAuthAccount && userData.email && userData.email.trim()) {
-        // Generate random 8-character password
-        const generatePassword = (): string => {
-          const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789@#$%';
-          let password = '';
-          for (let i = 0; i < 8; i++) {
-            password += chars.charAt(Math.floor(Math.random() * chars.length));
-          }
-          return password;
-        };
-
-        temporaryPassword = generatePassword();
-        
-        try {
-          if (!this.auth) throw new Error('Firebase Auth not initialized');
-          
-          console.log('🔐 Creating Firebase Auth user...');
-          const userCredential = await createUserWithEmailAndPassword(
-            this.auth,
-            userData.email,
-            temporaryPassword
-          );
-          createdAuthUser = userCredential.user;
-          userId = createdAuthUser.uid;
-          authAccountCreated = true;
-          console.log('✅ Auth user created:', userId);
-        } catch (authError: any) {
-          if (authError.code === 'auth/email-already-in-use') {
-            throw new Error('This email address is already registered.');
-          }
-          throw authError;
-        }
-      } else {
-        // Generate unique ID for users without auth account
-        if (!this.firestore) throw new Error('Firestore not initialized');
-        const usersRef = collection(this.firestore, COLLECTIONS.USERS);
-        const newUserRef = doc(usersRef);
-        userId = newUserRef.id;
-      }
-
-      // Generate permissions based on user type
-      const permissions = this.getPermissions(userData.userType);
-
-      // Create standardized user document (all camelCase)
-      const userDoc: any = {
-        userId: userId,
-        fullName: userData.fullName,
-        title: userData.title || '',
-        email: userData.email ? userData.email.toLowerCase() : '',
-        phone: normalizedPhone,
-        phoneRaw: phoneRaw,
-        userType: userData.userType,
-        collegeId: userData.collegeId,
-        board: userData.board || 'Not Specified',
-        status: USER_STATUS.ACTIVE,
-        createdBy: userData.createdBy,
-        permissions: permissions,
-        
-        // Security fields
-        mustChangePassword: true,
-        firstLogin: true,
-        passwordChangedAt: null,
-        temporaryPassword: authAccountCreated,
-        accountLocked: false,
-        failedLoginAttempts: 0,
-        lastLoginAt: null,
-        
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-
-      // Add student-specific fields
-      if (userData.userType === 'student') {
-        userDoc.studentRoll = userData.studentRoll;
-        userDoc.academicYear = userData.academicYear;
-        userDoc.studentClass = userData.studentClass;
-        userDoc.parentPhone = userData.parentPhone || '';
-        userDoc.studentHistory = [{
-          academicYear: userData.academicYear,
-          className: userData.studentClass, // Standardized to 'className'
-          rollNumber: userData.studentRoll,
-          board: userData.board || 'Not Specified',
-          collegeId: userData.collegeId
-        }];
-      }
-
-      // Add teacher/principal/dean-specific fields (always arrays)
-      if (userData.userType === 'teacher' || userData.userType === 'principal' || userData.userType === 'dean') {
-        userDoc.teacherClasses = userData.teacherClasses || [];
-        userDoc.teacherSubjects = userData.teacherSubjects || [];
-      }
-
-      // Save to Firestore
-      console.log('💾 Saving user document to Firestore...');
-      await setDoc(doc(this.firestore, COLLECTIONS.USERS, userId), userDoc);
-      console.log('✅ User document saved to Firestore');
-
-      // Save credentials if auth account was created
-      if (authAccountCreated && temporaryPassword) {
-        console.log('💾 Saving temporary credentials...');
-        await setDoc(doc(this.firestore, 'pending_user_credentials', userId), {
-          email: userData.email,
-          fullName: userData.fullName,
-          userType: userData.userType,
-          temporaryPassword: temporaryPassword,
-          createdAt: serverTimestamp(),
-          shared: false
-        });
-      }
-
-      // Update college counts
-      if (userData.collegeId) {
-        await this.updateCollegeCountsForUser(
-          userData.collegeId,
-          userData.userType,
-          userData.board
-        );
-      }
-
-      // Send welcome email if requested and auth account created
-      if (userData.shouldSendWelcomeEmail && authAccountCreated && userData.email && temporaryPassword) {
-        console.log('📧 Sending welcome email...');
-        await this.sendWelcomeEmail(
-          userData.email,
-          userData.fullName,
-          temporaryPassword,
-          userData.userType,
-          userData.collegeId
-        );
-      }
-
-      console.log(`✅ Created user: ${userData.fullName}`);
-      
-      // Log activity (non-blocking - won't affect user creation)
-      try {
-        await this.addActivityLog({
-          userId: userData.createdBy,
-          collegeId: userData.collegeId,
-          action: 'create_user',
-          entityType: 'user',
-          entityId: userId,
-          details: JSON.stringify({
-            fullName: userData.fullName,
-            email: userData.email,
-            userType: userData.userType,
-            studentClass: userData.studentClass,
-            studentRoll: userData.studentRoll,
-            authAccountCreated: authAccountCreated
-          })
-        });
-      } catch (logError) {
-        console.warn('⚠️ Failed to log user creation (non-critical):', logError);
-      }
-      
-      return { userId, temporaryPassword };
-      
-  } catch (error: any) {
-      console.error('Error creating user:', error);
-      
-      // Rollback: Delete auth account if created
-      if (authAccountCreated && createdAuthUser) {
-        try {
-          console.log('🔄 Rolling back: Deleting auth account...');
-          await createdAuthUser.delete();
-          console.log('✅ Auth account deleted');
-        } catch (deleteError) {
-          console.error('❌ Failed to delete auth account:', deleteError);
-        }
-      }
-      
-      // Don't wrap the error again if it's already a clear message
-      if (error.message.includes('already exists') || 
-          error.message.includes('email address') || 
-          error.message.includes('phone number')) {
-        throw error; // Pass through as-is
-      }
-      
-      throw new Error(`Failed to create user: ${error.message}`);
-    }
-  }
-
-  /**
-   * Unified function to update college counts
-   * Works for both manual and bulk creation
-   */
-  private async updateCollegeCountsForUser(
-    collegeId: string,
-    userType: UserType,
-    board?: string
-  ): Promise<void> {
-    try {
-      if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping college count update');
-        return;
-      }
-      
-      const collegeRef = doc(this.firestore, COLLECTIONS.COLLEGES, collegeId);
-      const incrementValue = increment(1);
-      
-      const updates: any = {
-        updatedAt: serverTimestamp()
-      };
-      
-      // Update role-specific count
-      updates[`roleCounts.${userType}`] = incrementValue;
-      
-      // Update teacher/student totals and board-wise counts
-      if (userType === 'teacher' || userType === 'principal' || userType === 'dean') {
-        updates.totalTeachers = incrementValue;
-        
-        if (board && board !== 'Not Specified') {
-          const teacherBoards = board.includes(',') 
-            ? board.split(',').map(b => b.trim())
-            : [board];
-          
-          teacherBoards.forEach(b => {
-            if (b && b !== 'Not Specified') {
-              updates[`boardWiseCounts.${b}.totalTeachers`] = incrementValue;
-            }
-          });
-        }
-      } else if (userType === 'student') {
-        updates.totalStudents = incrementValue;
-        
-        if (board && board !== 'Not Specified') {
-          updates[`boardWiseCounts.${board}.totalStudents`] = incrementValue;
-        }
-      }
-      
-      await updateDoc(collegeRef, updates);
-      console.log('✅ College counts updated');
-    } catch (error) {
-      console.error('Error updating college counts:', error);
-      // Don't throw - we don't want to fail user creation if count update fails
-    }
-  }
-
   async createBulkUser(userData: any): Promise<void> {
     try {
-      // Call unified base function with bulk-specific settings
-      await this.createUserBase({
+      // ✅ FIX: Use Cloud Function instead of client-side Auth to prevent logging out admin
+      if (!this.functions) {
+        throw new Error('Firebase Functions not initialized');
+      }
+      
+      // Call Cloud Function (Admin SDK - won't log out current user)
+      const createUserFn = httpsCallable(this.functions, 'createUser');
+      await createUserFn({
         fullName: userData.fullName,
-        title: userData.title,
-        email: userData.email,
+        title: userData.title || '',
+        email: userData.email || '',
         phone: userData.phone,
         userType: userData.userType,
         collegeId: userData.collegeId,
-        board: userData.board,
-        createdBy: userData.createdBy,
-        studentRoll: userData.studentRoll,
-        academicYear: userData.academicYear,
-        studentClass: userData.studentClass,
-        parentPhone: userData.parentPhone,
-        teacherClasses: userData.teacherClasses,
-        teacherSubjects: userData.teacherSubjects,
-        shouldCreateAuthAccount: true,  // ✅ Now creates auth accounts
-        shouldSendWelcomeEmail: true    // ✅ Now sends welcome emails
+        board: userData.board || userData.collegeId,
+        studentRoll: userData.studentRoll || '',
+        academicYear: userData.academicYear || '',
+        studentClass: userData.studentClass || '',
+        teacherClasses: userData.teacherClasses || [],
+        teacherSubjects: userData.teacherSubjects || [],
+        createdBy: userData.createdBy || 'system',
+        createdByRole: 'admin'
       });
+      
+      console.log('✅ Bulk user created via Cloud Function:', userData.fullName);
     } catch (error: any) {
       console.error('Error creating bulk user:', error);
+      
+      // Extract error message from Cloud Function error
+      if (error.code === 'functions/already-exists') {
+        throw new Error(error.message || 'User already exists');
+      }
+      
       throw new Error(`Failed to create user: ${error.message}`);
     }
   }
@@ -9543,7 +9669,14 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
    */
   async createUser(userData: any): Promise<void> {
     try {
-      console.log('Creating user with data:', userData);
+      console.log('Creating user via Cloud Function:', userData);
+      
+      if (!this.functions) {
+        throw new Error('Firebase Functions not initialized');
+      }
+      
+      // Get current user info for createdBy
+      const currentUser = await this.getCurrentUserProfile();
       
       // Convert snake_case to camelCase and prepare data
       const teacherClasses = Array.isArray(userData.teacher_classes)
@@ -9558,31 +9691,35 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
           ? userData.teacher_subjects.split(',').map((s: string) => s.trim())
           : [];
       
-      // Call unified base function
-      await this.createUserBase({
+      // Call Cloud Function (Admin SDK - won't log out current user)
+      const createUserFn = httpsCallable(this.functions, 'createUser');
+      const result = await createUserFn({
         fullName: userData.full_name,
-        title: userData.title,
-        email: userData.email,
+        title: userData.title || '',
+        email: userData.email || '',
         phone: userData.phone,
         userType: userData.user_type,
         collegeId: userData.college_id,
-        board: userData.board,
-        createdBy: userData.created_by || 'admin',
-        studentRoll: userData.student_roll,
-        academicYear: userData.academic_year,
-        studentClass: userData.student_class,
-        parentPhone: '', // Can be added to CreateUserModal if needed
+        board: userData.board || 'Not Specified',
+        studentRoll: userData.student_roll || '',
+        academicYear: userData.academic_year || '',
+        studentClass: userData.student_class || '',
         teacherClasses: teacherClasses,
         teacherSubjects: teacherSubjects,
-        shouldCreateAuthAccount: true,
-        shouldSendWelcomeEmail: true
+        createdBy: currentUser?.userId || userData.created_by || 'admin',
+        createdByRole: currentUser?.userType || 'admin'
       });
       
-      console.log('✅ User created successfully');
+      console.log('✅ User created successfully via Cloud Function:', result.data);
       
     } catch (error: any) {
       console.error('Error in createUser:', error);
-      // Don't double-wrap duplicate errors
+      
+      // Extract error message from Cloud Function error
+      if (error.code === 'functions/already-exists') {
+        throw new Error(error.message || 'User already exists');
+      }
+      
       throw error;
     }
   }
@@ -11481,10 +11618,16 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
     const attempt = attemptsByStudent.get(student.studentId);
     const isPresent = attendanceRecord?.status === 'present'; // ✅ Use attendance status!
     
-    if (isPresent) {
-      // Student is marked PRESENT in attendance
+    // ✅ FIX: Student is "present" if either:
+    // 1. Marked present in attendance, OR
+    // 2. Has submitted an exam attempt (implicit presence)
+    const hasAttemptData = !!attempt;
+    const shouldBeInPresent = isPresent || hasAttemptData;
+    
+    if (shouldBeInPresent) {
+      // Student is marked PRESENT in attendance OR has attempted the exam
       if (attempt) {
-        // Present AND has attempted the exam
+        // Has attempted the exam (with or without attendance marked)
         const sessionData = this.extractSessionData(attempt);
         
         presentStudents.push({
@@ -11537,7 +11680,7 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
         });
       }
     } else {
-      // Student is marked ABSENT in attendance (or not marked at all)
+      // Student is marked ABSENT in attendance AND has no attempt
       absentStudents.push({
         studentId: student.studentId,
         studentName: student.studentName,
@@ -11548,6 +11691,58 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
       });
     }
   });
+
+  // ✅ FIX: Also add students who have attempts but are NOT in allStudents list
+  // (e.g., students with different academicYear filter or missing from Users collection)
+  const processedStudentIds = new Set(allStudents.map(s => s.studentId));
+  
+  attempts.forEach(attempt => {
+    if (!processedStudentIds.has(attempt.studentId)) {
+      // This student has an attempt but wasn't in allStudents query
+      console.log(`📌 Adding student from attempt (not in Users query): ${attempt.studentName} (${attempt.studentId})`);
+      
+      const sessionData = this.extractSessionData(attempt);
+      
+      presentStudents.push({
+        studentId: attempt.studentId,
+        studentName: attempt.studentName || 'Unknown Student',
+        studentEmail: attempt.studentEmail || '',
+        rollNumber: attempt.rollNumber || '',
+        class: attempt.class || examData.class,
+        hasAttempt: true,
+        attemptData: {
+          attemptId: attempt.attemptId,
+          percentage: attempt.percentage,
+          obtainedMarks: attempt.obtainedMarks,
+          totalScore: attempt.totalScore,
+          violationCount: (attempt as any).violationCount || 0,
+          status: attempt.status,
+          startTime: attempt.startTime,
+          submitTime: attempt.submitTime,
+          timeSpent: attempt.timeSpent,
+          correctAnswers: attempt.correctAnswers,
+          attemptedQuestions: attempt.attemptedQuestions,
+          totalQuestions: attempt.totalQuestions,
+          
+          enterIPAddress: sessionData.enterIPAddress,
+          exitIPAddress: sessionData.exitIPAddress,
+          browser: sessionData.browser,
+          operatingSystem: sessionData.operatingSystem,
+          deviceType: sessionData.deviceType,
+          tabSwitchCount: sessionData.tabSwitchCount,
+          totalEntries: sessionData.totalEntries,
+          enterCount: sessionData.enterCount,
+          exitCount: sessionData.exitCount,
+          
+          answers: (attempt as any).responses || [],
+          responses: (attempt as any).responses || [],
+          questionResponses: (attempt as any).responses || []
+        } as any
+      });
+    }
+  });
+  
+  console.log(`✅ Final presentStudents count: ${presentStudents.length} (${presentStudents.filter(s => s.hasAttempt).length} with attempts)`);
 
   // 6. Return structured data
   return {
@@ -12350,9 +12545,13 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       
       // Storage path: proctoring_evidence/{examId}/{uid}/{fileName}
       // Must match Firebase Storage rules: match /proctoring_evidence/{examId}/{uid}/{fileName}
-      const user = this.auth.currentUser;
+      const user = this.auth?.currentUser;
       if (!user) {
         console.error('❌ No authenticated user for violation proof upload');
+        return { url: '', success: false };
+      }
+      if (!this.storage) {
+        console.error('❌ Firebase Storage not initialized');
         return { url: '', success: false };
       }
       const storageRef = ref(this.storage, `proctoring_evidence/${examId}/${user.uid}/${fileName}`);
@@ -12421,7 +12620,7 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       console.log('📚 Fetching enrollments for user:', userId);
       
       // Query exam_attempts collection for this student
-      const attemptsRef = collection(this.db, COLLECTIONS.EXAM_ATTEMPTS);
+      const attemptsRef = collection(this.firestore!, COLLECTIONS.EXAM_ATTEMPTS);
       const q = query(
         attemptsRef,
         where('studentId', '==', userId),
@@ -12447,7 +12646,7 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
         // If exam name not in attempt, fetch from exams collection
         if (!data.examName && data.examId) {
           try {
-            const examDoc = await getDoc(doc(this.db, COLLECTIONS.EXAMS, data.examId));
+            const examDoc = await getDoc(doc(this.firestore!, COLLECTIONS.EXAMS, data.examId));
             if (examDoc.exists()) {
               const examData = examDoc.data();
               examName = examData.title || examData.examName || 'Unknown Exam';
@@ -12881,7 +13080,7 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
     conversationHistory: Array<{ role: string; content: string }> = []
   ): Promise<{ success: boolean; response: string }> {
     try {
-      const chatWithAIFn = httpsCallable(this.functions, 'chatWithAI');
+      const chatWithAIFn = httpsCallable(this.functions!, 'chatWithAI');
       const result = await chatWithAIFn({ message, conversationHistory });
       const data = result.data as { success: boolean; response: string };
       return data;
@@ -12962,7 +13161,7 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       }
 
       // Call Firebase Cloud Function
-      const aiCodeAssistantFn = httpsCallable(this.functions, 'aiCodeAssistant');
+      const aiCodeAssistantFn = httpsCallable(this.functions!, 'aiCodeAssistant');
       const result = await aiCodeAssistantFn({
         operation: request.operation,
         code: request.code || '',
@@ -13005,7 +13204,7 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
     prefix: string
   ): Promise<AutocompleteResponse> {
     try {
-      const aiAutocompleteFn = httpsCallable(this.functions, 'aiCodeAssistant');
+      const aiAutocompleteFn = httpsCallable(this.functions!, 'aiCodeAssistant');
       const result = await aiAutocompleteFn({
         operation: 'autocomplete',
         code,
@@ -13050,7 +13249,7 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
     prefix: string
   ): Promise<AutocompleteResponse> {
     try {
-      const aiAutocompleteFn = httpsCallable(this.functions, 'aiCodeAssistant');
+      const aiAutocompleteFn = httpsCallable(this.functions!, 'aiCodeAssistant');
       const result = await aiAutocompleteFn({
         operation: 'inline',
         code,

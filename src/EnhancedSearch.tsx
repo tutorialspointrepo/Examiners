@@ -63,7 +63,7 @@ const EnhancedSearch: React.FC<EnhancedSearchProps> = ({
 
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const searchTimeoutRef = useRef<number | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Log activeCollegeId for debugging
   useEffect(() => {

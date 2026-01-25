@@ -9,6 +9,7 @@ import ChangePassword from './ChangePassword';
 import UserProfile from './UserProfile';
 import CreateRoomModal from './CreateRoomModal';
 import BulkUploadRooms from './BulkUploadRooms';
+import BulkUploadUniversity from './BulkUploadUniversity';
 import Rooms from './Rooms';
 import RoomDetail from './RoomDetail';
 import Reports from './Reports';
@@ -122,7 +123,8 @@ import {
   faDoorOpen,
   faImage,
   faClipboardCheck,
-  faCode
+  faCode,
+  faAddressCard
 } from '@fortawesome/sharp-light-svg-icons';
 
 import { 
@@ -180,20 +182,33 @@ function canMarkAttendance(examDate: string, examTime: string, duration: string)
  * Get current academic year (Apr-Mar)
  * Returns format: "2025-26"
  */
-const getCurrentAcademicYear = (): string => {
-  const today = new Date();
-  const currentMonth = today.getMonth(); // 0-11
-  const currentYear = today.getFullYear();
+/**
+ * Calculate academic year based on college's academic year start month
+ * @param startMonth - The month when academic year starts (e.g., "April", "January", "June")
+ *                     Defaults to "April" if not provided
+ */
+// Calculate academic year from start month (used when college data is already loaded)
+const calculateAcademicYear = (startMonth?: string): string => {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
   
-  // Academic year starts in April (month 3)
-  // Jan-Mar: previous year's session
-  // Apr-Dec: current year's session
-  let startYear = currentMonth < 3 ? currentYear - 1 : currentYear;
+  const monthMap: Record<string, number> = {
+    'january': 1, 'jan': 1, 'february': 2, 'feb': 2,
+    'march': 3, 'mar': 3, 'april': 4, 'apr': 4,
+    'may': 5, 'june': 6, 'jun': 6, 'july': 7, 'jul': 7,
+    'august': 8, 'aug': 8, 'september': 9, 'sep': 9, 'sept': 9,
+    'october': 10, 'oct': 10, 'november': 11, 'nov': 11,
+    'december': 12, 'dec': 12
+  };
   
-  const endYear = startYear + 1;
-  const endYearShort = endYear.toString().slice(-2);
+  const startMonthNum = startMonth ? (monthMap[startMonth.toLowerCase()] || 4) : 4;
   
-  return `${startYear}-${endYearShort}`;
+  if (currentMonth >= startMonthNum) {
+    return `${currentYear}-${(currentYear + 1).toString().slice(-2)}`;
+  } else {
+    return `${currentYear - 1}-${currentYear.toString().slice(-2)}`;
+  }
 };
 
 // Helper function to check if live stats are available (30 minutes before exam, stays enabled after exam ends)
@@ -435,8 +450,8 @@ async function handleExamStartClick(
 function triggerPreExamVerification(
   exam: any,
   user: UserModel | null,
-  onVerificationSuccess: () => void,
-  onVerificationCancel: () => void,
+  _onVerificationSuccess: () => void,
+  _onVerificationCancel: () => void,
   setShowPreExamVerification: (show: boolean) => void,
   setPendingExam: (exam: any) => void,
   setActiveExam: (exam: any) => void,
@@ -709,6 +724,7 @@ function ProctoringSetupDialog({
   brandTheme,
   onClose,
   onProceed,
+  onRefreshUser,
   cameraStatus,
   audioStatus,
   onCameraStatusChange,
@@ -730,7 +746,7 @@ function ProctoringSetupDialog({
   mediaStream: MediaStream | null;
   onMediaStreamChange: (stream: MediaStream | null) => void;
 }) {
-  const [isCheckingPermissions, setIsCheckingPermissions] = useState(true);
+  const [, setIsCheckingPermissions] = useState(true);
   const [proctoringPhotosStatus, setProctoringPhotosStatus] = useState<'checking' | 'complete' | 'incomplete'>('checking');
   const [missingPhotos, setMissingPhotos] = useState<string[]>([]);
   const [showPermissionHelp, setShowPermissionHelp] = useState(false);
@@ -1767,6 +1783,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserModel | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [userRequiringPasswordChange, setUserRequiringPasswordChange] = useState<UserModel | null>(null);
@@ -1782,6 +1799,7 @@ function App() {
 
 const [isCreateRoomModalOpen, setIsCreateRoomModalOpen] = useState(false);
 const [isBulkUploadRoomsOpen, setIsBulkUploadRoomsOpen] = useState(false);
+const [isBulkUploadUniversityOpen, setIsBulkUploadUniversityOpen] = useState(false);
 const [selectedRoom, setSelectedRoom] = useState<any>(null);
 const [roomRefreshTrigger, setRoomRefreshTrigger] = useState(0);
 const [selectedReport, setSelectedReport] = useState<any>(null);
@@ -1818,15 +1836,8 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   const [activeItem, setActiveItem] = useState('exams');
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
     management: false, // Always expanded
-    tools: true,       // Collapsed by default (will be expanded for students via useEffect)
+    tools: true,       // Collapsed by default
   });
-  
-  // Expand Tools section for students (they have fewer menu items)
-  useEffect(() => {
-    if (currentUser?.userType === 'student') {
-      setCollapsedSections(prev => ({ ...prev, tools: false }));
-    }
-  }, [currentUser?.userType]);
   
   const [_rightPanelWidth, setRightPanelWidth] = useState(380); // Default 380px
   const [actualRightWidth, setActualRightWidth] = useState(0); // Actual rendered width
@@ -1891,7 +1902,7 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   
   // Colleges state (for system admin)
   const [colleges, setColleges] = useState<Array<{id: string; name: string}>>([]);
-  const [selectedCollege, setSelectedCollege] = useState<{id: string; name: string} | null>(null);
+  const [selectedCollege, setSelectedCollege] = useState<{id: string; name: string; academicYear?: string; academicYearStartMonth?: string} | null>(null);
   const [isCollegeDropdownOpen, setIsCollegeDropdownOpen] = useState(false);
   
   // College data (boards, subjects, classes)
@@ -1906,6 +1917,26 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
     classes: [],
     features: []
   });
+  
+  // Check for existing session on page load
+  useEffect(() => {
+    const restoreSession = async () => {
+      try {
+        const firebaseUser = await firebaseService.waitForAuthReady();
+        if (firebaseUser?.email) {
+          const userData = await firebaseService.getUserByEmail(firebaseUser.email);
+          if (userData) {
+            await handleLoginSuccess(userData);
+          }
+        }
+      } catch (err) {
+        console.error('Session restore error:', err);
+      } finally {
+        setIsCheckingAuth(false);
+      }
+    };
+    restoreSession();
+  }, []);
   
   // Fetch colleges if system admin
   useEffect(() => {
@@ -1989,7 +2020,9 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
       
       const collegeList = fetchedColleges.map(c => ({
         id: c.collegeId,
-        name: c.collegeName
+        name: c.collegeName,
+        academicYear: calculateAcademicYear(c.academicYear),
+        academicYearStartMonth: c.academicYear
       }));
       
       console.log('📋 College list formatted:', collegeList);
@@ -2313,7 +2346,17 @@ const fetchCounts = async () => {
         setQuestionsCount(questionsSnapshot.length);
         setUsersCount(usersSnapshot);
         setRoomsCount(roomsStats.length);
-        setHallTicketsCount(hallTicketsGroups.length);
+        
+        // Filter hall tickets for students - only count groups where the student is included
+        if (currentUser?.userType === 'student' && currentUser?.userId) {
+          const studentHallTickets = hallTicketsGroups.filter((group: any) => 
+            group.students?.some((student: any) => student.studentId === currentUser.userId)
+          );
+          setHallTicketsCount(studentHallTickets.length);
+        } else {
+          setHallTicketsCount(hallTicketsGroups.length);
+        }
+        
         setReportsCount(reportTemplatesSnapshot.size);
         
         // Fetch completed exams count for results
@@ -2402,7 +2445,16 @@ const fetchCounts = async () => {
       setQuestionsCount(questionsSnapshot.length);
       setUsersCount(usersSnapshot);
       setRoomsCount(roomsStats.length);
-      setHallTicketsCount(hallTicketsGroups.length);
+      
+      // Filter hall tickets for students - only count groups where the student is included
+      if (currentUser?.userType === 'student' && currentUser?.userId) {
+        const studentHallTickets = hallTicketsGroups.filter((group: any) => 
+          group.students?.some((student: any) => student.studentId === currentUser.userId)
+        );
+        setHallTicketsCount(studentHallTickets.length);
+      } else {
+        setHallTicketsCount(hallTicketsGroups.length);
+      }
       
       const completedExams = examsSnapshot.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
       setResultsCount(completedExams.length);
@@ -2644,7 +2696,9 @@ const fetchCounts = async () => {
             console.log('🏫 Fetched colleges on login:', fetchedColleges.length);
             const collegeList = fetchedColleges.map(c => ({
               id: c.collegeId,
-              name: c.collegeName
+              name: c.collegeName,
+              academicYear: calculateAcademicYear(c.academicYear),
+              academicYearStartMonth: c.academicYear
             }));
             setColleges(collegeList);
             
@@ -2672,7 +2726,9 @@ const fetchCounts = async () => {
               if (college) {
                 const collegeInfo = {
                   id: college.collegeId || user.collegeId,
-                  name: college.collegeName || 'Unknown College'
+                  name: college.collegeName || 'Unknown College',
+                  academicYear: calculateAcademicYear(college.academicYear),
+                  academicYearStartMonth: college.academicYear
                 };
                 console.log('✅ Auto-selected college at login:', collegeInfo);
                 setSelectedCollege(collegeInfo);
@@ -2882,7 +2938,7 @@ const fetchCounts = async () => {
     };
     
     checkIfExamSubmitted();
-  }, [selectedExam, currentUser?.userId]);
+  }, [selectedExam?.id, currentUser?.userId]);
   
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
@@ -3177,7 +3233,7 @@ const fetchCounts = async () => {
         examSubject={activeExam.subject || 'General'}
         examType={activeExam.type || 'Online'}
         board={activeExam.board || 'CBSE'}
-        academicYear={activeExam.year || getCurrentAcademicYear()}
+        academicYear={activeExam.year || calculateAcademicYear(selectedCollege?.academicYearStartMonth)}
         totalMarks={parseInt(activeExam.maxMarks) || 100}
         duration={parseInt(activeExam.duration) || 60}
         examDate={activeExam.examDate}
@@ -3264,6 +3320,13 @@ const fetchCounts = async () => {
           showIPInfo={loginIPInfo !== null}
           ipInfo={loginIPInfo || undefined}
         />
+      ) : isCheckingAuth ? (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading...</p>
+          </div>
+        </div>
       ) : !isAuthenticated ? (
         <>
           {showPasswordChange ? (
@@ -3337,7 +3400,7 @@ const fetchCounts = async () => {
       `}</style>
       
       {/* Top Header */}
-      <header className="sticky top-0 z-40 bg-white shadow-sm border-b border-gray-200 w-full">
+      <header className="sticky top-0 z-[9998] bg-white shadow-sm border-b border-gray-200 w-full">
         <div className="flex items-center justify-between px-6 py-2.5">
           <div className="flex items-center space-x-4">
             <Logo size="medium" showText={true} brand={brandTheme} collegeName={selectedCollege?.name || brandTheme.collegeName} />
@@ -3365,7 +3428,7 @@ const fetchCounts = async () => {
             )}
             
             {/* Only show Create button for non-students (teachers/admins) - Hide when Coding Lab is active */}
-            {currentUser?.userType !== USER_TYPES.STUDENT && activeItem !== ACTIVE_ITEMS.CALENDAR && activeItem !== ACTIVE_ITEMS.LEADERBOARD && activeItem !== ACTIVE_ITEMS.REPORTS && activeItem !== ACTIVE_ITEMS.AUDIT && !(showLearning && learningActiveMenu === 'codinglab') && (
+            {currentUser?.userType !== USER_TYPES.STUDENT && activeItem !== ACTIVE_ITEMS.CALENDAR && activeItem !== ACTIVE_ITEMS.LEADERBOARD && activeItem !== ACTIVE_ITEMS.REPORTS && activeItem !== ACTIVE_ITEMS.AUDIT && !(showLearning && learningActiveMenu === 'codinglab') && !(showLearning && learningActiveMenu === 'resumebuilder') && (
               <>
                 <div className="w-px h-8 bg-gray-200"></div>
                 <button 
@@ -3421,6 +3484,25 @@ const fetchCounts = async () => {
                     </p>
                   </div>
                 </button>
+              </>
+            )}
+
+            {/* Resume Builder Header */}
+            {showLearning && learningActiveMenu === 'resumebuilder' && (
+              <>
+                <div className="w-px h-8 bg-gray-200"></div>
+                <div className="flex items-center space-x-3 px-3 py-2">
+                  <div 
+                    className="w-9 h-9 rounded-full flex items-center justify-center shadow-md"
+                    style={{ background: brandTheme.gradients.primary }}
+                  >
+                    <FontAwesomeIcon icon={faAddressCard} className="text-white" />  
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-gray-900">Resume Builder</p>
+                    <p className="text-xs text-gray-500">Build your professional resume</p>
+                  </div>
+                </div>
               </>
             )}
             </div>
@@ -3807,6 +3889,7 @@ const fetchCounts = async () => {
                 onEditProfile={() => setShowUserProfile(true)}
                 onDownloadBrowser={() => setShowSecureBrowserModal(true)}
                 onViewLoginDetails={() => setShowLoginDetailsDialog(true)}
+                onAddUniversity={() => setIsBulkUploadUniversityOpen(true)}
                 onSignOut={handleLogout}
                 onProfileClick={() => setShowUserProfile(true)}
                 onSwitchMode={(mode) => setShowLearning(mode === 'learning')}
@@ -3917,11 +4000,11 @@ const fetchCounts = async () => {
                     return true;
                   }
                   
-                  // Check feature filters
+                  // Check feature filters (case-insensitive)
                   if (collegeData.features.length > 0) {
                     const requiredFeature = featureMapping[i.id];
                     if (requiredFeature) {
-                      return collegeData.features.includes(requiredFeature);
+                      return collegeData.features.some(f => f.toLowerCase() === requiredFeature.toLowerCase());
                     }
                   }
                   
@@ -3933,9 +4016,9 @@ const fetchCounts = async () => {
               // Check if feature filtering is enabled (collegeData.features has items)
               if (collegeData.features.length > 0) {
                 const requiredFeature = featureMapping[item.id];
-                // If feature is mapped, check if college has it
+                // If feature is mapped, check if college has it (case-insensitive)
                 if (requiredFeature) {
-                  return collegeData.features.includes(requiredFeature);
+                  return collegeData.features.some(f => f.toLowerCase() === requiredFeature.toLowerCase());
                 }
                 // If not in mapping, show by default
                 return true;
@@ -4240,11 +4323,20 @@ const fetchCounts = async () => {
                   activeCollegeId={getActiveCollegeId() ?? null}
                   selectedYear={selectedYear}
                   brandTheme={brandTheme}
-                  onExamSelect={(exam) => {
+                  onExamSelect={async (exam) => {
+                    // First set the lightweight exam for immediate UI feedback
                     setSelectedExam(exam);
                     setIsViewingLiveStats(false);
                     setIsViewingAttendance(false);
-                    setShowStudentPreview(false); // Exit student preview when exam is selected
+                    setShowStudentPreview(false);
+                    
+                    // Then fetch full exam data with questionsList and questionPool
+                    if (exam && exam.id) {
+                      const fullExam = await firebaseService.getExamById(exam.id);
+                      if (fullExam) {
+                        setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
+                      }
+                    }
                   }}
                   selectedExam={selectedExam}
                   onCreateExam={() => setIsCreateModalOpen(true)}
@@ -4265,11 +4357,20 @@ const fetchCounts = async () => {
                   activeCollegeId={getActiveCollegeId() || ''}
                   selectedYear={selectedYear}
                   brandTheme={brandTheme}
-                  onExamSelect={(exam) => {
+                  onExamSelect={async (exam) => {
+                    // First set the lightweight exam for immediate UI feedback
                     setSelectedExam(exam);
                     setIsViewingLiveStats(false);
                     setIsViewingAttendance(false);
-                    setSelectedStudentForDetail(null); // Reset student selection
+                    setSelectedStudentForDetail(null);
+                    
+                    // Then fetch full exam data with questionsList and questionPool
+                    if (exam && exam.id) {
+                      const fullExam = await firebaseService.getExamById(exam.id);
+                      if (fullExam) {
+                        setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
+                      }
+                    }
                   }}
                   selectedExam={selectedExam}
                   isMainCollapsed={isMainCollapsed}
@@ -4344,26 +4445,23 @@ const fetchCounts = async () => {
                   brandTheme={brandTheme}
                   currentUser={currentUser}
                   onEventsCountChange={(count) => setCalendarEventsCount(count)}
-                  onExamSelect={(exam) => {
+                  onExamSelect={async (exam) => {
                     console.log('🎯 [CALENDAR] Exam clicked:', exam.title, exam.id);
                     // Switch to exams section
                     setActiveItem('exams');
-                    
-                    // Try to find and select the exam from the current list (which has full exam data)
-                    const fullExam = currentExamsList.find((e: Exam) => e.id === exam.id);
-                    if (fullExam) {
-                      console.log('✅ [CALENDAR] Found exam in current list:', fullExam.title);
-                      setSelectedExam(fullExam);
-                    } else {
-                      console.log('⚠️ [CALENDAR] Exam not in current list, setting as newly created');
-                      // Set the newly created exam ID so the Exams component can auto-select it when it loads
-                      setNewlyCreatedExamId(exam.id);
-                    }
                     
                     // Reset viewing states
                     setIsViewingLiveStats(false);
                     setIsViewingAttendance(false);
                     setShowStudentPreview(false);
+                    
+                    // Fetch full exam data with questionsList and questionPool
+                    const fullExam = await firebaseService.getExamById(exam.id);
+                    if (fullExam) {
+                      setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
+                    } else {
+                      setNewlyCreatedExamId(exam.id);
+                    }
                   }}
                 />
               )}
@@ -4489,7 +4587,7 @@ const fetchCounts = async () => {
                   // If secure exam and not over and NOT using secure browser, show secure browser message
                   if (isSecureExamBlocked) {
                     return (
-                      <div className="flex-1 flex items-center justify-center px-6 py-8 bg-gradient-to-br from-red-50 to-orange-50">
+                      <div className="flex-1 flex items-start justify-center px-6 py-8 bg-gradient-to-br from-red-50 to-orange-50 overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                         <div className="text-center max-w-md">
                           {/* Shield Icon */}
                           <div className="mb-5 flex justify-center relative">
@@ -5045,7 +5143,7 @@ const fetchCounts = async () => {
                 // Show secure browser required message for students trying to access secure exams
                 if (isSecureExamBlocked) {
                   return (
-                    <div className="flex-1 flex items-center justify-center px-6 py-8 bg-gradient-to-br from-red-50 to-orange-50">
+                    <div className="flex-1 flex items-start justify-center px-6 py-8 bg-gradient-to-br from-red-50 to-orange-50 overflow-y-auto scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
                       <div className="text-center max-w-md">
                         {/* Shield Icon */}
                         <div className="mb-5 flex justify-center relative">
@@ -5492,7 +5590,7 @@ const fetchCounts = async () => {
                                 </svg>
                                 <span className="text-xs font-medium text-gray-700">Creator</span>
                               </div>
-                              <span className="text-xs font-bold text-green-700">{selectedExam.createdBy}</span>
+                              <span className="text-xs font-bold text-green-700">{selectedExam.createdByName || selectedExam.createdBy}</span>
                             </div>
                           </div>
                         </div>
@@ -5821,7 +5919,7 @@ const fetchCounts = async () => {
                 {/* Created By Row */}
                 <div className="mb-3">
                   <p className="text-[16px] font-medium text-gray-500">
-                    Created By - {safeRender(selectedExam.createdBy)}, {safeRender(selectedExam.createdByRole)}
+                    Created By - {safeRender(selectedExam.createdByName || selectedExam.createdBy)}, {safeRender(selectedExam.createdByRole)}
                   </p>
                 </div>
                 
@@ -7541,26 +7639,23 @@ const fetchCounts = async () => {
                 brandTheme={brandTheme}
                 currentUser={currentUser}
                 onEventsCountChange={(count) => setCalendarEventsCount(count)}
-                onExamSelect={(exam) => {
+                onExamSelect={async (exam) => {
                   console.log('🎯 [CALENDAR] Exam clicked:', exam.title, exam.id);
                   // Switch to exams section
                   setActiveItem('exams');
-                  
-                  // Try to find and select the exam from the current list (which has full exam data)
-                  const fullExam = currentExamsList.find((e: Exam) => e.id === exam.id);
-                  if (fullExam) {
-                    console.log('✅ [CALENDAR] Found exam in current list:', fullExam.title);
-                    setSelectedExam(fullExam);
-                  } else {
-                    console.log('⚠️ [CALENDAR] Exam not in current list, setting as newly created');
-                    // Set the newly created exam ID so the Exams component can auto-select it when it loads
-                    setNewlyCreatedExamId(exam.id);
-                  }
                   
                   // Reset viewing states
                   setIsViewingLiveStats(false);
                   setIsViewingAttendance(false);
                   setShowStudentPreview(false);
+                  
+                  // Fetch full exam data with questionsList and questionPool
+                  const fullExam = await firebaseService.getExamById(exam.id);
+                  if (fullExam) {
+                    setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
+                  } else {
+                    setNewlyCreatedExamId(exam.id);
+                  }
                 }}
               />
             ) : activeItem === ACTIVE_ITEMS.LEADERBOARD ? (
@@ -9116,6 +9211,18 @@ const fetchCounts = async () => {
       activeCollegeId={getActiveCollegeId() ?? ''}
       currentUser={currentUser}
       onUploadComplete={handleRoomAdded}
+    />
+    
+    {/* Bulk Upload University/College Modal */}
+    <BulkUploadUniversity
+      isOpen={isBulkUploadUniversityOpen}
+      onClose={() => setIsBulkUploadUniversityOpen(false)}
+      currentUser={currentUser}
+      onUploadComplete={() => {
+        // Refresh colleges list to show newly added universities
+        console.log('✅ University upload complete - refreshing colleges list...');
+        loadColleges();
+      }}
     />
 
     {/* Problems List Modal - Slides from left */}

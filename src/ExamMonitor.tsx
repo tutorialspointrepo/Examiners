@@ -67,7 +67,7 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
   
   // Hark voice detection refs
   const audioStreamRef = useRef<MediaStream | null>(null);
-  const harkInstanceRef = useRef<hark.Harker | null>(null);
+  const harkInstanceRef = useRef<any>(null);
   const speechStartTimeRef = useRef<number | null>(null);
   
   // Timers & State
@@ -508,7 +508,7 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
                if (!streamRef.current && isMountedRef.current) {
                    console.log('🚨 VIOLATION - Camera disconnected (SAVING TO DB)');
                    lastViolationTime.current['DEVICE_CHANGE'] = Date.now();
-                   await handleViolation('DEVICE_CHANGE', 'Camera was disconnected or disabled', null, null);
+                   await handleViolation('DEVICE_CHANGE', 'Camera was disconnected or disabled', undefined, undefined);
                }
            }, 3000);
         }
@@ -527,7 +527,7 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
         if (timeSinceLastViolation > CONFIG.VIOLATION_COOLDOWN_MS) {
           console.log('🚨 VIOLATION - Camera muted/blocked (SAVING TO DB)');
           lastViolationTime.current['DEVICE_CHANGE'] = now;
-          await handleViolation('DEVICE_CHANGE', 'Camera was muted or blocked by another application', null, null);
+          await handleViolation('DEVICE_CHANGE', 'Camera was muted or blocked by another application', undefined, undefined);
         }
       };
       
@@ -689,7 +689,7 @@ const ExamMonitor: React.FC<ExamMonitorProps> = ({
         if (timeSinceLastDeviceChange > CONFIG.VIOLATION_COOLDOWN_MS) {
           console.log('🚨 VIOLATION - Camera disconnected/disabled (SAVING TO DB)');
           lastViolationTime.current['DEVICE_CHANGE'] = Date.now();
-          await handleViolation('DEVICE_CHANGE', 'Camera disconnected or disabled', null, null);
+          await handleViolation('DEVICE_CHANGE', 'Camera disconnected or disabled', undefined, undefined);
         }
         return;
       }

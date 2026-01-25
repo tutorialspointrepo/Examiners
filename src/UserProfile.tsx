@@ -16,7 +16,6 @@ import {
   Users,
   CheckCircle,
   Clock,
-  Sparkles,
 } from 'lucide-react';
 import { firebaseService } from './services/firebase_service';
 import { useBrand } from './BrandContext';
@@ -484,7 +483,8 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
           console.log('🔍 Checking email uniqueness across database...');
           
           // Check if email already exists for another user
-          const emailExists = await firebaseService.checkEmailExists(newEmail);
+          const existingUser = await firebaseService.getUserByEmail(newEmail);
+          const emailExists = existingUser !== null && existingUser.userId !== currentUser.userId;
           
           if (emailExists) {
             throw new Error('This email address is already registered to another user. Please use a different email.');

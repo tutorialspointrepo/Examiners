@@ -1699,6 +1699,16 @@ function StudentPerformanceView({
   expandedStudents: Set<string>,
   onToggleStudent: (studentId: string) => void
 }) {
+  // ✅ DEBUG: Log incoming data
+  console.log('🔍 StudentPerformanceView data:', {
+    hasData: !!data,
+    hasQuestions: data?.questions?.length,
+    presentStudentsCount: data?.presentStudents?.length,
+    presentStudentsWithAttempt: data?.presentStudents?.filter((s: any) => s.hasAttempt).length,
+    presentStudentsWithAttemptData: data?.presentStudents?.filter((s: any) => s.attemptData).length,
+    firstStudent: data?.presentStudents?.[0]
+  });
+  
   if (!data || !data.questions || data.questions.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
@@ -1777,7 +1787,7 @@ function StudentPerformanceView({
       {/* Student Cards */}
       <div className="px-6 space-y-4">
       {presentStudents
-        .filter((s: any) => s.hasAttempt && s.attemptData && s.attemptData.totalScore != null)
+        .filter((s: any) => s.hasAttempt && s.attemptData)
         .map((student: any) => {
           const isExpanded = expandedStudents.has(student.studentId);
           const totals = calculateStudentTotals(student);
@@ -1954,7 +1964,7 @@ function StudentPerformanceView({
         })}
 
       {/* No submissions message */}
-      {presentStudents.filter((s: any) => s.hasAttempt && s.attemptData && s.attemptData.totalScore != null).length === 0 && (
+      {presentStudents.filter((s: any) => s.hasAttempt && s.attemptData).length === 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
           <p className="text-gray-500">No student submissions yet</p>
         </div>

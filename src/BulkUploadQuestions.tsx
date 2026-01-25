@@ -25,7 +25,6 @@ import {
   ICON_SIZES,
   EXCEL_ROW_OFFSET,
   QUESTION_DEFAULTS,
-  QUESTION_PAGINATION,
   NOTIFICATION_MESSAGES,
   type QuestionType,
   type ComplexityLevel,
@@ -107,7 +106,6 @@ export default function BulkUploadQuestions({
   const [uploadStep, setUploadStep] = useState<UploadStep>(UPLOAD_STEPS.SELECT);
   const [parsedQuestions, setParsedQuestions] = useState<QuestionRow[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [visibleQuestionsCount, setVisibleQuestionsCount] = useState<number>(10);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [uploadResults, setUploadResults] = useState<{
     success: number;
@@ -115,6 +113,10 @@ export default function BulkUploadQuestions({
     errors: string[];
   }>({ success: 0, failed: 0, errors: [] });
   const [isDragging, setIsDragging] = useState(false);
+  
+  // Pagination state for preview
+  const [previewPage, setPreviewPage] = useState(1);
+  const PREVIEW_ITEMS_PER_PAGE = 10;
   
   const [notification, setNotification] = useState<{
     type: NotificationTypeUI;
@@ -134,10 +136,6 @@ export default function BulkUploadQuestions({
     } catch (err) {
       console.error('Failed to copy:', err);
     }
-  };
-
-  const loadMoreQuestions = () => {
-    setVisibleQuestionsCount(prev => Math.min(prev + QUESTION_PAGINATION.INCREMENT, parsedQuestions.length));
   };
 
   useEffect(() => {
@@ -559,7 +557,7 @@ export default function BulkUploadQuestions({
         }
         
         setParsedQuestions(jsonData);
-        setVisibleQuestionsCount(QUESTION_PAGINATION.INITIAL_COUNT);
+        setPreviewPage(1); // Reset preview pagination
         setUploadStep(UPLOAD_STEPS.PREVIEW);
       } catch (error) {
         showNotification(NOTIFICATION_TYPES_UI.ERROR, NOTIFICATION_MESSAGES.PARSE_ERROR);
@@ -780,7 +778,7 @@ export default function BulkUploadQuestions({
     setUploadStep(UPLOAD_STEPS.SELECT);
     setParsedQuestions([]);
     setUploadProgress(0);
-    setVisibleQuestionsCount(QUESTION_PAGINATION.INITIAL_COUNT);
+    setPreviewPage(1);
     setUploadResults({ success: 0, failed: 0, errors: [] });
     onClose();
   };
@@ -942,11 +940,15 @@ export default function BulkUploadQuestions({
                   <h3 className="font-semibold text-gray-900">Questions Preview</h3>
                 </div>
                 <div className="max-h-96 overflow-y-auto">
-                  {parsedQuestions.slice(0, visibleQuestionsCount).map((q, idx) => (
-                    <div key={idx} className="p-4 border-b border-gray-100 hover:bg-gray-50">
+                  {parsedQuestions
+                    .slice((previewPage - 1) * PREVIEW_ITEMS_PER_PAGE, previewPage * PREVIEW_ITEMS_PER_PAGE)
+                    .map((q, idx) => {
+                      const actualIndex = (previewPage - 1) * PREVIEW_ITEMS_PER_PAGE + idx;
+                      return (
+                    <div key={actualIndex} className="p-4 border-b border-gray-100 hover:bg-gray-50">
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex items-center space-x-2">
-                          <span className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold">{idx + 1}</span>
+                          <span className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold">{actualIndex + 1}</span>
                           {q.board && (
                             <span className="text-xs font-semibold px-2 py-1 rounded"
                               style={{ 
@@ -1117,27 +1119,67 @@ export default function BulkUploadQuestions({
                         })()}
                       </div>
                     </div>
-                  ))}
-                  {visibleQuestionsCount < parsedQuestions.length && (
-                    <div className="p-4 border-t border-gray-200 text-center">
-                      <p className="text-sm text-gray-600">
-                        Showing <span className="font-semibold">1</span> to{' '}
-                        <span className="font-semibold">{visibleQuestionsCount}</span> of{' '}
-                        <span className="font-semibold">{parsedQuestions.length}</span> questions{' '}
-                        <button
-                          onClick={loadMoreQuestions}
-                          className="font-bold transition-colors hover:underline ml-2"
-                          style={{ color: brandTheme.colors.primary }}
-                        >
-                          Load next {Math.min(QUESTION_PAGINATION.INCREMENT, parsedQuestions.length - visibleQuestionsCount)} Question{Math.min(QUESTION_PAGINATION.INCREMENT, parsedQuestions.length - visibleQuestionsCount) > 1 ? 's' : ''}
-                        </button>
-                      </p>
-                    </div>
-                  )}
+                      );
+                    })}
                 </div>
+
+                {/* Preview Pagination */}
+                {parsedQuestions.length > PREVIEW_ITEMS_PER_PAGE && (
+                  <div className="bg-gray-50 px-4 py-3 border-t border-gray-200 flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      Showing {((previewPage - 1) * PREVIEW_ITEMS_PER_PAGE) + 1} to {Math.min(previewPage * PREVIEW_ITEMS_PER_PAGE, parsedQuestions.length)} of {parsedQuestions.length} questions
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => setPreviewPage(prev => Math.max(1, prev - 1))}
+                        disabled={previewPage === 1}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Previous
+                      </button>
+                      
+                      {/* Page numbers */}
+                      {Array.from({ length: Math.ceil(parsedQuestions.length / PREVIEW_ITEMS_PER_PAGE) }, (_, i) => i + 1)
+                        .filter(page => {
+                          const totalPages = Math.ceil(parsedQuestions.length / PREVIEW_ITEMS_PER_PAGE);
+                          return page === 1 || 
+                                 page === totalPages || 
+                                 page === previewPage || 
+                                 page === previewPage - 1 || 
+                                 page === previewPage + 1;
+                        })
+                        .map((page, idx, arr) => {
+                          const showEllipsis = idx > 0 && page - arr[idx - 1] > 1;
+                          return (
+                            <div key={page} className="flex items-center">
+                              {showEllipsis && <span className="px-2 text-gray-500">...</span>}
+                              <button
+                                onClick={() => setPreviewPage(page)}
+                                className={`px-3 py-1 border rounded-md text-sm font-medium transition-colors ${
+                                  previewPage === page
+                                    ? 'border-indigo-500 bg-indigo-50 text-indigo-600'
+                                    : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                                }`}
+                              >
+                                {page}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      
+                      <button
+                        onClick={() => setPreviewPage(prev => Math.min(Math.ceil(parsedQuestions.length / PREVIEW_ITEMS_PER_PAGE), prev + 1))}
+                        disabled={previewPage === Math.ceil(parsedQuestions.length / PREVIEW_ITEMS_PER_PAGE)}
+                        className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="flex space-x-3">
-                <button onClick={() => setUploadStep('select')} className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors">
+                <button onClick={() => { setUploadStep('select'); setPreviewPage(1); }} className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-lg transition-colors">
                   Choose Different File
                 </button>
                 <button onClick={uploadQuestions} className="flex-1 px-4 py-3 text-white font-medium rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center space-x-2" style={{ background: brandTheme.gradients.primary }}>

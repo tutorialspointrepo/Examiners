@@ -15,8 +15,6 @@ interface PreExamVerificationProps {
 }
 
 const PreExamVerification: React.FC<PreExamVerificationProps> = ({
-  userId,
-  examTitle,
   proctoringPhotos,
   onSuccess,
   onCancel,
@@ -32,7 +30,6 @@ const PreExamVerification: React.FC<PreExamVerificationProps> = ({
   const [similarityScore, setSimilarityScore] = useState<number | null>(null);
   const [baselineDescriptors, setBaselineDescriptors] = useState<Float32Array[]>([]);
   const [baselineLoaded, setBaselineLoaded] = useState(false);
-  const [countdown, setCountdown] = useState<number>(10); // Countdown from 10 seconds
   
   // --- STATE: AUDIO VERIFICATION ---
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
