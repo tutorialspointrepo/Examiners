@@ -4844,3 +4844,163 @@ export const addCollege = functions
       );
     }
   });
+// ============================================
+// PROBLEM NAVIGATION FUNCTIONS
+// ============================================
+
+/**
+ * 🔄 Get Previous and Next Problems
+ * Returns the previous and next problems based on the current problem's number
+ * This is a public HTTP function (no authentication required)
+ */
+export const getProblemNavigation = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 10,
+    memory: '256MB'
+  })
+  .https.onRequest(async (req, res) => {
+    // Enable CORS
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.set('Cache-Control', 'public, max-age=60'); // Cache for 1 minute
+    
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    const currentNumber = parseInt(req.query.current as string) || 0;
+
+    try {
+      const db = admin.firestore();
+      
+      let prev = null;
+      let next = null;
+
+      // Get previous problem (number < current, order by number DESC, limit 1)
+      if (currentNumber > 0) {
+        const prevSnapshot = await db.collection('problems')
+          .where('number', '<', currentNumber)
+          .orderBy('number', 'desc')
+          .limit(1)
+          .select('slug', 'number', 'title')
+          .get();
+
+        if (!prevSnapshot.empty) {
+          const doc = prevSnapshot.docs[0];
+          const data = doc.data();
+          prev = {
+            id: doc.id,
+            slug: data.slug || doc.id,
+            number: data.number || 0,
+            title: data.title || ''
+          };
+        }
+      }
+
+      // Get next problem (number > current, order by number ASC, limit 1)
+      const nextSnapshot = await db.collection('problems')
+        .where('number', '>', currentNumber)
+        .orderBy('number', 'asc')
+        .limit(1)
+        .select('slug', 'number', 'title')
+        .get();
+
+      if (!nextSnapshot.empty) {
+        const doc = nextSnapshot.docs[0];
+        const data = doc.data();
+        next = {
+          id: doc.id,
+          slug: data.slug || doc.id,
+          number: data.number || 0,
+          title: data.title || ''
+        };
+      }
+
+      res.status(200).json({
+        success: true,
+        current: currentNumber,
+        prev,
+        next
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error getting problem navigation:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to get problem navigation'
+      });
+    }
+  });
+
+/**
+ * 📋 Get All Problems List
+ * Returns a list of all problems (id, slug, number, title only)
+ * Useful for sidebar or problem list page
+ */
+export const getProblemsList = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 30,
+    memory: '256MB'
+  })
+  .https.onRequest(async (req, res) => {
+    // Enable CORS - Only allow specific domain
+    const allowedOrigins = [
+      'https://www.tutorialspoint.com',
+      'https://tutorialspoint.com',
+      'http://localhost:3000' // For local development
+    ];
+    
+    const origin = req.headers.origin || '';
+    if (allowedOrigins.includes(origin)) {
+      res.set('Access-Control-Allow-Origin', origin);
+    } else {
+      res.status(403).json({ success: false, error: 'Forbidden' });
+      return;
+    }
+    res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
+    
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    try {
+      const db = admin.firestore();
+      
+      // Get all problems ordered by number
+      const snapshot = await db.collection('problems')
+        .orderBy('number', 'asc')
+        .select('slug', 'number', 'title', 'difficulty')
+        .get();
+
+      const problems = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          slug: data.slug || doc.id,
+          number: data.number || 0,
+          title: data.title || '',
+          difficulty: data.difficulty || 'Medium'
+        };
+      });
+
+      res.status(200).json({
+        success: true,
+        count: problems.length,
+        problems
+      });
+
+    } catch (error: any) {
+      console.error('❌ Error getting problems list:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to get problems list'
+      });
+    }
+  });

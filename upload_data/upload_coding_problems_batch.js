@@ -1,13 +1,14 @@
 /**
  * Coding Problems Uploader - BATCH VERSION
  * Reads problems from Excel, generates rich content via Claude AI Batch API (50% cheaper), uploads to Firebase
+ * Supports both CODING problems (6 languages) and SQL/DATABASE problems
  * 
  * Usage: 
- *   TEST MODE (Recommended first!):
+ *   TEST MODE (uses real-time API, uploads immediately):
  *     node upload_coding_problems_batch.js <excel_file_path> --test [count]
  *     Example: node upload_coding_problems_batch.js ./Leetcode.xlsx --test 2
  * 
- *   BATCH MODE (After testing):
+ *   BATCH MODE (50% cheaper, takes up to 24 hours):
  *     Step 1: node upload_coding_problems_batch.js <excel_file_path> --create-batch
  *     Step 2: node upload_coding_problems_batch.js <excel_file_path> --check-batch <batch_id>
  *     Step 3: node upload_coding_problems_batch.js <excel_file_path> --process-results <batch_id>
@@ -37,7 +38,9 @@ function initFirebase() {
   db = admin.firestore();
 }
 
-const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({
+  apiKey: ANTHROPIC_API_KEY,
+});
 
 // ==================== HELPER FUNCTIONS ====================
 
@@ -48,19 +51,6 @@ function generateSlug(name) {
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .trim();
-}
-
-/**
- * Generate a custom_id for batch API (max 64 characters)
- */
-function generateCustomId(slug, index) {
-  // If slug is short enough, use it directly
-  if (slug.length <= 64) {
-    return slug;
-  }
-  // Otherwise, truncate and add index to ensure uniqueness
-  const truncated = slug.substring(0, 50);
-  return `${truncated}-${index}`;
 }
 
 function parseRelatedProblems(row) {
@@ -92,10 +82,18 @@ function parseTopics(topicsStr) {
 }
 
 /**
- * Generate the prompt for a problem - ORIGINAL FULL PROMPT
+ * Detect if problem is SQL/Database type based on topics
  */
-function generatePrompt(problemName, description, topics, difficulty, relatedProblems, problemId) {
-  return `You are an expert algorithm instructor creating educational content for a coding practice platform similar to LeetCode.
+function isSQLProblem(topics) {
+  const sqlKeywords = ['sql', 'database', 'mysql', 'postgresql', 'sqlite', 'window functions', 'joins', 'aggregation'];
+  return topics.some(t => sqlKeywords.includes(t.toLowerCase()));
+}
+
+/**
+ * Generate prompt for CODING problems
+ */
+function generateCodingPrompt(problemName, description, topics, difficulty, relatedProblems, problemId) {
+  return `You are an expert algorithm instructor creating educational content for a coding practice platform.
 
 Generate comprehensive, educational content for the following coding problem:
 
@@ -106,246 +104,497 @@ Generate comprehensive, educational content for the following coding problem:
 **Difficulty:** ${difficulty}
 **Related Problems:** ${relatedProblems.map(r => r.title).join(', ') || 'None'}
 
-Generate a complete JSON response with the following structure. Be thorough and educational.
+Generate a complete JSON response. Be thorough and educational.
 
-IMPORTANT INSTRUCTIONS:
-1. Generate UP TO 5 APPROACHES based on what's applicable for this problem:
-   - "brute-force" - Always include (naive O(n²) or O(n³) solution)
-   - "two-pass-hash" - If hash table can solve it in two passes
-   - "one-pass-hash" - If hash table can solve it in one pass (optimal for many problems)
-   - "two-pointers" - If sorting + two pointers approach works
-   - "binary-search" - If sorting + binary search approach works
-   Only include approaches that are ACTUALLY APPLICABLE to this specific problem.
+CRITICAL INSTRUCTIONS:
 
-2. REWRITE THE DESCRIPTION: Make the original description more clear, engaging, and interesting. Add context, explain the problem better, use proper HTML formatting with examples inline if needed.
+1. APPROACHES - Generate 2-5 APPROACHES based on what's applicable to THIS problem:
+   
+   COMMON APPROACH KEYS (use these exact keys):
+   - "brute-force" - Always include first (naive solution, usually O(n²) or O(n³))
+   - "optimized" - General optimized solution when no specific pattern fits
+   
+   ARRAY/STRING PATTERNS:
+   - "two-pointers" - Two pointers moving toward each other or same direction
+   - "sliding-window" - Fixed or variable size window problems
+   - "prefix-sum" - Precompute cumulative sums for range queries
+   - "kadane" - Maximum subarray problems (Kadane's algorithm)
+   - "dutch-flag" - 3-way partitioning (0s, 1s, 2s problems)
+   
+   HASH/MAP PATTERNS:
+   - "hash-map" - Single pass with hash map lookup
+   - "two-pass-hash" - First pass build map, second pass query
+   - "frequency-count" - Count occurrences using map
+   
+   SEARCH PATTERNS:
+   - "binary-search" - O(log n) search on sorted data
+   - "binary-search-answer" - Binary search on answer space
+   
+   TREE/GRAPH PATTERNS:
+   - "dfs" - Depth-first search traversal
+   - "bfs" - Breadth-first search (shortest path, level order)
+   - "backtracking" - Try all possibilities with pruning
+   
+   DYNAMIC PROGRAMMING:
+   - "dp-1d" - 1D DP array
+   - "dp-2d" - 2D DP table
+   - "memoization" - Top-down recursion with cache
+   
+   OTHER PATTERNS:
+   - "greedy" - Local optimal choices lead to global optimum
+   - "stack" - Using stack for matching/parsing problems
+   - "heap" - Priority queue for top-k or scheduling
+   - "sort-first" - Sort then process
+   - "math" - Mathematical formula or property
+   - "bit-manipulation" - XOR, AND, OR operations
+   
+   RULES:
+   - Always start with "brute-force" as first approach
+   - Include 1-4 more approaches that ACTUALLY APPLY to this problem (total 2-5)
+   - Don't force approaches that don't fit
+   - Each approach must have WORKING code in all 6 languages
+
+2. CODE GENERATION - EXTREMELY CRITICAL:
+   
+   **FUNCTION NAME**: Always use "solution" (not "solve")
+   
+   **ADAPT I/O TO PROBLEM TYPE** - Don't copy a template blindly!
+   
+   Look at paramOrder and expected output to determine:
+   - How many inputs to read
+   - What type each input is
+   - What type the output is
+   
+   **INPUT FORMAT** - How test cases send data to stdin:
+   - Strings: sent as PLAIN TEXT without quotes (e.g., babad not "babad")
+   - Integers: sent as plain number (e.g., 9)
+   - Arrays: sent as JSON format (e.g., [1,2,3])
+   - 2D Arrays: sent as JSON format (e.g., [[1,2],[3,4]])
+   - Boolean: sent as lowercase string (true or false)
+   - Each parameter on a NEW LINE
+   
+   **INPUT PARSING PATTERNS BY LANGUAGE:**
+   
+   PYTHON:
+   - Integer: int(input())
+   - Float: float(input())
+   - String: input().strip()  # NO json.loads for strings!
+   - Array of int: json.loads(input())
+   - Array of string: json.loads(input())
+   - 2D Array: json.loads(input())
+   - Boolean: input().strip().lower() == "true"
+   
+   JAVASCRIPT:
+   - Integer: parseInt(lines[i])
+   - Float: parseFloat(lines[i])
+   - String: lines[i].trim()  // NO JSON.parse for strings!
+   - Array: JSON.parse(lines[i])
+   - Boolean: lines[i].trim() === "true"
+   
+   JAVA:
+   - Integer: Integer.parseInt(sc.nextLine().trim())
+   - Float: Double.parseDouble(sc.nextLine().trim())
+   - String: sc.nextLine().trim()  // NO JSON parsing for strings!
+   - Array of int: Parse JSON manually or use split
+   - Boolean: Boolean.parseBoolean(sc.nextLine().trim())
+   
+   C++:
+   - Integer: int x; cin >> x;
+   - Float: double x; cin >> x;
+   - String: string s; getline(cin, s);  // Plain text, no quote handling!
+   - Array: Parse JSON manually using stringstream
+   - Boolean: string s; cin >> s; bool b = (s == "true");
+   
+   GO:
+   - Integer: strconv.Atoi(strings.TrimSpace(line))
+   - Float: strconv.ParseFloat(strings.TrimSpace(line), 64)
+   - String: strings.TrimSpace(line)  // NO json.Unmarshal for strings!
+   - Array: json.Unmarshal([]byte(line), &arr)
+   - Boolean: strings.TrimSpace(line) == "true"
+   
+   C:
+   - Integer: int x; scanf("%d", &x);
+   - Float: double x; scanf("%lf", &x);
+   - String: fgets(s, sizeof(s), stdin); s[strcspn(s, "\\n")] = 0;  // Remove newline, NO quote handling!
+   - Array: Parse manually using strtok or character parsing
+   - Boolean: char s[10]; scanf("%s", s); int b = (strcmp(s, "true") == 0);
+   
+   **OUTPUT FORMAT** - What code should print to stdout:
+   - Strings: print PLAIN TEXT without quotes (e.g., print("bab") not print("\\"bab\\""))
+   - Integers: print plain number
+   - Floats: print plain number
+   - Boolean: print lowercase true or false
+   - Arrays: print JSON format [1,2,3] with no spaces after commas
+   - 2D Arrays: print JSON format [[1,2],[3,4]]
+   
+   **OUTPUT PATTERNS BY LANGUAGE:**
+   
+   | Output Type | Python | JavaScript | Java | C++ | Go | C |
+   |-------------|--------|------------|------|-----|----|----|
+   | Integer | print(x) | console.log(x) | System.out.println(x) | cout << x << endl | fmt.Println(x) | printf("%d\\n", x) |
+   | Float | print(x) | console.log(x) | System.out.println(x) | cout << x << endl | fmt.Println(x) | printf("%f\\n", x) |
+   | String | print(s) | console.log(s) | System.out.println(s) | cout << s << endl | fmt.Println(s) | printf("%s\\n", s) |
+   | Boolean | print(str(b).lower()) | console.log(result) | System.out.println(result) | cout << (b?"true":"false") << endl | fmt.Println(b) | printf(b?"true\\n":"false\\n") |
+   | Array | print(json.dumps(arr)) | console.log(JSON.stringify(arr)) | Custom format [1,2,3] | Custom format [1,2,3] | json.Marshal then print | Custom format [1,2,3] |
+   
+   **CRITICAL I/O RULES:**
+   1. String inputs come as PLAIN TEXT - do NOT try to parse quotes
+   2. String outputs should be PLAIN TEXT - do NOT add quotes around the output
+   3. Only Arrays use JSON format for both input AND output
+   4. Always end output with a newline
+   
+   **EXAMPLE - Different Problem Types:**
+   
+   Problem 1: Array + Integer → Array (Two Sum)
+   - paramOrder: ["nums", "target"]
+   - stdin: [2,7,11,15]\\n9
+   - stdout: [0,1]
+   
+   Problem 2: String → String (Longest Palindrome)
+   - paramOrder: ["s"]
+   - stdin: babad
+   - stdout: bab
+   
+   Problem 3: String → Boolean (Valid Palindrome)
+   - paramOrder: ["s"]
+   - stdin: racecar
+   - stdout: true
+   
+   Problem 4: Matrix → Integer (Island Count)
+   - paramOrder: ["grid"]
+   - stdin: [[1,1,0],[0,1,0],[0,0,1]]
+   - stdout: 2
+   
+   Problem 5: Two Arrays → Array (Merge Sorted)
+   - paramOrder: ["nums1", "nums2"]
+   - stdin: [1,3,5]\\n[2,4,6]
+   - stdout: [1,2,3,4,5,6]
+   
+   Problem 6: Linked List → Linked List (Reverse List) - REQUIRES CLASS DEFINITION
+   - paramOrder: ["head"]
+   - stdin: [1,2,3,4,5]
+   - stdout: [5,4,3,2,1]
+   - MUST include ListNode class at top of code
+   
+   Problem 7: Binary Tree → Integer (Max Depth) - REQUIRES CLASS DEFINITION
+   - paramOrder: ["root"]
+   - stdin: [3,9,20,null,null,15,7]
+   - stdout: 3
+   - MUST include TreeNode class at top of code
+   
+   **CLASS/STRUCT DEFINITIONS** - CRITICAL FOR LINKED LIST AND TREE PROBLEMS:
+   
+   If the problem involves Linked Lists or Trees, YOU MUST include the class/struct definition at the TOP of the code in ALL languages:
+   
+   LINKED LIST:
+   - Python: class ListNode:\\n    def __init__(self, val=0, next=None):\\n        self.val = val\\n        self.next = next
+   - JavaScript: class ListNode { constructor(val, next) { this.val = val === undefined ? 0 : val; this.next = next === undefined ? null : next; } }
+   - Java: class ListNode { int val; ListNode next; ListNode(int val) { this.val = val; } }
+   - C++: struct ListNode { int val; ListNode* next; ListNode(int x) : val(x), next(nullptr) {} };
+   - Go: type ListNode struct { Val int; Next *ListNode }
+   - C: struct ListNode { int val; struct ListNode* next; };
+   
+   BINARY TREE:
+   - Python: class TreeNode:\\n    def __init__(self, val=0, left=None, right=None):\\n        self.val = val\\n        self.left = left\\n        self.right = right
+   - JavaScript: class TreeNode { constructor(val, left, right) { this.val = val === undefined ? 0 : val; this.left = left === undefined ? null : left; this.right = right === undefined ? null : right; } }
+   - Java: class TreeNode { int val; TreeNode left; TreeNode right; TreeNode(int val) { this.val = val; } }
+   - C++: struct TreeNode { int val; TreeNode* left; TreeNode* right; TreeNode(int x) : val(x), left(nullptr), right(nullptr) {} };
+   - Go: type TreeNode struct { Val int; Left *TreeNode; Right *TreeNode }
+   - C: struct TreeNode { int val; struct TreeNode* left; struct TreeNode* right; };
+   
+   **CRITICAL RULES:**
+   1. Read paramOrder to know exact number and order of inputs
+   2. Look at test cases to determine data types
+   3. Generate I/O code specific to THIS problem
+   4. All 6 languages must produce IDENTICAL output
+   5. Function must be named "solution"
+   6. Code must be COMPLETE and RUNNABLE
+   7. For Linked List/Tree problems: INCLUDE class definition at TOP
+
+   **COMPLEXITY ANALYSIS** - For each approach, calculate:
+   
+   TIME COMPLEXITY:
+   - Count the loops: 1 loop = O(n), nested loops = O(n²), triple nested = O(n³)
+   - Sorting = O(n log n)
+   - Binary search = O(log n)
+   - Hash table lookup = O(1)
+   - Recursion: count recursive calls × work per call
+   
+   SPACE COMPLEXITY:
+   - Extra array of size n = O(n)
+   - Hash map with n entries = O(n)
+   - 2D array n×m = O(n×m)
+   - Only variables (no extra data structures) = O(1)
+   - Recursion depth d = O(d) for call stack
+   
+   **COLOR CLASSIFICATION** (UI displays these colors):
+   
+   TIME - Green (good): O(1), O(n)
+   TIME - Orange (medium): O(log n), O(n log n)
+   TIME - Red (bad): O(n²), O(n³), O(2^n), O(n!)
+   
+   SPACE - Green (good): O(1)
+   SPACE - Orange (medium): O(n), O(log n)
+   SPACE - Red (bad): O(n²), O(n³), O(2^n)
+   
+   EXAMPLES:
+   - Brute force two sum: Time O(n²) [RED], Space O(1) [GREEN]
+   - Hash map two sum: Time O(n) [GREEN], Space O(n) [ORANGE]
+   - Binary search: Time O(log n) [ORANGE], Space O(1) [GREEN]
+   - Merge sort: Time O(n log n) [ORANGE], Space O(n) [ORANGE]
+   - DFS on tree: Time O(n) [GREEN], Space O(h) [ORANGE]
+   
+   **FORMAT**: Use "O(n²)" not "O(n^2)" - the superscript ² is required
+   
+   **timeExplain** must clearly state WHY (e.g., "Nested loops iterate n×n times")
+   **spaceExplain** must clearly state WHY (e.g., "Hash map stores up to n elements")
+
+3. TEST CASES FORMAT - CRITICAL (READ CAREFULLY):
+   
+   STRUCTURE:
+   - "paramOrder": Array of parameter names in EXACT order they appear in function signature
+     Example: ["nums", "target"] for function solution(nums, target)
+   
+   - "testCases": Array of objects, each with:
+     - "id": Sequential number (1, 2, 3...)
+     - "input": Object with keys EXACTLY matching paramOrder, ALL VALUES AS STRINGS
+     - "expected": Expected output AS STRING
+     - "explanation": Brief explanation of why this is correct
+   
+   CRITICAL RULES FOR TEST CASE VALUES:
+   - Arrays must be JSON format: "[1,2,3]" (as string with quotes)
+   - Numbers must be strings: "9" not 9
+   - Strings must be quoted inside: "\"hello\"" 
+   - 2D arrays: "[[1,2],[3,4]]"
+   - The keys in "input" MUST match paramOrder EXACTLY (same spelling, same case)
+   
+   EXAMPLE:
+   paramOrder: ["nums", "target"]
+   testCase: {
+     "id": 1,
+     "input": {"nums": "[2,7,11,15]", "target": "9"},  // Keys match paramOrder
+     "expected": "[0,1]",
+     "explanation": "2 + 7 = 9, indices 0 and 1"
+   }
+   
+   ** VERIFICATION PROCESS (DO THIS FOR EVERY TEST CASE) **
+   Before finalizing each test case, mentally execute:
+   1. Parse the input values
+   2. Run the algorithm step by step
+   3. Verify the expected output is EXACTLY what the algorithm produces
+   4. Check output format matches (array brackets, spacing, etc.)
+   
+   ** REQUIRED TEST CASES (minimum 5) **
+   a) Basic case - straightforward example
+   b) Minimum size - smallest valid input
+   c) Edge case - boundary conditions (first/last element, duplicates)
+   d) Negative numbers - if applicable to problem
+   e) Larger input - 5-10 elements to verify logic scales
+
+4. EXAMPLES - Must have VERIFIED correct input/output
+   - Generate 2-3 examples with different scenarios
+   - Each example must show clear input → output
+   - Explanation must trace through WHY the output is correct
+   - Include at least one edge case example
+
+5. SVG VISUALIZATIONS:
+   
+   Generate simple, clean SVG diagrams. Each "svg" field must contain ACTUAL SVG CODE.
+   
+   CRITICAL SVG RULES:
+   - Canvas: viewBox="0 0 800 400" (800 width, 400 height)
+   - Background: #f8f9fa
+   - Use actual data from Example 1 (not metaphors or abstract icons)
+   - Keep it simple: boxes for arrays, circles for nodes, arrows for flow
+   
+   ⛔ TEXT OVERLAP PREVENTION (MANDATORY):
+   - **NEVER put multiple text lines inside the same box** - spread vertically
+   - **Minimum 25px vertical spacing between text lines**
+   - **Minimum 80px horizontal spacing between boxes/elements**
+   - **Box minimum width: 120px for text content**
+   - **Minimum font size: 14px**
+   - **Each text element must have its own dedicated space**
+   - **If content doesn't fit, use SMALLER font (12px) or WIDER box**
+   - **Calculate text width: ~8px per character at font-size 14**
+   
+   TEXT LAYOUT PATTERN:
+   - Title at y="30"
+   - Main elements at y="100-200"  
+   - Labels BELOW elements (not inside) at y="element_y + 70"
+   - Result/Output at y="350"
+   
+   EXAMPLE SVG FOR ARRAY PROBLEM (Two Sum with [2,7,11,15], target=9):
+   
+   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
+     <rect width="800" height="400" fill="#f8f9fa"/>
+     <text x="400" y="30" text-anchor="middle" font-size="18" font-weight="bold" fill="#1a1a2e">Two Sum: Find indices where nums[i] + nums[j] = 9</text>
+     <rect x="150" y="80" width="60" height="50" fill="#e8f4fc" stroke="#3498db" stroke-width="2"/>
+     <rect x="220" y="80" width="60" height="50" fill="#27ae60" stroke="#27ae60" stroke-width="2"/>
+     <rect x="290" y="80" width="60" height="50" fill="#e8f4fc" stroke="#3498db" stroke-width="2"/>
+     <rect x="360" y="80" width="60" height="50" fill="#e8f4fc" stroke="#3498db" stroke-width="2"/>
+     <text x="180" y="112" text-anchor="middle" font-size="20" font-weight="bold" fill="#1a1a2e">2</text>
+     <text x="250" y="112" text-anchor="middle" font-size="20" font-weight="bold" fill="#fff">7</text>
+     <text x="320" y="112" text-anchor="middle" font-size="20" fill="#1a1a2e">11</text>
+     <text x="390" y="112" text-anchor="middle" font-size="20" fill="#1a1a2e">15</text>
+     <text x="180" y="150" text-anchor="middle" font-size="14" fill="#4a4a6a">0</text>
+     <text x="250" y="150" text-anchor="middle" font-size="14" fill="#4a4a6a">1</text>
+     <text x="320" y="150" text-anchor="middle" font-size="14" fill="#4a4a6a">2</text>
+     <text x="390" y="150" text-anchor="middle" font-size="14" fill="#4a4a6a">3</text>
+     <text x="400" y="200" text-anchor="middle" font-size="16" fill="#1a1a2e">nums[0] + nums[1] = 2 + 7 = 9 ✓</text>
+     <text x="400" y="250" text-anchor="middle" font-size="18" font-weight="bold" fill="#27ae60">Output: [0, 1]</text>
+   </svg>
+   
+   FOR EACH APPROACH: Create a similar SVG showing how THAT SPECIFIC ALGORITHM works on the data. DO NOT include XML comments in the SVG.
+
+**IMPORTANT FOR CODE GENERATION:**
+The JSON template below uses generic placeholders (param1, param2, Type1, Type2, ReturnType).
+YOU MUST REPLACE these with actual parameter names from paramOrder and correct types based on the problem.
+- Replace "param1", "param2" with actual names from paramOrder
+- Replace "Type1", "Type2" with actual types (int[], String, List<Integer>, etc.)
+- Replace "ReturnType" with actual return type
+- Adjust parsing code based on input types (array, int, string, matrix, etc.)
+- Adjust output formatting based on return type
+
+**STRING I/O - CRITICAL:**
+- For STRING input: read as plain text, do NOT use json.loads/JSON.parse
+- For STRING output: print as plain text, do NOT use json.dumps/JSON.stringify or add quotes
+- WRONG: printf("\\"%s\\"\\n", result)  →  CORRECT: printf("%s\\n", result)
+- WRONG: print(json.dumps(s))  →  CORRECT: print(s)
+- WRONG: console.log(JSON.stringify(s))  →  CORRECT: console.log(s)
+- Only use JSON for ARRAYS, not for single strings/integers/booleans
 
 {
   "problem_id": "${problemId}",
-  "description": "REWRITTEN clear, engaging HTML description of the problem. Make it interesting and easy to understand. Include the goal, what input is given, what output is expected. Use <strong>, <em>, <code> tags where appropriate.",
-  "descriptionText": "Plain text version of the rewritten description (no HTML tags)",
+  "problemType": "coding",
+  "description": "REWRITTEN clear HTML description using <p>, <strong>, <em>, <code> tags",
+  "descriptionText": "Plain text version (no HTML)",
+  "paramOrder": ["param1", "param2"],
   "analogy": {
-    "title": "Creative analogy title",
-    "description": "Real-world scenario that explains the problem",
+    "title": "Simple real-world comparison",
+    "description": "Brief relatable scenario (1-2 sentences)",
     "icon": "🎯",
-    "bruteForce": "Explain brute force using the analogy",
-    "twoPass": "Explain a better approach using the analogy (if applicable)",
-    "optimal": "Explain optimal approach using the analogy",
-    "keyInsight": "💡 The key insight that makes the optimal solution work"
+    "bruteForce": "How you'd do it the slow way",
+    "twoPass": "A smarter approach",
+    "optimal": "The fastest way",
+    "keyInsight": "💡 One sentence key insight"
   },
   "approaches": {
     "brute-force": {
-      "title": "Brute Force (Nested Loops)",
+      "title": "Brute Force",
       "icon": "🔨",
-      "summary": "One-line summary",
-      "description": "Detailed description of the approach",
-      "steps": ["Step 1", "Step 2", "..."],
-      "pros": ["Pro 1", "Pro 2"],
-      "cons": ["Con 1", "Con 2"],
+      "summary": "One-line summary of approach",
+      "description": "2-3 sentence explanation of how it works",
+      "steps": ["Step 1: Clear action", "Step 2: Clear action"],
+      "pros": ["Simple to understand"],
+      "cons": ["Slow for large inputs"],
       "complexity": {
-        "time": "O(n²)",
-        "timeExplain": "Explanation of time complexity",
-        "space": "O(1)",
-        "spaceExplain": "Explanation of space complexity"
+        "time": "O(?)",
+        "timeExplain": "Brief explanation",
+        "space": "O(?)",
+        "spaceExplain": "Brief explanation"
       },
       "code": {
-        "python": "# Complete working Python solution\\ndef solution():\\n    pass",
-        "javascript": "// Complete working JavaScript solution\\nfunction solution() {\\n}",
-        "java": "// Complete working Java solution\\npublic int[] solution() {\\n}",
-        "cpp": "// Complete working C++ solution\\nvector<int> solution() {\\n}",
-        "go": "// Complete working Go solution\\nfunc solution() []int {\\n}",
-        "c": "// Complete working C solution\\nint* solution() {\\n}"
+        "python": "import json\\nimport sys\\n\\ndef solution(param1, param2):\\n    # IMPLEMENT ALGORITHM HERE\\n    pass\\n\\n# Read inputs\\nlines = sys.stdin.read().strip().split('\\\\n')\\nparam1 = json.loads(lines[0])  # Adjust parsing based on type\\nparam2 = int(lines[1])  # Adjust parsing based on type\\n\\n# Call solution and print result\\nresult = solution(param1, param2)\\nprint(json.dumps(result))  # Adjust output format based on return type",
+        "javascript": "const fs = require('fs');\\nconst lines = fs.readFileSync(0, 'utf8').trim().split('\\\\n');\\n\\nfunction solution(param1, param2) {\\n    // IMPLEMENT ALGORITHM HERE\\n}\\n\\n// Read inputs - adjust parsing based on types\\nconst param1 = JSON.parse(lines[0]);\\nconst param2 = parseInt(lines[1]);\\n\\n// Call solution and print result\\nconst result = solution(param1, param2);\\nconsole.log(JSON.stringify(result));  // Adjust output format",
+        "java": "import java.util.*;\\nimport java.io.*;\\n\\nclass Main {\\n    public static ReturnType solution(Type1 param1, Type2 param2) {\\n        // IMPLEMENT ALGORITHM HERE\\n        // Return appropriate default: 0 for int, false for boolean, null for objects\\n    }\\n    \\n    public static void main(String[] args) throws Exception {\\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\\n        // Parse inputs based on types\\n        // Call solution and print result\\n    }\\n}",
+        "cpp": "#include <iostream>\\n#include <vector>\\n#include <string>\\n#include <sstream>\\nusing namespace std;\\n\\nReturnType solution(Type1 param1, Type2 param2) {\\n    // IMPLEMENT ALGORITHM HERE\\n}\\n\\nint main() {\\n    // Parse inputs based on types\\n    // Call solution and print result\\n    return 0;\\n}",
+        "go": "package main\\n\\nimport (\\n    \\"bufio\\"\\n    \\"encoding/json\\"\\n    \\"fmt\\"\\n    \\"os\\"\\n    \\"strconv\\"\\n    \\"strings\\"\\n)\\n\\nfunc solution(param1 Type1, param2 Type2) ReturnType {\\n    // IMPLEMENT ALGORITHM HERE\\n    // Return appropriate zero value: 0 for int, \\\"\\\" for string, false for bool, nil for slice/pointer\\n}\\n\\nfunc main() {\\n    reader := bufio.NewReader(os.Stdin)\\n    // Parse inputs based on types\\n    // Call solution and print result\\n}",
+        "c": "#include <stdio.h>\\n#include <stdlib.h>\\n#include <string.h>\\n\\nReturnType solution(Type1 param1, Type2 param2) {\\n    // IMPLEMENT ALGORITHM HERE\\n}\\n\\nint main() {\\n    // Parse inputs based on types\\n    // Call solution and print result\\n    return 0;\\n}"
       },
       "visualization": {
-        "title": "Visualization title",
-        "description": "Brief description",
+        "title": "Approach Name: What It Does",
+        "description": "Shows how the algorithm works",
         "steps": [
-          {"stepNumber": 1, "title": "Step title", "description": "Step description"}
+          {"stepNumber": 1, "title": "Step 1", "description": "What happens"},
+          {"stepNumber": 2, "title": "Step 2", "description": "What happens"},
+          {"stepNumber": 3, "title": "Result", "description": "Final output"}
         ],
-        "svg": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 600 400\\">...</svg>"
-      }
-    },
-    "two-pass-hash": {
-      "title": "Two-Pass Hash Table",
-      "icon": "📚",
-      "summary": "Build hash map first, then search for complements",
-      "description": "Detailed description",
-      "steps": ["Step 1", "Step 2", "..."],
-      "pros": ["Pro 1", "Pro 2"],
-      "cons": ["Con 1", "Con 2"],
-      "complexity": {
-        "time": "O(n)",
-        "timeExplain": "Explanation",
-        "space": "O(n)",
-        "spaceExplain": "Explanation"
-      },
-      "code": {
-        "python": "# Complete Python solution",
-        "javascript": "// Complete JavaScript solution",
-        "java": "// Complete Java solution",
-        "cpp": "// Complete C++ solution",
-        "go": "// Complete Go solution",
-        "c": "// Complete C solution"
-      },
-      "visualization": {
-        "title": "Visualization title",
-        "description": "Brief description",
-        "steps": [{"stepNumber": 1, "title": "Step title", "description": "Step description"}],
-        "svg": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 700 450\\">...</svg>"
-      }
-    },
-    "one-pass-hash": {
-      "title": "One-Pass Hash Table (Optimal)",
-      "icon": "⚡",
-      "summary": "Build hash map and search simultaneously in one pass",
-      "description": "Detailed description",
-      "steps": ["Step 1", "Step 2", "..."],
-      "pros": ["Pro 1", "Pro 2"],
-      "cons": ["Con 1", "Con 2"],
-      "complexity": {
-        "time": "O(n)",
-        "timeExplain": "Explanation",
-        "space": "O(n)",
-        "spaceExplain": "Explanation"
-      },
-      "code": {
-        "python": "# Complete optimal Python solution",
-        "javascript": "// Complete optimal JavaScript solution",
-        "java": "// Complete optimal Java solution",
-        "cpp": "// Complete optimal C++ solution",
-        "go": "// Complete optimal Go solution",
-        "c": "// Complete optimal C solution"
-      },
-      "visualization": {
-        "title": "Visualization title",
-        "description": "Brief description",
-        "steps": [{"stepNumber": 1, "title": "Step title", "description": "Step description"}],
-        "svg": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 800 500\\">...</svg>"
-      }
-    },
-    "two-pointers": {
-      "title": "Two Pointers (Sorted Array)",
-      "icon": "👉👈",
-      "summary": "Sort array and use two pointers from both ends",
-      "description": "Detailed description",
-      "steps": ["Step 1", "Step 2", "..."],
-      "pros": ["Pro 1", "Pro 2"],
-      "cons": ["Con 1", "Con 2"],
-      "complexity": {
-        "time": "O(n log n)",
-        "timeExplain": "Explanation",
-        "space": "O(n)",
-        "spaceExplain": "Explanation"
-      },
-      "code": {
-        "python": "# Complete Python solution",
-        "javascript": "// Complete JavaScript solution",
-        "java": "// Complete Java solution",
-        "cpp": "// Complete C++ solution",
-        "go": "// Complete Go solution",
-        "c": "// Complete C solution"
-      },
-      "visualization": {
-        "title": "Visualization title",
-        "description": "Brief description",
-        "steps": [{"stepNumber": 1, "title": "Step title", "description": "Step description"}],
-        "svg": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 700 480\\">...</svg>"
-      }
-    },
-    "binary-search": {
-      "title": "Sorting + Binary Search",
-      "icon": "🔍",
-      "summary": "Sort array, then binary search for complement of each element",
-      "description": "Detailed description",
-      "steps": ["Step 1", "Step 2", "..."],
-      "pros": ["Pro 1", "Pro 2"],
-      "cons": ["Con 1", "Con 2"],
-      "complexity": {
-        "time": "O(n log n)",
-        "timeExplain": "Explanation",
-        "space": "O(n)",
-        "spaceExplain": "Explanation"
-      },
-      "code": {
-        "python": "# Complete Python solution",
-        "javascript": "// Complete JavaScript solution",
-        "java": "// Complete Java solution",
-        "cpp": "// Complete C++ solution",
-        "go": "// Complete Go solution",
-        "c": "// Complete C solution"
-      },
-      "visualization": {
-        "title": "Visualization title",
-        "description": "Brief description",
-        "steps": [{"stepNumber": 1, "title": "Step title", "description": "Step description"}],
-        "svg": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 650 500\\">...</svg>"
+        "svg": "GENERATE ACTUAL SVG CODE HERE following the example SVG format shown above. Must start with <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 400'> and contain rect, text, line elements showing this specific algorithm working on the problem data."
       }
     }
   },
   "examples": [
     {
       "id": 1,
-      "title": "example_1.py — Python",
-      "input": "Formatted input",
-      "output": "Expected output",
-      "explanation": "Why this is the answer"
+      "title": "Example 1 — Basic Case",
+      "input": "nums = [2,7,11,15], target = 9",
+      "output": "[0,1]",
+      "explanation": "Clear step-by-step: nums[0] + nums[1] = 2 + 7 = 9, so return [0,1]"
     },
     {
       "id": 2,
-      "title": "example_2.py — Python",
-      "input": "Another input",
-      "output": "Expected output",
-      "explanation": "Explanation"
+      "title": "Example 2 — Different Position",
+      "input": "nums = [3,2,4], target = 6",
+      "output": "[1,2]",
+      "explanation": "nums[1] + nums[2] = 2 + 4 = 6, indices are [1,2]"
     },
     {
       "id": 3,
-      "title": "example_3.py — Python",
-      "input": "Edge case input",
-      "output": "Expected output",
-      "explanation": "Edge case explanation"
+      "title": "Example 3 — Edge Case",
+      "input": "nums = [3,3], target = 6",
+      "output": "[0,1]",
+      "explanation": "Both elements are same: 3 + 3 = 6"
     }
   ],
   "testCases": [
     {
       "id": 1,
-      "input": {"param1": "value1", "param2": "value2"},
-      "expected": "expected output",
-      "explanation": "Test case explanation"
+      "input": {"nums": "[2,7,11,15]", "target": "9"},
+      "expected": "[0,1]",
+      "explanation": "Basic case: 2 + 7 = 9"
     },
     {
       "id": 2,
-      "input": {"param1": "value1", "param2": "value2"},
-      "expected": "expected output",
-      "explanation": "Another test case"
+      "input": {"nums": "[3,2,4]", "target": "6"},
+      "expected": "[1,2]",
+      "explanation": "Answer not at start: 2 + 4 = 6"
+    },
+    {
+      "id": 3,
+      "input": {"nums": "[3,3]", "target": "6"},
+      "expected": "[0,1]",
+      "explanation": "Minimum size, duplicate values"
+    },
+    {
+      "id": 4,
+      "input": {"nums": "[-1,-2,-3,-4,-5]", "target": "-8"},
+      "expected": "[2,4]",
+      "explanation": "Negative numbers: -3 + -5 = -8"
+    },
+    {
+      "id": 5,
+      "input": {"nums": "[1,2,3,4,5,6,7,8,9,10]", "target": "19"},
+      "expected": "[8,9]",
+      "explanation": "Larger array: 9 + 10 = 19"
     }
   ],
   "constraints": [
-    "Constraint 1 (use <sup> for exponents like 10<sup>4</sup>)",
-    "Constraint 2",
-    "<strong>Important constraint</strong>"
+    "2 ≤ nums.length ≤ 10<sup>4</sup>",
+    "-10<sup>9</sup> ≤ nums[i] ≤ 10<sup>9</sup>"
   ],
   "defaultCode": {
-    "python": "def solution():\\n    # Write your code here\\n    pass\\n\\n# Parse input\\nimport ast\\ndata = ast.literal_eval(input())\\nprint(solution(data))",
-    "javascript": "function solution() {\\n    // Write your code here\\n    return [];\\n}\\n\\nconst lines = require('fs').readFileSync(0, 'utf8').trim().split('\\\\n');\\nconsole.log(JSON.stringify(solution(JSON.parse(lines[0]))));",
-    "java": "import java.util.*;\\n\\nclass Main {\\n    public static void solution() {\\n        // Write your code here\\n    }\\n    \\n    public static void main(String[] args) {\\n        Scanner sc = new Scanner(System.in);\\n        // Parse input and call solution\\n    }\\n}",
-    "cpp": "#include <iostream>\\n#include <vector>\\nusing namespace std;\\n\\nvoid solution() {\\n    // Write your code here\\n}\\n\\nint main() {\\n    // Parse input and call solution\\n    return 0;\\n}",
-    "go": "package main\\n\\nimport (\\n    \\"fmt\\"\\n)\\n\\nfunc solution() {\\n    // Write your code here\\n}\\n\\nfunc main() {\\n    // Parse input and call solution\\n}",
-    "c": "#include <stdio.h>\\n#include <stdlib.h>\\n\\nvoid solution() {\\n    // Write your code here\\n}\\n\\nint main() {\\n    // Parse input and call solution\\n    return 0;\\n}"
+    "python": "import json\\nimport sys\\n\\ndef solution(param1, param2):\\n    # Write your code here\\n    pass\\n\\nlines = sys.stdin.read().strip().split('\\\\n')\\nparam1 = json.loads(lines[0])\\nparam2 = int(lines[1])\\nresult = solution(param1, param2)\\nprint(json.dumps(result))",
+    "javascript": "const fs = require('fs');\\nconst lines = fs.readFileSync(0, 'utf8').trim().split('\\\\n');\\n\\nfunction solution(param1, param2) {\\n    // Write your code here\\n}\\n\\nconst param1 = JSON.parse(lines[0]);\\nconst param2 = parseInt(lines[1]);\\nconsole.log(JSON.stringify(solution(param1, param2)));",
+    "java": "import java.util.*;\\nimport java.io.*;\\n\\nclass Main {\\n    public static ReturnType solution(Type1 param1, Type2 param2) {\\n        // Write your code here\\n        // Return appropriate default: 0 for int, false for boolean, null for objects\\n    }\\n    \\n    public static void main(String[] args) throws Exception {\\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\\n        // Read and parse inputs\\n        // Print result\\n    }\\n}",
+    "cpp": "#include <iostream>\\n#include <vector>\\n#include <sstream>\\n#include <string>\\nusing namespace std;\\n\\nReturnType solution(Type1 param1, Type2 param2) {\\n    // Write your code here\\n}\\n\\nint main() {\\n    // Read and parse inputs\\n    // Print result\\n    return 0;\\n}",
+    "go": "package main\\n\\nimport (\\n    \\"bufio\\"\\n    \\"encoding/json\\"\\n    \\"fmt\\"\\n    \\"os\\"\\n    \\"strconv\\"\\n    \\"strings\\"\\n)\\n\\nfunc solution(param1 Type1, param2 Type2) ReturnType {\\n    // Write your code here\\n    // Return appropriate zero value based on ReturnType\\n}\\n\\nfunc main() {\\n    reader := bufio.NewReader(os.Stdin)\\n    // Read and parse inputs\\n    // Print result\\n}",
+    "c": "#include <stdio.h>\\n#include <stdlib.h>\\n#include <string.h>\\n\\nReturnType solution(Type1 param1, Type2 param2) {\\n    // Write your code here\\n}\\n\\nint main() {\\n    // Read and parse inputs\\n    // Print result\\n    return 0;\\n}"
   },
-  "solutionSummary": "Brief HTML summary highlighting the optimal approach with <strong> tags for key terms",
+  "solutionSummary": "Brief HTML summary: The <strong>key insight</strong> is... Best approach is... Time: O(?), Space: O(?)",
   "visualize": {
-    "title": "Visual explanation title",
-    "description": "Real-world analogy description",
+    "title": "Problem Overview: [Problem Name]",
+    "description": "Shows the input→output transformation",
     "steps": [
-      {"stepNumber": 1, "title": "Step title", "description": "Step description"}
+      {"stepNumber": 1, "title": "Input", "description": "Input data with actual values"},
+      {"stepNumber": 2, "title": "Process", "description": "Key operation"},
+      {"stepNumber": 3, "title": "Output", "description": "Expected result"}
     ],
-    "svg": "<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 800 500\\">...</svg>",
-    "conclusion": "🎯 **Key Insight:** Summary of the key insight"
+    "svg": "GENERATE ACTUAL SVG CODE HERE following the example SVG format shown above. Must start with <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 400'> and show the problem input, transformation, and output.",
+    "conclusion": "🎯 **Key Insight:** One sentence about the main trick"
   },
   "companies": [
     {"name": "Google", "logo": "G", "class": "google", "count": 50},
-    {"name": "Amazon", "logo": "a", "class": "amazon", "count": 40},
-    {"name": "Meta", "logo": "f", "class": "meta", "count": 30},
-    {"name": "Microsoft", "logo": "⊞", "class": "microsoft", "count": 20}
+    {"name": "Amazon", "logo": "a", "class": "amazon", "count": 40}
   ],
   "stats": {
     "acceptance": "45.0%",
@@ -355,143 +604,676 @@ IMPORTANT INSTRUCTIONS:
     "views": 45000
   },
   "seo": {
-    "title": "Problem Name - Category | Practice Coding Problems | Tutorials Point",
-    "description": "Master the problem with detailed solutions in 6 languages...",
-    "keywords": ["keyword1", "keyword2", "algorithm", "coding interview"],
-    "ogImage": "/practice/images/problem-og.png",
-    "canonical": "https://www.tutorialspoint.com/practice/problem-slug.htm"
+    "title": "${problemName} - ${topics[0] || 'Algorithm'} | Practice | Tutorials Point",
+    "description": "Master ${problemName} with solutions in 6 languages.",
+    "keywords": ${JSON.stringify([...topics, 'algorithm', 'coding interview'])},
+    "ogImage": "/practice/images/${problemId}-og.png",
+    "canonical": "https://www.tutorialspoint.com/practice/${problemId}.htm"
   }
 }
 
-IMPORTANT REQUIREMENTS:
-1. All code must be COMPLETE and WORKING - not pseudocode
-2. Include proper input parsing for each language
-3. SVG visualizations should be detailed and educational
-4. Test cases should cover edge cases
-5. Explanations should be beginner-friendly
-6. Use proper escaping for JSON strings (\\n for newlines, \\" for quotes)
-7. Stats must be LOGICAL: views should be 20-50x more than likes (typical engagement rate is 2-5%)
+CHECKLIST - VERIFY EACH ITEM BEFORE SUBMITTING:
+1. ✅ paramOrder is array of strings matching function parameters exactly
+2. ✅ Every testCase.input has keys that EXACTLY match paramOrder (same spelling, case)
+3. ✅ ALL values in testCase.input are STRINGS (arrays as "[1,2,3]", numbers as "9")
+4. ✅ testCase.expected is a STRING matching exact output format
+5. ✅ VERIFIED each test case by mentally running algorithm - output is CORRECT
+6. ✅ At least 5 test cases: basic, minimum size, edge case, negatives (if applicable), larger input
+7. ✅ Function name is "solution" in ALL code (not "solve")
+8. ✅ Code I/O matches THIS problem's data types (not copied from another problem)
+9. ✅ All 6 languages read correct number of inputs based on paramOrder
+10. ✅ All 6 languages output in correct format (array as [1,2], bool as true/false, etc.)
+11. ✅ defaultCode has empty solution body but complete I/O handling
+12. ✅ approach.code has complete working algorithm + I/O
+13. ✅ Time complexity is CORRECT (count loops, recursion, operations)
+14. ✅ Space complexity is CORRECT (count extra data structures, recursion stack)
+15. ✅ timeExplain and spaceExplain clearly state WHY
+16. ✅ SVG fields contain ACTUAL SVG CODE (starts with <svg>)
+17. ✅ SVG: NO overlapping text - each text element has 25px+ vertical spacing
+18. ✅ SVG: Boxes are wide enough for text content (min 120px for labels)
+19. ✅ SVG: Labels are BELOW or OUTSIDE boxes, not cramped inside
+20. ✅ If Linked List/Tree problem: ListNode/TreeNode class defined at TOP of code in ALL languages
+21. ✅ STRING inputs: read as plain text (NO json.loads/JSON.parse)
+22. ✅ STRING outputs: print as plain text (NO json.dumps/JSON.stringify, NO quotes around output)
 
-Return ONLY the JSON object, no markdown formatting or extra text.`;
+Return ONLY the JSON object, no markdown.`;
 }
 
 /**
- * Attempt to fix truncated/malformed JSON
+ * Generate prompt for SQL/DATABASE problems
  */
+function generateSQLPrompt(problemName, description, topics, difficulty, relatedProblems, problemId) {
+  return `You are an expert SQL instructor creating educational content for a coding practice platform.
+
+Generate comprehensive content for the following SQL/Database problem:
+
+**Problem ID:** ${problemId}
+**Problem Name:** ${problemName}
+**Original Description:** ${description}
+**Topics/Tags:** ${topics.join(', ')}
+**Difficulty:** ${difficulty}
+**Related Problems:** ${relatedProblems.map(r => r.title).join(', ') || 'None'}
+
+Generate a complete JSON response for a SQL problem.
+
+CRITICAL INSTRUCTIONS:
+
+1. APPROACHES - Generate ONLY 1-2 SQL approaches (MAXIMUM 2, never more):
+   
+   ⚠️ IMPORTANT: SQL problems typically have ONE optimal solution. Generate at most 2 approaches.
+   DO NOT generate 3, 4, or 5 approaches - this is wasteful for SQL problems.
+   
+   COMMON SQL APPROACH KEYS (use these exact keys):
+   - "basic-query" - Simple SELECT with WHERE/ORDER BY (for easy problems)
+   
+   JOIN PATTERNS:
+   - "inner-join" - Standard INNER JOIN between tables
+   - "left-join" - LEFT JOIN for including non-matching rows
+   - "self-join" - Table joined with itself (comparing rows)
+   - "cross-join" - Cartesian product when needed
+   
+   AGGREGATION PATTERNS:
+   - "group-by" - GROUP BY with aggregate functions (COUNT, SUM, AVG, MAX, MIN)
+   - "having" - GROUP BY with HAVING filter
+   
+   WINDOW FUNCTION PATTERNS:
+   - "window-rank" - ROW_NUMBER, RANK, DENSE_RANK
+   - "window-aggregate" - SUM/AVG/COUNT OVER (PARTITION BY...)
+   - "window-lead-lag" - LEAD/LAG for comparing adjacent rows
+   - "running-total" - Cumulative sum with window function
+   
+   SUBQUERY PATTERNS:
+   - "subquery" - Subquery in WHERE or SELECT
+   - "correlated-subquery" - Subquery referencing outer query
+   - "cte" - Common Table Expression (WITH clause)
+   - "derived-table" - Subquery in FROM clause
+   
+   SET OPERATIONS:
+   - "union" - UNION or UNION ALL
+   - "except" - EXCEPT/MINUS for difference
+   - "intersect" - INTERSECT for common rows
+   
+   OTHER PATTERNS:
+   - "case-when" - Conditional logic with CASE
+   - "string-functions" - LIKE, CONCAT, SUBSTRING, etc.
+   - "date-functions" - DATE_DIFF, EXTRACT, DATE_ADD, etc.
+   - "null-handling" - COALESCE, NULLIF, IS NULL
+   
+   RULES:
+   - ⛔ STRICT LIMIT: Generate ONLY 1-2 approaches (NEVER 3 or more)
+   - Most SQL problems need just 1 approach - only add a 2nd if truly different
+   - Pick the BEST approach that solves the problem optimally
+   - Each approach must have WORKING SQL code
+   - SQL must be PostgreSQL (PGLite) compatible
+
+2. SQL CODE REQUIREMENTS:
+   - Must be compatible with PostgreSQL (PGLite)
+   - Use standard SQL syntax
+   - Include only "sql" in code object (not 6 languages)
+
+3. TABLE SCHEMA - CRITICAL:
+   For SINGLE TABLE problems:
+   - Define "tableSchema" with tableName, columns, primaryKey, notes
+   - Each column: name, type, description
+   
+   For MULTI-TABLE problems (JOINs, subqueries across tables):
+   - Define "tableSchema" as an ARRAY of table objects
+   - Each table object has: tableName, columns, primaryKey
+   - Example: "tableSchema": [
+       {"tableName": "Person", "columns": [...], "primaryKey": "personId"},
+       {"tableName": "Address", "columns": [...], "primaryKey": "addressId"}
+     ]
+
+4. EXAMPLES FORMAT - Table-based:
+
+   === SINGLE TABLE PROBLEMS ===
+   tableSchema (object):
+   {
+     "tableName": "Employee",
+     "columns": [
+       {"name": "id", "type": "int", "description": "Primary key"},
+       {"name": "salary", "type": "int", "description": "Employee salary"}
+     ],
+     "primaryKey": "id",
+     "notes": "Each row represents one employee"
+   }
+   
+   examples input:
+   {
+     "headers": ["id", "salary"],
+     "rows": [
+       {"i0": 1, "i1": 100},
+       {"i0": 2, "i1": 200},
+       {"i0": 3, "i1": 300}
+     ]
+   }
+   
+   === MULTI-TABLE PROBLEMS (JOINs) ===
+   tableSchema (array):
+   [
+     {
+       "tableName": "Person",
+       "columns": [
+         {"name": "personId", "type": "int", "description": "Primary key"},
+         {"name": "firstName", "type": "varchar", "description": "First name"},
+         {"name": "lastName", "type": "varchar", "description": "Last name"}
+       ],
+       "primaryKey": "personId"
+     },
+     {
+       "tableName": "Address",
+       "columns": [
+         {"name": "addressId", "type": "int", "description": "Primary key"},
+         {"name": "personId", "type": "int", "description": "Foreign key to Person"},
+         {"name": "city", "type": "varchar", "description": "City name"},
+         {"name": "state", "type": "varchar", "description": "State name"}
+       ],
+       "primaryKey": "addressId"
+     }
+   ]
+   
+   examples input (multi-table):
+   {
+     "tables": [
+       {
+         "name": "Person",
+         "headers": ["personId", "firstName", "lastName"],
+         "rows": [
+           {"i0": 1, "i1": "Wang", "i2": "Allen"},
+           {"i0": 2, "i1": "Alice", "i2": "Bob"}
+         ]
+       },
+       {
+         "name": "Address",
+         "headers": ["addressId", "personId", "city", "state"],
+         "rows": [
+           {"i0": 1, "i1": 2, "i2": "New York City", "i3": "New York"}
+         ]
+       }
+     ]
+   }
+   
+   === OUTPUT (same for single/multi-table) ===
+   {
+     "headers": ["firstName", "lastName", "city", "state"],
+     "rows": [
+       {"i0": "Wang", "i1": "Allen", "i2": null, "i3": null},
+       {"i0": "Alice", "i1": "Bob", "i2": "New York City", "i3": "New York"}
+     ]
+   }
+   
+   RULES:
+   - Use i0, i1, i2... as keys for row values matching header order
+   - Generate 2-3 examples with different scenarios
+   - Include edge cases (empty results, single row, NULL handling)
+   - Use null (not "null" string) for NULL values
+
+5. TEST CASES - NOT REQUIRED FOR SQL:
+   - SQL problems do NOT need testCases array
+   - Set "testCases": [] (empty array)
+   - SQL execution uses PGlite with data from examples
+
+6. SVG VISUALIZATIONS:
+   
+   Generate simple, clean SVG diagrams showing tables. Each "svg" field must contain ACTUAL SVG CODE.
+   
+   RULES:
+   - Canvas: viewBox="0 0 800 400"
+   - Background: #f8f9fa
+   - Use actual data from Example 1
+   - Draw tables as grids with headers and data rows
+   - **NO OVERLAPPING**: Minimum 40px spacing between elements. Text must not overlap other text or shapes.
+   - Minimum font size: 12px for table content, 14px for labels
+   
+   EXAMPLE SVG FOR SQL PROBLEM:
+   
+   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400">
+     <rect width="800" height="400" fill="#f8f9fa"/>
+     <text x="400" y="25" text-anchor="middle" font-size="16" font-weight="bold" fill="#1a1a2e">Running Total with Window Function</text>
+     <text x="150" y="55" text-anchor="middle" font-size="14" font-weight="bold" fill="#1a1a2e">Input: Transactions</text>
+     <rect x="50" y="65" width="200" height="30" fill="#2c3e50"/>
+     <text x="100" y="85" text-anchor="middle" font-size="12" fill="#fff">account</text>
+     <text x="175" y="85" text-anchor="middle" font-size="12" fill="#fff">amount</text>
+     <rect x="50" y="95" width="200" height="25" fill="#fff" stroke="#bdc3c7"/>
+     <text x="100" y="112" text-anchor="middle" font-size="12" fill="#1a1a2e">1</text>
+     <text x="175" y="112" text-anchor="middle" font-size="12" fill="#1a1a2e">2000</text>
+     <rect x="50" y="120" width="200" height="25" fill="#f9f9f9" stroke="#bdc3c7"/>
+     <text x="100" y="137" text-anchor="middle" font-size="12" fill="#1a1a2e">1</text>
+     <text x="175" y="137" text-anchor="middle" font-size="12" fill="#1a1a2e">1000</text>
+     <line x1="270" y1="110" x2="330" y2="110" stroke="#3498db" stroke-width="2"/>
+     <polygon points="330,105 340,110 330,115" fill="#3498db"/>
+     <text x="305" y="95" text-anchor="middle" font-size="10" fill="#3498db">SUM() OVER</text>
+     <text x="500" y="55" text-anchor="middle" font-size="14" font-weight="bold" fill="#1a1a2e">Output</text>
+     <rect x="350" y="65" width="280" height="30" fill="#2c3e50"/>
+     <text x="400" y="85" text-anchor="middle" font-size="12" fill="#fff">account</text>
+     <text x="475" y="85" text-anchor="middle" font-size="12" fill="#fff">amount</text>
+     <text x="560" y="85" text-anchor="middle" font-size="12" fill="#fff">balance</text>
+     <rect x="350" y="95" width="280" height="25" fill="#fff" stroke="#bdc3c7"/>
+     <text x="400" y="112" text-anchor="middle" font-size="12" fill="#1a1a2e">1</text>
+     <text x="475" y="112" text-anchor="middle" font-size="12" fill="#1a1a2e">2000</text>
+     <text x="560" y="112" text-anchor="middle" font-size="12" font-weight="bold" fill="#27ae60">2000</text>
+     <rect x="350" y="120" width="280" height="25" fill="#f9f9f9" stroke="#bdc3c7"/>
+     <text x="400" y="137" text-anchor="middle" font-size="12" fill="#1a1a2e">1</text>
+     <text x="475" y="137" text-anchor="middle" font-size="12" fill="#1a1a2e">1000</text>
+     <text x="560" y="137" text-anchor="middle" font-size="12" font-weight="bold" fill="#27ae60">1000</text>
+   </svg>
+   
+   FOR EACH APPROACH: Create a similar SVG showing how THAT SPECIFIC SQL OPERATION works. DO NOT include XML comments in the SVG.
+
+{
+  "problem_id": "${problemId}",
+  "problemType": "sql",
+  "description": "REWRITTEN clear HTML description using <p>, <strong>, <code>, <ul>, <li>",
+  "descriptionText": "Plain text version",
+  "tableSchema": {
+    "tableName": "TableName",
+    "columns": [
+      {"name": "id", "type": "int", "description": "Primary key"},
+      {"name": "value", "type": "varchar", "description": "Description of column"}
+    ],
+    "primaryKey": "id",
+    "notes": "Additional notes about the table"
+  },
+  "analogy": {
+    "title": "Simple real-world comparison",
+    "description": "Brief relatable scenario (1-2 sentences)",
+    "icon": "📊",
+    "bruteForce": "The slow manual way",
+    "optimal": "The efficient SQL way",
+    "keyInsight": "💡 One sentence key insight"
+  },
+  "approaches": {
+    "window-function": {
+      "title": "Window Function",
+      "icon": "🪟",
+      "summary": "One-line summary of approach",
+      "description": "2-3 sentence explanation",
+      "steps": ["Step 1: Clear action", "Step 2: Clear action"],
+      "pros": ["Efficient single pass"],
+      "cons": ["Requires understanding window syntax"],
+      "complexity": {
+        "time": "O(n log n)",
+        "timeExplain": "Sorting required for window ordering",
+        "space": "O(n)",
+        "spaceExplain": "Window frame storage"
+      },
+      "code": {
+        "sql": "SELECT\\n    column1,\\n    column2,\\n    SUM(amount) OVER (PARTITION BY account ORDER BY date) AS running_total\\nFROM table_name\\nORDER BY column1;"
+      },
+      "visualization": {
+        "title": "Window Function: Running Total",
+        "description": "Shows PARTITION BY grouping and running sum",
+        "steps": [
+          {"stepNumber": 1, "title": "Partition", "description": "Group by account"},
+          {"stepNumber": 2, "title": "Order", "description": "Sort by date"},
+          {"stepNumber": 3, "title": "Calculate", "description": "Running sum"}
+        ],
+        "svg": "GENERATE ACTUAL SVG CODE HERE following the example SVG format shown above. Must start with <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 400'> and show input table, SQL operation arrow, and output table with actual data."
+      }
+    }
+  },
+  "examples": [
+    {
+      "id": 1,
+      "title": "Example 1 — Descriptive Title",
+      "input": {
+        "headers": ["col1", "col2"],
+        "rows": [{"i0": "val1", "i1": "val2"}]
+      },
+      "output": {
+        "headers": ["result_col1", "result_col2"],
+        "rows": [{"i0": "result1", "i1": "result2"}]
+      },
+      "explanation": "<p>Clear explanation of how input produces this output.</p>"
+    },
+    {
+      "id": 2,
+      "title": "Example 2 — Edge Case",
+      "input": {
+        "headers": ["col1", "col2"],
+        "rows": [{"i0": "val1", "i1": null}]
+      },
+      "output": {
+        "headers": ["result_col1", "result_col2"],
+        "rows": [{"i0": "result1", "i1": null}]
+      },
+      "explanation": "<p>Explanation showing NULL handling or edge case.</p>"
+    }
+  ],
+  "testCases": [],
+  "constraints": [
+    "<code>1 ≤ account_id ≤ 1000</code>",
+    "<code>type</code> is either <code>'Deposit'</code> or <code>'Withdraw'</code>"
+  ],
+  "defaultCode": {
+    "sql": "-- Write your SQL query here\\n-- Use SELECT, UPDATE, DELETE, or INSERT as needed for this problem\\n"
+  },
+  "solutionSummary": "Brief HTML summary: Use <strong>window function</strong> with <code>SUM() OVER()</code> to calculate running totals efficiently.",
+  "visualize": {
+    "title": "SQL Problem Overview: [Problem Name]",
+    "description": "Shows input table → SQL operation → output table",
+    "steps": [
+      {"stepNumber": 1, "title": "Input", "description": "Original table data"},
+      {"stepNumber": 2, "title": "Operation", "description": "SQL operation"},
+      {"stepNumber": 3, "title": "Output", "description": "Result table"}
+    ],
+    "svg": "GENERATE ACTUAL SVG CODE HERE following the example SVG format shown above. Must start with <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 400'> and show input table, SQL operation, and output table.",
+    "conclusion": "🎯 **Key Insight:** When to use this SQL pattern"
+  },
+  "companies": [
+    {"name": "Amazon", "logo": "a", "class": "amazon", "count": 45},
+    {"name": "Google", "logo": "G", "class": "google", "count": 32}
+  ],
+  "stats": {
+    "acceptance": "45.0%",
+    "avgTime": "~15 min",
+    "frequency": "High",
+    "likes": 1250,
+    "views": 45000
+  },
+  "seo": {
+    "title": "${problemName} - SQL | Practice | Tutorials Point",
+    "description": "Master ${problemName} SQL problem with window functions and joins.",
+    "keywords": ${JSON.stringify([...topics, 'SQL', 'database', 'practice'])},
+    "ogImage": "/practice/images/${problemId}-og.png",
+    "canonical": "https://www.tutorialspoint.com/practice/${problemId}.htm"
+  }
+}
+
+CHECKLIST - VERIFY EACH ITEM BEFORE SUBMITTING:
+1. ✅ tableSchema: For single-table use object, for multi-table (JOINs) use array of objects
+2. ✅ tableSchema has correct tableName, all columns with name/type/description for EACH table
+3. ✅ examples input: For single-table use {headers, rows}, for multi-table use {tables: [{name, headers, rows}, ...]}
+4. ✅ examples rows use i0, i1, i2... keys matching header order
+5. ✅ testCases is empty array: []
+6. ✅ SQL syntax is PostgreSQL compatible (PGLite)
+7. ✅ SVG fields contain ACTUAL SVG CODE (starts with <svg>, not placeholder text)
+8. ✅ Each approach has its own visualization SVG showing that specific SQL operation
+9. ✅ SVG shows actual table data from examples, not abstract shapes
+10. ✅ NO overlapping text or elements in SVG
+11. ⛔ APPROACHES COUNT: Maximum 2 approaches (1 is preferred for most SQL problems)
+12. ✅ NULL values use null (not "null" string)
+
+Return ONLY the JSON object, no markdown.`;
+}
+
+/**
+ * Generate rich problem content using Claude AI
+ */
+async function generateProblemContent(problemName, description, topics, difficulty, relatedProblems, problemId) {
+  const isSQL = isSQLProblem(topics);
+  const prompt = isSQL 
+    ? generateSQLPrompt(problemName, description, topics, difficulty, relatedProblems, problemId)
+    : generateCodingPrompt(problemName, description, topics, difficulty, relatedProblems, problemId);
+
+  try {
+    console.log(`    🤖 Calling Claude API for: ${problemName}`);
+    console.log(`    📋 Problem Type: ${isSQL ? 'SQL/Database' : 'Coding'}`);
+    
+    const message = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 20000,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const responseText = message.content[0].text;
+    
+    const inputTokens = message.usage?.input_tokens || 0;
+    const outputTokens = message.usage?.output_tokens || 0;
+    const totalTokens = inputTokens + outputTokens;
+    
+    const inputCost = (inputTokens / 1000000) * 3;
+    const outputCost = (outputTokens / 1000000) * 15;
+    const totalCost = inputCost + outputCost;
+    
+    console.log(`    📊 Tokens - Input: ${inputTokens.toLocaleString()}, Output: ${outputTokens.toLocaleString()}`);
+    console.log(`    💰 Cost: $${totalCost.toFixed(4)}`);
+    
+    if (message.stop_reason === 'max_tokens') {
+      console.log(`    ⚠️  Warning: Response truncated`);
+    }
+    
+    let jsonContent;
+    try {
+      jsonContent = JSON.parse(responseText);
+    } catch (e) {
+      console.log(`    ⚠️  JSON parse failed, attempting recovery...`);
+      
+      const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        try {
+          jsonContent = JSON.parse(jsonMatch[1]);
+        } catch (e2) {}
+      }
+      
+      if (!jsonContent) {
+        const startIdx = responseText.indexOf('{');
+        const endIdx = responseText.lastIndexOf('}');
+        if (startIdx !== -1 && endIdx !== -1) {
+          let jsonStr = responseText.substring(startIdx, endIdx + 1);
+          try {
+            jsonContent = JSON.parse(jsonStr);
+          } catch (e3) {
+            jsonStr = fixTruncatedJson(jsonStr);
+            try {
+              jsonContent = JSON.parse(jsonStr);
+              console.log(`    ✅ JSON recovered`);
+            } catch (e4) {
+              throw new Error(`Could not parse JSON: ${e4.message}`);
+            }
+          }
+        } else {
+          throw new Error('Could not extract JSON');
+        }
+      }
+    }
+    
+    jsonContent._tokenUsage = { inputTokens, outputTokens, totalTokens, inputCost, outputCost, totalCost };
+    jsonContent._isSQL = isSQL;
+    
+    console.log(`    ✅ Generated content for: ${problemName}`);
+    return jsonContent;
+    
+  } catch (error) {
+    console.error(`    ❌ Error generating content: ${error.message}`);
+    return null;
+  }
+}
+
 function fixTruncatedJson(jsonStr) {
   let fixed = jsonStr;
   
-  // Count open brackets/braces
+  fixed = fixed.replace(/,\s*[^}\]"'\d\w]*$/, '');
+  
   let openBraces = (fixed.match(/{/g) || []).length;
   let closeBraces = (fixed.match(/}/g) || []).length;
   let openBrackets = (fixed.match(/\[/g) || []).length;
   let closeBrackets = (fixed.match(/\]/g) || []).length;
   
-  // Remove trailing incomplete elements
-  fixed = fixed.replace(/,\s*[^}\]"'\d\w]*$/, '');
-  
-  // Remove incomplete string at the end
-  const lastCompleteIdx = Math.max(
-    fixed.lastIndexOf('}'),
-    fixed.lastIndexOf(']'),
-    fixed.lastIndexOf('true'),
-    fixed.lastIndexOf('false'),
-    fixed.lastIndexOf('null')
-  );
-  
-  // If there's an unclosed string, remove it
-  const quotesAfterComplete = (fixed.substring(lastCompleteIdx).match(/"/g) || []).length;
-  if (quotesAfterComplete % 2 !== 0) {
-    const lastCommaBeforeEnd = fixed.lastIndexOf(',', lastCompleteIdx);
-    if (lastCommaBeforeEnd > 0) {
-      fixed = fixed.substring(0, lastCommaBeforeEnd);
-    }
-  }
-  
-  // Recount after fixes
-  openBraces = (fixed.match(/{/g) || []).length;
-  closeBraces = (fixed.match(/}/g) || []).length;
-  openBrackets = (fixed.match(/\[/g) || []).length;
-  closeBrackets = (fixed.match(/\]/g) || []).length;
-  
-  // Add missing closing brackets/braces
-  while (closeBrackets < openBrackets) {
-    fixed += ']';
-    closeBrackets++;
-  }
-  while (closeBraces < openBraces) {
-    fixed += '}';
-    closeBraces++;
-  }
+  while (closeBrackets < openBrackets) { fixed += ']'; closeBrackets++; }
+  while (closeBraces < openBraces) { fixed += '}'; closeBraces++; }
   
   return fixed;
 }
 
 /**
- * Read Excel and prepare problems
+ * Build complete problem document for Firebase
  */
-function prepareProblemsFromExcel(excelPath, limit = null) {
-  console.log(`📖 Reading Excel file: ${excelPath}`);
+function buildProblemDocument(row, generatedContent, problemNumber) {
+  const problemName = row['Problem Name'];
+  const slug = generateSlug(problemName);
+  const problemId = slug;
+  const topics = parseTopics(row['Topics']);
+  const difficulty = row['Difficulty'] || 'Medium';
+  const description = row['Description'] || '';
+  const relatedProblems = parseRelatedProblems(row);
+  const isSQL = generatedContent?._isSQL || isSQLProblem(topics);
+  
+  // Base document structure
+  const doc = {
+    id: slug,
+    problem_id: problemId,
+    slug: slug,
+    number: problemNumber,
+    title: problemName,
+    description: description,
+    descriptionText: description.replace(/<[^>]*>/g, ''),
+    difficulty: difficulty,
+    level: difficulty,
+    category: topics[0] || 'Algorithm',
+    tags: topics,
+    topics: isSQL ? ['Database', 'SQL'] : ['Data Structures', 'Algorithms'],
+    related: relatedProblems,
+    status: null,
+    problemType: isSQL ? 'sql' : 'coding',
+    
+    // Timestamps
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    
+    // Default values
+    analogy: null,
+    approaches: {},
+    examples: [],
+    testCases: [],
+    constraints: [],
+    defaultCode: {},
+    solutionSummary: '',
+    visualize: null,
+    companies: [],
+    stats: {
+      acceptance: '50.0%',
+      avgTime: '~15 min',
+      frequency: 'Medium',
+      likes: 850,
+      views: 25000
+    },
+    seo: {
+      title: `${problemName} - ${topics[0] || 'Algorithm'} | Practice | Tutorials Point`,
+      description: `Master the ${problemName} problem with detailed solutions.`,
+      keywords: [...topics, 'algorithm', 'coding interview', 'practice'],
+      ogImage: `/practice/images/${slug}-og.png`,
+      canonical: `https://www.tutorialspoint.com/practice/${slug}.htm`
+    }
+  };
+  
+  // Add type-specific fields
+  if (isSQL) {
+    doc.tableSchema = null;
+  } else {
+    doc.paramOrder = [];
+  }
+  
+  // Merge generated content
+  if (generatedContent) {
+    if (generatedContent.description) doc.description = generatedContent.description;
+    if (generatedContent.descriptionText) doc.descriptionText = generatedContent.descriptionText;
+    
+    const fieldsToMerge = [
+      'analogy', 'approaches', 'examples', 'testCases', 'constraints',
+      'defaultCode', 'solutionSummary', 'visualize', 'companies', 'stats', 'seo'
+    ];
+    
+    if (isSQL) {
+      fieldsToMerge.push('tableSchema');
+    } else {
+      fieldsToMerge.push('paramOrder');
+    }
+    
+    fieldsToMerge.forEach(field => {
+      if (generatedContent[field] !== undefined) {
+        doc[field] = generatedContent[field];
+      }
+    });
+    
+    // Ensure views > likes in stats
+    if (doc.stats) {
+      const likes = doc.stats.likes || 1000;
+      const views = doc.stats.views || 0;
+      if (views < likes * 20) {
+        doc.stats.views = likes * (Math.floor(Math.random() * 16) + 25);
+      }
+    }
+    
+    if (generatedContent._tokenUsage) {
+      doc._generationMeta = {
+        tokenUsage: generatedContent._tokenUsage,
+        generatedAt: new Date().toISOString(),
+        model: 'claude-sonnet-4-20250514'
+      };
+    }
+  }
+  
+  return doc;
+}
+
+async function uploadToFirebase(problemDoc) {
+  try {
+    const docRef = db.collection(COLLECTION_NAME).doc(problemDoc.id);
+    // OVERWRITE by default - completely replaces old document
+    await docRef.set(problemDoc);
+    console.log(`    ✅ Uploaded to Firebase: ${problemDoc.title}`);
+    return true;
+  } catch (error) {
+    console.error(`    ❌ Firebase upload error: ${error.message}`);
+    return false;
+  }
+}
+
+// ==================== BATCH HELPER FUNCTIONS ====================
+
+function generateCustomId(slug, index) {
+  if (slug.length <= 64) return slug;
+  return `${slug.substring(0, 50)}-${index}`;
+}
+
+function prepareProblemsFromExcel(excelPath) {
   const workbook = xlsx.readFile(excelPath);
   const sheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
   const data = xlsx.utils.sheet_to_json(worksheet);
   
-  console.log(`📊 Found ${data.length} problems in Excel`);
-  if (limit) console.log(`🔢 Limiting to first ${limit} problems for testing`);
-  console.log('');
-  
   const problems = [];
-  const maxProblems = limit || data.length;
   
-  for (let i = 0; i < Math.min(data.length, maxProblems); i++) {
+  for (let i = 0; i < data.length; i++) {
     const row = data[i];
     const problemName = row['Problem Name'];
     
-    if (!problemName) {
-      console.log(`⚠️  Skipping row ${i + 1}: No problem name`);
-      continue;
-    }
+    if (!problemName) continue;
     
     const topics = parseTopics(row['Topics']);
     const difficulty = row['Difficulty'] || 'Medium';
     const description = row['Description'] || '';
     const relatedProblems = parseRelatedProblems(row);
     const problemId = generateSlug(problemName);
-    const customId = generateCustomId(problemId, i); // For batch API (max 64 chars)
     
     problems.push({
       index: i,
-      row: row,
-      problemId: problemId,        // Full slug for Firebase
-      customId: customId,          // Truncated for batch API
-      problemName: problemName,
-      topics: topics,
-      difficulty: difficulty,
-      description: description,
-      relatedProblems: relatedProblems
+      row,
+      problemId,
+      problemName,
+      description,
+      topics,
+      difficulty,
+      relatedProblems,
+      customId: generateCustomId(problemId, i)
     });
   }
   
   return problems;
 }
 
-// ==================== TEST MODE ====================
+// ==================== BATCH COMMANDS ====================
 
-async function runTestMode(excelPath, testCount = 2) {
+async function runTestMode(excelPath, testCount) {
   initFirebase();
   
-  console.log('========================================');
-  console.log('🧪 TEST MODE - Verifying Setup');
-  console.log(`   Processing ${testCount} problem(s) with real-time API`);
-  console.log('========================================\n');
+  const problems = prepareProblemsFromExcel(excelPath);
+  const toProcess = problems.slice(0, testCount);
   
-  const problems = prepareProblemsFromExcel(excelPath, testCount);
-  
-  if (problems.length === 0) {
-    console.error('❌ No problems found in Excel file');
-    return;
-  }
+  console.log(`📖 Reading Excel file: ${excelPath}`);
+  console.log(`📊 Found ${problems.length} problems in Excel`);
+  console.log(`🔢 Limiting to first ${testCount} problems for testing\n`);
   
   let successCount = 0;
   let failCount = 0;
@@ -499,10 +1281,10 @@ async function runTestMode(excelPath, testCount = 2) {
   let totalOutputTokens = 0;
   let totalCost = 0;
   
-  for (let i = 0; i < problems.length; i++) {
-    const problem = problems[i];
+  for (let i = 0; i < toProcess.length; i++) {
+    const problem = toProcess[i];
     
-    console.log(`\n[${i + 1}/${problems.length}] Testing: ${problem.problemName}`);
+    console.log(`\n[${i + 1}/${toProcess.length}] Testing: ${problem.problemName}`);
     console.log('─'.repeat(50));
     console.log(`    📌 Problem ID: ${problem.problemId}`);
     console.log(`    📌 Difficulty: ${problem.difficulty}`);
@@ -510,121 +1292,31 @@ async function runTestMode(excelPath, testCount = 2) {
     console.log(`    🔗 Related: ${problem.relatedProblems.length} problems`);
     
     try {
-      console.log(`    🤖 Calling Claude API (real-time)...`);
+      const generatedContent = await generateProblemContent(
+        problem.problemName,
+        problem.description,
+        problem.topics,
+        problem.difficulty,
+        problem.relatedProblems,
+        problem.problemId
+      );
       
-      const message = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 20000,
-        messages: [{
-          role: 'user',
-          content: generatePrompt(
-            problem.problemName,
-            problem.description,
-            problem.topics,
-            problem.difficulty,
-            problem.relatedProblems,
-            problem.problemId
-          )
-        }]
-      });
-      
-      const inputTokens = message.usage?.input_tokens || 0;
-      const outputTokens = message.usage?.output_tokens || 0;
-      const inputCost = (inputTokens / 1000000) * 3;
-      const outputCost = (outputTokens / 1000000) * 15;
-      const cost = inputCost + outputCost;
-      
-      totalInputTokens += inputTokens;
-      totalOutputTokens += outputTokens;
-      totalCost += cost;
-      
-      console.log(`    📊 Tokens - Input: ${inputTokens.toLocaleString()}, Output: ${outputTokens.toLocaleString()}, Total: ${(inputTokens + outputTokens).toLocaleString()}`);
-      console.log(`    💰 Cost - Input: $${inputCost.toFixed(4)}, Output: $${outputCost.toFixed(4)}, Total: $${cost.toFixed(4)}`);
-      
-      // Check if truncated
-      if (message.stop_reason === 'max_tokens') {
-        console.log(`    ⚠️  Warning: Response was truncated (hit max_tokens limit)`);
+      if (generatedContent?._tokenUsage) {
+        totalInputTokens += generatedContent._tokenUsage.inputTokens;
+        totalOutputTokens += generatedContent._tokenUsage.outputTokens;
+        totalCost += generatedContent._tokenUsage.totalCost;
       }
       
-      // Parse response
-      const responseText = message.content[0]?.text || '';
-      let generatedContent = null;
-      
-      try {
-        generatedContent = JSON.parse(responseText);
-        console.log(`    ✅ JSON parsed successfully`);
-      } catch (e) {
-        console.log(`    ⚠️  JSON parse failed, attempting recovery...`);
-        
-        // Try markdown extraction
-        const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (jsonMatch) {
-          try {
-            generatedContent = JSON.parse(jsonMatch[1]);
-            console.log(`    ✅ JSON extracted from markdown`);
-          } catch (e2) {}
-        }
-        
-        if (!generatedContent) {
-          const startIdx = responseText.indexOf('{');
-          const endIdx = responseText.lastIndexOf('}');
-          if (startIdx !== -1 && endIdx !== -1) {
-            let jsonStr = responseText.substring(startIdx, endIdx + 1);
-            try {
-              generatedContent = JSON.parse(jsonStr);
-              console.log(`    ✅ JSON recovered successfully`);
-            } catch (e3) {
-              console.log(`    🔧 Attempting to fix malformed JSON...`);
-              jsonStr = fixTruncatedJson(jsonStr);
-              try {
-                generatedContent = JSON.parse(jsonStr);
-                console.log(`    ✅ JSON fixed and recovered`);
-              } catch (e4) {
-                console.log(`    ❌ Failed to parse JSON response`);
-              }
-            }
-          }
-        }
-      }
-      
-      // Verify content structure
-      if (generatedContent) {
-        const hasDescription = !!generatedContent.description;
-        const approachCount = Object.keys(generatedContent.approaches || {}).length;
-        const exampleCount = (generatedContent.examples || []).length;
-        const hasCode = Object.keys((generatedContent.approaches?.['brute-force']?.code) || {}).length > 0;
-        
-        console.log(`    📋 Content Check:`);
-        console.log(`       - Description: ${hasDescription ? '✅' : '❌'}`);
-        console.log(`       - Approaches: ${approachCount > 0 ? '✅' : '❌'} (${approachCount} found)`);
-        console.log(`       - Examples: ${exampleCount > 0 ? '✅' : '❌'} (${exampleCount} found)`);
-        console.log(`       - Code: ${hasCode ? '✅' : '❌'}`);
-        
-        // Add token usage
-        generatedContent._tokenUsage = {
-          inputTokens,
-          outputTokens,
-          totalTokens: inputTokens + outputTokens,
-          inputCost,
-          outputCost,
-          totalCost: cost
-        };
-      }
-      
-      // Build and upload document
-      const problemDoc = buildProblemDocument(problem.row, generatedContent, problem.index + 1);
+      const problemDoc = buildProblemDocument(problem.row, generatedContent, problem.row['P_ID'] || (problem.index + 1));
       const uploaded = await uploadToFirebase(problemDoc);
       
       if (uploaded) {
         successCount++;
-        console.log(`    ✅ Uploaded to Firebase successfully!`);
       } else {
         failCount++;
-        console.log(`    ❌ Failed to upload to Firebase`);
       }
       
-      // Small delay between requests
-      if (i < problems.length - 1) {
+      if (i < toProcess.length - 1) {
         console.log('    ⏳ Waiting 2 seconds...');
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
@@ -635,71 +1327,40 @@ async function runTestMode(excelPath, testCount = 2) {
     }
   }
   
-  // Calculate estimates for full batch
-  const workbook = xlsx.readFile(excelPath);
-  const totalProblemsInExcel = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]).length;
-  const avgCostPerProblem = totalCost / problems.length;
-  const estimatedFullCostRealtime = avgCostPerProblem * totalProblemsInExcel;
-  const estimatedFullCostBatch = estimatedFullCostRealtime * 0.5;
-  
-  // Summary
   console.log('\n========================================');
-  console.log('🧪 TEST SUMMARY');
+  console.log('📊 TEST SUMMARY');
   console.log('========================================');
-  console.log(`✅ Successful: ${successCount}/${problems.length}`);
-  console.log(`❌ Failed: ${failCount}/${problems.length}`);
+  console.log(`✅ Successful: ${successCount}`);
+  console.log(`❌ Failed: ${failCount}`);
   console.log('────────────────────────────────────────');
-  console.log('💰 TEST COST');
-  console.log('────────────────────────────────────────');
-  console.log(`📥 Input Tokens:  ${totalInputTokens.toLocaleString()}`);
-  console.log(`📤 Output Tokens: ${totalOutputTokens.toLocaleString()}`);
-  console.log(`📊 Total Tokens:  ${(totalInputTokens + totalOutputTokens).toLocaleString()}`);
-  console.log(`💵 Test Cost:     $${totalCost.toFixed(4)}`);
-  console.log('────────────────────────────────────────');
-  console.log('📊 FULL BATCH ESTIMATE');
-  console.log('────────────────────────────────────────');
-  console.log(`📦 Total Problems: ${totalProblemsInExcel}`);
-  console.log(`💵 Real-time API:  ~$${estimatedFullCostRealtime.toFixed(2)}`);
-  console.log(`💵 Batch API:      ~$${estimatedFullCostBatch.toFixed(2)} (50% off!)`);
-  console.log(`💰 You'd Save:     ~$${(estimatedFullCostRealtime - estimatedFullCostBatch).toFixed(2)}`);
-  console.log('========================================');
-  
-  if (successCount === problems.length) {
-    console.log('\n✅ TEST PASSED! Everything looks good.');
-    console.log('   You can now run the full batch:');
-    console.log(`   node upload_coding_problems_batch.js ${excelPath} --create-batch\n`);
-  } else {
-    console.log('\n⚠️  Some tests failed. Please check the errors above before running full batch.\n');
-  }
+  console.log('💰 TOKEN USAGE & COST');
+  console.log(`📥 Input:  ${totalInputTokens.toLocaleString()}`);
+  console.log(`📤 Output: ${totalOutputTokens.toLocaleString()}`);
+  console.log(`💵 Total:  $${totalCost.toFixed(4)}`);
+  console.log('========================================\n');
 }
-
-// ==================== BATCH FUNCTIONS ====================
 
 async function createBatch(excelPath) {
   const problems = prepareProblemsFromExcel(excelPath);
   
-  console.log('========================================');
-  console.log('🚀 Creating Batch Request (50% cheaper!)');
-  console.log('========================================\n');
+  console.log(`📖 Reading Excel file: ${excelPath}`);
+  console.log(`📊 Found ${problems.length} problems to process\n`);
   
-  const batchRequests = problems.map(problem => ({
-    custom_id: problem.customId,  // Use truncated customId (max 64 chars)
-    params: {
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 20000,
-      messages: [{
-        role: 'user',
-        content: generatePrompt(
-          problem.problemName,
-          problem.description,
-          problem.topics,
-          problem.difficulty,
-          problem.relatedProblems,
-          problem.problemId
-        )
-      }]
-    }
-  }));
+  const batchRequests = problems.map(problem => {
+    const isSQL = isSQLProblem(problem.topics);
+    const prompt = isSQL 
+      ? generateSQLPrompt(problem.problemName, problem.description, problem.topics, problem.difficulty, problem.relatedProblems, problem.problemId)
+      : generateCodingPrompt(problem.problemName, problem.description, problem.topics, problem.difficulty, problem.relatedProblems, problem.problemId);
+    
+    return {
+      custom_id: problem.customId,
+      params: {
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 20000,
+        messages: [{ role: 'user', content: prompt }]
+      }
+    };
+  });
   
   console.log(`📦 Preparing ${batchRequests.length} requests for batch processing...`);
   console.log(`📊 Estimated cost: ~$${(batchRequests.length * 0.21 * 0.5).toFixed(2)} (with 50% batch discount)`);
@@ -715,27 +1376,19 @@ async function createBatch(excelPath) {
     console.log(`🕐 Created: ${batch.created_at}`);
     console.log('────────────────────────────────────────');
     console.log('\n💡 Next Steps:');
-    console.log(`   1. Wait for batch to complete (up to 24 hours, usually much faster)`);
+    console.log(`   1. Wait for batch to complete (up to 24 hours)`);
     console.log(`   2. Check status: node upload_coding_problems_batch.js ${excelPath} --check-batch ${batch.id}`);
     console.log(`   3. Process results: node upload_coding_problems_batch.js ${excelPath} --process-results ${batch.id}`);
     
-    // Save batch info
-    const batchInfo = {
+    // Save batch info to file
+    fs.writeFileSync(`batch_${batch.id}.json`, JSON.stringify({
       batchId: batch.id,
       createdAt: batch.created_at,
-      totalRequests: batchRequests.length,
-      problems: problems.map(p => ({ 
-        customId: p.customId,  // For result mapping
-        problemId: p.problemId, // Full slug for Firebase
-        name: p.problemName 
-      })),
-      excelPath: excelPath
-    };
-    
-    fs.writeFileSync(`batch_${batch.id}.json`, JSON.stringify(batchInfo, null, 2));
+      excelPath,
+      problemCount: problems.length
+    }, null, 2));
     console.log(`\n📁 Batch info saved to: batch_${batch.id}.json`);
     
-    return batch;
   } catch (error) {
     console.error('❌ Error creating batch:', error.message);
     throw error;
@@ -743,44 +1396,60 @@ async function createBatch(excelPath) {
 }
 
 async function checkBatchStatus(batchId) {
-  console.log('========================================');
-  console.log('🔍 Checking Batch Status');
-  console.log('========================================\n');
-  
   try {
     const batch = await anthropic.messages.batches.retrieve(batchId);
     
-    console.log(`📋 Batch ID: ${batch.id}`);
+    console.log('========================================');
+    console.log('📋 BATCH STATUS');
+    console.log('========================================');
+    console.log(`📋 Batch ID: ${batchId}`);
     console.log(`⏰ Status: ${batch.processing_status}`);
     console.log(`🕐 Created: ${batch.created_at}`);
     
     if (batch.request_counts) {
-      const { succeeded = 0, errored = 0, processing = 0, canceled = 0 } = batch.request_counts;
-      const total = succeeded + errored + processing + canceled;
-      const completed = succeeded + errored;
-      const percent = total > 0 ? ((completed / total) * 100).toFixed(1) : 0;
-      
       console.log('────────────────────────────────────────');
-      console.log('📊 Progress:');
-      console.log(`   ✅ Succeeded:  ${succeeded}`);
-      console.log(`   ❌ Errored:    ${errored}`);
-      console.log(`   ⏳ Processing: ${processing}`);
-      console.log(`   🚫 Canceled:   ${canceled}`);
-      console.log(`   📈 Progress:   ${percent}%`);
+      console.log('📊 REQUEST COUNTS:');
+      console.log(`   ✅ Succeeded: ${batch.request_counts.succeeded || 0}`);
+      console.log(`   ❌ Errored: ${batch.request_counts.errored || 0}`);
+      console.log(`   ⏳ Processing: ${batch.request_counts.processing || 0}`);
+      console.log(`   🚫 Canceled: ${batch.request_counts.canceled || 0}`);
     }
     
     if (batch.processing_status === 'ended') {
-      console.log('\n✅ Batch processing complete!');
-      console.log(`   Run: node upload_coding_problems_batch.js <excel_file> --process-results ${batchId}`);
-    } else if (batch.processing_status === 'in_progress') {
-      console.log('\n⏳ Batch still processing. Check again in a few minutes.');
+      console.log('\n✅ Batch completed! Ready to process results.');
     } else {
-      console.log(`\n⏰ Status: ${batch.processing_status}`);
+      console.log('\n⏳ Batch still processing. Check again later.');
     }
     
-    return batch;
+    console.log('========================================\n');
+    
   } catch (error) {
     console.error('❌ Error checking batch:', error.message);
+    throw error;
+  }
+}
+
+async function listBatches() {
+  try {
+    const batches = await anthropic.messages.batches.list({ limit: 10 });
+    
+    console.log('========================================');
+    console.log('📋 RECENT BATCHES');
+    console.log('========================================');
+    
+    for (const batch of batches.data) {
+      console.log(`\n📋 ${batch.id}`);
+      console.log(`   Status: ${batch.processing_status}`);
+      console.log(`   Created: ${batch.created_at}`);
+      if (batch.request_counts) {
+        console.log(`   Requests: ${batch.request_counts.succeeded || 0} succeeded, ${batch.request_counts.errored || 0} errored`);
+      }
+    }
+    
+    console.log('\n========================================\n');
+    
+  } catch (error) {
+    console.error('❌ Error listing batches:', error.message);
     throw error;
   }
 }
@@ -788,23 +1457,9 @@ async function checkBatchStatus(batchId) {
 async function processResults(excelPath, batchId) {
   initFirebase();
   
-  console.log('========================================');
-  console.log('📥 Processing Batch Results');
-  console.log('========================================\n');
-  
-  // Check if batch is complete
-  const batch = await anthropic.messages.batches.retrieve(batchId);
-  
-  if (batch.processing_status !== 'ended') {
-    console.log(`⚠️  Batch is not yet complete. Status: ${batch.processing_status}`);
-    console.log('   Please wait for the batch to finish processing.');
-    return;
-  }
-  
-  // Read problems from Excel
   const problems = prepareProblemsFromExcel(excelPath);
   const problemMap = {};
-  problems.forEach(p => { problemMap[p.customId] = p; }); // Map by customId
+  problems.forEach(p => { problemMap[p.customId] = p; });
   
   console.log(`📦 Fetching results for batch: ${batchId}`);
   
@@ -812,6 +1467,9 @@ async function processResults(excelPath, batchId) {
   let failCount = 0;
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
+  
+  // Track failed problems for retry
+  const failedProblems = [];
   
   try {
     const results = await anthropic.messages.batches.results(batchId);
@@ -830,55 +1488,76 @@ async function processResults(excelPath, batchId) {
       if (result.result.type === 'succeeded') {
         const message = result.result.message;
         
-        // Track tokens
         if (message.usage) {
           totalInputTokens += message.usage.input_tokens || 0;
           totalOutputTokens += message.usage.output_tokens || 0;
         }
         
-        // Parse response
         const responseText = message.content[0]?.text || '';
         let generatedContent = null;
+        let parseError = null;
         
         try {
           generatedContent = JSON.parse(responseText);
         } catch (e) {
-          // Try markdown extraction
+          parseError = e.message;
           const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)```/);
           if (jsonMatch) {
-            try { generatedContent = JSON.parse(jsonMatch[1]); } catch (e2) {}
+            try { generatedContent = JSON.parse(jsonMatch[1]); parseError = null; } catch (e2) { parseError = e2.message; }
           }
           
           if (!generatedContent) {
             const startIdx = responseText.indexOf('{');
             const endIdx = responseText.lastIndexOf('}');
             if (startIdx !== -1 && endIdx !== -1) {
-              let jsonStr = responseText.substring(startIdx, endIdx + 1);
               try {
-                generatedContent = JSON.parse(jsonStr);
+                generatedContent = JSON.parse(responseText.substring(startIdx, endIdx + 1));
+                parseError = null;
               } catch (e3) {
-                jsonStr = fixTruncatedJson(jsonStr);
-                try { generatedContent = JSON.parse(jsonStr); } catch (e4) {
-                  console.log(`   ⚠️  Failed to parse JSON response`);
-                }
+                parseError = e3.message;
+                console.log(`   ⚠️  Failed to parse JSON response`);
               }
             }
           }
         }
         
-        // Build and upload document
-        const problemDoc = buildProblemDocument(problem.row, generatedContent, problem.index + 1);
-        const uploaded = await uploadToFirebase(problemDoc);
-        
-        if (uploaded) {
-          successCount++;
-          console.log(`   ✅ Uploaded to Firebase`);
+        if (generatedContent) {
+          const isSQL = isSQLProblem(problem.topics);
+          generatedContent._isSQL = isSQL;
+          generatedContent._tokenUsage = {
+            inputTokens: message.usage?.input_tokens || 0,
+            outputTokens: message.usage?.output_tokens || 0
+          };
+          
+          const problemDoc = buildProblemDocument(problem.row, generatedContent, problem.row['P_ID'] || (problem.index + 1));
+          const uploaded = await uploadToFirebase(problemDoc);
+          
+          if (uploaded) {
+            successCount++;
+          } else {
+            failCount++;
+          }
         } else {
+          console.log(`   ❌ No valid content generated`);
+          // Save failed response for debugging
+          failedProblems.push({
+            problemId: problem.problemId,
+            problemName: problem.problemName,
+            parseError: parseError,
+            responsePreview: responseText.substring(0, 500),
+            responseLength: responseText.length
+          });
           failCount++;
         }
         
       } else if (result.result.type === 'errored') {
         console.log(`   ❌ Error: ${result.result.error?.message || 'Unknown error'}`);
+        failedProblems.push({
+          problemId: problem.problemId,
+          problemName: problem.problemName,
+          errorType: 'api_error',
+          error: result.result.error?.message || 'Unknown error'
+        });
         failCount++;
       } else {
         console.log(`   ⚠️  Unexpected result type: ${result.result.type}`);
@@ -891,170 +1570,38 @@ async function processResults(excelPath, batchId) {
     throw error;
   }
   
+  // Save failed problems to file for debugging
+  if (failedProblems.length > 0) {
+    const failedFile = `failed_problems_${batchId}.json`;
+    fs.writeFileSync(failedFile, JSON.stringify(failedProblems, null, 2));
+    console.log(`\n📁 Failed problems saved to: ${failedFile}`);
+    
+    // Also save just the problem IDs for easy retry
+    const failedIds = failedProblems.map(p => p.problemId);
+    const failedIdsFile = `failed_ids_${batchId}.txt`;
+    fs.writeFileSync(failedIdsFile, failedIds.join('\n'));
+    console.log(`📁 Failed problem IDs saved to: ${failedIdsFile}`);
+  }
+  
   // Calculate costs (Batch API = 50% off)
-  const inputCost = (totalInputTokens / 1000000) * 1.5;  // $3 * 0.5
-  const outputCost = (totalOutputTokens / 1000000) * 7.5; // $15 * 0.5
+  const inputCost = (totalInputTokens / 1000000) * 1.5;
+  const outputCost = (totalOutputTokens / 1000000) * 7.5;
   const totalCost = inputCost + outputCost;
   const standardCost = (totalInputTokens / 1000000) * 3 + (totalOutputTokens / 1000000) * 15;
   const savedAmount = standardCost - totalCost;
   
-  // Summary
   console.log('\n========================================');
-  console.log('📊 UPLOAD SUMMARY');
+  console.log('📊 BATCH RESULTS SUMMARY');
   console.log('========================================');
-  console.log(`✅ Successfully uploaded: ${successCount}`);
+  console.log(`✅ Successful: ${successCount}`);
   console.log(`❌ Failed: ${failCount}`);
-  console.log(`📊 Total processed: ${successCount + failCount}`);
   console.log('────────────────────────────────────────');
-  console.log('💰 TOKEN USAGE & COST (BATCH - 50% OFF!)');
-  console.log('────────────────────────────────────────');
-  console.log(`📥 Total Input Tokens:  ${totalInputTokens.toLocaleString()}`);
-  console.log(`📤 Total Output Tokens: ${totalOutputTokens.toLocaleString()}`);
-  console.log(`📊 Total Tokens:        ${(totalInputTokens + totalOutputTokens).toLocaleString()}`);
-  console.log(`💵 Batch Cost:          $${totalCost.toFixed(4)}`);
-  console.log(`💵 Standard would be:   $${standardCost.toFixed(4)}`);
-  console.log(`💰 YOU SAVED:           $${savedAmount.toFixed(4)} (50%!)`);
+  console.log('💰 TOKEN USAGE & COST (50% Batch Discount)');
+  console.log(`📥 Input:  ${totalInputTokens.toLocaleString()}`);
+  console.log(`📤 Output: ${totalOutputTokens.toLocaleString()}`);
+  console.log(`💵 Total:  $${totalCost.toFixed(4)}`);
+  console.log(`💰 Saved:  $${savedAmount.toFixed(4)} (vs standard API)`);
   console.log('========================================\n');
-}
-
-async function listBatches() {
-  console.log('========================================');
-  console.log('📋 Listing All Batches');
-  console.log('========================================\n');
-  
-  try {
-    const batches = await anthropic.messages.batches.list({ limit: 20 });
-    
-    if (!batches.data || batches.data.length === 0) {
-      console.log('No batches found.');
-      return;
-    }
-    
-    for (const batch of batches.data) {
-      console.log(`📋 ${batch.id}`);
-      console.log(`   Status: ${batch.processing_status}`);
-      console.log(`   Created: ${batch.created_at}`);
-      if (batch.request_counts) {
-        console.log(`   Requests: ${batch.request_counts.succeeded || 0} succeeded, ${batch.request_counts.errored || 0} errored, ${batch.request_counts.processing || 0} processing`);
-      }
-      console.log('');
-    }
-  } catch (error) {
-    console.error('❌ Error listing batches:', error.message);
-  }
-}
-
-// ==================== FIREBASE FUNCTIONS ====================
-
-function buildProblemDocument(row, generatedContent, problemNumber) {
-  const problemName = row['Problem Name'];
-  const slug = generateSlug(problemName);
-  const problemId = slug;
-  const topics = parseTopics(row['Topics']);
-  const difficulty = row['Difficulty'] || 'Medium';
-  const description = row['Description'] || '';
-  const relatedProblems = parseRelatedProblems(row);
-  
-  // Base document structure
-  const doc = {
-    id: slug,
-    problem_id: problemId,
-    slug: slug,
-    number: problemNumber,
-    title: problemName,
-    description: description,
-    descriptionText: description.replace(/<[^>]*>/g, ''),
-    difficulty: difficulty,
-    level: difficulty,
-    category: topics[0] || 'Algorithm',
-    tags: topics,
-    topics: ['Data Structures', 'Algorithms'],
-    related: relatedProblems,
-    status: null,
-    likes: 1,
-    views: 0,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    analogy: null,
-    approaches: {},
-    examples: [],
-    testCases: [],
-    constraints: [],
-    defaultCode: {},
-    solutionSummary: '',
-    visualize: null,
-    companies: [],
-    stats: {
-      acceptance: '50.0%',
-      avgTime: '~15 min',
-      frequency: 'Medium',
-      likes: 850,
-      views: 25000
-    },
-    seo: {
-      title: `${problemName} - ${topics[0] || 'Algorithm'} | Practice Coding Problems | Tutorials Point`,
-      description: `Master the ${problemName} problem with detailed solutions in 6 languages.`,
-      keywords: [...topics, 'algorithm', 'coding interview', 'practice'],
-      ogImage: `/practice/images/${slug}-og.png`,
-      canonical: `https://www.tutorialspoint.com/practice/${slug}.htm`
-    }
-  };
-  
-  // Merge generated content
-  if (generatedContent) {
-    if (generatedContent.description) {
-      doc.description = generatedContent.description;
-    }
-    if (generatedContent.descriptionText) {
-      doc.descriptionText = generatedContent.descriptionText;
-    }
-    
-    Object.assign(doc, {
-      analogy: generatedContent.analogy || null,
-      approaches: generatedContent.approaches || {},
-      examples: generatedContent.examples || [],
-      testCases: generatedContent.testCases || [],
-      constraints: generatedContent.constraints || [],
-      defaultCode: generatedContent.defaultCode || {},
-      solutionSummary: generatedContent.solutionSummary || '',
-      visualize: generatedContent.visualize || null,
-      companies: generatedContent.companies || [],
-      stats: generatedContent.stats || doc.stats,
-      seo: generatedContent.seo || doc.seo
-    });
-    
-    // Ensure views > likes
-    if (doc.stats) {
-      const likes = doc.stats.likes || 1000;
-      const views = doc.stats.views || 0;
-      if (views < likes * 20) {
-        const multiplier = Math.floor(Math.random() * 16) + 25;
-        doc.stats.views = likes * multiplier;
-      }
-    }
-    
-    // Store token usage
-    if (generatedContent._tokenUsage) {
-      doc._generationMeta = {
-        tokenUsage: generatedContent._tokenUsage,
-        generatedAt: new Date().toISOString(),
-        model: 'claude-sonnet-4-20250514'
-      };
-    }
-  }
-  
-  return doc;
-}
-
-async function uploadToFirebase(problemDoc) {
-  try {
-    const docRef = db.collection(COLLECTION_NAME).doc(problemDoc.id);
-    await docRef.set(problemDoc, { merge: true });
-    return true;
-  } catch (error) {
-    console.error(`   ❌ Firebase upload error for ${problemDoc.title}:`, error.message);
-    return false;
-  }
 }
 
 // ==================== MAIN ====================
@@ -1078,7 +1625,6 @@ async function main() {
     process.exit(1);
   }
   
-  // Handle --list-batches
   if (args[0] === '--list-batches') {
     await listBatches();
     process.exit(0);
@@ -1122,7 +1668,7 @@ async function main() {
     default:
       console.error(`❌ Unknown command: ${command}`);
       console.log('\nAvailable commands:');
-      console.log('  --test [count]           Test with 1-2 problems first (recommended!)');
+      console.log('  --test [count]           Test with 1-2 problems first');
       console.log('  --create-batch           Create batch for all problems');
       console.log('  --check-batch <id>       Check batch status');
       console.log('  --process-results <id>   Download results & upload to Firebase');

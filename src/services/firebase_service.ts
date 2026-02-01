@@ -45,9 +45,11 @@ import {
   arrayUnion,
   onSnapshot,
   Timestamp,
+  writeBatch,
   type DocumentSnapshot,
   type Firestore,
-  type DocumentData
+  type DocumentData,
+  type WriteBatch
 } from 'firebase/firestore';
 
 import { 
@@ -1078,7 +1080,75 @@ export interface SubjectQuestionStats {
   descriptiveCount: number;
   codeCount: number;
 }
+// ==================== TYPE DEFINITIONS ====================
 
+// Course Types
+export interface CourseListing {
+  slug: string;
+  courseId: string;
+  courseName: string;
+  courseAuthor: string;
+  thumbnailUrl: string;
+  tagLine: string;
+  complexityLevel: number;
+  totalUnits: number;
+  totalLectures: number;
+  totalDuration: number;
+  prices: {
+    INR: { originalPrice: number; discountedPrice: number };
+    USD: { originalPrice: number; discountedPrice: number };
+    GBP: { originalPrice: number; discountedPrice: number };
+    CAD: { originalPrice: number; discountedPrice: number };
+    AED: { originalPrice: number; discountedPrice: number };
+  };
+  courseCategories: string[];
+  isFree: boolean;
+  language: string;
+  dateOfPublishing: string | null;
+  status: string;
+  isPublished: boolean;
+  enrollmentCount: number;
+  collegeEnrollmentCounts?: Record<string, number>;
+  completedCount: number;
+  rating: {
+    average: number;
+    totalRatings: number;
+  };
+}
+
+export interface CourseDetails {
+  courseDescription: string;
+  coursePurpose: string;
+  coursePrerequisite: string;
+  updatedDate: string | null;
+}
+
+export interface CourseLecture {
+  lectureId: string;
+  lectureName: string;
+  lectureType: 'Video' | 'Text' | 'Quiz' | 'Exercise' | 'Assessment';
+  lectureOrder: number;
+  durationInSeconds: number;
+  videoUrl: string | null;
+  textContent: string | null;
+  quizQuestions: any[] | null;
+  exerciseQuestions: any[] | null;
+  assessmentQuestions: any[] | null;
+  attachments: any[];
+}
+
+export interface CourseUnit {
+  unitId: string;
+  unitName: string;
+  unitOrder: number;
+  totalLectures: number;
+  lectures: Record<string, CourseLecture>;
+}
+
+export interface FullCourse extends CourseListing {
+  details?: CourseDetails;
+  curriculum?: CourseUnit[];
+}
 // ==================== UTILITY FUNCTIONS ====================
 
 /**
@@ -13344,6 +13414,631 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       question,
       history
     });
+  }
+
+  // ==========================================
+  // COURSES SERVICE
+  // ==========================================
+
+  async getCourses(options: {
+    category?: string;
+    limit?: number;
+    orderBy?: 'courseName' | 'dateOfPublishing' | 'totalLectures';
+    orderDirection?: 'asc' | 'desc';
+  } = {}): Promise<CourseListing[]> {
+    try {
+      const {
+        category,
+        limit: limitCount = 50,
+        orderBy: orderField = 'courseName',
+        orderDirection = 'asc'
+      } = options;
+
+      let q;
+      
+      if (category) {
+        q = query(
+          collection(this.firestore!, COLLECTIONS.COURSES),
+          where('courseCategories', 'array-contains', category),
+          limit(limitCount)
+        );
+      } else {
+        q = query(
+          collection(this.firestore!, COLLECTIONS.COURSES),
+          limit(limitCount)
+        );
+      }
+
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ slug: doc.id, ...doc.data() } as CourseListing));
+    } catch (error) {
+      console.error('Error fetching courses:', error);
+      return [];
+    }
+  }
+  /**
+   * Get courses with database-level pagination
+   * Supports cursor-based pagination for efficient large dataset handling
+   */
+async getCoursesPaginated(options: {
+    category?: string;
+    limit?: number;
+    orderBy?: 'courseName' | 'dateOfPublishing' | 'totalLectures';
+    orderDirection?: 'asc' | 'desc';
+    startAfterDoc?: any;
+    searchQuery?: string;
+  } = {}): Promise<{ courses: CourseListing[]; totalCount: number; lastDoc: any }> {
+    try {
+      const {
+        category,
+        limit: limitCount = 10,
+        orderBy: orderField = 'courseName',
+        orderDirection = 'asc',
+        startAfterDoc,
+        searchQuery,
+      } = options;
+
+      // If searching, we need to fetch all and filter client-side (Firestore limitation)
+      if (searchQuery && searchQuery.trim().length > 0) {
+        const searchLower = searchQuery.toLowerCase().trim();
+        
+        // Build query without pagination for search
+        let q;
+        if (category) {
+          q = query(
+            collection(this.firestore!, COLLECTIONS.COURSES),
+            where('courseCategories', 'array-contains', category),
+            orderBy(orderField, orderDirection)
+          );
+        } else {
+          q = query(
+            collection(this.firestore!, COLLECTIONS.COURSES),
+            orderBy(orderField, orderDirection)
+          );
+        }
+
+        const snapshot = await getDocs(q);
+        
+        // Filter by search query
+        const allCourses = snapshot.docs
+          .map(doc => ({ slug: doc.id, ...doc.data() } as CourseListing))
+          .filter(course => 
+            course.courseName?.toLowerCase().includes(searchLower) ||
+            course.courseCategories?.some(cat => cat.toLowerCase().includes(searchLower)) ||
+            course.courseAuthor?.toLowerCase().includes(searchLower)
+          );
+
+        return {
+          courses: allCourses,
+          totalCount: allCourses.length,
+          lastDoc: null // No cursor-based pagination for search results
+        };
+      }
+
+      // Regular pagination without search
+      // First, get total count for pagination info
+      let countQuery;
+      if (category) {
+        countQuery = query(
+          collection(this.firestore!, COLLECTIONS.COURSES),
+          where('courseCategories', 'array-contains', category)
+        );
+      } else {
+        countQuery = query(collection(this.firestore!, COLLECTIONS.COURSES));
+      }
+      
+      const countSnapshot = await getCountFromServer(countQuery);
+      const totalCount = countSnapshot.data().count;
+
+      // Build the paginated query
+      const constraints: any[] = [];
+      
+      if (category) {
+        constraints.push(where('courseCategories', 'array-contains', category));
+      }
+      
+      constraints.push(orderBy(orderField, orderDirection));
+      
+      if (startAfterDoc) {
+        constraints.push(startAfter(startAfterDoc));
+      }
+      
+      constraints.push(limit(limitCount));
+
+      const q = query(collection(this.firestore!, COLLECTIONS.COURSES), ...constraints);
+      const snapshot = await getDocs(q);
+      
+      const courses = snapshot.docs.map(doc => ({ slug: doc.id, ...doc.data() } as CourseListing));
+      
+      // Get the last document for next page cursor
+      const lastDoc = snapshot.docs[snapshot.docs.length - 1] || null;
+
+      return {
+        courses,
+        totalCount,
+        lastDoc
+      };
+    } catch (error) {
+      console.error('Error fetching paginated courses:', error);
+      return { courses: [], totalCount: 0, lastDoc: null };
+    }
+  }
+  async getCourseBySlug(slug: string): Promise<CourseListing | null> {
+    try {
+      const docRef = doc(this.firestore!, COLLECTIONS.COURSES, slug);
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) return null;
+      return { slug: docSnap.id, ...docSnap.data() } as CourseListing;
+    } catch (error) {
+      console.error('Error fetching course:', error);
+      return null;
+    }
+  }
+
+  async getCourseDetails(slug: string): Promise<CourseDetails | null> {
+    try {
+      const docRef = doc(this.firestore!, COLLECTIONS.COURSES, slug, 'details', 'content');
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) return null;
+      return docSnap.data() as CourseDetails;
+    } catch (error) {
+      console.error('Error fetching course details:', error);
+      return null;
+    }
+  }
+
+  async getCourseCurriculum(slug: string): Promise<CourseUnit[]> {
+    try {
+      const curriculumRef = collection(this.firestore!, COLLECTIONS.COURSES, slug, 'curriculum');
+      const q = query(curriculumRef, orderBy('unitOrder', 'asc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => doc.data() as CourseUnit);
+    } catch (error) {
+      console.error('Error fetching curriculum:', error);
+      return [];
+    }
+  }
+
+  async getFullCourse(slug: string): Promise<FullCourse | null> {
+    try {
+      const [course, details, curriculum] = await Promise.all([
+        this.getCourseBySlug(slug),
+        this.getCourseDetails(slug),
+        this.getCourseCurriculum(slug)
+      ]);
+      if (!course) return null;
+      return { ...course, details: details || undefined, curriculum: curriculum.length > 0 ? curriculum : undefined };
+    } catch (error) {
+      console.error('Error fetching full course:', error);
+      return null;
+    }
+  }
+
+  async searchCourses(searchQuery: string, limitCount: number = 20): Promise<CourseListing[]> {
+    try {
+      const snapshot = await getDocs(query(collection(this.db!, COLLECTIONS.COURSES), where('isPublished', '==', true), limit(200)));
+      const searchLower = searchQuery.toLowerCase();
+      const results: CourseListing[] = [];
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const name = (data.courseName || '').toLowerCase();
+        const author = (data.courseAuthor || '').toLowerCase();
+        if (name.includes(searchLower) || author.includes(searchLower)) {
+          results.push({ slug: doc.id, ...data } as CourseListing);
+        }
+      });
+      return results.slice(0, limitCount);
+    } catch (error) {
+      console.error('Error searching courses:', error);
+      return [];
+    }
+  }
+
+  // ==========================================
+  // COURSE ENROLLMENTS
+  // ==========================================
+
+  /**
+   * Enroll multiple users to a course
+   */
+  async enrollUsersToCourse(
+    courseId: string,
+    userIds: string[],
+    enrolledBy: string,
+    collegeId: string,
+    expiryDate?: Date | null,
+    enrollmentType: 'manual' | 'self' | 'bulk' = 'manual',
+    courseSlug?: string
+  ): Promise<{ success: boolean; enrolledCount: number; errors: string[] }> {
+    const errors: string[] = [];
+    let enrolledCount = 0;
+
+    try {
+      console.log(`📚 Enrolling ${userIds.length} users to course: ${courseId}`);
+
+      // Use batched writes for efficiency
+      const batchSize = 500; // Firestore limit
+      const batches: WriteBatch[] = [];
+      let currentBatch = writeBatch(this.firestore!);
+      let operationCount = 0;
+
+      for (const userId of userIds) {
+        try {
+          // Check if already enrolled
+          const existingEnrollment = await this.getEnrollment(courseId, userId);
+          if (existingEnrollment) {
+            errors.push(`User ${userId} is already enrolled`);
+            continue;
+          }
+
+          // Create enrollment document
+          const enrollmentRef = doc(collection(this.firestore!, 'course_enrollments'));
+          const enrollmentData = {
+            enrollmentId: enrollmentRef.id,
+            courseId,
+            userId,
+            collegeId,
+            enrolledAt: serverTimestamp(),
+            enrolledBy,
+            enrollmentType,
+            expiryDate: expiryDate ? Timestamp.fromDate(expiryDate) : null,
+            status: 'active',
+            progress: {
+              percentage: 0,
+              completedLectures: [],
+              lastAccessedAt: null,
+              lastLectureId: null,
+              totalTimeSpent: 0,
+            },
+            completedAt: null,
+            certificateIssued: false,
+            certificateId: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+
+          currentBatch.set(enrollmentRef, enrollmentData);
+          operationCount++;
+          enrolledCount++;
+
+          // Start a new batch if we've reached the limit
+          if (operationCount >= batchSize) {
+            batches.push(currentBatch);
+            currentBatch = writeBatch(this.firestore!);
+            operationCount = 0;
+          }
+        } catch (error) {
+          console.error(`Error preparing enrollment for user ${userId}:`, error);
+          errors.push(`Failed to enroll user ${userId}`);
+        }
+      }
+
+      // Push the last batch if it has operations
+      if (operationCount > 0) {
+        batches.push(currentBatch);
+      }
+
+      // Commit all batches
+      for (const batch of batches) {
+        await batch.commit();
+      }
+
+      // Update course enrollment counts (use slug as document ID)
+      if (enrolledCount > 0 && courseSlug) {
+        const courseRef = doc(this.firestore!, COLLECTIONS.COURSES, courseSlug);
+        await updateDoc(courseRef, {
+          enrollmentCount: increment(enrolledCount),
+          [`collegeEnrollmentCounts.${collegeId}`]: increment(enrolledCount),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      console.log(`✅ Successfully enrolled ${enrolledCount} users to course ${courseId}`);
+
+      return {
+        success: errors.length === 0,
+        enrolledCount,
+        errors,
+      };
+    } catch (error) {
+      console.error('Error enrolling users to course:', error);
+      return {
+        success: false,
+        enrolledCount,
+        errors: [...errors, 'Failed to complete enrollment process'],
+      };
+    }
+  }
+
+  /**
+   * Get a specific enrollment
+   */
+  async getEnrollment(courseId: string, userId: string): Promise<any | null> {
+    try {
+      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      const q = query(
+        enrollmentsRef,
+        where('courseId', '==', courseId),
+        where('userId', '==', userId),
+        limit(1)
+      );
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) return null;
+      
+      return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+    } catch (error) {
+      console.error('Error fetching enrollment:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get enrollment count for a course filtered by college
+   * Uses aggregation query for efficiency - no document downloads
+   * Index required: course_enrollments - courseId (Asc), collegeId (Asc), status (Asc)
+   */
+  async getCourseEnrollmentCountByCollege(courseId: string, collegeId: string): Promise<number> {
+    try {
+      console.log(`📊 Getting enrollment count for course: ${courseId}, college: ${collegeId}`);
+      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      
+      const q = query(
+        enrollmentsRef,
+        where('courseId', '==', courseId),
+        where('collegeId', '==', collegeId),
+        where('status', '==', 'active')
+      );
+      
+      // Use getCountFromServer for efficient counting without downloading docs
+      const countSnapshot = await getCountFromServer(q);
+      const count = countSnapshot.data().count;
+      
+      console.log(`✅ Enrollment count for course ${courseId}, college ${collegeId}: ${count}`);
+      return count;
+    } catch (error) {
+      console.error('Error getting course enrollment count:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get paginated enrollments for a course filtered by college
+   * Index required: course_enrollments - courseId (Asc), collegeId (Asc), status (Asc), enrolledAt (Desc)
+   */
+  async getCourseEnrollmentsPaginated(
+    courseId: string,
+    collegeId: string,
+    pageSize: number = 10,
+    lastDocument: DocumentSnapshot | null = null
+  ): Promise<{ enrollments: any[]; lastDoc: DocumentSnapshot | null; hasMore: boolean; total: number }> {
+    try {
+      console.log(`📚 Fetching paginated enrollments for course: ${courseId}, college: ${collegeId}`);
+      
+      // Get total count first
+      const total = await this.getCourseEnrollmentCountByCollege(courseId, collegeId);
+      
+      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      
+      // Build query with all filters for proper index usage
+      let q;
+      if (lastDocument) {
+        q = query(
+          enrollmentsRef,
+          where('courseId', '==', courseId),
+          where('collegeId', '==', collegeId),
+          where('status', '==', 'active'),
+          orderBy('enrolledAt', 'desc'),
+          startAfter(lastDocument),
+          limit(pageSize)
+        );
+      } else {
+        q = query(
+          enrollmentsRef,
+          where('courseId', '==', courseId),
+          where('collegeId', '==', collegeId),
+          where('status', '==', 'active'),
+          orderBy('enrolledAt', 'desc'),
+          limit(pageSize)
+        );
+      }
+      
+      const snapshot = await getDocs(q);
+      const enrollments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+      const hasMore = snapshot.docs.length === pageSize;
+      
+      console.log(`✅ Found ${enrollments.length} enrollments (page), total: ${total}`);
+      
+      return {
+        enrollments,
+        lastDoc: newLastDoc,
+        hasMore,
+        total
+      };
+    } catch (error) {
+      console.error('Error fetching paginated course enrollments:', error);
+      return { enrollments: [], lastDoc: null, hasMore: false, total: 0 };
+    }
+  }
+
+  /**
+   * Get all course enrollments for a user
+   */
+  async getUserCourseEnrollments(userId: string): Promise<any[]> {
+    try {
+      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      const q = query(
+        enrollmentsRef,
+        where('userId', '==', userId),
+        where('status', '==', 'active'),
+        orderBy('enrolledAt', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (error) {
+      console.error('Error fetching user course enrollments:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Update enrollment progress
+   */
+  async updateEnrollmentProgress(
+    enrollmentId: string,
+    progressData: {
+      percentage?: number;
+      completedLectureId?: string;
+      lastLectureId?: string;
+      timeSpent?: number;
+    }
+  ): Promise<boolean> {
+    try {
+      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      
+      const updateData: any = {
+        'progress.lastAccessedAt': serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      if (progressData.percentage !== undefined) {
+        updateData['progress.percentage'] = progressData.percentage;
+      }
+      if (progressData.lastLectureId) {
+        updateData['progress.lastLectureId'] = progressData.lastLectureId;
+      }
+      if (progressData.completedLectureId) {
+        updateData['progress.completedLectures'] = arrayUnion(progressData.completedLectureId);
+      }
+      if (progressData.timeSpent) {
+        updateData['progress.totalTimeSpent'] = increment(progressData.timeSpent);
+      }
+
+      await updateDoc(enrollmentRef, updateData);
+      return true;
+    } catch (error) {
+      console.error('Error updating enrollment progress:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Update enrollment expiry date
+   */
+  async updateEnrollmentExpiry(
+    enrollmentId: string,
+    expiryDate: Date | null
+  ): Promise<boolean> {
+    try {
+      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      
+      await updateDoc(enrollmentRef, {
+        expiryDate: expiryDate ? Timestamp.fromDate(expiryDate) : null,
+        updatedAt: serverTimestamp(),
+      });
+      
+      console.log(`✅ Updated expiry date for enrollment ${enrollmentId}`);
+      return true;
+    } catch (error) {
+      console.error('Error updating enrollment expiry:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Unenroll a user from a course
+   */
+  async unenrollUserFromCourse(courseId: string, userId: string, courseSlug?: string): Promise<boolean> {
+    try {
+      const enrollment = await this.getEnrollment(courseId, userId);
+      if (!enrollment) return false;
+
+      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollment.id);
+      await updateDoc(enrollmentRef, {
+        status: 'suspended',
+        updatedAt: serverTimestamp(),
+      });
+
+      // Decrement course enrollment counts
+      const courseDocId = courseSlug || courseId;
+      const courseRef = doc(this.firestore!, COLLECTIONS.COURSES, courseDocId);
+      const updateData: any = {
+        enrollmentCount: increment(-1),
+        updatedAt: serverTimestamp(),
+      };
+      
+      // Decrement college-specific count if collegeId exists in enrollment
+      if (enrollment.collegeId) {
+        updateData[`collegeEnrollmentCounts.${enrollment.collegeId}`] = increment(-1);
+      }
+      
+      await updateDoc(courseRef, updateData);
+
+      console.log(`✅ Successfully unenrolled user ${userId} from course ${courseId}`);
+      return true;
+    } catch (error) {
+      console.error('Error unenrolling user from course:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Mark course as completed for a user
+   */
+  async markCourseCompleted(enrollmentId: string): Promise<boolean> {
+    try {
+      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      await updateDoc(enrollmentRef, {
+        status: 'completed',
+        'progress.percentage': 100,
+        completedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      return true;
+    } catch (error) {
+      console.error('Error marking course as completed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check and update expired enrollments
+   */
+  async checkExpiredEnrollments(): Promise<number> {
+    try {
+      const now = Timestamp.now();
+      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      const q = query(
+        enrollmentsRef,
+        where('status', '==', 'active'),
+        where('expiryDate', '!=', null),
+        where('expiryDate', '<=', now)
+      );
+      
+      const snapshot = await getDocs(q);
+      let expiredCount = 0;
+
+      const batch = writeBatch(this.firestore!);
+      snapshot.docs.forEach(doc => {
+        batch.update(doc.ref, {
+          status: 'expired',
+          updatedAt: serverTimestamp(),
+        });
+        expiredCount++;
+      });
+
+      if (expiredCount > 0) {
+        await batch.commit();
+        console.log(`✅ Marked ${expiredCount} enrollments as expired`);
+      }
+
+      return expiredCount;
+    } catch (error) {
+      console.error('Error checking expired enrollments:', error);
+      return 0;
+    }
   }
 }
 

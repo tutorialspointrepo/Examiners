@@ -53,4 +53,16 @@ export declare const createUser: functions.HttpsFunction & functions.Runnable<an
  * Only system_admin can add colleges
  */
 export declare const addCollege: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * 🔄 Get Previous and Next Problems
+ * Returns the previous and next problems based on the current problem's number
+ * This is a public HTTP function (no authentication required)
+ */
+export declare const getProblemNavigation: functions.HttpsFunction;
+/**
+ * 📋 Get All Problems List
+ * Returns a list of all problems (id, slug, number, title only)
+ * Useful for sidebar or problem list page
+ */
+export declare const getProblemsList: functions.HttpsFunction;
 //# sourceMappingURL=index.d.ts.map

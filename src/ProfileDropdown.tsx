@@ -18,7 +18,8 @@ import {
   faEyeSlash,
   faSpinner,
   faCircleExclamation,
-  faBuilding
+  faBuilding,
+  faClipboardCheck
 } from '@fortawesome/sharp-light-svg-icons';
 import { useBrand } from './BrandContext';
 import { type UserType } from './constants';
@@ -54,6 +55,8 @@ export default function ProfileDropdown({
   onViewLoginDetails,
   onAddUniversity,
   onSignOut,
+  onSwitchMode,
+  currentMode,
   isSecureBrowser = false
 }: ProfileDropdownProps) {
   const brand = useBrand();
@@ -380,7 +383,7 @@ export default function ProfileDropdown({
             {/* Divider */}
             <div className="border-t border-gray-100 my-2"></div>
             
-            {/* Mode Switch - Learning / Assessment - COMMENTED OUT
+            {/* Mode Switch - Learning / Assessment */}
             <div className="px-4 py-3">
               <div className="text-xs font-medium text-gray-500 mb-2">Switch Module</div>
               <div className="flex gap-2">
@@ -451,7 +454,6 @@ export default function ProfileDropdown({
               </div>
             </div>
             <div className="border-t border-gray-100 my-2"></div>
-            */}
 
             {/* Sign Out Button */}
             <button

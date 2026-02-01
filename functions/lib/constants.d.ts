@@ -255,6 +255,7 @@ export declare const VIOLATION_TYPES: {
     readonly TAB_SWITCH: "TAB_SWITCH";
     readonly WINDOW_MINIMIZE: "WINDOW_MINIMIZE";
     readonly FULLSCREEN_EXIT: "FULLSCREEN_EXIT";
+    readonly SCREEN_RESIZE: "SCREEN_RESIZE";
     readonly COPY_ATTEMPT: "COPY_ATTEMPT";
     readonly PASTE_ATTEMPT: "PASTE_ATTEMPT";
     readonly CUT_ATTEMPT: "CUT_ATTEMPT";
@@ -1000,6 +1001,7 @@ export declare const APP_CONSTANTS: {
         readonly TAB_SWITCH: "TAB_SWITCH";
         readonly WINDOW_MINIMIZE: "WINDOW_MINIMIZE";
         readonly FULLSCREEN_EXIT: "FULLSCREEN_EXIT";
+        readonly SCREEN_RESIZE: "SCREEN_RESIZE";
         readonly COPY_ATTEMPT: "COPY_ATTEMPT";
         readonly PASTE_ATTEMPT: "PASTE_ATTEMPT";
         readonly CUT_ATTEMPT: "CUT_ATTEMPT";

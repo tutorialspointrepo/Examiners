@@ -1459,7 +1459,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
           </div>
 
           {/* Problem Description */}
-          <p className="text-gray-700 leading-relaxed text-base">{problem.description}</p>
+          <p className="text-gray-700 leading-relaxed text-base" dangerouslySetInnerHTML={{ __html: problem.description }}></p>
         </div>
 
         <div className="h-px bg-gray-100 mx-6"></div>

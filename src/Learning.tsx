@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
+import { createPortal } from 'react-dom';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faGraduationCap,
@@ -23,6 +24,7 @@ import {
   faBookBookmark,
   faBullseye,
   faAddressCard,
+  faQuoteLeft,
 } from '@fortawesome/sharp-light-svg-icons';
 import Courses from './Courses';
 import LearningHome from './LearningHome';
@@ -35,6 +37,7 @@ import { firebaseService } from './services/firebase_service';
 // Course interface
 export interface Course {
   id: string;
+  courseId?: string;
   name: string;
   thumbnail: string;
   category: string;
@@ -46,12 +49,18 @@ export interface Course {
   isEnrolled: boolean;
   notes?: number;
   assessments?: number;
-  students?: number;
+  completedCount?: number;
   instructor?: string;
   level?: string;
   tags?: string[];
   rating?: number;
+  totalRatings?: number;
   createdAt?: string;
+  tagLine?: string;
+  description?: string;
+  language?: string;
+  collegeEnrollmentCounts?: Record<string, number>;
+  enrollmentCount?: number;
 }
 
 interface LearningProps {
@@ -72,12 +81,223 @@ interface LearningProps {
   selectedProblemSlug?: string;
 }
 
+// Helper function to decode HTML entities and render HTML
+const decodeHtmlEntities = (text: string): string => {
+  if (!text) return '';
+  
+  // Create a textarea element to decode HTML entities
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = text;
+  let decoded = textarea.value;
+  
+  // Handle double-encoded entities (e.g., &amp;rsquo; -> &rsquo; -> ')
+  textarea.innerHTML = decoded;
+  decoded = textarea.value;
+  
+  // Replace common HTML entity patterns
+  decoded = decoded
+    .replace(/&rsquo;/g, "'")
+    .replace(/&lsquo;/g, "'")
+    .replace(/&rdquo;/g, '"')
+    .replace(/&ldquo;/g, '"')
+    .replace(/&mdash;/g, '—')
+    .replace(/&ndash;/g, '–')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+  
+  return decoded;
+};
+
+// Expandable Card Component
+interface ExpandableCardProps {
+  title: string;
+  icon: any;
+  iconBgColor: string;
+  iconColor: string;
+  cardBgColor: string;
+  cardBorderColor: string;
+  headerBorderColor: string;
+  content: string;
+  brandTheme: any;
+  isLoading?: boolean;
+  markerColor?: string;
+}
+
+const ExpandableCard: React.FC<ExpandableCardProps> = ({
+  title,
+  icon,
+  iconBgColor,
+  iconColor,
+  cardBgColor,
+  cardBorderColor,
+  headerBorderColor,
+  content,
+  brandTheme,
+  isLoading = false,
+  markerColor,
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [needsExpansion, setNeedsExpansion] = useState(false);
+  
+  // Check if content needs expansion (more than ~10 lines)
+  React.useEffect(() => {
+    if (contentRef.current) {
+      const lineHeight = 22;
+      const maxLines = 10;
+      const maxHeight = lineHeight * maxLines;
+      setNeedsExpansion(contentRef.current.scrollHeight > maxHeight);
+    }
+  }, [content]);
+
+  const isGradient = cardBgColor.includes('gradient');
+  const collapsedHeight = 220; // pixels for ~10 lines
+
+  return (
+    <div 
+      className="rounded-xl border shadow-sm overflow-hidden"
+      style={{ 
+        background: isGradient ? cardBgColor : undefined,
+        backgroundColor: !isGradient ? cardBgColor : undefined,
+        borderColor: cardBorderColor
+      }}
+    >
+      <div 
+        className="px-5 py-3 border-b flex items-center gap-2"
+        style={{ borderColor: headerBorderColor }}
+      >
+        <div 
+          className="w-8 h-8 rounded-lg flex items-center justify-center"
+          style={{ backgroundColor: iconBgColor }}
+        >
+          <FontAwesomeIcon icon={icon} className="text-sm" style={{ color: iconColor }} />
+        </div>
+        <h3 className="font-semibold text-gray-900">{title}</h3>
+      </div>
+      <div className="p-5">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
+            <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin"></div>
+            Loading...
+          </div>
+        ) : (
+          <div className="relative">
+            {/* Content container */}
+            <div 
+              ref={contentRef}
+              className={`text-gray-600 text-sm leading-relaxed prose prose-sm max-w-none [&>ul]:list-disc [&>ul]:pl-5 [&>ul]:space-y-1 [&>ol]:list-decimal [&>ol]:pl-5 [&>ol]:space-y-1 overflow-hidden`}
+              style={{ 
+                maxHeight: !isExpanded && needsExpansion ? `${collapsedHeight}px` : 'none',
+                ...(markerColor ? { ['--marker-color' as any]: markerColor } : {})
+              }}
+              dangerouslySetInnerHTML={{ 
+                __html: decodeHtmlEntities(content)
+              }}
+            />
+            
+            {/* Gradient Fade overlay when collapsed */}
+            {needsExpansion && !isExpanded && (
+              <div 
+                className="absolute bottom-0 left-0 right-0 h-20 pointer-events-none"
+                style={{
+                  background: isGradient 
+                    ? 'linear-gradient(to top, rgb(240 253 244), transparent)' 
+                    : `linear-gradient(to top, ${cardBgColor || 'white'}, transparent)`
+                }}
+              />
+            )}
+            
+            {/* Show More/Less Button */}
+            {needsExpansion && (
+              <div className={`${!isExpanded ? 'pt-2' : 'pt-4'}`}>
+                <button
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  className="flex items-center gap-2 text-sm font-medium transition-all hover:gap-3"
+                  style={{ color: brandTheme.colors.primary }}
+                >
+                  <span>{isExpanded ? 'Show Less' : 'Show More'}</span>
+                  <FontAwesomeIcon 
+                    icon={faChevronDown} 
+                    className={`text-xs transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
+                  />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCollege, onActiveMenuChange, selectedProblemSlug }) => {
   const [activeMenuItem, setActiveMenuItem] = useState('courses');
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [isCoursesCollapsed, setIsCoursesCollapsed] = useState(false);
+  
+  // College-specific enrollment count for selected course
+  const [collegeEnrollmentCount, setCollegeEnrollmentCount] = useState<number>(0);
+  
+  // Course Details State (fetched from details/content subcollection)
+  const [courseDetails, setCourseDetails] = useState<{
+    courseDescription?: string;
+    coursePurpose?: string;
+    coursePrerequisite?: string;
+  } | null>(null);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+
+  // Fetch course details when a course is selected
+  useEffect(() => {
+    const fetchCourseDetails = async () => {
+      if (!selectedCourse?.id) {
+        setCourseDetails(null);
+        return;
+      }
+      
+      console.log('Fetching details for course slug:', selectedCourse.id);
+      setIsLoadingDetails(true);
+      try {
+        const details = await firebaseService.getCourseDetails(selectedCourse.id);
+        console.log('Fetched course details:', details);
+        setCourseDetails(details);
+      } catch (error) {
+        console.error('Error fetching course details:', error);
+        setCourseDetails(null);
+      } finally {
+        setIsLoadingDetails(false);
+      }
+    };
+
+    fetchCourseDetails();
+  }, [selectedCourse?.id]);
+
+  // Set college-specific enrollment count when course or college changes
+  useEffect(() => {
+    if (!selectedCourse) {
+      setCollegeEnrollmentCount(0);
+      return;
+    }
+    
+    // Determine college ID based on user type
+    let collegeIdToUse: string | null = null;
+    if (currentUser?.userType === 'system_admin') {
+      collegeIdToUse = selectedCollege?.id || null;
+    } else if (currentUser?.userType !== 'student') {
+      collegeIdToUse = currentUser?.collegeId || null;
+    }
+    
+    // Get count from collegeEnrollmentCounts map if available
+    if (collegeIdToUse && selectedCourse.collegeEnrollmentCounts) {
+      setCollegeEnrollmentCount(selectedCourse.collegeEnrollmentCounts[collegeIdToUse] || 0);
+    } else {
+      // Fallback to global enrollmentCount or students field
+      setCollegeEnrollmentCount(selectedCourse.enrollmentCount || 0);
+    }
+  }, [selectedCourse, selectedCollege, currentUser]);
   
   // Users/Classes States
   const [selectedClassForUsers, setSelectedClassForUsers] = useState<string | null>(null);
@@ -86,13 +306,22 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
   // Enroll Modal States
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
   const [isLoadingEnrollData, setIsLoadingEnrollData] = useState(false);
+  const [isEnrolling, setIsEnrolling] = useState(false);
+  const [enrollmentResult, setEnrollmentResult] = useState<{ success: boolean; message: string } | null>(null);
   const [availableUsers, setAvailableUsers] = useState<any[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [selectedClassFilter, setSelectedClassFilter] = useState('all');
   const [selectedSectionFilter, setSelectedSectionFilter] = useState('all');
   const [enrollCurrentPage, setEnrollCurrentPage] = useState(1);
-  const enrollUsersPerPage = 5;
+  const [enrollmentEndDate, setEnrollmentEndDate] = useState<string>('');
+  const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
+  const [datePickerMonth, setDatePickerMonth] = useState(new Date().getMonth());
+  const [datePickerYear, setDatePickerYear] = useState(new Date().getFullYear());
+  const [editingExpiryUserId, setEditingExpiryUserId] = useState<string | null>(null);
+  const [editExpiryDate, setEditExpiryDate] = useState<string>('');
+  const [isUpdatingExpiry, setIsUpdatingExpiry] = useState(false);
+  const enrollUsersPerPage = 25;
   
   // Curriculum Modal States
   const [isCurriculumModalOpen, setIsCurriculumModalOpen] = useState(false);
@@ -149,6 +378,9 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     }
   }, [activeMenuItem, onActiveMenuChange]);
 
+  // State for valid classes in enroll modal
+  const [enrollValidClasses, setEnrollValidClasses] = useState<string[]>([]);
+
   // Fetch enrolled users when Enroll modal opens
   const openEnrollModal = async () => {
     setIsEnrollModalOpen(true);
@@ -158,28 +390,92 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     setSelectedClassFilter('all');
     setSelectedSectionFilter('all');
     setEnrollCurrentPage(1);
+    setEnrollValidClasses([]);
+    setEnrollmentEndDate('');
+    setEnrollmentResult(null);
     
     try {
-      // TODO: Replace with actual API call
-      // const users = await firebaseService.getAvailableUsersForCourse(selectedCollege?.id, selectedCourse?.id);
+      // Determine which college to use based on user type
+      let collegeIdToUse: string | null = null;
       
-      // Simulating API call with sample data
-      await new Promise(resolve => setTimeout(resolve, 800));
-      const sampleUsers = [
-        { id: '1', name: 'Rahul Sharma', email: 'rahul.s@email.com', className: 'Class 10', section: 'A', avatar: 'RS' },
-        { id: '2', name: 'Priya Patel', email: 'priya.p@email.com', className: 'Class 10', section: 'B', avatar: 'PP' },
-        { id: '3', name: 'Amit Kumar', email: 'amit.k@email.com', className: 'Class 9', section: 'A', avatar: 'AK' },
-        { id: '4', name: 'Sneha Gupta', email: 'sneha.g@email.com', className: 'Class 10', section: 'A', avatar: 'SG' },
-        { id: '5', name: 'Vikram Singh', email: 'vikram.s@email.com', className: 'Class 9', section: 'B', avatar: 'VS' },
-        { id: '6', name: 'Ananya Reddy', email: 'ananya.r@email.com', className: 'Class 10', section: 'A', avatar: 'AR' },
-        { id: '7', name: 'Karan Mehta', email: 'karan.m@email.com', className: 'Class 9', section: 'A', avatar: 'KM' },
-        { id: '8', name: 'Neha Verma', email: 'neha.v@email.com', className: 'Class 10', section: 'B', avatar: 'NV' },
-        { id: '9', name: 'Rohan Das', email: 'rohan.d@email.com', className: 'Class 9', section: 'B', avatar: 'RD' },
-        { id: '10', name: 'Pooja Iyer', email: 'pooja.i@email.com', className: 'Class 10', section: 'A', avatar: 'PI' },
-        { id: '11', name: 'Arjun Nair', email: 'arjun.n@email.com', className: 'Class 9', section: 'A', avatar: 'AN' },
-        { id: '12', name: 'Meera Joshi', email: 'meera.j@email.com', className: 'Class 10', section: 'B', avatar: 'MJ' },
-      ];
-      setAvailableUsers(sampleUsers);
+      if (currentUser?.userType === 'system_admin') {
+        // System Admin: Use the selected college from dropdown
+        collegeIdToUse = selectedCollege?.id || null;
+      } else if (currentUser?.userType !== 'student') {
+        // Other roles (admin, principal, dean, teacher): Use their own college
+        collegeIdToUse = currentUser?.collegeId || null;
+      }
+      
+      if (!collegeIdToUse) {
+        console.error('No college ID available');
+        setAvailableUsers([]);
+        setEnrollValidClasses([]);
+        return;
+      }
+      
+      // Fetch college data to get valid classes
+      const collegeData = await firebaseService.getCollege(collegeIdToUse);
+      if (collegeData?.validClasses) {
+        setEnrollValidClasses(collegeData.validClasses);
+      }
+      
+      // Fetch users from the college (students only for enrollment)
+      const users = await firebaseService.getUsersByCollege(collegeIdToUse);
+      
+      // Fetch already enrolled users for this course
+      const courseId = selectedCourse?.courseId || selectedCourse?.id;
+      let enrollmentMap: Map<string, any> = new Map();
+      if (courseId && collegeIdToUse) {
+        console.log('📚 Fetching enrollments for courseId:', courseId);
+        // Fetch all enrollments for this college (paginated, but we need all for the modal)
+        let allEnrollments: any[] = [];
+        let lastDoc = null;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const result = await firebaseService.getCourseEnrollmentsPaginated(courseId, collegeIdToUse, 100, lastDoc);
+          allEnrollments = [...allEnrollments, ...result.enrollments];
+          lastDoc = result.lastDoc;
+          hasMore = result.hasMore;
+        }
+        
+        console.log('📚 Enrollments found:', allEnrollments.length);
+        // Create a map of userId -> enrollment data
+        allEnrollments.forEach((e: any) => {
+          enrollmentMap.set(e.userId, {
+            enrollmentId: e.enrollmentId || e.id,
+            expiryDate: e.expiryDate?.toDate?.() || e.expiryDate || null,
+            enrolledAt: e.enrolledAt?.toDate?.() || e.enrolledAt || null,
+          });
+        });
+        console.log('📚 Enrolled user IDs:', Array.from(enrollmentMap.keys()));
+      }
+      
+      // Filter to only show students and transform data, marking enrolled users
+      const studentUsers = users
+        .filter(user => user.userType === 'student')
+        .map(user => {
+          const enrollment = enrollmentMap.get(user.userId);
+          const isEnrolled = !!enrollment;
+          if (isEnrolled) {
+            console.log(`✅ User ${user.fullName} (${user.userId}) is enrolled`);
+          }
+          return {
+            id: user.userId,
+            name: user.fullName || user.email?.split('@')[0] || 'Unknown',
+            email: user.email || '',
+            className: user.studentClass || 'Unassigned',
+            section: user.studentClass?.includes('-') ? user.studentClass.split('-')[1] : '',
+            avatar: (user.fullName || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2),
+            isEnrolled,
+            enrollmentId: enrollment?.enrollmentId || null,
+            expiryDate: enrollment?.expiryDate || null,
+            enrolledAt: enrollment?.enrolledAt || null,
+          };
+        });
+      
+      console.log('📚 Total students:', studentUsers.length, 'Enrolled:', studentUsers.filter(u => u.isEnrolled).length);
+      setAvailableUsers(studentUsers);
     } catch (error) {
       console.error('Error fetching users:', error);
       setAvailableUsers([]);
@@ -341,11 +637,122 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     );
   };
 
+  // Get users available for selection (not already enrolled)
+  const selectableUsers = filteredUsers.filter(u => !u.isEnrolled);
+
   const handleSelectAll = () => {
-    if (selectedUsers.length === filteredUsers.length) {
+    if (selectedUsers.length === selectableUsers.length && selectableUsers.length > 0) {
       setSelectedUsers([]);
     } else {
-      setSelectedUsers(filteredUsers.map(u => u.id));
+      setSelectedUsers(selectableUsers.map(u => u.id));
+    }
+  };
+
+  // Handle enrollment submission
+  const handleEnrollUsers = async () => {
+    if (selectedUsers.length === 0 || !selectedCourse) return;
+    
+    setIsEnrolling(true);
+    setEnrollmentResult(null);
+    
+    try {
+      // Determine collegeId
+      let collegeId = '';
+      if (currentUser?.userType === 'system_admin') {
+        collegeId = selectedCollege?.id || '';
+      } else {
+        collegeId = currentUser?.collegeId || '';
+      }
+      
+      // Parse expiry date if set
+      const expiryDate = enrollmentEndDate ? new Date(enrollmentEndDate) : null;
+      
+      // Call the enrollment service - use numeric courseId for enrollment record, slug for course update
+      const result = await firebaseService.enrollUsersToCourse(
+        selectedCourse.courseId || selectedCourse.id,
+        selectedUsers,
+        currentUser?.userId || currentUser?.uid || '',
+        collegeId,
+        expiryDate,
+        'manual',
+        selectedCourse.id  // Pass slug (id) for updating course document
+      );
+      
+      if (result.success && result.enrolledCount > 0) {
+        // Mark newly enrolled users in the list
+        setAvailableUsers(prev => prev.map(user => 
+          selectedUsers.includes(user.id) ? { ...user, isEnrolled: true } : user
+        ));
+        
+        setEnrollmentResult({
+          success: true,
+          message: `Successfully enrolled ${result.enrolledCount} student${result.enrolledCount > 1 ? 's' : ''} to the course!`
+        });
+        // Clear selected users after successful enrollment
+        setSelectedUsers([]);
+        setEnrollmentEndDate('');
+      } else if (result.enrolledCount > 0) {
+        // Mark newly enrolled users in the list
+        setAvailableUsers(prev => prev.map(user => 
+          selectedUsers.includes(user.id) ? { ...user, isEnrolled: true } : user
+        ));
+        
+        setEnrollmentResult({
+          success: true,
+          message: `Enrolled ${result.enrolledCount} student${result.enrolledCount > 1 ? 's' : ''}. Some users may already be enrolled.`
+        });
+        setSelectedUsers([]);
+      } else {
+        setEnrollmentResult({
+          success: false,
+          message: result.errors.length > 0 ? result.errors[0] : 'Failed to enroll students. Please try again.'
+        });
+      }
+    } catch (error) {
+      console.error('Error enrolling users:', error);
+      setEnrollmentResult({
+        success: false,
+        message: 'An error occurred while enrolling students. Please try again.'
+      });
+    } finally {
+      setIsEnrolling(false);
+    }
+  };
+
+  // Handle expiry date update for enrolled user
+  const handleUpdateExpiry = async (userId: string, enrollmentId: string) => {
+    if (!enrollmentId) return;
+    
+    setIsUpdatingExpiry(true);
+    try {
+      const newExpiryDate = editExpiryDate ? new Date(editExpiryDate) : null;
+      
+      await firebaseService.updateEnrollmentExpiry(enrollmentId, newExpiryDate);
+      
+      // Update local state
+      setAvailableUsers(prev => prev.map(user => 
+        user.id === userId 
+          ? { ...user, expiryDate: newExpiryDate }
+          : user
+      ));
+      
+      setEditingExpiryUserId(null);
+      setEditExpiryDate('');
+      
+      setEnrollmentResult({
+        success: true,
+        message: newExpiryDate 
+          ? `Expiry date updated to ${newExpiryDate.toLocaleDateString()}`
+          : 'Expiry date removed (unlimited access)'
+      });
+    } catch (error) {
+      console.error('Error updating expiry:', error);
+      setEnrollmentResult({
+        success: false,
+        message: 'Failed to update expiry date'
+      });
+    } finally {
+      setIsUpdatingExpiry(false);
     }
   };
 
@@ -541,13 +948,19 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
             </div>
           </div>
         ) : (
-          <Courses
-            brandTheme={brandTheme}
-            onCourseSelect={setSelectedCourse}
-            selectedCourse={selectedCourse}
-            onCollapse={() => setIsCoursesCollapsed(true)}
-            currentUser={currentUser}
-          />
+          <div 
+            className="h-full overflow-hidden bg-white border-r border-gray-200"
+            style={{ minWidth: '600px', maxWidth: '600px', width: '600px' }}
+          >
+            <Courses
+              brandTheme={brandTheme}
+              onCourseSelect={setSelectedCourse}
+              selectedCourse={selectedCourse}
+              onCollapse={() => setIsCoursesCollapsed(true)}
+              currentUser={currentUser}
+              selectedCollege={selectedCollege}
+            />
+          </div>
         )
       )}
 
@@ -612,20 +1025,23 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                     </div>
                     <h1 className="text-xl font-bold text-gray-900 mb-1">{selectedCourse.name}</h1>
                     <p className="text-gray-500 text-sm mb-3">
-                      Instructor: {selectedCourse.instructor || 'Anadi Sharma'}
+                      Instructor: {selectedCourse.instructor || 'Not Assigned'}
                     </p>
                     
                     {/* Rating & Stats */}
                     <div className="flex items-center gap-6">
                       <div className="flex items-center gap-1">
                         {[1, 2, 3, 4, 5].map((star) => (
-                          <span key={star} className={`text-base ${star <= (selectedCourse.rating || 4) ? 'text-yellow-400' : 'text-gray-200'}`}>★</span>
+                          <span key={star} className={`text-base ${star <= Math.round(selectedCourse.rating || 0) ? 'text-yellow-400' : 'text-gray-200'}`}>★</span>
                         ))}
-                        <span className="ml-1 text-sm text-gray-500">{selectedCourse.rating || 4.5}/5</span>
+                        <span className="ml-1 text-sm text-gray-500">{selectedCourse.rating || 0}/5</span>
+                        {selectedCourse.totalRatings ? (
+                          <span className="text-sm text-gray-400 ml-1">({selectedCourse.totalRatings} reviews)</span>
+                        ) : null}
                       </div>
                       <div className="text-sm text-gray-500">
                         <FontAwesomeIcon icon={faUsers} className="mr-1" />
-                        {selectedCourse.students || 0} students
+                        {collegeEnrollmentCount} students
                       </div>
                     </div>
                   </div>
@@ -652,15 +1068,70 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 </div>
               </div>
               
-              {/* Course Description */}
-              <div className="p-6">
-                <h3 className="font-semibold text-gray-900 text-lg mb-3">Course Description</h3>
-                <p className="text-gray-600 text-sm leading-relaxed">
-                  This comprehensive course covers all the essential concepts and practical applications. 
-                  Students will gain hands-on experience through interactive exercises, real-world projects, 
-                  and assessments designed to reinforce learning outcomes. Perfect for beginners and intermediate 
-                  learners looking to advance their skills.
-                </p>
+              {/* Tagline - On grey background inside white card */}
+              <div className="px-6 pt-4">
+                {selectedCourse.tagLine && (
+                  <div 
+                    className="p-4 rounded-xl border-l-4 italic"
+                    style={{ 
+                      backgroundColor: `${brandTheme.colors.primary}10`,
+                      borderLeftColor: brandTheme.colors.primary
+                    }}
+                  >
+                    <p className="text-gray-700 text-sm font-medium">
+                      "{selectedCourse.tagLine}"
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Course Info Cards */}
+              <div className="p-6 space-y-4">
+                {/* Description Card */}
+                <ExpandableCard
+                  title="Course Description"
+                  icon={faFileLines}
+                  iconBgColor={`${brandTheme.colors.primary}15`}
+                  iconColor={brandTheme.colors.primary}
+                  cardBgColor={`${brandTheme.colors.primary}05`}
+                  cardBorderColor={`${brandTheme.colors.primary}20`}
+                  headerBorderColor={`${brandTheme.colors.primary}15`}
+                  isLoading={isLoadingDetails}
+                  content={courseDetails?.courseDescription || 'No description available for this course.'}
+                  brandTheme={brandTheme}
+                />
+
+                {/* What You'll Learn Card */}
+                {courseDetails?.coursePurpose && (
+                  <ExpandableCard
+                    title="What You'll Learn"
+                    icon={faGraduationCap}
+                    iconBgColor="rgb(220 252 231)"
+                    iconColor="rgb(22 163 74)"
+                    cardBgColor="linear-gradient(to bottom right, rgb(240 253 244), rgb(236 253 245))"
+                    cardBorderColor="rgb(209 250 229)"
+                    headerBorderColor="rgb(209 250 229)"
+                    content={courseDetails.coursePurpose}
+                    brandTheme={brandTheme}
+                    markerColor="rgb(34 197 94)"
+                  />
+                )}
+
+                {/* Prerequisites Card */}
+                {courseDetails?.coursePrerequisite && (
+                  <ExpandableCard
+                    title="Prerequisites"
+                    icon={faListCheck}
+                    iconBgColor="rgb(254 243 199)"
+                    iconColor="rgb(217 119 6)"
+                    cardBgColor="linear-gradient(to bottom right, rgb(255 251 235), rgb(255 247 237))"
+                    cardBorderColor="rgb(253 230 138)"
+                    headerBorderColor="rgb(253 230 138)"
+                    content={courseDetails.coursePrerequisite}
+                    brandTheme={brandTheme}
+                    markerColor="rgb(245 158 11)"
+                  />
+                )}
               </div>
             </div>
             
@@ -669,7 +1140,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold text-gray-900 text-lg">Enrolled Students</h3>
-                  <p className="text-sm text-gray-500">{selectedCourse.students || 12} students enrolled in this course</p>
+                  <p className="text-sm text-gray-500">{collegeEnrollmentCount} students enrolled in this course</p>
                 </div>
                 <button 
                   className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
@@ -760,7 +1231,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               {/* Pagination */}
               <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50">
                 <div className="text-sm text-gray-500">
-                  Showing 1-6 of {selectedCourse.students || 456} students
+                  Showing 1-{Math.min(6, collegeEnrollmentCount)} of {collegeEnrollmentCount} students
                 </div>
                 <div className="flex items-center gap-2">
                   <button className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
@@ -889,16 +1360,16 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
       )}
 
       {/* Enroll Modal - Slide from Right */}
-      {isEnrollModalOpen && (
+      {isEnrollModalOpen && createPortal(
         <>
           {/* Backdrop */}
           <div 
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 transition-opacity"
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] transition-opacity"
             onClick={() => setIsEnrollModalOpen(false)}
           />
           
           {/* Modal Panel */}
-          <div className="fixed inset-2 left-auto w-[560px] bg-white shadow-2xl z-50 flex flex-col rounded-2xl animate-slide-in-right overflow-hidden">
+          <div className="fixed top-4 bottom-4 right-4 w-[560px] bg-white shadow-2xl z-[10000] flex flex-col rounded-2xl animate-slide-in-right overflow-hidden">
             {/* Modal Header - Gradient with Course Name */}
             <div 
               className="px-5 py-4 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
@@ -918,10 +1389,10 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
             
             {/* Search & Filters */}
             <div className="px-5 py-4 border-b border-gray-100 flex-shrink-0">
-              {/* Search Input and Class Filter */}
+              {/* Search Input, Class Filter, and End Date */}
               <div className="flex items-center gap-2">
                 {/* Search Input */}
-                <div className="w-1/2 relative">
+                <div className="flex-1 relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="11" cy="11" r="8"></circle>
@@ -941,27 +1412,197 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 <select
                   value={selectedClassFilter}
                   onChange={(e) => { setSelectedClassFilter(e.target.value); setEnrollCurrentPage(1); }}
-                  className="w-1/2 px-3 py-2 h-10 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-blue-400 transition-all bg-white"
+                  className="w-32 px-3 py-2 h-10 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-blue-400 transition-all bg-white"
                 >
                   <option value="all">All Classes</option>
-                  {uniqueClasses.map(cls => (
+                  {enrollValidClasses.map(cls => (
                     <option key={cls} value={cls}>{cls}</option>
                   ))}
                 </select>
+                
+                {/* Custom End Date Picker */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsDatePickerOpen(!isDatePickerOpen)}
+                    className={`w-40 px-3 py-2 h-10 rounded-lg border text-sm text-left transition-all bg-white flex items-center justify-between ${
+                      isDatePickerOpen ? 'border-blue-400' : 'border-gray-200'
+                    }`}
+                  >
+                    <span className={enrollmentEndDate ? 'text-gray-900' : 'text-gray-400'}>
+                      {enrollmentEndDate 
+                        ? new Date(enrollmentEndDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                        : 'Expiry Date'
+                      }
+                    </span>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                      <line x1="16" y1="2" x2="16" y2="6"></line>
+                      <line x1="8" y1="2" x2="8" y2="6"></line>
+                      <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                  </button>
+                  
+                  {/* Date Picker Dropdown */}
+                  {isDatePickerOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-[10001]" 
+                        onClick={() => setIsDatePickerOpen(false)}
+                      />
+                      <div className="absolute right-0 top-full mt-2 bg-white rounded-xl shadow-2xl border border-gray-200 p-4 z-[10002] w-72">
+                        {/* Header */}
+                        <div className="text-center mb-3 pb-2 border-b border-gray-100">
+                          <h4 className="text-sm font-semibold text-gray-900">Expiry Date</h4>
+                          <p className="text-xs text-gray-400 mt-0.5">Select when enrollment expires</p>
+                        </div>
+                        
+                        {/* Month/Year Navigation */}
+                        <div className="flex items-center justify-between mb-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (datePickerMonth === 0) {
+                                setDatePickerMonth(11);
+                                setDatePickerYear(datePickerYear - 1);
+                              } else {
+                                setDatePickerMonth(datePickerMonth - 1);
+                              }
+                            }}
+                            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500"
+                          >
+                            ‹
+                          </button>
+                          <span className="text-sm font-medium text-gray-900">
+                            {new Date(datePickerYear, datePickerMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (datePickerMonth === 11) {
+                                setDatePickerMonth(0);
+                                setDatePickerYear(datePickerYear + 1);
+                              } else {
+                                setDatePickerMonth(datePickerMonth + 1);
+                              }
+                            }}
+                            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500"
+                          >
+                            ›
+                          </button>
+                        </div>
+                        
+                        {/* Day Headers */}
+                        <div className="grid grid-cols-7 gap-1 mb-1">
+                          {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                            <div key={day} className="text-center text-xs font-medium text-gray-400 py-1">
+                              {day}
+                            </div>
+                          ))}
+                        </div>
+                        
+                        {/* Calendar Days */}
+                        <div className="grid grid-cols-7 gap-1">
+                          {(() => {
+                            const firstDay = new Date(datePickerYear, datePickerMonth, 1).getDay();
+                            const daysInMonth = new Date(datePickerYear, datePickerMonth + 1, 0).getDate();
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const days = [];
+                            
+                            // Empty cells for days before first of month
+                            for (let i = 0; i < firstDay; i++) {
+                              days.push(<div key={`empty-${i}`} className="w-8 h-8" />);
+                            }
+                            
+                            // Days of the month
+                            for (let day = 1; day <= daysInMonth; day++) {
+                              const date = new Date(datePickerYear, datePickerMonth, day);
+                              const dateStr = date.toISOString().split('T')[0];
+                              const isSelected = enrollmentEndDate === dateStr;
+                              const isPast = date < today;
+                              const isToday = date.getTime() === today.getTime();
+                              
+                              days.push(
+                                <button
+                                  key={day}
+                                  type="button"
+                                  disabled={isPast}
+                                  onClick={() => {
+                                    setEnrollmentEndDate(dateStr);
+                                    setIsDatePickerOpen(false);
+                                  }}
+                                  className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
+                                    isSelected 
+                                      ? 'text-white' 
+                                      : isPast 
+                                        ? 'text-gray-300 cursor-not-allowed' 
+                                        : isToday
+                                          ? 'text-blue-600 font-bold hover:bg-blue-50'
+                                          : 'text-gray-700 hover:bg-gray-100'
+                                  }`}
+                                  style={isSelected ? { background: brandTheme.gradients.primary } : {}}
+                                >
+                                  {day}
+                                </button>
+                              );
+                            }
+                            
+                            return days;
+                          })()}
+                        </div>
+                        
+                        {/* Footer Actions */}
+                        <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEnrollmentEndDate('');
+                              setIsDatePickerOpen(false);
+                            }}
+                            className="text-xs font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                          >
+                            Clear
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const today = new Date();
+                              setDatePickerMonth(today.getMonth());
+                              setDatePickerYear(today.getFullYear());
+                            }}
+                            className="text-xs font-medium transition-colors"
+                            style={{ color: brandTheme.colors.primary }}
+                          >
+                            Today
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
               
               <div className="flex items-center justify-between mt-3">
-                <label className="flex items-center gap-2 cursor-pointer">
+                <label className={`flex items-center gap-2 ${selectableUsers.length > 0 ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
                   <input
                     type="checkbox"
-                    checked={selectedUsers.length === filteredUsers.length && filteredUsers.length > 0}
+                    checked={selectedUsers.length === selectableUsers.length && selectableUsers.length > 0}
                     onChange={handleSelectAll}
+                    disabled={selectableUsers.length === 0}
                     className="w-4 h-4 rounded border-gray-300"
                     style={{ accentColor: brandTheme.colors.primary }}
                   />
                   <span className="text-sm text-gray-600">Select All</span>
                 </label>
-                <span className="text-sm text-gray-500">{selectedUsers.length} selected</span>
+                <span className="text-sm text-gray-500">
+                  {selectedUsers.length} selected
+                  {filteredUsers.length > selectableUsers.length && (
+                    <span className="text-green-600 ml-1">
+                      ({filteredUsers.length - selectableUsers.length} already enrolled)
+                    </span>
+                  )}
+                </span>
               </div>
             </div>
             
@@ -978,34 +1619,137 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               ) : (
                 <>
                   {paginatedUsers.map((user) => (
+                    <Fragment key={user.id}>
                     <div 
-                      key={user.id}
-                      onClick={() => toggleUserSelection(user.id)}
-                      className={`flex items-center gap-3 p-3 cursor-pointer transition-all border-b border-gray-100 last:border-b-0 ${
-                        selectedUsers.includes(user.id) 
-                          ? 'bg-blue-50' 
-                          : 'hover:bg-gray-50'
-                      }`}
+                      className={`${user.isEnrolled ? 'border border-green-200 rounded-lg my-2 overflow-hidden' : ''}`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={selectedUsers.includes(user.id)}
-                        onChange={() => toggleUserSelection(user.id)}
-                        className="w-4 h-4 rounded border-gray-300"
-                        style={{ accentColor: brandTheme.colors.primary }}
-                      />
+                    <div 
+                      onClick={() => !user.isEnrolled && toggleUserSelection(user.id)}
+                      className={`flex items-center gap-3 p-3 transition-all ${
+                        user.isEnrolled 
+                          ? 'bg-green-50/50 cursor-default' 
+                          : selectedUsers.includes(user.id) 
+                            ? 'bg-blue-50 cursor-pointer' 
+                            : 'hover:bg-gray-50 cursor-pointer'
+                      } ${!user.isEnrolled ? 'border-b border-gray-100' : ''}`}
+                    >
+                      {user.isEnrolled ? (
+                        <div className="w-4 h-4 flex-shrink-0" />
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.includes(user.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleUserSelection(user.id);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                          style={{ accentColor: brandTheme.colors.primary }}
+                        />
+                      )}
                       <div 
-                        className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0"
+                        className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0 ${user.isEnrolled ? 'opacity-60' : ''}`}
                         style={{ background: brandTheme.gradients.primary }}
                       >
                         {user.avatar}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-900">{user.name}</div>
-                        <div className="text-xs font-medium" style={{ color: brandTheme.colors.primary }}>{user.className} - Section {user.section}</div>
+                        <div className={`font-medium ${user.isEnrolled ? 'text-gray-500' : 'text-gray-900'}`}>
+                          {user.name}
+                        </div>
+                        <div className={`text-xs font-medium ${user.isEnrolled ? 'text-gray-400' : ''}`} style={!user.isEnrolled ? { color: brandTheme.colors.primary } : {}}>
+                          {user.className}{user.section ? ` - Section ${user.section}` : ''}
+                        </div>
                         <div className="text-xs text-gray-400 truncate">{user.email}</div>
                       </div>
                     </div>
+                    
+                    {/* Footer strip for enrolled users */}
+                    {user.isEnrolled && (
+                      <div 
+                        className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-green-50 to-emerald-50 border-b border-gray-100"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center gap-4">
+                          <span className="text-xs font-medium text-green-600 bg-green-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                              <polyline points="20 6 9 17 4 12"></polyline>
+                            </svg>
+                            Enrolled
+                          </span>
+                          <span className={`text-xs flex items-center gap-1 ${user.expiryDate ? 'text-amber-600' : 'text-gray-400'}`}>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                              <line x1="16" y1="2" x2="16" y2="6"></line>
+                              <line x1="8" y1="2" x2="8" y2="6"></line>
+                              <line x1="3" y1="10" x2="21" y2="10"></line>
+                            </svg>
+                            {user.expiryDate 
+                              ? `Expires: ${new Date(user.expiryDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                              : 'No expiry (Unlimited)'
+                            }
+                          </span>
+                        </div>
+                        
+                        {editingExpiryUserId === user.id ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="date"
+                              value={editExpiryDate}
+                              onChange={(e) => setEditExpiryDate(e.target.value)}
+                              min={new Date().toISOString().split('T')[0]}
+                              className="px-2 py-1 text-xs rounded-md border border-gray-300 focus:outline-none focus:border-blue-400 bg-white"
+                            />
+                            <button
+                              onClick={() => handleUpdateExpiry(user.id, user.enrollmentId)}
+                              disabled={isUpdatingExpiry}
+                              className="px-3 py-1 text-xs font-semibold text-white rounded-md transition-all disabled:opacity-50 flex items-center gap-1.5 hover:opacity-90 active:scale-95"
+                              style={{ background: brandTheme.gradients.primary }}
+                            >
+                              {isUpdatingExpiry ? (
+                                <>
+                                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                  Saving...
+                                </>
+                              ) : (
+                                <>
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <polyline points="20 6 9 17 4 12"></polyline>
+                                  </svg>
+                                  Save
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={() => { setEditingExpiryUserId(null); setEditExpiryDate(''); }}
+                              className="w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                              </svg>
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingExpiryUserId(user.id);
+                              setEditExpiryDate(user.expiryDate ? new Date(user.expiryDate).toISOString().split('T')[0] : '');
+                            }}
+                            className="text-xs font-medium text-blue-500 hover:text-blue-700 flex items-center gap-1"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                            Edit
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    </div>
+                  </Fragment>
                   ))}
                   
                   {filteredUsers.length === 0 && (
@@ -1100,19 +1844,69 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setIsEnrollModalOpen(false)}
-                  className="px-4 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-white text-gray-600 transition-all"
+                  disabled={isEnrolling}
+                  className="px-4 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-white text-gray-600 transition-all disabled:opacity-50"
                 >
-                  Cancel
+                  Close
                 </button>
                 <button
-                  disabled={selectedUsers.length === 0}
-                  className="px-4 py-1.5 rounded-lg text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={handleEnrollUsers}
+                  disabled={selectedUsers.length === 0 || isEnrolling}
+                  className="px-4 py-1.5 rounded-lg text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   style={{ background: brandTheme.gradients.primary }}
                 >
-                  Enroll {selectedUsers.length > 0 ? `(${selectedUsers.length})` : ''}
+                  {isEnrolling ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Enrolling...
+                    </>
+                  ) : (
+                    <>Enroll {selectedUsers.length > 0 ? `(${selectedUsers.length})` : ''}</>
+                  )}
                 </button>
               </div>
             </div>
+            
+            {/* Enrollment Result Message */}
+            {enrollmentResult && (
+              <div 
+                className={`mx-5 mb-4 px-4 py-3 rounded-xl flex items-center gap-3 ${
+                  enrollmentResult.success 
+                    ? 'bg-green-50 border border-green-200' 
+                    : 'bg-red-50 border border-red-200'
+                }`}
+              >
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  enrollmentResult.success ? 'bg-green-100' : 'bg-red-100'
+                }`}>
+                  {enrollmentResult.success ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-green-600">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600">
+                      <circle cx="12" cy="12" r="10"></circle>
+                      <line x1="15" y1="9" x2="9" y2="15"></line>
+                      <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                  )}
+                </div>
+                <p className={`text-sm font-medium ${enrollmentResult.success ? 'text-green-700' : 'text-red-700'}`}>
+                  {enrollmentResult.message}
+                </p>
+                <button 
+                  onClick={() => setEnrollmentResult(null)}
+                  className={`ml-auto p-1 rounded-lg hover:bg-white/50 transition-colors ${
+                    enrollmentResult.success ? 'text-green-500' : 'text-red-500'
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                </button>
+              </div>
+            )}
           </div>
           
           <style>{`
@@ -1124,20 +1918,21 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               animation: slideInRight 0.5s ease-in-out forwards;
             }
           `}</style>
-        </>
+        </>,
+        document.body
       )}
 
       {/* Curriculum Modal - Slide from Right */}
-      {isCurriculumModalOpen && (
+      {isCurriculumModalOpen && createPortal(
         <>
           {/* Backdrop */}
           <div 
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 transition-opacity"
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] transition-opacity"
             onClick={() => setIsCurriculumModalOpen(false)}
           />
           
           {/* Modal Panel */}
-          <div className="fixed inset-2 left-auto w-[600px] bg-white shadow-2xl z-50 flex flex-col rounded-2xl animate-slide-in-right overflow-hidden">
+          <div className="fixed top-4 bottom-4 right-4 w-[600px] bg-white shadow-2xl z-[10000] flex flex-col rounded-2xl animate-slide-in-right overflow-hidden">
             {/* Modal Header - Gradient */}
             <div 
               className="px-5 py-4 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
@@ -1296,20 +2091,21 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               animation: slideInRight 0.5s ease-in-out forwards;
             }
           `}</style>
-        </>
+        </>,
+        document.body
       )}
 
       {/* Student Progress Modal - Slide from Right */}
-      {isStudentProgressModalOpen && selectedStudentForProgress && (
+      {isStudentProgressModalOpen && selectedStudentForProgress && createPortal(
         <>
           {/* Backdrop */}
           <div 
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 transition-opacity"
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] transition-opacity"
             onClick={() => setIsStudentProgressModalOpen(false)}
           />
           
           {/* Modal Panel */}
-          <div className="fixed inset-2 left-auto w-[650px] bg-white shadow-2xl z-50 flex flex-col rounded-2xl animate-slide-in-right overflow-hidden">
+          <div className="fixed top-4 bottom-4 right-4 w-[650px] bg-white shadow-2xl z-[10000] flex flex-col rounded-2xl animate-slide-in-right overflow-hidden">
             {/* Modal Header */}
             <div 
               className="px-6 py-4 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
@@ -1730,20 +2526,21 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               animation: slideInRight 0.5s ease-in-out forwards;
             }
           `}</style>
-        </>
+        </>,
+        document.body
       )}
 
       {/* Student Profile Modal - Shows all enrolled courses */}
-      {isStudentProfileModalOpen && selectedStudentForProgress && (
+      {isStudentProfileModalOpen && selectedStudentForProgress && createPortal(
         <>
           {/* Transparent overlay just for click handling - no darkening */}
           <div 
-            className="fixed inset-0 z-[60]"
+            className="fixed inset-0 z-[9999]"
             onClick={() => setIsStudentProfileModalOpen(false)}
           />
           
           {/* Modal Panel */}
-          <div className="fixed inset-2 left-auto w-[650px] bg-white shadow-2xl z-[70] flex flex-col rounded-2xl animate-slide-in-right overflow-hidden">
+          <div className="fixed top-4 bottom-4 right-4 w-[650px] bg-white shadow-2xl z-[10000] flex flex-col rounded-2xl animate-slide-in-right overflow-hidden">
             {/* Modal Header */}
             <div 
               className="px-6 py-4 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
@@ -2126,7 +2923,8 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               </button>
             </div>
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );

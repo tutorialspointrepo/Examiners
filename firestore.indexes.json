@@ -266,307 +266,6 @@
       "collectionGroup": "questionBank",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "notifications",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "tags", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "class", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "reportInstances",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "collegeId", "order": "ASCENDING" },
-        { "fieldPath": "generatedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "complexity", "order": "ASCENDING" },
-        { "fieldPath": "isProprietaryQuestion", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "tags", "arrayConfig": "CONTAINS" },
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "class", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "examAttempts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "academicYear", "order": "ASCENDING" },
-        { "fieldPath": "class", "order": "ASCENDING" },
-        { "fieldPath": "examType", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "notifications",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "createdBy", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "chapter", "order": "ASCENDING" },
-        { "fieldPath": "class", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "class", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "class_name", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "class_name", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "chapter", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "chapter", "order": "ASCENDING" },
-        { "fieldPath": "collegeId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "class_name", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" },
-        { "fieldPath": "chapter", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "class_name", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "class", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "notifications",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "collegeId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "academicYear", "order": "ASCENDING" },
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "collegeId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "studentClass", "order": "ASCENDING" },
-        { "fieldPath": "userType", "order": "ASCENDING" },
-        { "fieldPath": "studentRoll", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "isProprietaryQuestion", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "examAttempts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "examId", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" },
-        { "fieldPath": "studentId", "order": "ASCENDING" },
-        { "fieldPath": "startTime", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "examAttempts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "examId", "order": "ASCENDING" },
-        { "fieldPath": "studentId", "order": "ASCENDING" },
-        { "fieldPath": "startTime", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "collegeId", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "exams",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "collegeId", "order": "ASCENDING" },
-        { "fieldPath": "year", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "collegeId", "order": "ASCENDING" },
-        { "fieldPath": "studentClass", "order": "ASCENDING" },
-        { "fieldPath": "userType", "order": "ASCENDING" },
-        { "fieldPath": "fullName", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "examAttempts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "academicYear", "order": "ASCENDING" },
-        { "fieldPath": "class", "order": "ASCENDING" },
-        { "fieldPath": "examType", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "class", "order": "ASCENDING" },
-        { "fieldPath": "complexity", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "class_name", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "class_name", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
-        { "fieldPath": "type", "order": "ASCENDING" },
-        { "fieldPath": "created_at", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "reportInstances",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "collegeId", "order": "ASCENDING" },
-        { "fieldPath": "templateId", "order": "ASCENDING" },
-        { "fieldPath": "generatedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "answerSheets",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "evaluatorId", "order": "ASCENDING" },
-        { "fieldPath": "evaluatedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "questionBank",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "board", "order": "ASCENDING" },
-        { "fieldPath": "class_name", "order": "ASCENDING" },
-        { "fieldPath": "subject", "order": "ASCENDING" },
         { "fieldPath": "chapter", "order": "ASCENDING" },
         { "fieldPath": "created_at", "order": "DESCENDING" }
       ]
@@ -698,6 +397,73 @@
       "fields": [
         { "fieldPath": "studentId", "order": "ASCENDING" },
         { "fieldPath": "examId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "problems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "difficulty", "order": "ASCENDING" },
+        { "fieldPath": "number", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "problems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tags", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "number", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "problems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "tags", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "difficulty", "order": "ASCENDING" },
+        { "fieldPath": "number", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "problems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companies", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "number", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "problems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companies", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "difficulty", "order": "ASCENDING" },
+        { "fieldPath": "number", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "problems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "difficulty", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "problems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "number", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "problems",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "difficulty", "order": "ASCENDING" },
+        { "fieldPath": "number", "order": "ASCENDING" }
       ]
     }
   ],

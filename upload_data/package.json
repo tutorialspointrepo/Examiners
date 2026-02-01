@@ -12,7 +12,9 @@
   "type": "commonjs",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
-    "firebase-admin": "^13.5.0",
+    "@google/generative-ai": "^0.24.1",
+    "ajv": "^8.17.1",
+    "firebase-admin": "^13.6.0",
     "readline-sync": "^1.4.10",
     "xlsx": "^0.18.5"
   }

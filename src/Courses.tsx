@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faSearch,
   faChevronLeft,
+  faChevronRight,
   faBooks,
   faLayerGroup,
   faVideo,
@@ -14,9 +15,12 @@ import {
   faFilter,
   faChevronDown,
   faChevronUp,
-  faUsers,
+  faSpinner,
+  faChevronsLeft,
+  faChevronsRight,
 } from '@fortawesome/sharp-light-svg-icons';
 import type { Course } from './Learning';
+import { firebaseService } from './services/firebase_service';
 
 interface CoursesProps {
   brandTheme: {
@@ -32,6 +36,7 @@ interface CoursesProps {
   selectedCourse: Course | null;
   onCollapse?: () => void;
   currentUser?: any;
+  selectedCollege?: { id: string; name: string } | null;
 }
 
 const Courses: React.FC<CoursesProps> = ({
@@ -40,15 +45,38 @@ const Courses: React.FC<CoursesProps> = ({
   selectedCourse,
   onCollapse,
   currentUser,
+  selectedCollege,
 }) => {
-  const [searchQuery, _setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'topRated' | 'recentlyAdded'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+
+  // Data states
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCourses, setTotalCourses] = useState(0);
+  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [pageCache, setPageCache] = useState<Map<number, { courses: Course[], lastDoc: any }>>(new Map());
+  const coursesPerPage = 10;
 
   // Check if user is a student
   const isStudent = currentUser?.userType === 'student';
+
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -61,259 +89,338 @@ const Courses: React.FC<CoursesProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Track filter changes to bypass cache
+  const [filterVersion, setFilterVersion] = useState(0);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+    setPageCache(new Map());
+    setLastDoc(null);
+    setFilterVersion(v => v + 1); // Force fresh fetch
+  }, [selectedCategory, selectedFilter, debouncedSearchQuery]);
+
+  // Fetch courses from Firebase with pagination
+  useEffect(() => {
+    const fetchCourses = async () => {
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        // Get the lastDoc from previous page for cursor-based pagination
+        const previousPageCache = currentPage > 1 ? pageCache.get(currentPage - 1) : null;
+        const startAfterDoc = previousPageCache?.lastDoc || null;
+
+        const result = await firebaseService.getCoursesPaginated({
+          category: selectedCategory || undefined,
+          limit: coursesPerPage,
+          orderBy: selectedFilter === 'recentlyAdded' ? 'dateOfPublishing' : 'courseName',
+          orderDirection: selectedFilter === 'recentlyAdded' ? 'desc' : 'asc',
+          startAfterDoc: startAfterDoc,
+          searchQuery: debouncedSearchQuery.length > 0 ? debouncedSearchQuery : undefined,
+        });
+        
+        // Determine college ID for enrollment counts
+        let collegeIdForCounts: string | null = null;
+        if (currentUser?.userType === 'system_admin') {
+          collegeIdForCounts = selectedCollege?.id || null;
+        } else if (currentUser?.userType !== 'student') {
+          collegeIdForCounts = currentUser?.collegeId || null;
+        }
+        
+        console.log('🎓 collegeIdForCounts:', collegeIdForCounts);
+        
+        // Transform to Course type expected by UI
+        const transformedCourses: Course[] = result.courses.map(course => {
+          const courseData = course as any;
+          
+          console.log('📚 Course:', course.courseName);
+          console.log('📊 collegeEnrollmentCounts:', courseData.collegeEnrollmentCounts);
+          console.log('🔢 Count for college:', courseData.collegeEnrollmentCounts?.[collegeIdForCounts || '']);
+          
+          // Use college-specific count from the map if available
+          const collegeEnrollmentCount = collegeIdForCounts && courseData.collegeEnrollmentCounts
+            ? (courseData.collegeEnrollmentCounts[collegeIdForCounts] || 0)
+            : (course.enrollmentCount || 0);
+          
+          console.log('✅ Final count:', collegeEnrollmentCount);
+            
+          return {
+            id: course.slug,
+            courseId: course.courseId,
+            name: course.courseName,
+            thumbnail: course.thumbnailUrl,
+            category: course.courseCategories?.[0] || 'General',
+            lectures: course.totalLectures || 0,
+            duration: formatDuration(course.totalDuration || 0),
+            quizzes: courseData.totalQuizzes || 0,
+            exercises: courseData.totalExercises || 0,
+            progress: 0,
+            isEnrolled: false,
+            notes: courseData.totalNotes || 0,
+            assessments: course.totalUnits || 0,
+            completedCount: course.completedCount || 0,
+            tags: course.courseCategories,
+            rating: course.rating?.average || 0,
+            totalRatings: course.rating?.totalRatings || 0,
+            createdAt: course.dateOfPublishing || '',
+            instructor: courseData.courseAuthor || '',
+            level: courseData.complexityLevel === 1 ? 'Beginner' : courseData.complexityLevel === 2 ? 'Intermediate' : courseData.complexityLevel === 3 ? 'Advanced' : 'All Levels',
+            tagLine: courseData.tagLine || '',
+            language: courseData.language || 'English',
+            collegeEnrollmentCounts: courseData.collegeEnrollmentCounts || {},
+            enrollmentCount: course.enrollmentCount || 0,
+          };
+        });
+        
+        setCourses(transformedCourses);
+        setTotalCourses(result.totalCount);
+        setLastDoc(result.lastDoc);
+
+        // Cache this page
+        setPageCache(prev => new Map(prev).set(currentPage, {
+          courses: transformedCourses,
+          lastDoc: result.lastDoc
+        }));
+
+      } catch (err) {
+        console.error('Error fetching courses:', err);
+        setError('Failed to load courses. Please try again.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchCourses();
+  }, [selectedCategory, selectedFilter, currentPage, debouncedSearchQuery, filterVersion, currentUser, selectedCollege]);
+
   // Category options
   const categoryOptions = [
     { id: null, name: 'All Categories' },
-    { id: 'Coding', name: 'Coding' },
+    { id: 'Development', name: 'Development' },
+    { id: 'IT and Software', name: 'IT and Software' },
     { id: 'Data Science', name: 'Data Science' },
-    { id: 'Web Dev', name: 'Web Development' },
-    { id: 'AI/ML', name: 'AI / Machine Learning' },
-    { id: 'Database', name: 'Database' },
+    { id: 'Personal Development', name: 'Personal Development' },
   ];
 
-  // Sample courses data with new fields
-  const courses: Course[] = [
-    {
-      id: '1',
-      name: 'Data Structure and Algorithm in C++',
-      thumbnail: '',
-      category: 'Coding',
-      lectures: 63,
-      duration: '12h 55m',
-      quizzes: 570,
-      exercises: 275,
-      progress: 65,
-      isEnrolled: true,
-      notes: 63,
-      assessments: 5,
-      students: 234,
-      tags: ['LPU', '2025-26'],
-      rating: 4.8,
-      createdAt: '2025-01-10',
-    },
-    {
-      id: '2',
-      name: 'Advanced Java Programming',
-      thumbnail: '',
-      category: 'Coding',
-      lectures: 45,
-      duration: '10h 30m',
-      quizzes: 320,
-      exercises: 180,
-      progress: 40,
-      isEnrolled: true,
-      notes: 45,
-      assessments: 4,
-      students: 189,
-      tags: ['LPU', '2025-26'],
-      rating: 4.5,
-      createdAt: '2025-01-05',
-    },
-    {
-      id: '3',
-      name: 'Python for Data Science',
-      thumbnail: '',
-      category: 'Data Science',
-      lectures: 58,
-      duration: '15h 20m',
-      quizzes: 420,
-      exercises: 200,
-      progress: 0,
-      isEnrolled: false,
-      notes: 58,
-      assessments: 6,
-      students: 312,
-      tags: ['LPU', '2025-26'],
-      rating: 4.9,
-      createdAt: '2025-01-15',
-    },
-    {
-      id: '4',
-      name: 'Web Development with React',
-      thumbnail: '',
-      category: 'Web Dev',
-      lectures: 72,
-      duration: '18h 45m',
-      quizzes: 380,
-      exercises: 150,
-      progress: 80,
-      isEnrolled: true,
-      notes: 72,
-      assessments: 8,
-      students: 456,
-      tags: ['LPU', '2025-26'],
-      rating: 4.7,
-      createdAt: '2024-12-20',
-    },
-    {
-      id: '5',
-      name: 'Machine Learning Fundamentals',
-      thumbnail: '',
-      category: 'AI/ML',
-      lectures: 40,
-      duration: '14h 10m',
-      quizzes: 290,
-      exercises: 120,
-      progress: 0,
-      isEnrolled: false,
-      notes: 40,
-      assessments: 5,
-      students: 278,
-      tags: ['LPU', '2025-26'],
-      rating: 4.6,
-      createdAt: '2025-01-12',
-    },
-    {
-      id: '6',
-      name: 'Database Management Systems',
-      thumbnail: '',
-      category: 'Database',
-      lectures: 35,
-      duration: '9h 30m',
-      quizzes: 250,
-      exercises: 100,
-      progress: 25,
-      isEnrolled: true,
-      notes: 35,
-      assessments: 3,
-      students: 167,
-      tags: ['LPU', '2025-26'],
-      rating: 4.3,
-      createdAt: '2024-11-15',
-    },
-  ];
-
-  // Filter and sort courses
-  const filteredCourses = useMemo(() => {
-    let result = courses.filter(course => {
-      const matchesSearch = course.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           course.category.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCategory = !selectedCategory || course.category === selectedCategory;
-      return matchesSearch && matchesCategory;
-    });
-
-    // Sort based on selected filter
-    if (selectedFilter === 'topRated') {
-      result = [...result].sort((a, b) => (b.rating || 0) - (a.rating || 0));
-    } else if (selectedFilter === 'recentlyAdded') {
-      result = [...result].sort((a, b) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return dateB - dateA;
-      });
+  // Format duration from seconds to readable format
+  const formatDuration = (seconds: number): string => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
     }
+    return `${minutes}m`;
+  };
 
-    return result;
-  }, [searchQuery, selectedFilter, selectedCategory]);
+  // Calculate pagination
+  const totalPages = Math.ceil(totalCourses / coursesPerPage);
 
+  // Handle page change
+  const handlePageChange = (page: number) => {
+    if (page < 1 || page > totalPages || page === currentPage) return;
+    setCurrentPage(page);
+    // Scroll to top of list
+    if (listContainerRef.current) {
+      listContainerRef.current.scrollTop = 0;
+    }
+  };
+
+  // Generate page numbers to display
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const showEllipsisThreshold = 7;
+    
+    if (totalPages <= showEllipsisThreshold) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      pages.push(1);
+      
+      if (currentPage > 3) {
+        pages.push('...');
+      }
+      
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
+      
+      for (let i = start; i <= end; i++) {
+        if (!pages.includes(i)) {
+          pages.push(i);
+        }
+      }
+      
+      if (currentPage < totalPages - 2) {
+        pages.push('...');
+      }
+      
+      if (!pages.includes(totalPages)) {
+        pages.push(totalPages);
+      }
+    }
+    
+    return pages;
+  };
 
   return (
-    <div className="h-full flex flex-col bg-white border-r border-gray-200" style={{ minWidth: '600px', maxWidth: '600px', width: '600px' }}>
+    <div className="flex flex-col h-full bg-gray-50">
       {/* Header */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <FontAwesomeIcon icon={faBooks} className="text-xl" style={{ color: brandTheme.colors.primary }} />
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">Courses</h2>
-              <p className="text-sm text-gray-500">{filteredCourses.length} courses</p>
+      <div className="p-4 border-b border-gray-200 bg-white sticky top-0 z-10 flex-shrink-0">
+        {/* Title Row with Filters */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center">
+              <FontAwesomeIcon icon={faBooks} className="mr-2" style={{ color: brandTheme.colors.primary }} />
+              Courses
+            </h2>
+            
+            {/* Filter Pills */}
+            <div className="flex gap-1 ml-2">
+              {['all', 'topRated', 'recentlyAdded'].map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setSelectedFilter(filter as any)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                    selectedFilter === filter
+                      ? 'text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                  style={selectedFilter === filter ? { backgroundColor: brandTheme.colors.primary } : {}}
+                >
+                  {filter === 'all' ? 'All' : filter === 'topRated' ? 'Top Rated' : 'Recent'}
+                </button>
+              ))}
+            </div>
+
+            {/* Category Dropdown */}
+            <div ref={categoryDropdownRef} className="relative">
+              <button
+                onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                className="flex items-center gap-2 px-3 py-1.5 border border-gray-200 rounded-full text-xs font-medium hover:bg-gray-50"
+              >
+                <FontAwesomeIcon icon={faFilter} className="text-gray-400" style={{ fontSize: '10px' }} />
+                <span className="text-gray-600">{selectedCategory || 'All Categories'}</span>
+                <FontAwesomeIcon 
+                  icon={isCategoryDropdownOpen ? faChevronUp : faChevronDown} 
+                  className="text-gray-400"
+                  style={{ fontSize: '10px' }}
+                />
+              </button>
+              
+              {isCategoryDropdownOpen && (
+                <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20">
+                  {categoryOptions.map(option => (
+                    <button
+                      key={option.id || 'all'}
+                      onClick={() => {
+                        setSelectedCategory(option.id);
+                        setIsCategoryDropdownOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg ${
+                        selectedCategory === option.id ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
+                      }`}
+                    >
+                      {option.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+
           {onCollapse && (
             <button
               onClick={onCollapse}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Collapse"
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
             >
               <FontAwesomeIcon icon={faChevronLeft} className="text-gray-500" />
             </button>
           )}
         </div>
 
-        {/* Filter Pills */}
-        <div className="flex items-center space-x-2 mb-4 flex-wrap gap-y-2">
-          <button
-            onClick={() => setSelectedFilter('all')}
-            className={`px-4 py-2 rounded-xl font-medium transition-colors text-xs flex items-center space-x-2 ${
-              selectedFilter === 'all' ? 'text-white shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-            style={selectedFilter === 'all' ? { background: brandTheme.gradients.primary } : {}}
-          >
-            <FontAwesomeIcon icon={faBooks} />
-            <span>All {courses.length}</span>
-          </button>
-          <button
-            onClick={() => setSelectedFilter('topRated')}
-            className={`px-4 py-2 rounded-xl font-medium transition-colors text-xs flex items-center space-x-2 ${
-              selectedFilter === 'topRated' ? 'shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-            style={selectedFilter === 'topRated' ? { backgroundColor: `${brandTheme.colors.primary}20`, color: brandTheme.colors.primary } : {}}
-          >
-            <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
-            <span>Top Rated</span>
-          </button>
-          <button
-            onClick={() => setSelectedFilter('recentlyAdded')}
-            className={`px-4 py-2 rounded-xl font-medium transition-colors text-xs flex items-center space-x-2 ${
-              selectedFilter === 'recentlyAdded' ? 'shadow-md' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-            style={selectedFilter === 'recentlyAdded' ? { backgroundColor: `${brandTheme.colors.primary}20`, color: brandTheme.colors.primary } : {}}
-          >
-            <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-            <span>Recently Added</span>
-          </button>
+        {/* Search */}
+        <div className="relative">
+          <FontAwesomeIcon 
+            icon={faSearch} 
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+          />
+          <input
+            type="text"
+            placeholder="Search courses..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 text-sm"
+          />
+        </div>
+      </div>
 
-          {/* Category Dropdown */}
-          <div className="relative ml-auto" ref={categoryDropdownRef}>
-            <button
-              onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
-              className="flex items-center space-x-2 px-4 py-2 rounded-xl font-medium transition-colors text-xs bg-gray-100 text-gray-700 hover:bg-gray-200"
-            >
-              <FontAwesomeIcon icon={faFilter} />
-              <span>{selectedCategory || 'Category'}</span>
-              <FontAwesomeIcon icon={isCategoryDropdownOpen ? faChevronUp : faChevronDown} className="text-xs" />
-            </button>
-
-            {/* Dropdown Menu */}
-            {isCategoryDropdownOpen && (
-              <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[1000]">
-                {categoryOptions.map((cat) => (
-                  <button
-                    key={cat.id || 'all'}
-                    onClick={() => {
-                      setSelectedCategory(cat.id);
-                      setIsCategoryDropdownOpen(false);
-                    }}
-                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                      selectedCategory === cat.id
-                        ? 'font-medium'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                    style={selectedCategory === cat.id ? { 
-                      backgroundColor: `${brandTheme.colors.primary}15`,
-                      color: brandTheme.colors.primary 
-                    } : {}}
-                  >
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-            )}
+      {/* Courses List */}
+      <div ref={listContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Loading State */}
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <FontAwesomeIcon 
+              icon={faSpinner} 
+              className="text-4xl mb-4 animate-spin"
+              style={{ color: brandTheme.colors.primary }}
+            />
+            <p className="text-gray-500">Loading courses...</p>
           </div>
-        </div>
-
-        </div>
-
-      {/* Course List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-        {filteredCourses.length === 0 ? (
-          <div className="text-center py-12">
-            <FontAwesomeIcon icon={faSearch} className="text-4xl text-gray-300 mb-4" />
-            <p className="text-gray-500">No courses found</p>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <p className="text-red-500 mb-2">{error}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="text-sm text-blue-600 hover:underline"
+            >
+              Try again
+            </button>
+          </div>
+        ) : courses.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <div 
+              className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5"
+              style={{ backgroundColor: `${brandTheme.colors.primary}10` }}
+            >
+              <FontAwesomeIcon 
+                icon={debouncedSearchQuery ? faSearch : faBooks} 
+                className="text-3xl"
+                style={{ color: brandTheme.colors.primary }}
+              />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-800 mb-2">
+              {debouncedSearchQuery ? 'No courses found' : 'No courses available'}
+            </h3>
+            <p className="text-sm text-gray-500 text-center max-w-xs mb-4">
+              {debouncedSearchQuery 
+                ? `We couldn't find any courses matching "${debouncedSearchQuery}". Try a different search term.`
+                : selectedCategory 
+                  ? `No courses available in ${selectedCategory} category.`
+                  : 'There are no courses available at the moment.'
+              }
+            </p>
+            {(debouncedSearchQuery || selectedCategory) && (
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedCategory(null);
+                  setSelectedFilter('all');
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+                style={{ 
+                  backgroundColor: `${brandTheme.colors.primary}15`,
+                  color: brandTheme.colors.primary
+                }}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <>
-            {filteredCourses.map(course => (
+            {courses.map(course => (
               <div
                 key={course.id}
                 onClick={() => onCourseSelect(course)}
@@ -362,7 +469,9 @@ const Courses: React.FC<CoursesProps> = ({
                       <h3 className="text-lg font-semibold text-gray-900 mb-1">
                         {course.name}
                       </h3>
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md ml-2 flex-shrink-0">ID: CRS-{course.id.padStart(2, '0')}</span>
+                      <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md ml-2 flex-shrink-0">
+                        {course.id.substring(0, 15)}...
+                      </span>
                     </div>
                     <p className="text-xs text-gray-600 flex items-center gap-3">
                       <span className="flex items-center">
@@ -414,48 +523,36 @@ const Courses: React.FC<CoursesProps> = ({
                   <div className="flex items-center space-x-2">
                     <FontAwesomeIcon icon={faClipboardCheck} style={{ fontSize: '16px' }} className="text-gray-500" />
                     <div>
-                      <p className="text-xs text-gray-500">Assessments</p>
+                      <p className="text-xs text-gray-500">Units</p>
                       <p className="text-sm font-medium text-gray-900">{course.assessments}</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Footer - Tags & Buttons */}
+                {/* Footer - Stats & Buttons */}
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                  <div className="flex items-center">
-                    {/* Stats with pipe separator */}
-                    <div className="flex items-center text-[11px] font-semibold text-gray-600 bg-gradient-to-r from-gray-50 to-gray-100 px-3 py-1.5 rounded-lg shadow-sm">
-                      {/* Enrollment Count */}
-                      {course.students && (
-                        <span className="inline-flex items-center">
-                          <FontAwesomeIcon icon={faUsers} className="mr-1.5" />
-                          {course.students} Enrolled
-                        </span>
-                      )}
-                      
-                      {/* For non-students: Completed count and Avg Marks */}
-                      {!isStudent && course.students && (
-                        <>
-                          <span className="mx-2 text-gray-300">|</span>
-                          <span className="text-green-600">
-                            {Math.round(course.students * (course.progress || 0) / 100)} Completed
-                          </span>
-                          <span className="mx-2 text-gray-300">|</span>
-                          <span className="text-purple-600">
-                            {(course as any).avgMarks || Math.round(70 + Math.random() * 20)}% Avg Marks
-                          </span>
-                        </>
-                      )}
-                      
-                      {/* For students: Progress */}
-                      {isStudent && course.progress > 0 && (
-                        <>
-                          <span className="mx-2 text-gray-300">|</span>
-                          <span className="text-green-600">
-                            {course.progress}% Completed
-                          </span>
-                        </>
-                      )}
+                  <div className="flex items-center gap-4">
+                    {/* Enrolments Count */}
+                    <div className="flex items-center text-xs">
+                      <span className="text-gray-500">Enrolments:</span>
+                      <span className="font-semibold text-gray-700 ml-1">
+                        {(() => {
+                          let collegeId: string | null = null;
+                          if (currentUser?.userType === 'system_admin') {
+                            collegeId = selectedCollege?.id || null;
+                          } else if (currentUser?.userType !== 'student') {
+                            collegeId = currentUser?.collegeId || null;
+                          }
+                          return collegeId && course.collegeEnrollmentCounts
+                            ? (course.collegeEnrollmentCounts[collegeId] || 0)
+                            : (course.enrollmentCount || 0);
+                        })()}
+                      </span>
+                    </div>
+                    {/* Completed Count */}
+                    <div className="flex items-center text-xs">
+                      <span className="text-gray-500">Completed:</span>
+                      <span className="font-semibold text-green-600 ml-1">{course.completedCount || 0}</span>
                     </div>
                   </div>
                   
@@ -501,18 +598,109 @@ const Courses: React.FC<CoursesProps> = ({
                 </div>
               </div>
             ))}
-
-            {/* End of List Indicator */}
-            <div className="flex flex-col items-center justify-center py-8 text-center">
-              <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-3 border-2 border-dashed border-gray-200">
-                <span className="text-3xl">📚</span>
-              </div>
-              <p className="font-semibold text-gray-700">That's everything!</p>
-              <p className="text-sm text-gray-400">No more courses to load</p>
-            </div>
           </>
         )}
       </div>
+
+      {/* Sticky Pagination Footer */}
+      {!isLoading && !error && totalPages > 1 && (
+        <div className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-3 sticky bottom-0 z-10">
+          <div className="flex items-center justify-between">
+            {/* Page Info */}
+            <div className="text-sm text-gray-600">
+              <span className="font-medium">{((currentPage - 1) * coursesPerPage) + 1}</span>
+              <span className="mx-1">-</span>
+              <span className="font-medium">{Math.min(currentPage * coursesPerPage, totalCourses)}</span>
+              <span className="mx-1">of</span>
+              <span className="font-medium">{totalCourses}</span>
+              <span className="ml-1 text-gray-400">courses</span>
+            </div>
+
+            {/* Pagination Controls */}
+            <div className="flex items-center gap-2">
+              {/* First Page Button */}
+              <button
+                onClick={() => handlePageChange(1)}
+                disabled={currentPage === 1}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 border ${
+                  currentPage === 1
+                    ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:shadow-sm'
+                }`}
+                title="First page"
+              >
+                <FontAwesomeIcon icon={faChevronsLeft} className="text-xs" />
+              </button>
+
+              {/* Previous Button */}
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 border ${
+                  currentPage === 1
+                    ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:shadow-sm'
+                }`}
+                title="Previous page"
+              >
+                <FontAwesomeIcon icon={faChevronLeft} className="text-xs" />
+              </button>
+
+              {/* Page Numbers */}
+              <div className="flex items-center gap-1.5 mx-1">
+                {getPageNumbers().map((page, index) => (
+                  page === '...' ? (
+                    <span key={`ellipsis-${index}`} className="px-1.5 text-gray-400 text-sm">...</span>
+                  ) : (
+                    <button
+                      key={page}
+                      onClick={() => handlePageChange(page as number)}
+                      className={`min-w-[36px] h-9 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                        currentPage === page
+                          ? 'text-white shadow-lg transform scale-105'
+                          : 'text-gray-600 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900'
+                      }`}
+                      style={currentPage === page ? { 
+                        background: brandTheme.gradients.primary 
+                      } : {}}
+                    >
+                      {page}
+                    </button>
+                  )
+                ))}
+              </div>
+
+              {/* Next Button */}
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 border ${
+                  currentPage === totalPages
+                    ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:shadow-sm'
+                }`}
+                title="Next page"
+              >
+                <FontAwesomeIcon icon={faChevronRight} className="text-xs" />
+              </button>
+
+              {/* Last Page Button */}
+              <button
+                onClick={() => handlePageChange(totalPages)}
+                disabled={currentPage === totalPages}
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200 border ${
+                  currentPage === totalPages
+                    ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:shadow-sm'
+                }`}
+                title="Last page"
+              >
+                <FontAwesomeIcon icon={faChevronsRight} className="text-xs" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

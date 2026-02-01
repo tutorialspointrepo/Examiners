@@ -477,6 +477,7 @@ export const COLLECTIONS = {
   PASSWORD_RESET_OTPS: 'passwordResetOTPs',
   PASSWORD_RESET_REQUESTS: 'passwordResetRequests',
   CODING_LANGUAGES: 'CodingLanguages',
+  COURSES: 'courses',
 } as const;
 
 // ==================== SPECIAL IDENTIFIERS ====================
