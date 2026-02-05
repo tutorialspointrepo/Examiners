@@ -19,11 +19,9 @@ import {
   faEye,
   faChevronDown,
   faChevronRight,
-  faCheck,
   faCode,
   faDiagramProject,
   faChartLine,
-  faClipboardList,
   faStairs,
   faCircleInfo,
 } from '@fortawesome/sharp-light-svg-icons';
