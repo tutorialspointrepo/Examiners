@@ -1,0 +1,15 @@
+{
+    "id": "coin_change",
+    "problem_id": "coin_change",
+    "title": "Coin Change - Dynamic Programming",
+    "algorithm": [
+        "Step 1: Initialize an array 'dp' of size (amount + 1) with all elements set to infinity, except dp[0] which should be set to 0.",
+        "Step 2: For each coin in the provided list of coins, iterate through the 'dp' array from the coin value to the target amount.",
+        "Step 3: For each index 'j' in the 'dp' array, update dp[j] to be the minimum of its current value and dp[j - coin] + 1.",
+        "Step 4: Continue this process for all coins until all have been considered.",
+        "Final step: If dp[amount] is still infinity, return -1 indicating no combination can make up that amount; otherwise, return dp[amount]."
+    ],
+    "pseudocode": "ALGORITHM CoinChange\nBEGIN\n    DECLARE dp AS ARRAY OF SIZE (amount + 1)\n    FOR i FROM 1 TO amount DO\n        dp[i] := INFINITY\n    END FOR\n    dp[0] := 0\n    FOR EACH coin IN coins DO\n        FOR j FROM coin TO amount DO\n            dp[j] := MIN(dp[j], dp[j - coin] + 1)\n        END FOR\n    END FOR\n    RETURN dp[amount] IF dp[amount] != INFINITY ELSE -1\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize dp array]\n  │\n  ▼\n[Iterate over each coin]\n  │\n  ▼\n◊ Is j >= coin? ◊ ──YES──► [Update dp[j]]\n  │                        │\n  ▼                        ▼\n[Continue for next coin]  [Return result]\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The core principle is to build up the solution for the amount using previously computed solutions for smaller amounts.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use dynamic programming to store the minimum number of coins needed for each amount from 0 to the target.\n2. **Key Components**: The 'dp' array keeps track of the minimum coins needed, and we iteratively update it based on each coin's value.\n3. **Why It Works**: By checking each coin and its possible contributions to the total, we ensure that we find the optimal number of coins required.\n4. **Edge Cases**: If the amount is 0, the answer is 0 coins; if no coins can make up the amount, the result should indicate failure (-1).\n\n**Alternative Approaches:** Greedy algorithms can work for specific denominations but do not guarantee the optimal solution in all cases."
+}

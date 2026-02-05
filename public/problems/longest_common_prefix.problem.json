@@ -1,0 +1,54 @@
+{
+    "id": "longest_common_prefix",
+    "title": "Longest Common Prefix",
+    "description": "Write a function to find the <code>longest common prefix</code> string among an array of strings. If there is no common prefix, return an empty string <code>\"\"</code>. A common prefix is defined as the longest substring that appears at the start of all given strings.",
+    "difficulty": "Easy",
+    "category": "String, Array",
+    "examples": [
+        {
+            "input": "[\"flower\", \"flow\", \"flight\"]",
+            "output": "\"fl\"",
+            "explanation": "The common prefix for the strings is <code>\"fl\"</code> as it appears at the start of all three strings."
+        },
+        {
+            "input": "[\"dog\", \"racecar\", \"car\"]",
+            "output": "\"\"",
+            "explanation": "There is no common prefix among the strings; hence the output is an empty string <code>\"\"</code>."
+        },
+        {
+            "input": "[\"interspecies\", \"interstellar\", \"interstate\"]",
+            "output": "\"inter\"",
+            "explanation": "The longest common prefix is <code>\"inter\"</code>, which is shared among all three strings."
+        }
+    ],
+    "constraints": [
+        "All input strings are lowercase letters.",
+        "The array length will be in the range [0, 200].",
+        "Each string will have a length of at most 200."
+    ],
+    "tags": [
+        "String",
+        "Array",
+        "Prefix"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Apple"
+    ],
+    "similar_problems": [
+        "longest_common_suffix",
+        "group_anagrams",
+        "valid_parentheses"
+    ],
+    "hints": [
+        "Consider iterating through each character of the strings.",
+        "Keep track of the shortest string's length to limit your checks.",
+        "If a character does not match, stop checking further.",
+        "Try using a horizontal scanning approach to compare prefixes."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

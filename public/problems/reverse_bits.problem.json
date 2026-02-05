@@ -1,0 +1,52 @@
+{
+    "id": "reverse_bits",
+    "title": "Reverse Bits",
+    "description": "Given a <code>32-bit</code> unsigned integer <code>n</code>, return the number <code>n</code> with its bits reversed. For example, if <code>n</code> is <code>00000010100101000001111010011100</code>, the output should be <code>00111001011110000010100101000000</code>.",
+    "difficulty": "Easy",
+    "category": "Bit Manipulation, Math",
+    "examples": [
+        {
+            "input": "n = 43261596",
+            "output": "964176192",
+            "explanation": "The binary representation of <code>43261596</code> is <code>00000010100101000001111010011100</code>. Reversing the bits gives <code>00111001011110000010100101000000</code>, which is <code>964176192</code> in decimal."
+        },
+        {
+            "input": "n = 4294967293",
+            "output": "3221225471",
+            "explanation": "The binary representation of <code>4294967293</code> is <code>11111111111111111111111111111101</code>. Reversing the bits results in <code>10111111111111111111111111111111</code>, equal to <code>3221225471</code>."
+        },
+        {
+            "input": "n = 1",
+            "output": "2147483648",
+            "explanation": "The binary representation of <code>1</code> is <code>00000000000000000000000000000001</code>. Reversing the bits results in <code>10000000000000000000000000000000</code>, which is <code>2147483648</code> in decimal."
+        }
+    ],
+    "constraints": [
+        "<code>n</code> is a <code>32-bit</code> unsigned integer"
+    ],
+    "tags": [
+        "Bit Manipulation",
+        "Math",
+        "Integer"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Apple"
+    ],
+    "similar_problems": [
+        "reverse_integer",
+        "count_bits",
+        "bitwise_and"
+    ],
+    "hints": [
+        "Consider using bit manipulation techniques to reverse the bits.",
+        "You can process the bits one by one and build the result gradually.",
+        "Think about how you can use bit shifts to move bits into their new positions.",
+        "Consider using a loop or recursion depending on your comfort with either approach."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

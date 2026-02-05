@@ -1,0 +1,115 @@
+{
+    "id": "depth_first_search",
+    "title": "Depth First Search",
+    "description": "Given a graph represented as an adjacency list, perform a <code>depth-first search</code> (DFS) traversal starting from a specified <code>startNode</code>. Return the nodes in the order they were visited.",
+    "difficulty": "Medium",
+    "category": "Graph, Traversal",
+    "examples": [
+        {
+            "input": {
+                "graph": {
+                    "A": [
+                        "B",
+                        "C"
+                    ],
+                    "B": [
+                        "D"
+                    ],
+                    "C": [
+                        "E"
+                    ],
+                    "D": [],
+                    "E": []
+                },
+                "startNode": "A"
+            },
+            "output": [
+                "A",
+                "B",
+                "D",
+                "C",
+                "E"
+            ],
+            "explanation": "Starting at <code>A</code>, we visit <code>B</code> and then go deeper to <code>D</code>. After visiting all of <code>B</code>'s neighbors, we backtrack to <code>A</code> and visit <code>C</code>, followed by <code>E</code>, thus giving the order: <code>A, B, D, C, E</code>."
+        },
+        {
+            "input": {
+                "graph": {
+                    "1": [
+                        "2",
+                        "3"
+                    ],
+                    "2": [
+                        "4"
+                    ],
+                    "3": [],
+                    "4": [
+                        "5"
+                    ],
+                    "5": []
+                },
+                "startNode": "1"
+            },
+            "output": [
+                "1",
+                "2",
+                "4",
+                "5",
+                "3"
+            ],
+            "explanation": "We start at <code>1</code>, visit <code>2</code>, then go deeper to <code>4</code>, where we visit <code>5</code>. After returning, we finish <code>3</code>, resulting in <code>1, 2, 4, 5, 3</code>."
+        },
+        {
+            "input": {
+                "graph": {
+                    "X": [
+                        "Y",
+                        "Z"
+                    ],
+                    "Y": [],
+                    "Z": [
+                        "W"
+                    ],
+                    "W": []
+                },
+                "startNode": "X"
+            },
+            "output": [
+                "X",
+                "Y",
+                "Z",
+                "W"
+            ],
+            "explanation": "Starting at <code>X</code>, we first visit <code>Y</code> (which has no neighbors), and then go to <code>Z</code>, visiting <code>W</code> afterwards. The final order is <code>X, Y, Z, W</code>."
+        }
+    ],
+    "constraints": [
+        "The graph is represented as an adjacency list with unique node names.",
+        "Input graph may contain up to 1000 nodes."
+    ],
+    "tags": [
+        "Graph",
+        "Traversal",
+        "DFS"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "binary_tree_inorder_traversal",
+        "graph_breadth_first_search",
+        "find_all_paths"
+    ],
+    "hints": [
+        "Consider using a stack or recursion for the DFS implementation.",
+        "Be mindful of already visited nodes to avoid cycles.",
+        "Think about how to represent your graph adequately.",
+        "Try to visualize the traversal to better understand the order of visiting nodes."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

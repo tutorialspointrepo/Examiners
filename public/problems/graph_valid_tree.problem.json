@@ -1,0 +1,53 @@
+{
+    "id": "graph_valid_tree",
+    "title": "Validate if a Graph is a Tree",
+    "description": "Given <code>n</code> nodes labeled from <code>0</code> to <code>n - 1</code> and a list of edges, you need to determine if these edges can form a valid tree. The graph is a tree if it is connected and acyclic. A valid tree must have exactly <code>n - 1</code> edges. Your task is to implement a function that checks if the given graph fulfills these conditions.",
+    "difficulty": "Medium",
+    "category": "Graph, Union Find",
+    "examples": [
+        {
+            "input": "n = 5, edges = [[0,1],[0,2],[0,3],[1,4]]",
+            "output": "true",
+            "explanation": "In this example, we have 5 nodes and 4 edges. All nodes are connected without any cycles, fulfilling the criteria for a tree."
+        },
+        {
+            "input": "n = 5, edges = [[0,1],[1,2],[2,3],[3,4],[4,0]]",
+            "output": "false",
+            "explanation": "Here, we have 5 nodes but 5 edges, which creates a cycle (0-1-2-3-4-0). Thus, this graph cannot be a valid tree."
+        },
+        {
+            "input": "n = 4, edges = [[0,1],[0,2],[1,2]]",
+            "output": "false",
+            "explanation": "This case has 4 nodes but 3 edges; however, there is a cycle between nodes 1 and 2. Therefore, it does not satisfy the conditions of a tree."
+        }
+    ],
+    "constraints": [
+        "The number of nodes <code>n</code> is in the range of <code>[1, 10000]</code>.",
+        "The number of edges is in the range of <code>[0, n - 1]</code>."
+    ],
+    "tags": [
+        "Graph",
+        "Union Find",
+        "Depth First Search"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "detect_cycle_in_graph",
+        "number_of_connected_components",
+        "clone_graph"
+    ],
+    "hints": [
+        "Consider how many edges a tree should have.",
+        "Check if all nodes are reachable from one node using DFS or BFS.",
+        "Watch out for cycles while traversing the graph.",
+        "Using Union-Find can help efficiently identify cycles."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

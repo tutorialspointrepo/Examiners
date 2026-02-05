@@ -1,0 +1,53 @@
+{
+    "id": "longest_palindrome",
+    "title": "Longest Palindromic Substring",
+    "description": "Given a string <code>s</code>, return the longest palindromic substring in <code>s</code>. A substring is a contiguous sequence of characters within the string. A palindrome is a string that reads the same forward and backward.",
+    "difficulty": "Medium",
+    "category": "String, Dynamic Programming",
+    "examples": [
+        {
+            "input": "\"babad\"",
+            "output": "\"bab\"",
+            "explanation": "The input string is \"babad\". The longest palindromic substrings are \"bab\" and \"aba\", both of which have a length of 3. The output should return one of them."
+        },
+        {
+            "input": "\"cbbd\"",
+            "output": "\"bb\"",
+            "explanation": "In the string \"cbbd\", the longest palindromic substring is \"bb\", which has a length of 2. The characters 'c' and 'd' do not form a palindrome."
+        },
+        {
+            "input": "\"a\"",
+            "output": "\"a\"",
+            "explanation": "The input string is a single character \"a\". Any single character is a palindrome, so the output is \"a\"."
+        }
+    ],
+    "constraints": [
+        "The input string <code>s</code> has a length of at most 1000.",
+        "<code>s</code> consists of only digits and English letters."
+    ],
+    "tags": [
+        "String",
+        "Dynamic Programming",
+        "Two Pointers"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "longest_common_substring",
+        "palindrome_partitioning",
+        "valid_palindrome"
+    ],
+    "hints": [
+        "Consider checking for palindromes centered around each character and between each pair of characters.",
+        "Use a helper function to determine if a substring is a palindrome.",
+        "Keep track of the starting index and max length of the longest palindromic substring found.",
+        "Think about the difference between even-length and odd-length palindromes."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

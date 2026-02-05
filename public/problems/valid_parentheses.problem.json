@@ -1,0 +1,53 @@
+{
+    "id": "valid_parentheses",
+    "title": "Valid Parentheses",
+    "description": "Given a string <code>s</code> consisting of parentheses, determine if the input string is valid. An input string is valid if these conditions are met: <br> 1. Open parentheses must be closed by the same type of parentheses. <br> 2. Open parentheses must be closed in the correct order.",
+    "difficulty": "Easy",
+    "category": "String, Stack",
+    "examples": [
+        {
+            "input": "\"()\"",
+            "output": "true",
+            "explanation": "The string consists of a single pair of parentheses, which are correctly matched."
+        },
+        {
+            "input": "\"()[]{}\"",
+            "output": "true",
+            "explanation": "All parentheses are matched and closed correctly with corresponding types."
+        },
+        {
+            "input": "\"(]\"",
+            "output": "false",
+            "explanation": "The first open parenthesis <code>(</code> is closed with a different type of parenthesis <code>]</code>, which makes it invalid."
+        }
+    ],
+    "constraints": [
+        "The input string <code>s</code> has a length between <code>0</code> and <code>10^4</code>.",
+        "<code>s</code> consists of parentheses only: <code>()[]{}</code>."
+    ],
+    "tags": [
+        "String",
+        "Stack",
+        "Validation"
+    ],
+    "companies": [
+        "Google",
+        "Facebook",
+        "Amazon",
+        "Microsoft"
+    ],
+    "similar_problems": [
+        "valid_anagram",
+        "balanced_parentheses",
+        "minimum_add_to_make_parentheses_valid"
+    ],
+    "hints": [
+        "Consider using a stack to keep track of open parentheses.",
+        "Make sure to check for the correct closing parentheses for each type.",
+        "Think about how to handle unmatched parentheses as you iterate through the string.",
+        "Remember to validate the stack at the end to ensure all opened parentheses are closed."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

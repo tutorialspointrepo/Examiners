@@ -1,0 +1,20 @@
+{
+    "id": "rotate_array",
+    "problem_id": "rotate_array",
+    "title": "Rotate Array - In-Place Algorithm",
+    "algorithm": [
+        "Step 1: Determine the length of the array and the number of positions to rotate.",
+        "Step 2: Normalize the number of rotations if it exceeds the array length (i.e., use modulus).",
+        "Step 3: Reverse the entire array to shift elements to their new positions.",
+        "Step 4: Reverse the first 'k' elements to restore their order.",
+        "Step 5: Reverse the remaining 'n-k' elements to restore their order.",
+        "Final step: The array is now rotated in place."
+    ],
+    "pseudocode": "ALGORITHM RotateArray\nBEGIN\n    // Input: Array A and integer k\n    n ← LENGTH(A)\n    k ← k MOD n\n    REVERSE(A, 0, n - 1) // Step 3\n    REVERSE(A, 0, k - 1) // Step 4\n    REVERSE(A, k, n - 1) // Step 5\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Determine array length and normalize k]\n  │\n  ▼\n[Reverse entire array]\n  │\n  ▼\n[Reverse first k elements]\n  │\n  ▼\n[Reverse last n-k elements]\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The algorithm leverages the principle of reversing segments of the array to achieve the desired rotation efficiently.\n\n**Approach Explanation:**\n1. **Main Strategy**: Instead of rotating the array element by element, reverse the entire array and then reverse the two segments to achieve the final configuration.\n2. **Key Components**: The reversal operation is the core component that allows the algorithm to rotate the array without using additional space.\n3. **Why It Works**: Reversing the entire array shifts the elements such that the last 'k' elements come to the front; further reversing the segments restores their original order.\n4. **Edge Cases**: If k is 0 or a multiple of the array length, the array remains unchanged.\n\n**Alternative Approaches:** Other methods include using additional space for a temporary array or performing a brute-force method of shifting each element individually, but these approaches are less efficient.",
+    "complexity": "Time Complexity: O(n)\n- Each of the three reverse operations takes O(n) time. Thus, the total time complexity remains O(n).\n\nSpace Complexity: O(1)\n- The algorithm operates in-place, requiring only a constant amount of extra space.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(1)      │\n│ Alternative 1   │    O(n)      │    O(n)      │\n│ Alternative 2   │    O(n^2)    │    O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- This algorithm performs well on large arrays due to its linear time complexity and constant space usage.\n- It is scalable for larger inputs compared to alternatives that rely on extra space or repeated shifts.\n- The trade-offs involve simplicity versus performance in terms of implementation, with this method being optimal for in-place rotations.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

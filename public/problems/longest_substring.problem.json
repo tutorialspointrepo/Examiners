@@ -1,0 +1,53 @@
+{
+    "id": "longest_substring",
+    "title": "Longest Substring Without Repeating Characters",
+    "description": "Given a string <code>s</code>, find the length of the longest substring without repeating characters.",
+    "difficulty": "Medium",
+    "category": "String, Sliding Window",
+    "examples": [
+        {
+            "input": "abcabcbb",
+            "output": "3",
+            "explanation": "The longest substring without repeating characters is 'abc', which has a length of 3."
+        },
+        {
+            "input": "bbbbb",
+            "output": "1",
+            "explanation": "The longest substring without repeating characters is 'b', with a length of 1."
+        },
+        {
+            "input": "pwwkew",
+            "output": "3",
+            "explanation": "The longest substring without repeating characters is 'wke', which has a length of 3. Note that the answer must be a substring, 'pw' is also a valid substring but shorter."
+        }
+    ],
+    "constraints": [
+        "0 <= s.length <= 5 * 10^4",
+        "s consists of English letters, digits, symbols and spaces."
+    ],
+    "tags": [
+        "String",
+        "Sliding Window",
+        "Hash Table"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Apple"
+    ],
+    "similar_problems": [
+        "longest_repeating_character_replacement",
+        "minimum_window_substring",
+        "valid_parentheses"
+    ],
+    "hints": [
+        "Consider using a sliding window approach to track the current substring.",
+        "Utilize a hash map to store the last index of each character.",
+        "If you encounter a repeating character, move the start of your window.",
+        "Think about how to efficiently check for duplicates as you expand your window."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

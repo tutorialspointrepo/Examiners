@@ -1,0 +1,19 @@
+{
+    "id": "find_median",
+    "problem_id": "find_median",
+    "title": "Find Median - Statistical Analysis",
+    "algorithm": [
+        "Step 1: Sort the array of numbers in non-decreasing order.",
+        "Step 2: Determine the number of elements in the sorted array (n).",
+        "Step 3: If n is odd, return the middle element as the median.",
+        "Step 4: If n is even, calculate the average of the two middle elements.",
+        "Final step: Return the calculated median value."
+    ],
+    "pseudocode": "ALGORITHM FindMedian\nBEGIN\n    // Step 1: Sort the array\n    SORT(array)\n    // Step 2: Get the number of elements\n    n := LENGTH(array)\n    // Step 3: Check if n is odd or even\n    IF n MOD 2 = 1 THEN\n        RETURN array[n / 2]\n    ELSE\n        mid1 := array[(n / 2) - 1]\n        mid2 := array[n / 2]\n        RETURN (mid1 + mid2) / 2\n    END IF\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Sort the array]\n  │\n  ▼\nGet number of elements (n)\n  │\n  ▼\n◊ Is n odd? ◊ ──YES──► [Return array[n/2]]\n  │                        │\n  ▼                        ▼\n[Calculate average of two middle elements] END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The median is a measure that separates the higher half from the lower half of a data sample.\n\n**Approach Explanation:**\n1. **Main Strategy**: Sorting the array allows for easy access to the middle elements.\n2. **Key Components**: Identifying whether the count of numbers is odd or even is crucial for median calculation.\n3. **Why It Works**: For an ordered dataset, the median is robust against outliers, making it a reliable statistic.\n4. **Edge Cases**: Handles empty arrays gracefully (return None or throw an error) and considers single-element arrays directly.\n\n**Alternative Approaches:** Using data structures like heaps for finding the median in a streaming context can be considered.",
+    "complexity": "Time Complexity: O(n log n)\n- Sorting the array dominates the time complexity.\n- The subsequent operations (finding the median) are O(1).\n\nSpace Complexity: O(1)\n- Only a constant amount of space is needed for variables, assuming sorting is done in-place.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n log n)│    O(1)      │\n│ Alternative 1   │    O(n)      │    O(n)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- For small datasets, the overhead of sorting may be negligible.\n- For larger datasets, consider using the median of medians algorithm to achieve O(n) time complexity for selection.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

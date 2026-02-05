@@ -1,0 +1,20 @@
+{
+    "id": "add_two_numbers",
+    "problem_id": "add_two_numbers",
+    "title": "Add Two Numbers - Basic Arithmetic",
+    "algorithm": [
+        "Step 1: Start by defining two variables to hold the input numbers.",
+        "Step 2: Assign values to the two variables that you want to add.",
+        "Step 3: Create a third variable to store the result of the addition.",
+        "Step 4: Perform the addition operation using the two input variables.",
+        "Step 5: Store the result of the addition in the third variable.",
+        "Final step: Return or print the result variable."
+    ],
+    "pseudocode": "ALGORITHM AddTwoNumbers\nBEGIN\n    DECLARE num1, num2, result AS INTEGER\n    num1 = INPUT('Enter first number')\n    num2 = INPUT('Enter second number')\n    result = num1 + num2\n    RETURN result\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Input num1]\n  │\n  ▼\n[Input num2]\n  │\n  ▼\n[result = num1 + num2]\n  │\n  ▼\n◊ Decision? ◊ ──YES/NO──► [Display result]\n  │                        │\n  ▼                        ▼\n[More steps]              END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The algorithm relies on basic arithmetic to compute the sum of two numbers.\n\n**Approach Explanation:**\n1. **Main Strategy**: The algorithm reads two inputs and adds them together.\n2. **Key Components**: Variables to hold user inputs and the result.\n3. **Why It Works**: Addition is a fundamental operation in mathematics.\n4. **Edge Cases**: Handles negative numbers and zero correctly, as addition is defined for all integers.\n\n**Alternative Approaches:** Using a function to encapsulate the logic for reusability in more complex programs.",
+    "complexity": "Time Complexity: O(1)\n- The addition operation takes a constant time regardless of input size.\n- Each operation (input and addition) is performed in constant time.\n\nSpace Complexity: O(1)\n- Only a fixed number of variables are used regardless of inputs.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(1)     │    O(1)      │\n│ Alternative 1   │    O(1)     │    O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The algorithm runs efficiently in real-time with minimal resource usage.\n- It scales well for large inputs since it only involves basic arithmetic operations.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

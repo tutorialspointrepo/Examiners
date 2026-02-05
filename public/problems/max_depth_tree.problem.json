@@ -1,0 +1,53 @@
+{
+    "id": "max_depth_tree",
+    "title": "Maximum Depth of Binary Tree",
+    "description": "Given a binary tree, return the maximum depth of the tree. The maximum depth is the number of nodes along the longest path from the root node down to the farthest leaf node. If the tree is empty, return <code>0</code>.",
+    "difficulty": "Easy",
+    "category": "Tree, Depth-First Search",
+    "examples": [
+        {
+            "input": "Input: root = [3,9,20,null,null,15,7]",
+            "output": "Output: 3",
+            "explanation": "The longest path is from the root (3) to the leaf nodes (15 or 7), which consists of 3 nodes: 3 -> 20 -> 15 or 3 -> 20 -> 7."
+        },
+        {
+            "input": "Input: root = [1,null,2]",
+            "output": "Output: 2",
+            "explanation": "The longest path is from the root (1) to the leaf node (2), consisting of 2 nodes: 1 -> 2."
+        },
+        {
+            "input": "Input: root = []",
+            "output": "Output: 0",
+            "explanation": "Since the tree is empty, there are no nodes, hence the maximum depth is <code>0</code>."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the tree is in the range [0, 10^4].",
+        "The value of each node is within the range [-100, 100]."
+    ],
+    "tags": [
+        "Tree",
+        "Depth-First Search",
+        "Recursion"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "minimum_depth_tree",
+        "binary_tree_level_order_traversal",
+        "validate_binary_search_tree"
+    ],
+    "hints": [
+        "Consider using a recursive approach to traverse the tree.",
+        "Keep track of the depth as you explore each node.",
+        "Base case for recursion should handle null nodes effectively.",
+        "You can also solve this iteratively using a queue."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

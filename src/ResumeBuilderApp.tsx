@@ -2524,20 +2524,6 @@ const downloadHTML = () => {
                   Print
                 </button>
               </div>
-              {/* Close Button - Goes back to startup page */}
-              <button
-                onClick={() => {
-                    if (onClose) {
-                      onClose();
-                    } else {
-                      window.history.back();
-                    }
-                }}
-                className="btn-close"
-                title="Close Resume Builder"
-              >
-                <X size={16} />
-              </button>
             </div>
           </div>
           {/* Template Selection - Show/Hide based on state */}

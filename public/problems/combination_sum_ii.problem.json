@@ -1,0 +1,54 @@
+{
+    "id": "combination_sum_ii",
+    "title": "Combination Sum II",
+    "description": "Given a collection of candidate numbers (<code>candidates</code>) and a target number (<code>target</code>), find all unique combinations in <code>candidates</code> where the candidate numbers sum to <code>target</code>. Each number in <code>candidates</code> may only be used once in the combination. The solution set must not contain duplicate combinations.",
+    "difficulty": "Medium",
+    "category": "Backtracking, Array",
+    "examples": [
+        {
+            "input": "candidates = [10,1,2,7,6,1,5], target = 8",
+            "output": "[[1,1,6],[1,2,5],[1,7],[2,6]]",
+            "explanation": "The unique combinations that sum up to 8 are: [1,1,6], [1,2,5], [1,7], and [2,6]. Note that [1,1,6] and [1,2,5] cannot be formed with repeated elements."
+        },
+        {
+            "input": "candidates = [2,5,2,1,2], target = 5",
+            "output": "[[1,2,2],[5]]",
+            "explanation": "The valid combinations summing to 5 are [1,2,2] and [5]. The combination [2,2,1] is avoided because it is a duplicate of [1,2,2]."
+        },
+        {
+            "input": "candidates = [1], target = 1",
+            "output": "[[1]]",
+            "explanation": "Only one candidate matches the target exactly, which is [1]. Thus, this is the only unique combination."
+        }
+    ],
+    "constraints": [
+        "All integers in <code>candidates</code> are unique.",
+        "The size of <code>candidates</code> will be at most 100.",
+        "The value of <code>target</code> is a positive integer."
+    ],
+    "tags": [
+        "Backtracking",
+        "Array",
+        "Combination"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "combination_sum_i",
+        "subsets",
+        "permutations"
+    ],
+    "hints": [
+        "Consider using backtracking to explore all potential combinations.",
+        "Sort the <code>candidates</code> array to facilitate skipping duplicates.",
+        "Use a set or a boolean array to track which elements have been used in the current combination.",
+        "Think about the base case for your recursive function to stop when you've hit the target."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

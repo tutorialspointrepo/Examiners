@@ -1,0 +1,22 @@
+{
+    "id": "meeting_rooms",
+    "problem_id": "meeting_rooms",
+    "title": "Meeting Rooms - Interval Scheduling",
+    "algorithm": [
+        "Step 1: Gather all meeting intervals in the form of pairs (start, end).",
+        "Step 2: Sort the list of meeting intervals by their start times.",
+        "Step 3: Initialize a variable to track the end time of the last added meeting room.",
+        "Step 4: Iterate through the sorted meeting intervals:",
+        "    If the start time of the current meeting is greater than or equal to the end time of the last meeting room,",
+        "    then assign the current meeting to this room and update the end time.",
+        "Step 5: If not, increment the count of meeting rooms needed.",
+        "Final step: Return the count of meeting rooms needed."
+    ],
+    "pseudocode": "ALGORITHM MeetingRooms\nBEGIN\n    // Step 1: Input list of intervals\n    intervals = [list of (start, end) pairs]\n    // Step 2: Sort intervals by start time\n    SORT intervals BY start\n    last_end_time = 0\n    room_count = 0\n    // Step 3: Iterate through intervals\n    FOR interval IN intervals DO\n        IF interval.start >= last_end_time THEN\n            last_end_time = interval.end\n        ELSE\n            room_count = room_count + 1\n        ENDIF\n    ENDFOR\n    RETURN room_count\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Gather intervals]\n  │\n  ▼\n[Sort intervals by start time]\n  │\n  ▼\n◊ Are there more intervals? ◊ ──YES──► [Process next interval]\n  │                        │\n  ▼                        ▼\n[Update room count]      END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The key insight is that overlapping meetings require separate rooms, while non-overlapping meetings can share the same room.\n\n**Approach Explanation:**\n1. **Main Strategy**: The strategy involves sorting the meetings and checking for overlaps.\n2. **Key Components**: Sorting allows us to efficiently determine which meetings can occur in the same room without conflict.\n3. **Why It Works**: By maintaining the end time of the last assigned meeting room, we can easily assess whether the next meeting can fit in an existing room or requires a new one.\n4. **Edge Cases**: This algorithm effectively handles edge cases such as meetings that start and end at the same time and back-to-back meetings.\n\n**Alternative Approaches:** One alternative method could involve using a min-heap to keep track of end times dynamically, but it may increase complexity.",
+    "complexity": "Time Complexity: O(n log n)\n- The dominating factor is the sorting step, which takes O(n log n).\n- The iteration through the intervals is O(n).\n\nSpace Complexity: O(1)\n- We are only using a constant amount of extra space for variables like room_count and last_end_time.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n log n) │    O(1)      │\n│ Min-Heap Method │    O(n log n) │    O(n)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- This algorithm scales well with larger inputs due to its O(n log n) time complexity.\n- Simple to implement and understand, making it suitable for real-time scheduling applications.\n- Trade-offs include simplicity versus the more complex heap-based solution, which may provide better performance in specific scenarios.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

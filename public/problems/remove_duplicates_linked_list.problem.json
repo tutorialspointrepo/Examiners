@@ -1,0 +1,53 @@
+{
+    "id": "remove_duplicates_linked_list",
+    "title": "Remove Duplicates from a Linked List",
+    "description": "Given the head of a sorted linked list, delete all duplicates such that each element appears only once. Return the linked list sorted as well.<br>For example, if the linked list is <code>1 -> 1 -> 2</code>, it should become <code>1 -> 2</code>.",
+    "difficulty": "Easy",
+    "category": "Linked List, Data Structure",
+    "examples": [
+        {
+            "input": "[1, 1, 2]",
+            "output": "[1, 2]",
+            "explanation": "The input linked list has two '1's, which are duplicates. After removing duplicates, the linked list becomes <code>1 -> 2</code>."
+        },
+        {
+            "input": "[1, 1, 2, 3, 3]",
+            "output": "[1, 2, 3]",
+            "explanation": "In this case, the input contains duplicates '1' and '3'. The output linked list after removing duplicates is <code>1 -> 2 -> 3</code>."
+        },
+        {
+            "input": "[1, 2, 3, 4, 5]",
+            "output": "[1, 2, 3, 4, 5]",
+            "explanation": "This linked list has no duplicates. Thus, it remains unchanged as <code>1 -> 2 -> 3 -> 4 -> 5</code>."
+        }
+    ],
+    "constraints": [
+        "The linked list is sorted in ascending order.",
+        "The number of nodes in the list is in the range [0, 100]."
+    ],
+    "tags": [
+        "Linked List",
+        "Two Pointers",
+        "Data Structure"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "remove_duplicates_array",
+        "merge_two_sorted_lists",
+        "reverse_linked_list"
+    ],
+    "hints": [
+        "Consider using a pointer to keep track of the current node while iterating through the list.",
+        "Use a while loop to traverse the list and check the next node for duplicates.",
+        "Remember to update the next pointers properly to bypass the duplicate nodes.",
+        "Think about edge cases such as an empty list or a list with only one node."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

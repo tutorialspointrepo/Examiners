@@ -1,0 +1,20 @@
+{
+    "id": "perfect_squares",
+    "problem_id": "perfect_squares",
+    "title": "Perfect Squares - Dynamic Programming",
+    "algorithm": [
+        "Step 1: Initialize an array 'dp' of size n+1 where dp[i] represents the minimum number of perfect squares that sum up to i.",
+        "Step 2: Set dp[0] = 0, as zero can be formed using zero perfect squares.",
+        "Step 3: Loop through all integers from 1 to n (inclusive). For each integer i, initialize dp[i] to a large value.",
+        "Step 4: Loop through all perfect square numbers j such that j*j <= i. Update dp[i] as dp[i] = min(dp[i], dp[i - j*j] + 1).",
+        "Step 5: Continue this process until all values from 1 to n are computed.",
+        "Final step: Return dp[n] which contains the minimum number of perfect squares that sum up to n."
+    ],
+    "pseudocode": "ALGORITHM PerfectSquares\nBEGIN\n    DECLARE dp[0..n] AS INTEGER\n    dp[0] := 0\n    FOR i FROM 1 TO n DO\n        dp[i] := ∞ // Set to a large value\n        FOR j FROM 1 TO sqrt(i) DO\n            j_squared := j * j\n            IF j_squared <= i THEN\n                dp[i] := MIN(dp[i], dp[i - j_squared] + 1)\n            END IF\n        END FOR\n    END FOR\n    RETURN dp[n]\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize dp array]\n  │\n  ▼\nFOR i = 1 TO n ──────────────────────► [Update dp[i]]\n  │                                    \n  ▼                                    \n[Calculate j squared]                 \n  │                                    \n  ▼                                    \n◊ Is j*j <= i? ◊ ──YES/NO──► [Update dp[i]]\n  │                        │\n  ▼                        ▼\n[More steps]              END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The core principle is to break down the problem into smaller subproblems using dynamic programming.\n\n**Approach Explanation:**\n1. **Main Strategy**: We construct a solution iteratively by building upon previously computed results.\n2. **Key Components**: The dp array stores the minimum counts for each integer from 0 to n, allowing us to leverage previous calculations.\n3. **Why It Works**: The logic is based on the mathematical property that any integer can be expressed as the sum of perfect squares, and we can minimize the count by exploring all possible squares.\n4. **Edge Cases**: The algorithm effectively handles cases where n is less than 1, returning 0 since no squares are needed.\n\n**Alternative Approaches:** Other methods such as backtracking or greedy algorithms exist, but they may not guarantee optimal solutions or require more computational time.",
+    "complexity": "Time Complexity: O(n * sqrt(n))\n- Each of the n integers requires looping through up to sqrt(n) perfect squares.\n- Overall performance is efficient for moderately sized n.\n\nSpace Complexity: O(n)\n- The dp array takes O(n) space for storing results.\n- This is a linear space utilization pattern, which is optimal for this problem.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n * sqrt(n))    │    O(n)     │\n│ Alternative 1   │    O(2^n)    │    O(n)     │\n│ Alternative 2   │    O(n^2)    │    O(n)     │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The dynamic programming approach significantly reduces computation time compared to naive recursive methods.\n- It scales linearly with respect to n, making it suitable for larger inputs.\n- Trade-offs include additional memory usage for the dp array, but this is acceptable given the performance benefits.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

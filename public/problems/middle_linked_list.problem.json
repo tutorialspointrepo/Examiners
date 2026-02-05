@@ -1,0 +1,53 @@
+{
+    "id": "middle_linked_list",
+    "title": "Find the Middle Node of a Linked List",
+    "description": "Given a linked list, return the middle node. If there are two middle nodes, return the second middle node. You can define a linked list node as follows: <code>class ListNode { int val; ListNode next; }</code>",
+    "difficulty": "Easy",
+    "category": "Linked List, Two Pointers",
+    "examples": [
+        {
+            "input": "[1, 2, 3, 4, 5]",
+            "output": "[3, 4, 5]",
+            "explanation": "The linked list has an odd number of nodes (5). The middle node is the third node with value 3, and all nodes after it (3, 4, 5) are returned."
+        },
+        {
+            "input": "[1, 2, 3, 4, 5, 6]",
+            "output": "[4, 5, 6]",
+            "explanation": "The linked list has an even number of nodes (6). The two middle nodes are 3 and 4. According to the problem statement, we return the second middle node, which is 4, along with all subsequent nodes (4, 5, 6)."
+        },
+        {
+            "input": "[1]",
+            "output": "[1]",
+            "explanation": "The linked list has only one node (1). This node is the middle node by default, and thus is returned."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the linked list is in the range [1, 100].",
+        "Each node's value is within the range [-100, 100]."
+    ],
+    "tags": [
+        "Linked List",
+        "Two Pointers",
+        "Fast and Slow Pointers"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "find_kth_to_last_node",
+        "linked_list_cycle",
+        "reverse_linked_list"
+    ],
+    "hints": [
+        "Consider using two pointers: one fast and one slow.",
+        "The slow pointer moves one step at a time, while the fast pointer moves two steps.",
+        "When the fast pointer reaches the end of the list, the slow pointer will be at the middle.",
+        "Think about how to handle lists with an even number of nodes."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

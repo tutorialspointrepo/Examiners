@@ -1,0 +1,53 @@
+{
+    "id": "level_order_traversal",
+    "title": "Level Order Traversal of a Binary Tree",
+    "description": "Given a binary tree, return the <code>level order</code> traversal of its nodes' values. (i.e., from left to right, level by level).",
+    "difficulty": "Medium",
+    "category": "Tree, BFS",
+    "examples": [
+        {
+            "input": "[3,9,20,null,null,15,7]",
+            "output": "[[3],[9,20],[15,7]]",
+            "explanation": "The binary tree is: \n    3\n   / \\\n  9  20\n     / \\\n    15  7\n\nThe first level contains only node 3, the second level contains nodes 9 and 20, and the third level contains nodes 15 and 7."
+        },
+        {
+            "input": "[1]",
+            "output": "[[1]]",
+            "explanation": "The binary tree consists of a single node with value 1. Thus, the level order traversal contains just this node."
+        },
+        {
+            "input": "[1,2,3,4,5,null,null,6,7]",
+            "output": "[[1],[2,3],[4,5],[6]]",
+            "explanation": "The binary tree is: \n       1\n      / \\\n     2   3\n    / \\   \n   4   5   \n  / \\\n  6\n\nThe first level contains node 1, the second level contains nodes 2 and 3, the third level contains nodes 4 and 5, and the last level contains node 6."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the tree is in the range [0, 2000].",
+        "Each node's value is an integer in the range [-1000, 1000]."
+    ],
+    "tags": [
+        "Tree",
+        "Breadth-First Search",
+        "Queue"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "binary_tree_level_order_traversal",
+        "binary_tree_right_side_view",
+        "zigzag_level_order"
+    ],
+    "hints": [
+        "Consider using a queue to help with the breadth-first search approach.",
+        "You will need to keep track of the number of nodes at each level.",
+        "Remember to process nodes from left to right at each level.",
+        "Think about how you can structure your output to match the required format."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

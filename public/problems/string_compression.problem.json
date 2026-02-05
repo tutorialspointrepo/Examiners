@@ -1,0 +1,53 @@
+{
+    "id": "string_compression",
+    "title": "String Compression",
+    "description": "Given a string <code>chars</code> consisting of lowercase letters and digits, compress it using the following algorithm: Begin with an empty string <code>compressed</code>. For each group of consecutive identical characters in <code>chars</code>, append the character followed by the count of its occurrences (if greater than 1) to <code>compressed</code>. The final output should be the length of <code>compressed</code> and the new string formed.",
+    "difficulty": "Medium",
+    "category": "String, Array",
+    "examples": [
+        {
+            "input": "[\"a\",\"a\",\"b\",\"b\",\"c\",\"c\",\"c\"]",
+            "output": "[6, \"a2b2c3\"]",
+            "explanation": "The input contains two 'a's, two 'b's, and three 'c's. Therefore, the compressed string is 'a2b2c3', which has a length of 6."
+        },
+        {
+            "input": "[\"a\"]",
+            "output": "[1, \"a\"]",
+            "explanation": "There is only one 'a' in the input. Thus, the compressed string is 'a', and the length is 1."
+        },
+        {
+            "input": "[\"a\",\"b\",\"b\",\"b\",\"a\"]",
+            "output": "[5, \"ab3a\"]",
+            "explanation": "The input consists of one 'a', three 'b's, and another 'a'. The compressed string becomes 'ab3a', resulting in a length of 5."
+        }
+    ],
+    "constraints": [
+        "The length of <code>chars</code> is between 1 and 150.",
+        "The <code>chars</code> array consists only of lowercase letters and digits."
+    ],
+    "tags": [
+        "String",
+        "Compression",
+        "Array"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "run_length_encoding",
+        "string_decompression",
+        "group_anagrams"
+    ],
+    "hints": [
+        "Consider how to track counts of consecutive characters.",
+        "Think about how to build the new string efficiently.",
+        "Don't forget to handle the last group of characters after the loop.",
+        "You may need to use a list to collect parts of the compressed string before joining."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

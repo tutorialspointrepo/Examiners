@@ -1,0 +1,21 @@
+{
+    "id": "breadth_first_search",
+    "problem_id": "breadth_first_search",
+    "title": "Breadth First Search - Graph Traversal Technique",
+    "algorithm": [
+        "Step 1: Initialize a queue and enqueue the starting node.",
+        "Step 2: Mark the starting node as visited.",
+        "Step 3: While the queue is not empty, repeat the following steps:",
+        "Step 4: Dequeue a node from the front of the queue.",
+        "Step 5: Process the dequeued node (e.g., print or store it).",
+        "Step 6: For each unvisited adjacent node of the dequeued node, mark it as visited and enqueue it.",
+        "Final step: Continue until all reachable nodes are processed."
+    ],
+    "pseudocode": "ALGORITHM BreadthFirstSearch\nBEGIN\n    DECLARE queue as a queue data structure\n    DECLARE visited as a set\n    ENQUEUE startingNode onto queue\n    ADD startingNode to visited\n\n    WHILE queue is not empty DO\n        currentNode = DEQUEUE from queue\n        PROCESS currentNode\n\n        FOR each neighbor in currentNode.adjacentNodes DO\n            IF neighbor is not in visited THEN\n                ADD neighbor to visited\n                ENQUEUE neighbor onto queue\n            ENDIF\n        ENDFOR\n    ENDWHILE\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize queue and enqueue start node]\n  │\n  ▼\n◊ Is queue empty? ◊ ──NO──► [Dequeue node]\n  │                        │\n  ▼                        ▼\n[Process node]           ◊ Are there neighbors? ◊ ──NO──► END\n  │                        │\n  ▼                        ▼\n[Mark as visited]     [Enqueue unvisited neighbors]\n  │\n  ▼\n  LOOP BACK TO 'Is queue empty?'\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The breadth-first search (BFS) algorithm systematically explores the vertices of a graph layer by layer, ensuring that all nodes at the present depth level are explored before moving on to nodes at the next depth level.\n\n**Approach Explanation:**\n1. **Main Strategy**: BFS uses a queue to keep track of nodes that need to be explored, ensuring that nodes are processed in the order they were discovered.\n2. **Key Components**: The key components include the queue for tracking nodes and a set for marking visited nodes to prevent reprocessing.\n3. **Why It Works**: BFS guarantees that the shortest path in an unweighted graph is found, as it explores all nodes at the present depth before moving deeper.\n4. **Edge Cases**: The algorithm handles disconnected graphs by simply leaving unvisited nodes if they are not reachable from the starting node.\n\n**Alternative Approaches:** Depth-first search (DFS) can also be used for graph traversal, but it typically uses a stack and goes deeper into branches before exploring siblings.",
+    "complexity": "Time Complexity: O(V + E)\n- Each vertex and edge is processed at most once.\n- V is the number of vertices and E is the number of edges in the graph.\n\nSpace Complexity: O(V)\n- Space required for the queue and the visited set, which can grow to the size of the graph in the worst case.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(V + E)  │    O(V)      │\n│ Depth-First Search│    O(V + E)  │    O(V)      │\n│ Alternative 2   │    O(...)    │    O(...)     │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- BFS is particularly useful for finding the shortest path in unweighted graphs, making it ideal for applications such as network routing.\n- Scalability considerations involve the ability to handle large graphs efficiently as long as memory allows for the storage of visited nodes.\n- Trade-offs include higher space complexity compared to DFS, but advantages in shortest path calculations.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

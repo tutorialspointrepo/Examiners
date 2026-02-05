@@ -1,0 +1,52 @@
+{
+    "id": "number_of_1_bits",
+    "title": "Number of 1 Bits",
+    "description": "Write a function that takes an unsigned integer <code>n</code> and returns the number of '1' bits it has (also known as the Hamming weight). For example, given <code>n</code> = 11 (which is <code>b1011</code> in binary), the function should return 3 because it has three '1' bits.",
+    "difficulty": "Easy",
+    "category": "Bit Manipulation, Counting",
+    "examples": [
+        {
+            "input": "n = 11",
+            "output": "3",
+            "explanation": "The binary representation of 11 is <code>1011</code>, which contains three '1' bits."
+        },
+        {
+            "input": "n = 128",
+            "output": "1",
+            "explanation": "The binary representation of 128 is <code>10000000</code>, which contains one '1' bit."
+        },
+        {
+            "input": "n = 7",
+            "output": "3",
+            "explanation": "The binary representation of 7 is <code>0111</code>, which contains three '1' bits."
+        }
+    ],
+    "constraints": [
+        "<code>n</code> is a 32-bit unsigned integer."
+    ],
+    "tags": [
+        "Bit Manipulation",
+        "Counting",
+        "Math"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "counting_bits",
+        "hamming_weight",
+        "number_of_1_bits_in_range"
+    ],
+    "hints": [
+        "Consider using bitwise operations to check each bit of <code>n</code>.",
+        "You can right shift the bits of <code>n</code> to examine them one by one.",
+        "Think about how you can use a loop or recursion to count the bits.",
+        "There might be an efficient algorithm that reduces the number of iterations needed."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

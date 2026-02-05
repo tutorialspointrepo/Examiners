@@ -19,6 +19,7 @@ export default function ChangePassword({ user, onPasswordChanged, onCancel }: Ch
   const [showPasswords, setShowPasswords] = useState(false);
   const [errors, setErrors] = useState<{ current?: string; new?: string; confirm?: string; general?: string }>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const validateForm = () => {
     const newErrors: { current?: string; new?: string; confirm?: string } = {};
@@ -58,13 +59,18 @@ export default function ChangePassword({ user, onPasswordChanged, onCancel }: Ch
 
     setIsLoading(true);
     setErrors({});
+    setSuccessMessage(null);
 
     try {
       const result = await firebaseService.changePassword(currentPassword, newPassword);
 
       if (result.success) {
-        // Password changed successfully
-        onPasswordChanged(user);
+        // Show success message in modal
+        setSuccessMessage('Password changed successfully!');
+        // Auto close after 2 seconds
+        setTimeout(() => {
+          onPasswordChanged(user);
+        }, 2000);
       } else {
         setErrors({ general: result.error || 'Failed to change password' });
       }
@@ -132,6 +138,17 @@ export default function ChangePassword({ user, onPasswordChanged, onCancel }: Ch
               <FontAwesomeIcon icon={faCircleExclamation} className="text-red-600 flex-shrink-0 mt-0.5 text-sm" />
               <div>
                 <p className="text-xs font-medium text-red-800">{errors.general}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Success Message */}
+          {successMessage && (
+            <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center space-x-2">
+              <FontAwesomeIcon icon={faCheckCircle} className="text-green-600 flex-shrink-0 text-lg" />
+              <div>
+                <p className="text-sm font-medium text-green-800">{successMessage}</p>
+                <p className="text-xs text-green-600 mt-0.5">Closing in a moment...</p>
               </div>
             </div>
           )}

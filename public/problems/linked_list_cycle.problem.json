@@ -1,0 +1,53 @@
+{
+    "id": "linked_list_cycle",
+    "title": "Linked List Cycle",
+    "description": "Given a <code>head</code> of a linked list, determine if the linked list has a cycle in it. A linked list is said to have a cycle if there exists a node in the list that can be reached again by continuously following the <code>next</code> pointer. Do not use extra space for storing visited nodes.",
+    "difficulty": "Medium",
+    "category": "Linked List",
+    "examples": [
+        {
+            "input": "head = [3,2,0,-4], pos = 1",
+            "output": "true",
+            "explanation": "The linked list has a cycle because the tail connects back to the second node (value 2)."
+        },
+        {
+            "input": "head = [1,2], pos = 0",
+            "output": "true",
+            "explanation": "The linked list has a cycle because the tail connects back to the first node (value 1)."
+        },
+        {
+            "input": "head = [1], pos = -1",
+            "output": "false",
+            "explanation": "The linked list does not have a cycle because there is only one node and no connections back to it."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the linked list is in the range [0, 10^4].",
+        "The values of the nodes are within the range [-10^5, 10^5]."
+    ],
+    "tags": [
+        "Linked List",
+        "Two Pointers",
+        "Cycle Detection"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "detect_cycle_in_linked_list",
+        "linked_list_cycle_ii",
+        "merge_two_sorted_lists"
+    ],
+    "hints": [
+        "Consider using the two-pointer technique to solve the problem.",
+        "One pointer should move faster than the other to detect a cycle.",
+        "Think about how you can identify when the two pointers meet.",
+        "What happens if you encounter a null reference while traversing?"
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs/Nuevo - VTT base preview thumbnails</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>VTT Preview Thumbnails</h1>
+	<link href="../skins/treso/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+	<script src="../plugins/videojs.thumbnails.js?q=4"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid" controls preload playsinline webkit-playsinline poster="../examples/assets/images/coffee.jpg" crossorigin="anonymous">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+
+
+
+	<div class="info"><br />
+	 Mouse over progressbar to see the time thumbnails once video started to play.
+	</div>
+
+	<script>
+	var player = videojs('player_1', {license: licenseKey});
+	player.nuevo();
+	player.thumbnails({src:"../examples/assets/vtt/thumbs.vtt"});
+	</script>
+
+<h2>Tutorial</h2>
+<div class="info">To use VTT based thumnails plugin you must load it first, right after video.js script, for example:</div>
+
+
+<pre>
+&lt;link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" /&gt;
+&lt;script src="../video.min.js"&gt;&lt;/script&gt;
+&lt;script src="../nuevo.js"&gt;&lt;/script&gt;
+&lt;script src="../plugins/videojs.thumbnails.min.js"&gt;&lt;/script&gt;
+</pre>
+
+
+<div class="info">Initialize videojs player with nuevo and thumbnails plugin. Provide VTT Url for thumbnails src option.</div>
+<pre>
+&lt;script&gt;
+var player = videojs("player_1", {license: "key"});
+player.nuevo({ option1: "value1", option2: "value2" })
+player.thumbnails({src:"../examples/assets/vtt/demo.vtt"});
+&lt;/script&gt;
+</pre>
+Another option to supply VTT thumbnails protocol is to define metadata kind &lttrack&gt; element for video tag.
+<pre>
+&lt;video id="myplayer" class="video-js vjs-fluid" controls playsinline&gt;
+ &lt;source src: //path-to-playlist.m3u8" type="application/x-mpegURL"&gt;
+ &lt;track kind="metadata" src="//path-to-vtt-thummbnails.vtt"&gt;
+&lt;/video&gt;
+</pre>
+
+
+Thumbs over progress bar can be responsive. This means that it can be of different size, depending on the player's width.<br />
+On Nuevodevel <a href="https://www.nuevodevel.com/nuevo/showcase/thumbnailsvtt">demo website page</a> we describe how to apply thumb's responsivity and what are possible settings for such option.
+<br /><br />
+
+To learn what are thumbnails images or thumbnails single sprite image, and to learn what VTT file structure should be, please visit <a href="https://www.nuevodevel.com/nuevo/showcase/thumbnailsvtt">VTT Thumbnails</a> dedicated resource. If you login on Nuevodevel website you will also gain access to download bash sprite/vtt generator free script.
+
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

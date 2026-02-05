@@ -1,0 +1,20 @@
+{
+    "id": "max_depth_tree",
+    "problem_id": "max_depth_tree",
+    "title": "Max Depth of Binary Tree - Depth-First Search",
+    "algorithm": [
+        "Step 1: If the tree is empty (root is null), return 0 as the depth.",
+        "Step 2: Recursively calculate the depth of the left subtree.",
+        "Step 3: Recursively calculate the depth of the right subtree.",
+        "Step 4: Take the maximum of the depths obtained from the left and right subtrees.",
+        "Step 5: Add 1 to account for the current node's depth.",
+        "Final step: Return the computed maximum depth."
+    ],
+    "pseudocode": "ALGORITHM MaxDepthTree\nBEGIN\n    IF root == NULL THEN\n        RETURN 0\n    ENDIF\n    left_depth := MaxDepthTree(root.left)\n    right_depth := MaxDepthTree(root.right)\n    max_depth := MAX(left_depth, right_depth) + 1\n    RETURN max_depth\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\nIs root NULL?\n  │\n  ├──YES──► RETURN 0\n  │\n  ▼\n  └──NO───► left_depth := MaxDepthTree(root.left)\n  │\n  ▼\n  right_depth := MaxDepthTree(root.right)\n  │\n  ▼\nmax_depth := MAX(left_depth, right_depth) + 1\n  │\n  ▼\nRETURN max_depth\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The maximum depth of a binary tree can be found by exploring both left and right children recursively and determining the longest path.\n\n**Approach Explanation:**\n1. **Main Strategy**: Utilize depth-first search (DFS) to traverse the tree, calculating the depth of each subtree.\n2. **Key Components**: The recursion base case handles empty trees, while the maximum depth is determined by comparing left and right subtree depths.\n3. **Why It Works**: Each recursive call dives deeper into the tree, ensuring that all paths are explored until leaf nodes are reached.\n4. **Edge Cases**: The algorithm properly handles scenarios such as an empty tree or a tree with only one node.\n\n**Alternative Approaches:** Breadth-first search (BFS) can also be used to calculate the maximum depth iteratively.",
+    "complexity": "Time Complexity: O(n)\n- Each node in the binary tree is visited exactly once during the traversal.\n- This leads to a linear time complexity proportional to the number of nodes.\n\nSpace Complexity: O(h)\n- Where h is the height of the tree, due to the recursion stack during DFS.\n- In the worst case (a completely unbalanced tree), this can become O(n).\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(h)       │\n│ BFS Alternative  │    O(n)      │    O(w)       │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The algorithm efficiently traverses the entire tree, making it suitable for large inputs.\n- Recursive depth-first search may face stack overflow issues with highly unbalanced trees. Iterative solutions using BFS can mitigate this risk.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

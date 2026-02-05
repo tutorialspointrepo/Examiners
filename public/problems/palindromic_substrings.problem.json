@@ -1,0 +1,53 @@
+{
+    "id": "palindromic_substrings",
+    "title": "Count Palindromic Substrings",
+    "description": "Given a string <code>s</code>, return the number of distinct palindromic substrings in it. A substring is considered palindromic if it reads the same backward as forward.",
+    "difficulty": "Medium",
+    "category": "String, Dynamic Programming",
+    "examples": [
+        {
+            "input": "abc",
+            "output": "3",
+            "explanation": "The palindromic substrings are: 'a', 'b', 'c'. There are 3 palindromic substrings."
+        },
+        {
+            "input": "aaa",
+            "output": "6",
+            "explanation": "The palindromic substrings are: 'a', 'a', 'a', 'aa', 'aa', 'aaa'. Counting distinct ones gives us 6."
+        },
+        {
+            "input": "racecar",
+            "output": "10",
+            "explanation": "The palindromic substrings are: 'r', 'a', 'c', 'e', 'cec', 'aceca', 'racecar', 'a', 'a', 'a'. Counting distinct ones gives us 10."
+        }
+    ],
+    "constraints": [
+        "1 <= s.length <= 1000",
+        "s consists of only lowercase English letters."
+    ],
+    "tags": [
+        "String",
+        "Dynamic Programming",
+        "Palindrome"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Microsoft"
+    ],
+    "similar_problems": [
+        "count_substrings_with_all_unique_characters",
+        "longest_palindromic_substring",
+        "palindrome_partitioning"
+    ],
+    "hints": [
+        "Consider expanding around each character and each pair of characters to find palindromes.",
+        "Utilize a dynamic programming approach to store results of previously computed substrings.",
+        "Account for single-character and multi-character palindromes separately.",
+        "Think about how to efficiently check for palindromic properties while iterating through the string."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

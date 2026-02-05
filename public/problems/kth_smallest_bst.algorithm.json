@@ -1,0 +1,20 @@
+{
+    "id": "kth_smallest_bst",
+    "problem_id": "kth_smallest_bst",
+    "title": "Kth Smallest Element in a BST - Binary Search Tree Traversal",
+    "algorithm": [
+        "Step 1: Initialize a variable 'count' to keep track of the number of nodes processed.",
+        "Step 2: Perform an in-order traversal of the BST starting from the root node.",
+        "Step 3: For each node visited, increment 'count' by 1.",
+        "Step 4: If 'count' equals 'k', store the value of the current node as the result.",
+        "Step 5: If the result is found, terminate the traversal early.",
+        "Final step: Return the stored result as the kth smallest element."
+    ],
+    "pseudocode": "ALGORITHM KthSmallestBST(root, k)\nBEGIN\n    count ← 0\n    result ← NULL\n    FUNCTION InOrderTraversal(node):\n        IF node IS NULL THEN\n            RETURN\n        InOrderTraversal(node.left)\n        count ← count + 1\n        IF count = k THEN\n            result ← node.value\n            RETURN\n        InOrderTraversal(node.right)\n    END FUNCTION\n    InOrderTraversal(root)\n    RETURN result\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n [Initialize count and result]\n  │\n  ▼\n[Traverse left subtree]\n  │\n  ▼\n◊ Count == k? ◊ ──YES──► [Store result]\n  │                        │\n  ▼                        ▼\n[Increment count]      [Terminate]\n  │                        │\n  ▼                        ▼\n[Traverse right subtree] END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The in-order traversal of a BST yields elements in sorted order.\n\n**Approach Explanation:**\n1. **Main Strategy**: Utilize in-order traversal to access nodes in sorted order until the kth node is reached.\n2. **Key Components**: The use of a counter to track the number of nodes visited during traversal.\n3. **Why It Works**: Each node is visited in ascending order; thus, the kth visit corresponds to the kth smallest element.\n4. **Edge Cases**: Handle cases where k is larger than the total number of nodes or when the tree is empty by returning an appropriate error message.\n\n**Alternative Approaches:** Other methods include using a min-heap or maintaining a count during a standard traversal, but these are less efficient in terms of space compared to the in-order method used here.",
+    "complexity": "Time Complexity: O(k)\n- The algorithm performs a traversal that can stop early upon finding the kth smallest element, making it efficient for smaller values of k.\n- In the worst case, the complexity can be O(n) when k is equal to the number of nodes.\n\nSpace Complexity: O(h)\n- Space is used for the call stack during recursion, where h is the height of the tree.\n- In a balanced tree, this is O(log n), while in an unbalanced tree, it can be O(n).\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(k)      │    O(h)      │\n│ Alternative 1   │    O(n)      │    O(k)      │\n│ Alternative 2   │    O(n log n)│    O(n)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The in-order approach is optimal for finding the kth smallest element without needing to examine all nodes.\n- Suitable for large trees when k is small, as it minimizes unnecessary computations.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,53 @@
+{
+    "id": "search_rotated",
+    "title": "Search in Rotated Sorted Array",
+    "description": "Given an array <code>nums</code> that is sorted in ascending order and then rotated at some pivot, write a function to search for a target value <code>target</code>. If found in the array, return its index; otherwise, return <code>-1</code>. You must write an algorithm with <code>O(log n)</code> runtime complexity.",
+    "difficulty": "Medium",
+    "category": "Array, Binary Search",
+    "examples": [
+        {
+            "input": "nums = [4,5,6,7,0,1,2], target = 0",
+            "output": "4",
+            "explanation": "The target <code>0</code> is located at index <code>4</code> in the rotated sorted array."
+        },
+        {
+            "input": "nums = [4,5,6,7,0,1,2], target = 3",
+            "output": "-1",
+            "explanation": "The target <code>3</code> is not present in the array, hence the output is <code>-1</code>."
+        },
+        {
+            "input": "nums = [1], target = 0",
+            "output": "-1",
+            "explanation": "The array contains only one element <code>1</code>, and since <code>0</code> is not present, the result is <code>-1</code>."
+        }
+    ],
+    "constraints": [
+        "The input array <code>nums</code> must be of size <code>n</code> where <code>1 <= n <= 10^5</code>.",
+        "Each element in <code>nums</code> is an integer within the range <code>[-10^4, 10^4]</code>."
+    ],
+    "tags": [
+        "Array",
+        "Binary Search",
+        "Search"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "search_in_sorted_array",
+        "find_minimum_in_rotated_array",
+        "kth_smallest_element"
+    ],
+    "hints": [
+        "Consider how the array is divided into two sorted halves.",
+        "Determine which side of the array to explore based on the target value.",
+        "Check for edge cases when the array contains duplicates.",
+        "Try to identify the pivot point where the rotation occurs."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

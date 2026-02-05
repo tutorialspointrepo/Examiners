@@ -85,9 +85,11 @@ export default function UserList({
   selectedClass, 
   activeCollegeId, 
   brandTheme, 
+  onClose,
   currentUserRole = USER_TYPES.STUDENT,  // Production default - must be overridden by parent
   isSuperUser = false,
-  highlightUserId = null
+  highlightUserId = null,
+  onCountsChange
 }: UserListProps) {
   const [users, setUsers] = useState<UserModel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -396,6 +398,10 @@ export default function UserList({
   const handleUserUpdated = () => {
     // Refresh the user list
     fetchUsers(false);
+    // Notify parent to refresh counts (Classes component)
+    if (onCountsChange) {
+      onCountsChange();
+    }
   };
   
   /* TODO: Uncomment when course enrollment functionality is implemented
@@ -606,8 +612,7 @@ export default function UserList({
       setNewPassword('');
       setConfirmPassword('');
       
-      // Show success (optional - you could add a toast notification here)
-      alert('Password changed successfully!');
+      // Success message is now shown inside ChangePassword modal
     } catch (error) {
       console.error('Error changing password:', error);
       setPasswordError(error instanceof Error ? error.message : 'Failed to change password. Please try again.');

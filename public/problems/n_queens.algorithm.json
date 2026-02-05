@@ -1,0 +1,21 @@
+{
+    "id": "n_queens",
+    "problem_id": "n_queens",
+    "title": "N-Queens - Backtracking",
+    "algorithm": [
+        "Step 1: Initialize an empty board of size N x N.",
+        "Step 2: Start placing queens one by one in different columns, starting from the leftmost column.",
+        "Step 3: For each row in the current column, check if placing a queen there is safe.",
+        "Step 4: If it's safe, place the queen and move to the next column recursively.",
+        "Step 5: If placing queens leads to a solution, store the solution.",
+        "Step 6: Backtrack: Remove the queen and try the next row in the same column.",
+        "Final step: Repeat until all columns are filled or all rows have been checked."
+    ],
+    "pseudocode": "ALGORITHM NQueens(N)\nBEGIN\n    Initialize board[N][N] to 0\n    CALL PlaceQueens(board, 0, N)\nEND\n\nFUNCTION PlaceQueens(board, col, N)\nBEGIN\n    IF col >= N THEN\n        PrintSolution(board, N)\n        RETURN\n    ENDIF\n    FOR row FROM 0 TO N-1 DO\n        IF IsSafe(board, row, col, N) THEN\n            board[row][col] = 1 // Place queen\n            CALL PlaceQueens(board, col + 1, N)\n            board[row][col] = 0 // Backtrack\n        ENDIF\n    ENDFOR\nEND FUNCTION",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize board]\n  │\n  ▼\n◊ Check column? ◊ ──YES──►[Place Queen]\n  │                         │\n  ▼                         ▼\n[Recursive call]          [Backtrack]\n  │\n  ▼\n◊ All columns filled? ◊ ──YES──► [Store Solution]\n  │                        │\n  ▼                        ▼\n[More steps]              END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The N-Queens problem requires placing N queens on an N x N chessboard such that no two queens threaten each other.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use backtracking to explore all possible placements of queens on the board.\n2. **Key Components**: The algorithm checks for safe placements by ensuring no two queens share the same row, column, or diagonal.\n3. **Why It Works**: By recursively placing queens and backtracking when a placement leads to a conflict, the algorithm efficiently searches the solution space.\n4. **Edge Cases**: For N=2 and N=3, there are no solutions; the algorithm handles these cases by exiting early when no valid placements are found.\n\n**Alternative Approaches:** Other methods include using constraint programming or iterative methods, but backtracking remains the most intuitive and straightforward for this problem.",
+    "complexity": "Time Complexity: O(N!), the worst-case scenario occurs when we need to explore every possibility of queen placements.\n- Detailed explanation of time complexity: Each queen can be placed in N different rows and the recursive calls will branch out exponentially.\n- Best case happens when solutions are found quickly, while the average case also tends toward O(N!).\n\nSpace Complexity: O(N), which accounts for the recursion stack depth.\n- Detailed explanation of space usage: The maximum depth of the recursion is N, corresponding to the number of queens placed.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(N!)    │    O(N)      │\n│ Alternative 1   │    O(N^2)    │    O(N)      │\n│ Alternative 2   │    O(N!)    │    O(N)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- Real-world performance: The algorithm performs well for moderate values of N but becomes impractical for larger N due to factorial growth.\n- Scalability considerations include optimizing with heuristics or using parallel processing for larger boards.\n- Trade-offs: While backtracking is simple and clear, it can be optimized further using techniques like forward checking or constraint propagation.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,17 @@
+{
+    "id": "remove_duplicates_linked_list",
+    "problem_id": "remove_duplicates_linked_list",
+    "title": "Remove Duplicates from Linked List - In-Place Modification",
+    "algorithm": [
+        "Step 1: Initialize a pointer 'current' to the head of the linked list.",
+        "Step 2: Create a set 'seen' to keep track of values that have already been encountered.",
+        "Step 3: Traverse the linked list using the 'current' pointer until it reaches the end.",
+        "Step 4: For each node, check if its value is in 'seen'.",
+        "Step 5: If it is, skip the current node by adjusting the 'next' pointer of the previous node.",
+        "Step 6: If it is not in 'seen', add the value to 'seen' and move the 'current' pointer to the next node.",
+        "Final step: Return the modified linked list."
+    ],
+    "pseudocode": "ALGORITHM RemoveDuplicatesLinkedList\nBEGIN\n    SET current = head\n    SET seen = empty set\n    WHILE current is not NULL DO\n        IF current.value is in seen THEN\n            // Skip the current node\n            previous.next = current.next\n        ELSE\n            // Add value to seen\n            INSERT current.value into seen\n            SET previous = current\n        ENDIF\n        SET current = current.next\n    ENDWHILE\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize 'current' and 'seen']\n  │\n  ▼\n◊ Is 'current' NULL? ◊ ──YES──► END\n  │                        │\n  ▼                        ▼\n◊ Is 'current.value' in 'seen'? ◊ ──YES──► [Adjust 'previous.next']\n  │                        │\n  ▼                        ▼\n[Add 'current.value' to 'seen']  [Set 'current' to 'current.next']\n  │\n  ▼\n[Move to next node]\n  │\n  ▼\n   └──► LOOP BACK\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The algorithm uses a hash set to track duplicates efficiently, allowing for O(1) average time complexity for lookups.\n\n**Approach Explanation:**\n1. **Main Strategy**: Iterate through the linked list while maintaining a record of seen values.\n2. **Key Components**: A set is crucial for tracking duplicates without additional nested loops.\n3. **Why It Works**: Each value is checked against the set; if it's already there, it is removed from the list, ensuring no duplicates remain.\n4. **Edge Cases**: Handles an empty list gracefully and maintains the order of first occurrences.\n\n**Alternative Approaches:** One could use a sorting method followed by a linear pass to remove duplicates, but this would increase time complexity."
+}

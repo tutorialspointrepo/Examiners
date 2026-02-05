@@ -1,0 +1,42 @@
+{
+  "id": "missing_number",
+  "title": "Missing Number",
+  "description": "Given an array <code>nums</code> containing <code>n</code> distinct numbers in the range <code>[0, n]</code>, return the only number in the range that is missing from the array.",
+  "difficulty": "Easy",
+  "category": "Array, Math",
+  "examples": [
+    {
+      "input": "nums = [3,0,1]",
+      "output": "2",
+      "explanation": "n = 3 since there are 3 numbers, so all numbers are in the range [0,3]. 2 is the missing number in the range since it does not appear in nums."
+    },
+    {
+      "input": "nums = [0,1]",
+      "output": "2",
+      "explanation": "n = 2 since there are 2 numbers, so all numbers are in the range [0,2]. 2 is the missing number in the range since it does not appear in nums."
+    },
+    {
+      "input": "nums = [9,6,4,2,3,5,7,0,1]",
+      "output": "8",
+      "explanation": "n = 9 since there are 9 numbers, so all numbers are in the range [0,9]. 8 is the missing number in the range since it does not appear in nums."
+    }
+  ],
+  "constraints": [
+    "n == nums.length",
+    "1 ≤ n ≤ 10⁴",
+    "0 ≤ nums[i] ≤ n",
+    "All the numbers of nums are unique."
+  ],
+  "tags": ["Array", "Math", "Bit Manipulation"],
+  "companies": ["Microsoft", "Amazon", "Google", "Facebook"],
+  "similar_problems": ["find_missing_positive", "missing_number_in_arithmetic_progression", "find_all_missing_numbers"],
+  "hints": [
+    "Use the mathematical formula for the sum of first n natural numbers.",
+    "Calculate the expected sum and subtract the actual sum of the array.",
+    "XOR operation can also be used since XOR of a number with itself is 0.",
+    "Consider the properties of arithmetic sequences."
+  ],
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z",
+  "version": "1.0"
+}

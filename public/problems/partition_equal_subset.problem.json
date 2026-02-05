@@ -1,0 +1,53 @@
+{
+    "id": "partition_equal_subset",
+    "title": "Partition Equal Subset Sum",
+    "description": "Given a <code>nums</code> array of integers, determine if it can be partitioned into two subsets such that the sum of the elements in both subsets is the same. This problem can be solved by checking if there exists a subset of <code>nums</code> with a sum equal to half of the total sum of the array.",
+    "difficulty": "Medium",
+    "category": "Dynamic Programming, Array",
+    "examples": [
+        {
+            "input": "[1, 5, 11, 5]",
+            "output": "true",
+            "explanation": "The array can be partitioned into [1, 5, 5] and [11], both of which sum to 11."
+        },
+        {
+            "input": "[1, 2, 3, 5]",
+            "output": "false",
+            "explanation": "The total sum is 11, and it's impossible to split it into two subsets with equal sum."
+        },
+        {
+            "input": "[2, 2, 1, 1]",
+            "output": "true",
+            "explanation": "The array can be partitioned into [2, 2] and [1, 1], both of which sum to 4."
+        }
+    ],
+    "constraints": [
+        "Each element in <code>nums</code> is a non-negative integer.",
+        "The length of <code>nums</code> is at most 200."
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "Array",
+        "Backtracking"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "subset_sum_problem",
+        "combination_sum",
+        "target_sum"
+    ],
+    "hints": [
+        "Consider the total sum of the array and check if it's even.",
+        "Use dynamic programming to build a solution incrementally.",
+        "Think about how to track possible sums using a boolean array.",
+        "Try to optimize space by reusing the same array for calculations."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

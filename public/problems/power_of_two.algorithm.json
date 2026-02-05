@@ -1,0 +1,19 @@
+{
+    "id": "power_of_two",
+    "problem_id": "power_of_two",
+    "title": "Power of Two - Exponentiation Technique",
+    "algorithm": [
+        "Step 1: Initialize a variable 'result' to 1.",
+        "Step 2: Check if the exponent 'n' is less than 0. If it is, return an error message since negative exponents are not supported.",
+        "Step 3: Loop from 1 to 'n', multiplying 'result' by 2 for each iteration.",
+        "Step 4: After the loop completes, 'result' will contain 2 raised to the power of 'n'.",
+        "Final step: Return the 'result'."
+    ],
+    "pseudocode": "ALGORITHM PowerOfTwo\nBEGIN\n    DECLARE result AS INTEGER = 1\n    DECLARE n AS INTEGER\n    IF n < 0 THEN\n        RETURN \"Error: Negative exponent\"\n    ENDIF\n    FOR i FROM 1 TO n DO\n        result = result * 2\n    ENDFOR\n    RETURN result\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize 'result']\n  │\n  ▼\n◊ Is n < 0? ◊ ──YES──► [Return Error]\n  │                        │\n  ▼                        ▼\n[Loop from 1 to n]      [Return result]\n  │\n  ▼\n[Multiply result by 2]\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The algorithm utilizes simple multiplication in a loop to compute powers of two.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use iterative multiplication to derive the result.\n2. **Key Components**: Loop control structure and multiplication operation.\n3. **Why It Works**: By repeatedly multiplying by 2, we effectively build 2^n in O(n) time complexity.\n4. **Edge Cases**: The algorithm checks for negative exponents and handles them gracefully by returning an error.\n\n**Alternative Approaches:**\n- Recursive method to calculate powers of two.\n- Using bit shifting for optimization when calculating large powers of two.",
+    "complexity": "Time Complexity: O(n)\n- The algorithm loops 'n' times, performing a constant time operation (multiplication) in each iteration.\n- Best case scenario occurs when n = 0, where the function returns 1 immediately.\n\nSpace Complexity: O(1)\n- The algorithm uses a fixed amount of space for 'result' and 'n' regardless of input size.\n- No additional data structures are utilized.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(1)      │\n│ Recursive Method │    O(n)      │    O(n)      │\n│ Bit Shift Method │    O(1)      │    O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- While this implementation is straightforward, it may not be performant for very large values of 'n'.\n- The bit shift method can provide a constant time solution for powers of two, especially in cases where performance is critical.\n- Scalability considerations include how the algorithm behaves as 'n' increases, particularly in iterative vs. recursive contexts.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

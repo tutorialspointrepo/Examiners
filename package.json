@@ -57,6 +57,7 @@
     "readline-sync": "^1.4.10",
     "rehype-katex": "^7.0.1",
     "remark-math": "^6.0.0",
+    "video.js": "^8.23.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

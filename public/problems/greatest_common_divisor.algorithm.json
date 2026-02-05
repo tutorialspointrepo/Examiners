@@ -1,0 +1,19 @@
+{
+    "id": "greatest_common_divisor",
+    "problem_id": "greatest_common_divisor",
+    "title": "Greatest Common Divisor - Euclidean Algorithm",
+    "algorithm": [
+        "Step 1: Input two integers, a and b.",
+        "Step 2: If b is equal to 0, return a as the GCD.",
+        "Step 3: Otherwise, set a to b and b to the remainder of a divided by b.",
+        "Step 4: Repeat step 2 and step 3 until b becomes 0.",
+        "Final step: Return the value of a which is the GCD."
+    ],
+    "pseudocode": "ALGORITHM GreatestCommonDivisor\nBEGIN\n    DECLARE integer a, b\n    INPUT a, b\n    WHILE b ≠ 0 DO\n        DECLARE integer temp\n        temp := b\n        b := a MOD b\n        a := temp\n    END WHILE\n    RETURN a\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Input a and b]\n  │\n  ▼\n◊ Is b = 0? ◊ ──YES──► [Return a]\n  │                       │\n  ▼                       ▼\n[Set temp := b]         END\n  │\n  ▼\n[b := a MOD b]\n  │\n  ▼\n[a := temp]\n  │\n  ▼\nGO TO ◊ Is b = 0?\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The greatest common divisor (GCD) of two numbers can be found using their remainders through the Euclidean algorithm.\n\n**Approach Explanation:**\n1. **Main Strategy**: The algorithm repeatedly replaces the larger number with the smaller number and the smaller number with the remainder until one of them becomes zero.\n2. **Key Components**: The use of modulus operation to find remainders is pivotal to reduce the size of the problem iteratively.\n3. **Why It Works**: This method works because the GCD remains unchanged when the larger number is replaced by its remainder with respect to the smaller number.\n4. **Edge Cases**: If either number is zero, the GCD is defined as the non-zero number. If both are zero, GCD is undefined.\n\n**Alternative Approaches:** Other methods such as prime factorization or using the binary GCD algorithm exist but are generally less efficient than the Euclidean approach.",
+    "complexity": "Time Complexity: O(log(min(a, b)))\n- The number of iterations is proportional to the number of digits in the smaller of the two numbers.\n- Each iteration involves a modulus operation which takes constant time.\n\nSpace Complexity: O(1)\n- The algorithm uses a fixed amount of space regardless of input size (only a few integer variables).\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(log n)  │    O(1)      │\n│ Prime Factorization │ O(n log n) │    O(n)      │\n│ Binary GCD      │    O(log(min(a, b))) │    O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The Euclidean algorithm is highly efficient for computing GCD in practical scenarios.\n- It scales well for large inputs due to its logarithmic time complexity.\n- Minimizing memory usage makes it suitable for embedded systems and applications where resources are limited.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

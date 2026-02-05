@@ -1,0 +1,54 @@
+{
+    "id": "evaluate_postfix",
+    "title": "Evaluate Postfix Expression",
+    "description": "Given a string representing a <code>postfix</code> expression, evaluate it and return the result. The expression is made up of integers and operators, where operators are defined as <code>+</code>, <code>-</code>, <code>*</code>, and <code>/</code>. An operand is an integer, and the operators apply to the two most recent operands in the stack.",
+    "difficulty": "Medium",
+    "category": "Stack, Mathematical",
+    "examples": [
+        {
+            "input": "2 1 + 3 *",
+            "output": "9",
+            "explanation": "First, evaluate <code>2 1 +</code> which gives <code>3</code>. Then multiply that by <code>3</code> to get <code>9</code>."
+        },
+        {
+            "input": "4 13 5 / +",
+            "output": "6",
+            "explanation": "First, evaluate <code>13 5 /</code> which gives <code>2</code>. Then add that to <code>4</code> to get <code>6</code>."
+        },
+        {
+            "input": "10 6 9 3 - - *",
+            "output": "120",
+            "explanation": "First, evaluate <code>9 3 -</code> which gives <code>6</code>. Then evaluate <code>6 - 6</code> which gives <code>0</code>. Finally, <code>10 * 0</code> results in <code>120</code>."
+        }
+    ],
+    "constraints": [
+        "The input string is valid and follows postfix notation.",
+        "Operands are integers and may be positive or negative.",
+        "Operators are limited to <code>+</code>, <code>-</code>, <code>*</code>, and <code>/</code>."
+    ],
+    "tags": [
+        "Stack",
+        "Mathematical",
+        "Expression Evaluation"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Apple"
+    ],
+    "similar_problems": [
+        "evaluate_infix",
+        "evaluate_prefix",
+        "calculate_rpn"
+    ],
+    "hints": [
+        "Use a stack to keep track of operands.",
+        "Process each token in the input from left to right.",
+        "When encountering an operator, pop the top two operands from the stack.",
+        "Consider edge cases like division by zero."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

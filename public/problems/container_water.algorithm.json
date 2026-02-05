@@ -1,0 +1,21 @@
+{
+    "id": "container_water",
+    "problem_id": "container_water",
+    "title": "Container Water - Two Pointer Technique",
+    "algorithm": [
+        "Step 1: Initialize two pointers, left at the start (0) and right at the end (n-1) of the array.",
+        "Step 2: Set variables to keep track of the maximum height seen from both the left and right pointers.",
+        "Step 3: While left pointer is less than right pointer, do the following:",
+        "Step 4: Compare the heights at the left and right pointers. Move the pointer pointing to the shorter height inward.",
+        "Step 5: Update the maximum height and calculate the area formed by the current height and the width between the two pointers.",
+        "Step 6: Keep track of the maximum area found so far.",
+        "Final step: Return the maximum area calculated."
+    ],
+    "pseudocode": "ALGORITHM ContainerWater\nBEGIN\n    left ← 0\n    right ← n - 1\n    max_area ← 0\n    max_left_height ← 0\n    max_right_height ← 0\n\n    WHILE left < right DO\n        IF height[left] < height[right] THEN\n            max_left_height ← MAX(max_left_height, height[left])\n            area ← max_left_height * (right - left)\n            max_area ← MAX(max_area, area)\n            left ← left + 1\n        ELSE\n            max_right_height ← MAX(max_right_height, height[right])\n            area ← max_right_height * (right - left)\n            max_area ← MAX(max_area, area)\n            right ← right - 1\n        END IF\n    END WHILE\n    RETURN max_area\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize pointers and max variables]\n  │\n  ▼\n◊ Is left < right? ◊ ──YES──► [Compare heights]\n  │                        │\n  ▼                        ▼\n[Update area and move pointer]   [Update area and move pointer]\n  │                          │\n  ▼                          ▼\n[Continue loop]              END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The container's capacity is limited by the shorter of the two walls that form it.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use a two-pointer technique to explore all possible containers while efficiently calculating the area.\n2. **Key Components**: The two pointers represent the sides of the container, and we always move the pointer pointing to the shorter side to potentially find a taller wall.\n3. **Why It Works**: By moving the pointer with the shorter wall, we are guaranteed that the new area calculation can only be improved or remain the same since height is determined by the shorter wall.\n4. **Edge Cases**: Handles cases where walls have equal heights or where heights are strictly increasing/decreasing.\n\n**Alternative Approaches:** Brute force method can be used to check all pairs of walls, but it has a higher time complexity of O(n^2).",
+    "complexity": "Time Complexity: O(n)\n- Each pointer moves towards the center at most n times.\n- This results in linear time performance.\n\nSpace Complexity: O(1)\n- Only a fixed amount of extra space is used for variables, regardless of input size.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(1)      │\n│ Brute Force     │    O(n^2)    │    O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The two-pointer technique ensures optimal performance for large inputs.\n- It scales well and handles edge cases efficiently without extra memory overhead.\n- Trade-offs include simpler implementation vs. better performance in larger datasets.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

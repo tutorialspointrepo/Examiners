@@ -1,0 +1,53 @@
+{
+    "id": "find_median",
+    "title": "Find Median from Data Stream",
+    "description": "You are given a data stream that can be represented as a sequence of numbers. Your task is to find the median of all elements in the stream after each insertion. The <code>median</code> is defined as the middle value in the ordered list of numbers. If there is an even number of elements, it is the average of the two middle values.",
+    "difficulty": "Hard",
+    "category": "Heap, Binary Search",
+    "examples": [
+        {
+            "input": "[1, 2, 3, 4, 5]",
+            "output": "3",
+            "explanation": "After inserting elements 1, 2, 3, 4, and 5, the sorted list is [1, 2, 3, 4, 5]. The median is the middle element, which is 3."
+        },
+        {
+            "input": "[2, 3, 4, 5, 1]",
+            "output": "3",
+            "explanation": "Inserting elements 2, 3, 4, 5, and 1 gives the sorted list [1, 2, 3, 4, 5]. The median remains 3 as it's still the middle element."
+        },
+        {
+            "input": "[5, 15, 10, 20, 30]",
+            "output": "15",
+            "explanation": "The sorted insertion of elements 5, 15, 10, 20, and 30 results in [5, 10, 15, 20, 30]. The median here is the middle value, which is 15."
+        }
+    ],
+    "constraints": [
+        "The input stream will contain at most 10^5 elements.",
+        "Each element will be a valid integer."
+    ],
+    "tags": [
+        "Heap",
+        "Median",
+        "Data Stream"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "find_kth_largest",
+        "sliding_window_median",
+        "median_of_two_sorted_arrays"
+    ],
+    "hints": [
+        "Consider using two heaps to maintain the lower and upper halves of the numbers.",
+        "To calculate the median efficiently, balance the sizes of both heaps.",
+        "Think about edge cases where the total number of elements is even or odd.",
+        "Look into how the insertion of an element affects the median calculation."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

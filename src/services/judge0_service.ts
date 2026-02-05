@@ -84,8 +84,21 @@ class Judge0Service {
    */
   async submitCode(submission: Judge0Submission): Promise<Judge0Result> {
     const { source_code, language_id, stdin = '', wait = false } = submission;
-    const payload = { source_code, language_id, stdin };
-    const url = wait ? `${this.baseUrl}/submissions?wait=true` : `${this.baseUrl}/submissions`;
+    
+    // Base64 encode the source code and stdin to handle special characters
+    const encodedSourceCode = btoa(unescape(encodeURIComponent(source_code)));
+    const encodedStdin = stdin ? btoa(unescape(encodeURIComponent(stdin))) : '';
+    
+    const payload = { 
+      source_code: encodedSourceCode, 
+      language_id, 
+      stdin: encodedStdin 
+    };
+    
+    // Use base64_encoded=true to tell Judge0 we're sending base64
+    const url = wait 
+      ? `${this.baseUrl}/submissions?base64_encoded=true&wait=true` 
+      : `${this.baseUrl}/submissions?base64_encoded=true`;
 
     try {
       const response = await fetch(url, {
@@ -95,10 +108,46 @@ class Judge0Service {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Try to parse error response from Judge0
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          // If we can't parse JSON, use the default message
+        }
+        throw new Error(errorMessage);
       }
 
-      return await response.json();
+      const result = await response.json();
+      
+      // Decode base64 response fields if present
+      if (result.stdout) {
+        try {
+          result.stdout = decodeURIComponent(escape(atob(result.stdout)));
+        } catch (e) { /* Keep original if decode fails */ }
+      }
+      if (result.stderr) {
+        try {
+          result.stderr = decodeURIComponent(escape(atob(result.stderr)));
+        } catch (e) { /* Keep original if decode fails */ }
+      }
+      if (result.compile_output) {
+        try {
+          result.compile_output = decodeURIComponent(escape(atob(result.compile_output)));
+        } catch (e) { /* Keep original if decode fails */ }
+      }
+      if (result.message) {
+        try {
+          result.message = decodeURIComponent(escape(atob(result.message)));
+        } catch (e) { /* Keep original if decode fails */ }
+      }
+      
+      return result;
     } catch (error) {
       console.error('Judge0 submission error:', error);
       throw error;
@@ -110,13 +159,50 @@ class Judge0Service {
    */
   async getSubmission(token: string): Promise<Judge0Result> {
     try {
-      const response = await fetch(`${this.baseUrl}/submissions/${token}`);
+      // Request base64 encoded response
+      const response = await fetch(`${this.baseUrl}/submissions/${token}?base64_encoded=true`);
       
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Try to parse error response from Judge0
+        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          // If we can't parse JSON, use the default message
+        }
+        throw new Error(errorMessage);
       }
 
-      return await response.json();
+      const result = await response.json();
+      
+      // Decode base64 response fields if present
+      if (result.stdout) {
+        try {
+          result.stdout = decodeURIComponent(escape(atob(result.stdout)));
+        } catch (e) { /* Keep original if decode fails */ }
+      }
+      if (result.stderr) {
+        try {
+          result.stderr = decodeURIComponent(escape(atob(result.stderr)));
+        } catch (e) { /* Keep original if decode fails */ }
+      }
+      if (result.compile_output) {
+        try {
+          result.compile_output = decodeURIComponent(escape(atob(result.compile_output)));
+        } catch (e) { /* Keep original if decode fails */ }
+      }
+      if (result.message) {
+        try {
+          result.message = decodeURIComponent(escape(atob(result.message)));
+        } catch (e) { /* Keep original if decode fails */ }
+      }
+      
+      return result;
     } catch (error) {
       console.error('Judge0 get submission error:', error);
       throw error;
@@ -405,11 +491,21 @@ class Judge0Service {
 
       // Status 3 = Accepted (success)
       const success = result.status.id === 3;
+      
+      // Get error message - prefer compile_output for compilation errors, stderr for runtime errors
+      let errorMessage: string | null = null;
+      if (result.compile_output) {
+        errorMessage = result.compile_output;
+      } else if (result.stderr) {
+        errorMessage = result.stderr;
+      } else if (result.message) {
+        errorMessage = result.message;
+      }
 
       return {
         success,
         output: result.stdout || '',
-        error: result.stderr || result.compile_output || result.message || null,
+        error: errorMessage,
         time: result.time || '0',
         memory: result.memory ? `${(result.memory / 1024).toFixed(2)} MB` : '0 KB',
         status: result.status.description,

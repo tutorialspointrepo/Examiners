@@ -1,0 +1,53 @@
+{
+    "id": "palindrome_linked_list",
+    "title": "Palindrome Linked List",
+    "description": "Given a singly linked list, determine if it is a <code>palindrome</code>. A linked list is considered a palindrome if its elements are the same when read forward and backward.",
+    "difficulty": "Medium",
+    "category": "Linked List, Two Pointers",
+    "examples": [
+        {
+            "input": "1 -> 2 -> 2 -> 1",
+            "output": "true",
+            "explanation": "The elements are the same when read from both directions: 1, 2, 2, 1."
+        },
+        {
+            "input": "1 -> 2 -> 3 -> 4",
+            "output": "false",
+            "explanation": "The elements read forward are 1, 2, 3, 4 which do not match their reverse 4, 3, 2, 1."
+        },
+        {
+            "input": "1 -> 2 -> 1",
+            "output": "true",
+            "explanation": "The elements are the same when read from both directions: 1, 2, 1."
+        }
+    ],
+    "constraints": [
+        "The linked list has at most <code>10^5</code> nodes.",
+        "Each node's value is an integer within the range of <code>[-10^5, 10^5]</code>."
+    ],
+    "tags": [
+        "Linked List",
+        "Two Pointers",
+        "Fast and Slow Pointer"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "valid_palindrome",
+        "reverse_linked_list",
+        "linked_list_cycle"
+    ],
+    "hints": [
+        "Consider using a two-pointer approach to find the middle of the linked list.",
+        "You may need to reverse the second half of the linked list for comparison.",
+        "Make sure to handle the case when the linked list has an odd number of elements.",
+        "Using a stack can help in comparing the two halves of the list."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

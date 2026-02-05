@@ -1,0 +1,53 @@
+{
+    "id": "reverse_words",
+    "title": "Reverse Words in a String",
+    "description": "Given a string <code>s</code>, reverse the order of the words. A word is defined as a sequence of non-space characters. The words in <code>s</code> will be separated by at least one space and may have leading or trailing spaces. The final output should not contain any extra spaces. Return the reversed string of words.",
+    "difficulty": "Medium",
+    "category": "String, Array",
+    "examples": [
+        {
+            "input": "\"  Hello World!  \"",
+            "output": "\"World! Hello\"",
+            "explanation": "The input string has leading and trailing spaces. After removing them, we get 'Hello World!'. Reversing the order of words gives 'World! Hello'."
+        },
+        {
+            "input": "\"The quick brown fox jumps over the lazy dog\"",
+            "output": "\"dog lazy the over jumps fox brown quick The\"",
+            "explanation": "The input string contains multiple words. Reversing the order yields 'dog lazy the over jumps fox brown quick The'."
+        },
+        {
+            "input": "\"a good   example\"",
+            "output": "\"example good a\"",
+            "explanation": "Extra spaces between words are ignored. Thus, 'a good example' becomes 'example good a' after reversing."
+        }
+    ],
+    "constraints": [
+        "The input string <code>s</code> has a length of at most 10^4 characters.",
+        "Words are separated by one or more spaces."
+    ],
+    "tags": [
+        "String",
+        "Array",
+        "Two Pointers"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Apple"
+    ],
+    "similar_problems": [
+        "reverse_string",
+        "remove_extra_spaces",
+        "word_length"
+    ],
+    "hints": [
+        "Consider using two pointers to help with reversing the words.",
+        "First, split the string into words before processing.",
+        "Be mindful of leading and trailing spaces in the final result.",
+        "Try to avoid using built-in functions that directly reverse strings."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

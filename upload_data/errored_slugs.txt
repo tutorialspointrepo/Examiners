@@ -1,0 +1,8 @@
+check-if-an-array-is-consecutive
+find-the-number-of-ways-to-place-people-i
+number-of-black-blocks
+number-of-different-subsequences-gcds
+number-of-good-paths
+number-of-nodes-in-the-sub-tree-with-the-same-label
+number-of-unique-xor-triplets-ii
+remove-sub-folders-from-the-filesystem

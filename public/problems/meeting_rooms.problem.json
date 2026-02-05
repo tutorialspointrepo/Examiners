@@ -1,0 +1,53 @@
+{
+    "id": "meeting_rooms",
+    "title": "Meeting Rooms",
+    "description": "Given an array of meeting time <code>intervals</code> where <code>intervals[i]</code> = [<code>start</code>, <code>end</code>], determine if a person could attend all meetings. A person can attend all meetings if no two meetings overlap, meaning that the end time of one meeting must be less than or equal to the start time of the next meeting.",
+    "difficulty": "Easy",
+    "category": "Array, Sorting",
+    "examples": [
+        {
+            "input": "[[0, 30], [5, 10], [15, 20]]",
+            "output": "false",
+            "explanation": "The second meeting starts at 5, which is before the first meeting ends at 30. Hence, the person cannot attend all meetings."
+        },
+        {
+            "input": "[[7, 10], [2, 4]]",
+            "output": "true",
+            "explanation": "The first meeting ends at 10 and the second meeting starts at 2. There is no overlap between the two meetings, so the person can attend both."
+        },
+        {
+            "input": "[[1, 3], [2, 4], [3, 5]]",
+            "output": "false",
+            "explanation": "The second meeting starts at 2, which overlaps with the first meeting that ends at 3. Therefore, the person cannot attend all meetings."
+        }
+    ],
+    "constraints": [
+        "The length of <code>intervals</code> will be in the range [0, 10^4].",
+        "Each <code>interval</code> has two integers representing the start and end time, where 0 <= <code>start</code> < <code>end</code> <= 10^6."
+    ],
+    "tags": [
+        "Array",
+        "Sorting",
+        "Greedy"
+    ],
+    "companies": [
+        "Google",
+        "Microsoft",
+        "Amazon",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "meeting_rooms_ii",
+        "non_overlapping_intervals",
+        "merge_intervals"
+    ],
+    "hints": [
+        "Sort the meetings by their start time.",
+        "Check for overlaps by comparing the end time of the previous meeting with the start time of the current meeting.",
+        "Consider edge cases with no meetings or only one meeting.",
+        "Think about how sorting helps in reducing the problem size."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

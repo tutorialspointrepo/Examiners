@@ -322,6 +322,7 @@ export declare const COLLECTIONS: {
     readonly PASSWORD_RESET_OTPS: "passwordResetOTPs";
     readonly PASSWORD_RESET_REQUESTS: "passwordResetRequests";
     readonly CODING_LANGUAGES: "CodingLanguages";
+    readonly COURSES: "courses";
 };
 /**
  * Special college/organization identifiers
@@ -1058,6 +1059,7 @@ export declare const APP_CONSTANTS: {
         readonly PASSWORD_RESET_OTPS: "passwordResetOTPs";
         readonly PASSWORD_RESET_REQUESTS: "passwordResetRequests";
         readonly CODING_LANGUAGES: "CodingLanguages";
+        readonly COURSES: "courses";
     };
     readonly SPECIAL_IDS: {
         readonly TUTORIALS_POINT: "tutorialspoint";

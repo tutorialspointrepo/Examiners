@@ -1,0 +1,21 @@
+{
+    "id": "search_rotated",
+    "problem_id": "search_rotated",
+    "title": "Search in Rotated Sorted Array - Binary Search",
+    "algorithm": [
+        "Step 1: Initialize two pointers, left and right, to the start and end of the array respectively.",
+        "Step 2: While left is less than or equal to right, calculate the mid index as (left + right) / 2.",
+        "Step 3: Check if the element at mid is equal to the target. If yes, return mid.",
+        "Step 4: Determine whether the left half or the right half is sorted.",
+        "Step 5: If the left half is sorted, check if the target lies within this range. If yes, adjust the right pointer to mid - 1; otherwise, set left to mid + 1.",
+        "Step 6: If the right half is sorted, check if the target lies within this range. If yes, adjust the left pointer to mid + 1; otherwise, set right to mid - 1.",
+        "Final step: If the target is not found, return -1."
+    ],
+    "pseudocode": "ALGORITHM SearchInRotatedArray\nBEGIN\n    left := 0\n    right := length(array) - 1\n    WHILE left <= right DO\n        mid := (left + right) / 2\n        IF array[mid] = target THEN\n            RETURN mid\n        ENDIF\n        IF array[left] <= array[mid] THEN\n            // Left half is sorted\n            IF array[left] <= target AND target < array[mid] THEN\n                right := mid - 1\n            ELSE\n                left := mid + 1\n            ENDIF\n        ELSE\n            // Right half is sorted\n            IF array[mid] < target AND target <= array[right] THEN\n                left := mid + 1\n            ELSE\n                right := mid - 1\n            ENDIF\n        ENDIF\n    ENDWHILE\n    RETURN -1\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\nInitialize left and right pointers\n  │\n  ▼\nCalculate mid index\n  │\n  ▼\n◊ Is array[mid] = target? ◊ ──YES──► Return mid\n  │                        │\n  ▼                        ▼\nDetermine sorted half       Adjust pointers based on target\n  │                        │\n  ▼                        ▼\nContinue until left > right   END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The array is sorted but rotated, allowing for a modified binary search.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use a binary search strategy that identifies which half of the array is sorted and narrows the search space accordingly.\n2. **Key Components**: The left and right pointers help identify the current search range, while the mid index helps compare the target with the elements.\n3. **Why It Works**: By recognizing the sorted halves, we can efficiently decide which part to search next, reducing the number of comparisons needed.\n4. **Edge Cases**: Handles cases where the array is empty, contains duplicates, or where the target is not present.\n\n**Alternative Approaches:** A linear search could be used, but it would be less efficient with a time complexity of O(n).",
+    "complexity": "Time Complexity: O(log n)\n- Each iteration effectively halves the search space.\n- Best case occurs when the target is found at mid.\n- Worst case occurs when the entire array must be searched, which still remains logarithmic due to halving.\n\nSpace Complexity: O(1)\n- Only a few variables are used regardless of input size.\n- No auxiliary data structures are utilized.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(log n)  │    O(1)      │\n│ Linear Search   │    O(n)      │    O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- This algorithm performs well for large datasets due to its logarithmic time complexity.\n- It scales effectively with input size, minimizing unnecessary comparisons.\n- Trade-offs involve additional complexity in handling the rotation, but this is outweighed by the efficiency gains.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

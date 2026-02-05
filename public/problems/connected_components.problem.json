@@ -1,0 +1,53 @@
+{
+    "id": "connected_components",
+    "title": "Connected Components in a Graph",
+    "description": "Given an undirected graph represented by a set of nodes and edges, determine the number of connected components in the graph. A connected component is a subset of the graph where there is a path between any two nodes in that subset. You need to implement a function that accepts a list of edges and returns the number of connected components.<br> For example, if you have nodes labeled from <code>0</code> to <code>n-1</code>, a list of edges will be in the form of <code>edges = [[u1, v1], [u2, v2], ...]</code>.",
+    "difficulty": "Medium",
+    "category": "Graph, Depth First Search",
+    "examples": [
+        {
+            "input": "edges = [[0, 1], [1, 2], [3, 4]]",
+            "output": "2",
+            "explanation": "The nodes {0, 1, 2} form one connected component, while nodes {3, 4} form another. Hence, there are 2 connected components."
+        },
+        {
+            "input": "edges = [[0, 1], [1, 2], [2, 3], [4, 5]]",
+            "output": "2",
+            "explanation": "Nodes {0, 1, 2, 3} are all connected, making one component. Nodes {4, 5} are separate, resulting in another component. Thus, we have 2 connected components."
+        },
+        {
+            "input": "edges = []",
+            "output": "5",
+            "explanation": "With no edges, each node (0 through 4) is its own component. Therefore, there are 5 connected components."
+        }
+    ],
+    "constraints": [
+        "The number of nodes n will be in the range [1, 1000].",
+        "The edges will not contain self-loops or duplicate edges."
+    ],
+    "tags": [
+        "Graph",
+        "Depth First Search",
+        "Union Find"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "number_of_islands",
+        "clone_graph",
+        "graph_valid_tree"
+    ],
+    "hints": [
+        "Consider using Depth First Search (DFS) or Breadth First Search (BFS) for exploring the graph.",
+        "You might want to keep track of visited nodes to avoid counting the same component multiple times.",
+        "Think about how to represent the graph, an adjacency list may be useful.",
+        "Explore the Union-Find data structure as an alternative approach for managing connected components."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

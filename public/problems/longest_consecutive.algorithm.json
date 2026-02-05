@@ -1,0 +1,22 @@
+{
+    "id": "longest_consecutive",
+    "problem_id": "longest_consecutive",
+    "title": "Longest Consecutive Sequence - Hashing Technique",
+    "algorithm": [
+        "Step 1: Initialize a set to store unique elements from the input array.",
+        "Step 2: Iterate through each number in the input array and add it to the set.",
+        "Step 3: Initialize a variable 'longest_streak' to keep track of the longest consecutive sequence found.",
+        "Step 4: For each number in the set, check if it is the start of a sequence (i.e., number - 1 is not in the set).",
+        "Step 5: If it is the start, initialize another variable 'current_num' to the current number and 'current_streak' to 1.",
+        "Step 6: While 'current_num + 1' exists in the set, increment 'current_num' and 'current_streak'.",
+        "Step 7: Update 'longest_streak' if 'current_streak' is greater than it.",
+        "Final step: Return 'longest_streak' as the result."
+    ],
+    "pseudocode": "ALGORITHM LongestConsecutive\nBEGIN\n    SET numSet = CreateSet()\n    FOR each number IN inputArray DO\n        ADD number TO numSet\n    END FOR\n    SET longestStreak = 0\n    FOR each number IN numSet DO\n        IF (number - 1) NOT IN numSet THEN\n            SET currentNum = number\n            SET currentStreak = 1\n            WHILE (currentNum + 1) IN numSet DO\n                currentNum = currentNum + 1\n                currentStreak = currentStreak + 1\n            END WHILE\n            longestStreak = MAX(longestStreak, currentStreak)\n        END IF\n    END FOR\n    RETURN longestStreak\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize set and variables]\n  │\n  ▼\n◊ For each number in set? ◊ ──YES/NO──► [Add to set]\n  │                        │\n  ▼                        ▼\n[Check if start of sequence]   END\n  │\n  ▼\n◊ Is start? ◊ ──YES/NO──► [Continue]\n  │                        │\n  ▼                        ▼\n[Increment current streak]    END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The algorithm leverages a hash set to achieve O(n) time complexity by allowing O(1) average time complexity for lookups.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use a set to store unique elements for fast lookup to identify potential starts of sequences.\n2. **Key Components**: The use of a set to ensure no duplicates and the sequential checking of numbers to build consecutive chains.\n3. **Why It Works**: By only starting a sequence when encountering the first number, we avoid redundant checks, ensuring efficiency.\n4. **Edge Cases**: Handles cases with empty arrays and arrays where all elements are the same by returning 0 or 1 respectively.\n\n**Alternative Approaches:** Sorting the array and checking for consecutive numbers can achieve O(n log n) but is less efficient than the hashing method.",
+    "complexity": "Time Complexity: O(n)\n- Each number is processed at most twice: once while adding to the set and once while checking for sequences.\n- Efficient due to the hash set allowing for average O(1) lookups.\n\nSpace Complexity: O(n)\n- Requires additional space to store the set of numbers.\n- In the worst case, all numbers are unique, leading to n stored in the set.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(n)       │\n│ Sorting Method  │    O(n log n)│    O(1)       │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The hash set approach is optimal for large datasets, providing quick lookups and minimal processing time.\n- Suitable for scenarios requiring frequent consecutive checks and scales well with input size.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

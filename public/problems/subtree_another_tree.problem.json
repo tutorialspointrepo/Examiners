@@ -1,0 +1,53 @@
+{
+    "id": "subtree_another_tree",
+    "title": "Subtree of Another Tree",
+    "description": "Given the roots of two binary trees, <code>root</code> and <code>subRoot</code>, determine if <code>subRoot</code> is a subtree of <code>root</code>. A tree <code>subRoot</code> is considered a subtree of <code>root</code> if there exists a node in <code>root</code> such that the subtree rooted at that node is identical to <code>subRoot</code>.",
+    "difficulty": "Medium",
+    "category": "Tree, Recursion",
+    "examples": [
+        {
+            "input": "root = [3,4,5,1,2], subRoot = [4,1,2]",
+            "output": "true",
+            "explanation": "The tree with root value 4 in <code>root</code> has the same structure and values as <code>subRoot</code>, hence <code>subRoot</code> is a subtree of <code>root</code>."
+        },
+        {
+            "input": "root = [3,4,5,1,2,null,null,null,null,0], subRoot = [4,1,2]",
+            "output": "false",
+            "explanation": "Although <code>root</code> contains a node with value 4, the subtree starting from this node does not match <code>subRoot</code> because it has a different structure due to the presence of value 0."
+        },
+        {
+            "input": "root = [1,1], subRoot = [1]",
+            "output": "true",
+            "explanation": "The single node tree <code>subRoot</code> matches one of the nodes in <code>root</code>, making it a valid subtree."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in <code>root</code> and <code>subRoot</code> is in the range [0, 2000].",
+        "Each node's value is in the range [-10^4, 10^4]."
+    ],
+    "tags": [
+        "Tree",
+        "Recursion",
+        "Binary Tree"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "is_same_tree",
+        "lowest_common_ancestor",
+        "symmetric_tree"
+    ],
+    "hints": [
+        "Consider how to traverse both trees simultaneously.",
+        "You may want to implement a helper function to check if two trees are identical.",
+        "Think about edge cases where either tree could be empty.",
+        "Recursive functions can simplify the logic for tree traversal."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

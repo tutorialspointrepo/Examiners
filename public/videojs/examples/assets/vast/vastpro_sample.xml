@@ -1,0 +1,121 @@
+<VAST version="3.0" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns="http://www.iab.com/VAST">
+  <Ad id="19999" sequence="1">
+    <InLine>
+      <AdSystem version="4.0">IAB TechLab</AdSystem>
+      <Error>https://www.nuevodevel.com/error</Error>
+      <Impression id="Impression-ID">https://www.nuevodevel.com/tracking/impression</Impression>
+      <AdTitle>IAB TechLab Video Ad</AdTitle>
+      <Advertiser>Nuevodevel Sample Company</Advertiser>
+      <Creatives>
+        <Creative id="37" sequence="1" adId="19347">
+          <Linear skipoffset="00:00:05">
+            <TrackingEvents>
+              <Tracking event="start">https://www.nuevodevel.com/tracking/start</Tracking>
+              <Tracking event="firstQuartile">https://www.nuevodevel.com/tracking/firstQuartile</Tracking>
+              <Tracking event="midpoint">https://www.nuevodevel.com/tracking/midpoint</Tracking>
+              <Tracking event="thirdQuartile">https://www.nuevodevel.com/tracking/thirdQuartile</Tracking>
+              <Tracking event="complete">https://www.nuevodevel.com/tracking/complete</Tracking>
+			  <Tracking event="pause">https://www.nuevodevel.com/tracking/pause</Tracking>
+			  <Tracking event="resume">https://www.nuevodevel.com/tracking/resume</Tracking>
+			  <Tracking event="skip">https://www.nuevodevel.com/tracking/skip</Tracking>
+			  <Tracking event="clickthrough">https://www.nuevodevel.com/tracking/clickthrough</Tracking>
+
+            </TrackingEvents>
+            <Duration>00:00:25</Duration>
+            <MediaFiles>
+              <MediaFile id="41" delivery="progressive" type="video/mp4" bitrate="2250" width="1280" height="720" scalable="1" maintainAspectRatio="1">
+                <![CDATA[https://opencdn.b-cdn.net/pub/5.0/media/preroll_nuevo_720.mp4]]>
+              </MediaFile>
+              <MediaFile id="41" delivery="progressive" type="video/mp4" bitrate="860" width="640" height="360" scalable="1" maintainAspectRatio="1">
+                <![CDATA[https://opencdn.b-cdn.net/pub/5.0/media/preroll_nuevo_360.mp4]]>
+              </MediaFile>
+            </MediaFiles>
+            <VideoClicks>
+              <ClickThrough id="blog">
+                <![CDATA[https://www.nuevodevel.com/nuevo/]]>
+              </ClickThrough>
+            </VideoClicks>
+                        <Icons>
+                          <Icon program="AdChoices" width="190" height="48" xPosition="10" yPosition="bottom">
+                            <StaticResource creativeType="image/png">
+							<![CDATA[https://opencdn.b-cdn.net/pub/5.0/media/icon_vast.png]]>
+                            </StaticResource>
+							<IconClicks>
+                                    <IconClickThrough>
+                                        <![CDATA[
+                                            https://www.nuevodevel.com/nuevo/
+                                        ]]>
+                                    </IconClickThrough>
+                             </IconClicks>
+						  </Icon>
+                        </Icons>
+
+          </Linear>
+        </Creative>
+      </Creatives>
+    </InLine>
+  </Ad>
+<Ad id="19999" sequence="2">
+    <InLine>
+      <AdSystem version="4.0">IAB TechLab</AdSystem>
+      <Error>https://www.nuevodevel.com/error</Error>
+      <Impression id="Impression-ID">https://www.nuevodevel.com/tracking/impression</Impression>
+      <AdTitle>IAB TechLab Video Ad</AdTitle>
+      <Advertiser>Nuevodevel Sample Company</Advertiser>
+
+	  <Creatives>
+
+		<Creative>
+		  <CompanionAds>
+            <Companion id="233" width="540" height="82" adSlotId="3214" pxratio="1400">
+              <StaticResource creativeType="image/png">
+                <![CDATA[https://opencdn.b-cdn.net/pub/5.0/media/iab_540.png]]>
+              </StaticResource>
+              <CompanionClickThrough>
+                <![CDATA[https://nuevodevel.com/nuevo/showcase/vast-pro]]>
+              </CompanionClickThrough>
+			  <AltText>
+				<![CDATA[Example Companion Banner Image]]>
+			  </AltText>
+            </Companion>
+			</CompanionAds>
+		</Creative>
+
+        <Creative id="37" sequence="2" adId="19347">
+          <Linear skipoffset="00:00:10">
+            <TrackingEvents>
+              <Tracking event="start">https://www.nuevodevel.com/tracking/start</Tracking>
+              <Tracking event="firstQuartile">https://www.nuevodevel.com/tracking/firstQuartile</Tracking>
+              <Tracking event="midpoint">https://www.nuevodevel.com/tracking/midpoint</Tracking>
+              <Tracking event="thirdQuartile">https://www.nuevodevel.com/tracking/thirdQuartile</Tracking>
+              <Tracking event="complete">https://www.nuevodevel.com/tracking/complete</Tracking>
+			  <Tracking event="pause">https://www.nuevodevel.com/tracking/pause</Tracking>
+			  <Tracking event="resume">https://www.nuevodevel.com/tracking/resume</Tracking>
+			  <Tracking event="skip">https://www.nuevodevel.com/tracking/skip</Tracking>
+			  <Tracking event="clickthrough">https://www.nuevodevel.com/tracking/clickthrough</Tracking>
+
+            </TrackingEvents>
+            <Duration>00:00:25</Duration>
+            <MediaFiles>
+              <MediaFile id="41" delivery="progressive" type="video/mp4" bitrate="2250" width="1280" height="720" scalable="1" maintainAspectRatio="1">
+                <![CDATA[https://opencdn.b-cdn.net/pub/5.0/media/xiaomi_720.mp4]]>
+              </MediaFile>
+              <MediaFile id="41" delivery="progressive" type="video/mp4" bitrate="860" width="640" height="360" scalable="1" maintainAspectRatio="1">
+                <![CDATA[https://opencdn.b-cdn.net/pub/5.0/media/xiaomi_360.mp4]]>
+              </MediaFile>
+            </MediaFiles>
+            <VideoClicks>
+              <ClickThrough id="blog">
+                <![CDATA[https://www.nuevodevel.com/nuevo/]]>
+              </ClickThrough>
+            </VideoClicks>
+
+
+          </Linear>
+
+        </Creative>
+
+      </Creatives>
+    </InLine>
+  </Ad>
+</VAST>

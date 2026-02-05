@@ -1,0 +1,20 @@
+{
+    "id": "find_duplicate",
+    "problem_id": "find_duplicate",
+    "title": "Find Duplicate - Search and Compare",
+    "algorithm": [
+        "Step 1: Initialize a set to keep track of seen elements.",
+        "Step 2: Iterate through each element in the input list.",
+        "Step 3: For each element, check if it is already in the set of seen elements.",
+        "Step 4: If it is, return that element as the duplicate.",
+        "Step 5: If it is not, add the element to the set of seen elements.",
+        "Final step: If no duplicates are found after checking all elements, return null."
+    ],
+    "pseudocode": "ALGORITHM FindDuplicate\nBEGIN\n    SET seenElements = EMPTY SET\n    FOR each element IN inputList DO\n        IF element IN seenElements THEN\n            RETURN element\n        END IF\n        ADD element TO seenElements\n    END FOR\n    RETURN NULL\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize empty set]\n  │\n  ▼\n[Iterate through input list]\n  │\n  ▼\n◊ Check if element in seen set? ◊ ──YES──► [Return element]\n  │                        │\n  ▼                        ▼\n[Add element to seen set]  [Continue]\n  │                        │\n  ▼                        ▼\n  └─────────────────────► END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The algorithm leverages a set data structure for O(1) average time complexity for lookups.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use a hash set to track previously seen numbers while iterating through the list.\n2. **Key Components**: The use of a set allows for quick checks of existence and ensures only unique elements are stored.\n3. **Why It Works**: When we encounter a number that is already in the set, we know it's a duplicate, thus providing an efficient solution.\n4. **Edge Cases**: If the list is empty or contains no duplicates, the algorithm will return null appropriately.\n\n**Alternative Approaches:** Other approaches could include sorting the list first or using a counting array, but these methods may have higher time complexities.",
+    "complexity": "Time Complexity: O(n)\n- The algorithm makes a single pass through the list of n elements.\n- Each lookup in the set is O(1) on average.\n\nSpace Complexity: O(n)\n- In the worst case where all elements are unique, we store n elements in the set.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(n)       │\n│ Sorting Method  │    O(n log n)│    O(1)       │\n│ Counting Array  │    O(n)      │    O(k)       │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The algorithm performs well with large datasets due to its linear time complexity.\n- Memory usage is a consideration, especially with large lists, but is manageable with modern hardware.\n- The trade-off between time and space complexity favors this approach for most practical scenarios.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

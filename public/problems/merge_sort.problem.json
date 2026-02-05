@@ -1,0 +1,53 @@
+{
+    "id": "merge_sort",
+    "title": "Merge Sort",
+    "description": "Given an array <code>nums</code>, sort it using the merge sort algorithm. Merge sort is a divide-and-conquer algorithm that splits the array into halves, recursively sorts each half, and then merges the sorted halves back together.",
+    "difficulty": "Medium",
+    "category": "Sorting, Divide and Conquer",
+    "examples": [
+        {
+            "input": "[38, 27, 43, 3, 9, 82, 10]",
+            "output": "[3, 9, 10, 27, 38, 43, 82]",
+            "explanation": "The array is split into [38, 27, 43] and [3, 9, 82, 10]. Each half is sorted recursively to [27, 38, 43] and [3, 9, 10, 82]. Finally, the two sorted halves are merged to produce the final sorted array."
+        },
+        {
+            "input": "[5, 4, 3, 2, 1]",
+            "output": "[1, 2, 3, 4, 5]",
+            "explanation": "The input array is repeatedly divided until single-element arrays are reached. They are merged back together in sorted order, resulting in [1, 2, 3, 4, 5]."
+        },
+        {
+            "input": "[1, 2, 3, 4, 5]",
+            "output": "[1, 2, 3, 4, 5]",
+            "explanation": "Since the input array is already sorted, the merge sort will recognize this during merging and maintain the order, returning the same sorted array as output."
+        }
+    ],
+    "constraints": [
+        "The length of <code>nums</code> will be between 1 and 10^4.",
+        "Each element in <code>nums</code> is an integer within the range of -10^5 to 10^5."
+    ],
+    "tags": [
+        "Sorting",
+        "Divide and Conquer",
+        "Recursion"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Apple"
+    ],
+    "similar_problems": [
+        "quick_sort",
+        "bubble_sort",
+        "insertion_sort"
+    ],
+    "hints": [
+        "Consider how to split the array into halves.",
+        "Think about how to merge two sorted arrays efficiently.",
+        "What is the base case for your recursion?",
+        "Can you implement the merge function separately from the sort function?"
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -41,7 +41,523 @@ interface ExamData {
   collegeName?: string;
   [key: string]: any;
 }
+/**
+ * 🧠 Generate Logic Analysis for Custom Problem
+ * Uses ChatGPT to generate algorithm, pseudocode, flowchart, approach, and complexity analysis
+ */
 
+const LOGIC_ANALYSIS_SYSTEM_PROMPT = `You are an expert algorithm analyst and computer science educator. When given a problem statement, you must generate a comprehensive algorithm analysis with exactly these 5 components in JSON format.
+
+IMPORTANT: Return ONLY valid JSON, no markdown code blocks, no extra text.
+
+The response must be a JSON object with these exact keys:
+{
+  "algorithm": ["step1", "step2", ...],
+  "pseudocode": "string with pseudocode",
+  "flowchart": "string with ASCII flowchart",
+  "approach": "string with detailed approach explanation",
+  "complexity": "string with time and space complexity analysis"
+}
+
+FORMATTING GUIDELINES:
+
+1. **algorithm** (array of strings):
+   - Each step should be clear and concise
+   - 5-8 steps typically
+   - Start with initialization, end with return/output
+   - Example: ["Initialize empty hash map", "Iterate through array", "Check if complement exists", ...]
+
+2. **pseudocode** (string):
+   - Use standard pseudocode format
+   - Include ALGORITHM name, BEGIN, END
+   - Use IF/THEN/ELSE, FOR/WHILE loops
+   - Use proper indentation with newlines (\\n)
+   - Example format:
+   ALGORITHM ProblemName
+   BEGIN
+       INITIALIZE variables
+       FOR each element DO
+           process
+       END FOR
+       RETURN result
+   END
+
+3. **flowchart** (string):
+   - ASCII art flowchart with clear flow
+   - Use standard symbols:
+     - START/END for terminals
+     - [Process] for operations
+     - ◇ Decision ◇ for conditions
+     - Arrows: │ ▼ ► ◄ ▲ ──
+   - Show YES/NO branches for decisions
+   - Use newlines (\\n) for formatting
+
+4. **approach** (string):
+   - Start with problem analysis
+   - Explain the key insight
+   - Compare different approaches if applicable
+   - Include sections like:
+     - Problem Analysis:
+     - Approach Comparison:
+     - Key Insights:
+     - Implementation Strategy:
+   - Use **bold** for headers
+   - Use numbered lists for steps
+
+5. **complexity** (string):
+   - Time Complexity: O(?) with explanation
+   - Space Complexity: O(?) with explanation
+   - Include a comparison table if multiple approaches exist
+   - Explain why these complexities apply
+   - Mention trade-offs if any
+
+Remember: Output ONLY the JSON object, nothing else.`;
+
+export const generateLogicAnalysis = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 120,
+    memory: '512MB'
+  })
+  .https.onCall(async (data, context) => {
+    try {
+      const { problemStatement } = data || {};
+      
+      if (!problemStatement || typeof problemStatement !== 'string') {
+        throw new functions.https.HttpsError('invalid-argument', 'problemStatement is required');
+      }
+
+      if (problemStatement.length > 500) {
+        throw new functions.https.HttpsError('invalid-argument', 'problemStatement must be 500 characters or less');
+      }
+
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        throw new functions.https.HttpsError('failed-precondition', 'OpenAI API key not configured');
+      }
+      
+      const client = new OpenAI({ apiKey });
+
+      console.log(`🧠 Generating logic analysis for problem: ${problemStatement.substring(0, 50)}...`);
+
+      const completion = await client.chat.completions.create({
+        model: AI_MODELS.GPT_4O_MINI,
+        temperature: 0.7,
+        max_tokens: 3000,
+        messages: [
+          { role: 'system', content: LOGIC_ANALYSIS_SYSTEM_PROMPT },
+          { role: 'user', content: `Generate a comprehensive algorithm analysis for this problem:\n\n${problemStatement}` }
+        ]
+      });
+
+      const responseText = completion.choices?.[0]?.message?.content?.trim() || '';
+      
+      // Parse the JSON response
+      let analysisResult;
+      try {
+        // Remove any markdown code block if present
+        let cleanedResponse = responseText;
+        if (cleanedResponse.startsWith('```json')) {
+          cleanedResponse = cleanedResponse.slice(7);
+        }
+        if (cleanedResponse.startsWith('```')) {
+          cleanedResponse = cleanedResponse.slice(3);
+        }
+        if (cleanedResponse.endsWith('```')) {
+          cleanedResponse = cleanedResponse.slice(0, -3);
+        }
+        cleanedResponse = cleanedResponse.trim();
+        
+        analysisResult = JSON.parse(cleanedResponse);
+      } catch (parseError) {
+        console.error('Failed to parse AI response:', responseText);
+        throw new functions.https.HttpsError('internal', 'Failed to parse AI response');
+      }
+
+      // Validate the response has all required fields
+      const requiredFields = ['algorithm', 'pseudocode', 'flowchart', 'approach', 'complexity'];
+      for (const field of requiredFields) {
+        if (!analysisResult[field]) {
+          throw new functions.https.HttpsError('internal', `Missing required field: ${field}`);
+        }
+      }
+
+      // Ensure algorithm is an array
+      if (!Array.isArray(analysisResult.algorithm)) {
+        analysisResult.algorithm = [analysisResult.algorithm];
+      }
+
+      console.log(`✅ Successfully generated logic analysis`);
+      
+      return {
+        success: true,
+        data: {
+          id: 'custom_problem',
+          problem_id: 'custom_problem',
+          title: 'Custom Problem Analysis',
+          algorithm: analysisResult.algorithm,
+          pseudocode: analysisResult.pseudocode,
+          flowchart: analysisResult.flowchart,
+          approach: analysisResult.approach,
+          complexity: analysisResult.complexity,
+          created_at: new Date().toISOString()
+        }
+      };
+      
+    } catch (err: any) {
+      console.error('Logic Analysis Error:', err);
+      
+      if (err instanceof functions.https.HttpsError) {
+        throw err;
+      }
+      
+      throw new functions.https.HttpsError('internal', 'Failed to generate logic analysis', err.message);
+    }
+  });
+
+/**
+ * 🎓 Chat with AI Learning Assistant
+ * Helps students understand course content, provides explanations,
+ * code examples, practice problems, and answers questions
+ */
+
+/**
+ * 🎓 Chat with AI Learning Assistant
+ * Helps students understand course content, provides explanations,
+ * code examples, practice problems, and answers questions
+ */
+
+const LEARNING_ASSISTANT_SYSTEM_PROMPT = `You are an AI Learning Assistant for TUTORIX, an online learning platform. Your role is to help students understand course content and learn effectively.
+
+PERSONALITY:
+- Friendly, encouraging, and patient like a helpful tutor
+- Use simple language and clear explanations
+- Be enthusiastic about helping students learn
+- Use emojis sparingly to make conversations engaging
+
+CAPABILITIES:
+- Explain complex concepts in simple terms
+- Provide code examples with clear comments
+- Create practice problems and quizzes
+- Answer questions about programming, web development, and technology
+- Suggest additional learning resources
+- Help debug code and explain errors
+
+FORMATTING RULES:
+- Use **bold** for important terms
+- Use bullet points (•) for lists
+- Use numbered lists for step-by-step instructions
+- Use code blocks with language specification for code examples
+- Keep responses concise but thorough
+- Break down complex topics into digestible parts
+
+BOUNDARIES:
+- Focus on educational content related to programming and technology
+- Provide hints rather than complete solutions when appropriate
+- Encourage students to think and try solutions themselves
+- Be honest if you don't know something
+
+Remember: Your goal is to help students learn and understand, not just give answers.`;
+
+export const chatWithLearningAI = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 60,
+    memory: '512MB'
+  })
+  .https.onCall(async (data, context) => {
+    try {
+      const { message, conversationHistory = [], courseContext = {} } = data || {};
+      
+      if (!message || typeof message !== 'string') {
+        throw new functions.https.HttpsError('invalid-argument', 'message is required');
+      }
+
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        throw new functions.https.HttpsError('failed-precondition', 'OpenAI API key not configured');
+      }
+      
+      const client = new OpenAI({ apiKey });
+
+      // Build context-aware system prompt
+      let systemPrompt = LEARNING_ASSISTANT_SYSTEM_PROMPT;
+      
+      if (courseContext.courseName) {
+        systemPrompt += `\n\nCURRENT CONTEXT:
+- Course: ${courseContext.courseName}${courseContext.currentChapter ? `\n- Chapter: ${courseContext.currentChapter}` : ''}${courseContext.currentLecture ? `\n- Lecture: ${courseContext.currentLecture}` : ''}
+
+When answering, relate your responses to the course content when relevant.`;
+      }
+
+      const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+        { role: 'system', content: systemPrompt },
+        ...conversationHistory.slice(-10).map((m: any) => ({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content
+        })),
+        { role: 'user', content: message }
+      ];
+
+      const completion = await client.chat.completions.create({
+        model: AI_MODELS.GPT_4O_MINI,
+        temperature: 0.7,
+        max_tokens: 2000,
+        messages
+      });
+
+      const response = completion.choices?.[0]?.message?.content?.trim() || 'Sorry, I could not generate a response.';
+      
+      // Log for monitoring
+      console.log(`🎓 Learning AI - Course: ${courseContext.courseName || 'N/A'}, User: ${context.auth?.uid || 'anonymous'}`);
+      
+      return { success: true, response };
+      
+    } catch (err: any) {
+      console.error('Learning AI Error:', err);
+      throw new functions.https.HttpsError('internal', 'Failed to get response from AI', err.message);
+    }
+  });
+
+// ============================================
+// 1. PUBLISHER FUNCTION - Called when user submits exercise
+// ============================================
+/**
+ * 📝 Submit Exercise for Evaluation (Pub/Sub Publisher)
+ * Saves submission to Firestore and queues for AI evaluation
+ * Returns immediately - evaluation happens in background
+ */
+export const submitExerciseForEvaluation = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 30,
+    memory: '256MB'
+  })
+  .https.onCall(async (data, context) => {
+    try {
+      const { 
+        enrollmentId, 
+        visibilityId,  // Format: lectureId_exerciseId
+        submittedCode,
+        exerciseTitle,
+        questionDescription,
+        correctAnswer,
+        progLanguage 
+      } = data || {};
+
+      // Validate required fields
+      if (!enrollmentId || !visibilityId || !submittedCode) {
+        throw new functions.https.HttpsError(
+          'invalid-argument', 
+          'enrollmentId, visibilityId, and submittedCode are required'
+        );
+      }
+
+      console.log(`📝 Queueing exercise evaluation: ${visibilityId}`);
+
+      // Publish to Pub/Sub topic for background processing
+      const topic = pubsub.topic('evaluate-exercises');
+      
+      await topic.publishMessage({
+        json: {
+          enrollmentId,
+          visibilityId,
+          submittedCode,
+          exerciseTitle: exerciseTitle || 'Exercise',
+          questionDescription: questionDescription || '',
+          correctAnswer: correctAnswer || '',
+          progLanguage: progLanguage || 'javascript',
+          timestamp: Date.now()
+        }
+      });
+
+      console.log(`✅ Exercise queued for evaluation: ${visibilityId}`);
+
+      return {
+        success: true,
+        message: 'Exercise submitted for evaluation',
+        visibilityId
+      };
+
+    } catch (error: any) {
+      console.error('❌ Error queueing exercise:', error);
+      
+      if (error instanceof functions.https.HttpsError) {
+        throw error;
+      }
+      
+      throw new functions.https.HttpsError(
+        'internal',
+        `Failed to submit exercise: ${error.message}`
+      );
+    }
+  });
+
+
+// ============================================
+// 2. WORKER FUNCTION - Processes evaluation in background
+// ============================================
+/**
+ * 🤖 Exercise Evaluation Worker (Pub/Sub Subscriber)
+ * Triggered automatically for each exercise submission
+ * Multiple instances run in PARALLEL for scalability
+ * 
+ * NOTE: Pub/Sub has built-in retry on failure - no need for scheduled retry!
+ */
+export const exerciseEvaluationWorker = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 120,  // 2 minutes max per evaluation
+    memory: '512MB',
+    maxInstances: 500     // Allow up to 500 parallel workers
+  })
+  .pubsub.topic('evaluate-exercises')
+  .onPublish(async (message) => {
+    const { 
+      enrollmentId, 
+      visibilityId, 
+      submittedCode,
+      exerciseTitle,
+      questionDescription,
+      correctAnswer,
+      progLanguage 
+    } = message.json;
+
+    console.log(`🎯 [Worker] Evaluating exercise: ${visibilityId} for enrollment: ${enrollmentId}`);
+    
+    const startTime = Date.now();
+
+    try {
+      // Get OpenAI API key
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        throw new Error('OpenAI API key not configured');
+      }
+
+      const client = new OpenAI({ apiKey });
+
+      // Decode HTML entities in correct answer
+      const decodedCorrectAnswer = correctAnswer
+        ? correctAnswer
+            .replace(/<br>/g, '\n')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&amp;/g, '&')
+            .replace(/&quot;/g, '"')
+        : 'Not provided';
+
+      // Create evaluation prompt
+      const prompt = `You are an expert code reviewer and programming instructor. Evaluate this student's code submission.
+
+EXERCISE TITLE: ${exerciseTitle}
+
+QUESTION/TASK:
+${questionDescription}
+
+EXPECTED SOLUTION (Reference):
+${decodedCorrectAnswer}
+
+PROGRAMMING LANGUAGE: ${progLanguage}
+
+STUDENT'S SUBMITTED CODE:
+\`\`\`${progLanguage}
+${submittedCode}
+\`\`\`
+
+Evaluate the student's code and provide feedback in the following JSON format:
+{
+  "isCorrect": boolean (true if the code correctly solves the problem, false otherwise),
+  "score": number (0-100, overall score),
+  "feedback": string (2-3 sentences explaining what the student did well or wrong),
+  "isOptimized": boolean (true if the code is reasonably efficient and follows best practices),
+  "suggestions": string (specific suggestions for improvement, even if correct - focus on code quality, readability, edge cases)
+}
+
+EVALUATION CRITERIA:
+1. Correctness: Does the code solve the given problem correctly?
+2. Logic: Is the logic sound and complete?
+3. Syntax: Is the code syntactically correct?
+4. Best Practices: Does it follow coding conventions?
+5. Edge Cases: Does it handle edge cases appropriately?
+
+Be encouraging but honest. If the code is close but has minor issues, explain what needs to be fixed.
+If the code is completely wrong, kindly explain the correct approach.
+Always provide at least one constructive suggestion for improvement.`;
+
+      // Call OpenAI API
+      const completion = await client.chat.completions.create({
+        model: AI_MODELS.GPT_4O_MINI,
+        messages: [
+          { 
+            role: 'system', 
+            content: 'You are an expert programming instructor. Provide fair, constructive feedback on code submissions. Always respond in valid JSON format.' 
+          },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 1000,
+        response_format: { type: 'json_object' }
+      });
+
+      const result = JSON.parse(completion.choices?.[0]?.message?.content || '{}');
+
+      console.log(`🤖 [Worker] AI Evaluation Result for ${visibilityId}:`, {
+        isCorrect: result.isCorrect,
+        score: result.score,
+        isOptimized: result.isOptimized
+      });
+
+      // Prepare evaluation data
+      const evaluation = {
+        isCorrect: result.isCorrect ?? false,
+        score: result.score ?? 0,
+        feedback: result.feedback || 'Unable to evaluate. Please try again.',
+        isOptimized: result.isOptimized ?? false,
+        suggestions: result.suggestions || 'Review your code and try again.',
+        evaluatedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      // Update the submission in Firestore
+      const submissionRef = admin.firestore()
+        .collection('course_enrollments')
+        .doc(enrollmentId)
+        .collection('exerciseSubmissions')
+        .doc(visibilityId);
+
+      await submissionRef.update({
+        status: 'evaluated',
+        evaluation,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      const duration = Date.now() - startTime;
+      console.log(`✅ [Worker] Exercise ${visibilityId} evaluated in ${duration}ms (Score: ${result.score})`);
+
+    } catch (error: any) {
+      console.error(`❌ [Worker] Failed to evaluate ${visibilityId}:`, error.message);
+      
+      // Update submission with error status
+      try {
+        const submissionRef = admin.firestore()
+          .collection('course_enrollments')
+          .doc(enrollmentId)
+          .collection('exerciseSubmissions')
+          .doc(visibilityId);
+
+        await submissionRef.update({
+          status: 'error',
+          evaluationError: error.message,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (updateError) {
+        console.error(`❌ [Worker] Failed to update error status:`, updateError);
+      }
+      
+      // Throw to trigger Pub/Sub built-in retry
+      throw error;
+    }
+  });
 // ============================================
 // RESUME AI ENHANCEMENT FUNCTION
 // Add this to your index.ts file (after the imports section)

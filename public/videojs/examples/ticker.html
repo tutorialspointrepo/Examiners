@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs/Nuevo - News ticker plugin</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>News Ticker Plugin</h1>
+
+	<link href="../skins/treso/videojs.min.css" rel="stylesheet" type="text/css" />
+	<link href="../plugins/videojs.ticker.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+	<script src="../plugins/videojs.ticker.js"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_one" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/big_buck.jpg">
+				<source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+			
+			</video>
+		</div>
+	</div>
+
+
+
+	<script>
+	var player = videojs('player_one', {license: licenseKey});
+	player.nuevo({ 
+			title: "Nuevo plugin for VideoJs Player",
+			url: "https://www.nuevodevel.com/nuevo"
+	});
+		player.ticker({rss:'../examples/assets/rss/news.xml',logo:'../examples/assets/images/rsslogo.png',logotitle:'Daily News'});
+	</script>
+
+<br/>
+<center>Ticker plugin full usage description, including number of options is available on <a target="_blank" href="https://www.nuevodevel.com/nuevo/showcase/ticker">Nuevodevel demo</a> website page.</center>
+<br/>
+<h2>Example Code Setup</h2>
+<pre>
+
+<span class="comment">&lt;!--Load player skin, videojs and nuevo plugin inside &lt;body&gt; tag --&gt;</span>
+&lt;link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" /&gt;
+&lt;link href="../plugins/videojs.ticker.css" rel="stylesheet" type="text/css" /&gt;
+&lt;script src="../video.min.js"&gt;&lt;/script&gt;
+&lt;script src="../nuevo.min.js"&gt;&lt;/script&gt;
+&lt;script src="../plugins/videojs.ticker.js"&gt;&lt;/script&gt;
+
+<span class="comment">&lt;!--Video tag setup--&gt;</span>
+&lt;video id="<span class="mark">player_one</span>" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/poster.jpg"&gt;
+	&lt;source src="//opencdn.b-cdn.net/video/demo_720.mp4" type="video/mp4"&gt;
+	&lt;source src="//opencdn.b-cdn.net/video/demo_720.webm" type="video/webm"&gt;
+&lt;/video&gt;
+
+<span class="comment">&lt;!--Initialize the player and the plugin--&gt;</span>
+&lt;script&gt;
+	const player = videojs('<span class="mark">player_one</span>', {license: "key"});
+	player.nuevo({ 
+		//option_name: option_value, option_name: value
+	}); 
+	player.ticker({
+		rss:'../examples/assets/rss/news.xml',
+		logo:'../examples/assets/images/rsslogo.png',
+		logotitle:'Daily News'
+	});
+	
+&lt;/script&gt;
+</pre>
+
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

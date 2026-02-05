@@ -1,0 +1,20 @@
+{
+  "status": "needs_fixes",
+  "summary": "C++ brute force approach has flawed edge parsing logic that could fail on complex inputs",
+  "fixes": {
+    "approaches": {
+      "brute-force": {
+        "code": {
+          "cpp": "#include <iostream>\n#include <vector>\n#include <string>\n#include <sstream>\n#include <regex>\nusing namespace std;\n\nvector<int> solution(int n, vector<vector<int>>& edges, string labels) {\n    // Build adjacency list\n    vector<vector<int>> adj(n);\n    for (auto& edge : edges) {\n        adj[edge[0]].push_back(edge[1]);\n        adj[edge[1]].push_back(edge[0]);\n    }\n    \n    vector<int> result(n);\n    \n    function<int(int, int, char)> dfs = [&](int node, int parent, char targetLabel) {\n        int count = (labels[node] == targetLabel) ? 1 : 0;\n        for (int neighbor : adj[node]) {\n            if (neighbor != parent) {\n                count += dfs(neighbor, node, targetLabel);\n            }\n        }\n        return count;\n    };\n    \n    for (int i = 0; i < n; i++) {\n        result[i] = dfs(i, -1, labels[i]);\n    }\n    \n    return result;\n}\n\nint main() {\n    int n;\n    cin >> n;\n    cin.ignore();\n    \n    string edgesLine;\n    getline(cin, edgesLine);\n    \n    string labels;\n    getline(cin, labels);\n    \n    // Parse edges using regex for more robust parsing\n    vector<vector<int>> edges;\n    regex edge_regex(R\"(\\[(\\d+),(\\d+)\\])\");\n    sregex_iterator iter(edgesLine.begin(), edgesLine.end(), edge_regex);\n    sregex_iterator end;\n    \n    for (; iter != end; ++iter) {\n        smatch match = *iter;\n        int u = stoi(match[1].str());\n        int v = stoi(match[2].str());\n        edges.push_back({u, v});\n    }\n    \n    vector<int> result = solution(n, edges, labels);\n    cout << \"[\";\n    for (int i = 0; i < result.size(); i++) {\n        cout << result[i];\n        if (i < result.size() - 1) cout << \",\";\n    }\n    cout << \"]\" << endl;\n    return 0;\n}"
+        }
+      }
+    }
+  },
+  "details": [
+    {
+      "field": "approaches.brute-force.code.cpp",
+      "issue": "Edge parsing logic using manual string manipulation could fail on complex inputs",
+      "fix": "Replaced with regex-based parsing for more robust edge extraction"
+    }
+  ]
+}

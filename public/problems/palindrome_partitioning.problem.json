@@ -1,0 +1,53 @@
+{
+    "id": "palindrome_partitioning",
+    "title": "Palindrome Partitioning",
+    "description": "Given a string <code>s</code>, partition <code>s</code> such that every substring of the partition is a palindrome. Return all possible palindrome partitioning of <code>s</code>.",
+    "difficulty": "Medium",
+    "category": "Backtracking, String",
+    "examples": [
+        {
+            "input": "\"aab\"",
+            "output": "[[\"a\",\"a\",\"b\"],[\"aa\",\"b\"]]",
+            "explanation": "The string \"aab\" can be partitioned into two valid sets: ['a', 'a', 'b'] and ['aa', 'b']. Each substring is a palindrome."
+        },
+        {
+            "input": "\"a\"",
+            "output": "[[\"a\"]]",
+            "explanation": "The string \"a\" itself is a single character and is a palindrome, thus it can only be partitioned as [['a']]."
+        },
+        {
+            "input": "\"racecar\"",
+            "output": "[[\"r\",\"a\",\"c\",\"e\",\"c\",\"a\",\"r\"],[\"r\",\"aceca\",\"r\"],[\"racecar\"]]",
+            "explanation": "The string \"racecar\" can be partitioned into multiple valid sets including individual letters, the substring \"aceca\", and the whole string itself since they are all palindromes."
+        }
+    ],
+    "constraints": [
+        "The input string <code>s</code> has a length of at most 16 characters.",
+        "All characters in <code>s</code> consist of lowercase English letters."
+    ],
+    "tags": [
+        "Backtracking",
+        "String",
+        "Dynamic Programming"
+    ],
+    "companies": [
+        "Google",
+        "Microsoft",
+        "Amazon",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "palindrome_partitioning_ii",
+        "longest_palindromic_substring",
+        "valid_palindrome"
+    ],
+    "hints": [
+        "Consider using backtracking to explore all possible partitions.",
+        "You can check if a substring is a palindrome by comparing it to its reverse.",
+        "Keep track of the current partition and backtrack when necessary.",
+        "Use memoization to improve efficiency when checking for palindromes."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,53 @@
+{
+    "id": "fibonacci_memoization",
+    "title": "Fibonacci Sequence with Memoization",
+    "description": "Given an integer <code>n</code>, return the <code>n</code>th number in the Fibonacci sequence using memoization to optimize the computation. The Fibonacci sequence is defined as follows: <code>F(0) = 0</code>, <code>F(1) = 1</code>, and <code>F(n) = F(n-1) + F(n-2)</code> for <code>n >= 2</code>.",
+    "difficulty": "Medium",
+    "category": "Dynamic Programming, Recursion",
+    "examples": [
+        {
+            "input": "5",
+            "output": "5",
+            "explanation": "The Fibonacci sequence up to <code>5</code> is <code>0, 1, 1, 2, 3, 5</code>. Thus, <code>F(5) = 5</code>."
+        },
+        {
+            "input": "10",
+            "output": "55",
+            "explanation": "The Fibonacci sequence up to <code>10</code> is <code>0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55</code>. Therefore, <code>F(10) = 55</code>."
+        },
+        {
+            "input": "15",
+            "output": "610",
+            "explanation": "The Fibonacci sequence up to <code>15</code> is <code>0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610</code>. Thus, <code>F(15) = 610</code>."
+        }
+    ],
+    "constraints": [
+        "<code>0 <= n <= 50</code>",
+        "The input <code>n</code> is guaranteed to be a non-negative integer."
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "Recursion",
+        "Memoization"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Apple",
+        "Microsoft"
+    ],
+    "similar_problems": [
+        "climbing_stairs",
+        "nth_tribonacci_number",
+        "distinct_subsequences"
+    ],
+    "hints": [
+        "Consider storing previously computed Fibonacci numbers to avoid redundant calculations.",
+        "Use a dictionary or array to cache results of Fibonacci computations.",
+        "Think about the base cases for the recursion.",
+        "Explore how the recursive solution can be transformed into an iterative approach."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

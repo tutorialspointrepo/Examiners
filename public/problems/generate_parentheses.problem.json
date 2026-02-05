@@ -1,0 +1,53 @@
+{
+    "id": "generate_parentheses",
+    "title": "Generate Parentheses",
+    "description": "Given <code>n</code> pairs of parentheses, write a function to generate all combinations of well-formed parentheses. A combination is considered well-formed if every opening parenthesis has a corresponding closing parenthesis.",
+    "difficulty": "Medium",
+    "category": "Backtracking, Recursion",
+    "examples": [
+        {
+            "input": "n = 3",
+            "output": "[\"((()))\", \"(()())\", \"(())()\", \"()(())\", \"()()()\"]",
+            "explanation": "For n = 3, we can create the following combinations: 1. '((()))' has three open and three close parentheses. 2. '(()())' has two open followed by one open then close, and so forth. All combinations maintain the balance of parentheses."
+        },
+        {
+            "input": "n = 2",
+            "output": "[\"(())\", \"()()\"]",
+            "explanation": "For n = 2, the valid combinations are: 1. '(())' which has one set of outer parentheses containing an inner set. 2. '()()' which represents two separate valid pairs of parentheses."
+        },
+        {
+            "input": "n = 1",
+            "output": "[\"()\"]",
+            "explanation": "With only one pair of parentheses, the only valid combination is '()'. It is straightforward as there's only one possibility."
+        }
+    ],
+    "constraints": [
+        "0 <= n <= 8",
+        "The output will not exceed 5000 combinations."
+    ],
+    "tags": [
+        "Backtracking",
+        "Recursion",
+        "String"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Microsoft"
+    ],
+    "similar_problems": [
+        "generate_parentheses_ii",
+        "valid_parentheses",
+        "combine"
+    ],
+    "hints": [
+        "Consider using a recursive approach to build the parentheses string.",
+        "Track the count of opened and closed parentheses during generation.",
+        "Ensure that you only add a closing parenthesis if it won't exceed the number of opening ones.",
+        "Think about the base case when you have used all pairs of parentheses."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

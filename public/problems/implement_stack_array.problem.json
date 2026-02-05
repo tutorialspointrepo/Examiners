@@ -1,0 +1,53 @@
+{
+    "id": "implement_stack_array",
+    "title": "Implement Stack using Array",
+    "description": "Design a stack that supports push, pop, top, and retrieving the minimum element in constant time. Your implementation should use an array to store the elements of the stack. The operations are defined as follows:<br><code>push(value)</code>: Pushes the <code>value</code> onto the stack.<br><code>pop()</code>: Removes the element on the top of the stack.<br><code>top()</code>: Gets the top element of the stack without removing it.<br><code>get_min()</code>: Retrieves the minimum element in the stack.",
+    "difficulty": "Medium",
+    "category": "Data Structures, Stack",
+    "examples": [
+        {
+            "input": "stack = new Stack();\nstack.push(3);\nstack.push(5);\nstack.get_min();\nstack.push(2);\nstack.push(1);\nstack.get_min();\nstack.pop();\nstack.get_min();\nstack.top();",
+            "output": "3\n1\n2\n",
+            "explanation": "Initially, we push 3 and then 5 onto the stack. The minimum is 3. Next, we push 2 and 1. Now, the minimum becomes 1. After popping the top element (1), the stack's top is now 2, and the minimum is updated back to 2."
+        },
+        {
+            "input": "stack = new Stack();\nstack.push(-1);\nstack.push(0);\nstack.push(2);\nstack.get_min();\nstack.pop();\nstack.get_min();",
+            "output": "-1\n-1\n",
+            "explanation": "We start with -1, then push 0 and 2. The minimum is -1. After popping 2, the minimum remains -1 as -1 is still on the stack."
+        },
+        {
+            "input": "stack = new Stack();\nstack.push(10);\nstack.push(20);\nstack.push(5);\nstack.push(15);\nstack.pop();\nstack.get_min();\nstack.push(3);\nstack.get_min();",
+            "output": "5\n3\n",
+            "explanation": "The minimum after pushing 10, 20, and 5 is 5. After popping 15, the minimum is still 5. Finally, we push 3, which updates the minimum to 3."
+        }
+    ],
+    "constraints": [
+        "All operations must run in O(1) time.",
+        "The stack can only hold a finite number of elements determined by the size of the array."
+    ],
+    "tags": [
+        "Stack",
+        "Array",
+        "Data Structures"
+    ],
+    "companies": [
+        "Google",
+        "Microsoft",
+        "Amazon",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "min_stack",
+        "design_stack",
+        "stack_operations"
+    ],
+    "hints": [
+        "Consider how to keep track of the minimum during push and pop operations.",
+        "Think about using an additional array or variable to store the current minimum.",
+        "Ensure your implementation handles edge cases like popping from an empty stack.",
+        "You might want to explore using a linked list for dynamic sizing if needed."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

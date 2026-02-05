@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs/Snapshot Image</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>Capture Snapshot Image</h1>
+
+	<link href="../skins/treso/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid" controls preload="auto" crossorigin="anonymous" playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+
+
+
+	<script>
+	var player = videojs('player_1', {license: licenseKey});
+	player.nuevo({ 
+		snapshot:true,
+	});
+	</script>
+
+<div class="explain">
+Optional "snapshot" button, which allows to capture image from video at current time position.
+</div>
+
+<h2>Initialize snapshot button</h2>
+<pre>
+<span class="comment">Initialize video.js and Nuevo plugin with Snapshot enabled</span>
+<!--Initialize player and plugin-->
+&lt;script&gt;
+	var player = videojs('player_1', {license: "key"});
+	player.nuevo({ 
+		snapshot:true
+	});
+&lt;/script&gt;
+</pre>
+
+By default captured image is in <i>.jpg</i> format. You can also set an option to save image in <i>.png</i> format.
+
+<pre>
+&lt;script&gt;
+	var player = videojs('player_1', {license: "key"});
+	player.nuevo({ 
+		snapshot:true, snapshotType: "png"
+	});
+&lt;/script&gt;
+</pre>
+
+The plugin allows to overlay watermark on snapshot image. You need to define watermark text as plugin's option, e.g.
+<pre>
+	player.nuevo({ 
+		snapshot:true, 
+		snapshotWatermark: "Domain.com" 
+	});
+</pre>
+
+If streaming server is other than than production server, you need to enable CORS on streaming server or at least set video attribute crossorigin="anonymous".
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevodevel Software</a>. All rights reserved.
+</div>
+
+</body>
+</html>

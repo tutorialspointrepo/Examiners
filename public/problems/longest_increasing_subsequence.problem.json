@@ -1,0 +1,53 @@
+{
+    "id": "longest_increasing_subsequence",
+    "title": "Longest Increasing Subsequence",
+    "description": "Given an array of integers <code>nums</code>, return the length of the longest increasing subsequence. A subsequence is a sequence that can be derived from another sequence by deleting some elements without changing the order of the remaining elements.",
+    "difficulty": "Medium",
+    "category": "Dynamic Programming, Array",
+    "examples": [
+        {
+            "input": "[10, 9, 2, 5, 3, 7, 101, 18]",
+            "output": "4",
+            "explanation": "The longest increasing subsequence is [2, 3, 7, 101], which has a length of 4."
+        },
+        {
+            "input": "[0, 1, 0, 3, 2, 3]",
+            "output": "4",
+            "explanation": "The longest increasing subsequence is [0, 1, 2, 3], which has a length of 4."
+        },
+        {
+            "input": "[7, 7, 7, 7, 7, 7, 7]",
+            "output": "1",
+            "explanation": "All elements are the same, so the longest increasing subsequence can only be one element long, resulting in a length of 1."
+        }
+    ],
+    "constraints": [
+        "The length of <code>nums</code> will be between 1 and 2500.",
+        "Each element in <code>nums</code> will be between -10^4 and 10^4."
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "Array",
+        "Binary Search"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "maximum_length_of_increasing_subarray",
+        "longest_decreasing_subsequence",
+        "wiggle_subsequence"
+    ],
+    "hints": [
+        "Consider maintaining an array to keep track of the lengths of increasing subsequences.",
+        "You may want to use binary search to optimize your solution.",
+        "Think about how to handle elements that are equal to the current maximum in your increasing subsequence.",
+        "Try to come up with a solution that works in O(n log n) time complexity."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

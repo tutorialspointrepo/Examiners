@@ -1,0 +1,53 @@
+{
+    "id": "selection_sort",
+    "title": "Selection Sort",
+    "description": "Implement a function that performs <code>selection sort</code> on an array of integers. The algorithm works by repeatedly selecting the smallest element from the unsorted portion of the array and swapping it with the first unsorted element.",
+    "difficulty": "Easy",
+    "category": "Sorting, Algorithm",
+    "examples": [
+        {
+            "input": "[64, 25, 12, 22, 11]",
+            "output": "[11, 12, 22, 25, 64]",
+            "explanation": "The algorithm starts by finding the minimum value (11) and swaps it with the first element (64). Next, it finds the next minimum (12) and swaps it with the second element (25), and so on until the array is sorted."
+        },
+        {
+            "input": "[29, 10, 14, 37, 13]",
+            "output": "[10, 13, 14, 29, 37]",
+            "explanation": "In the first pass, the minimum value (10) is found and swapped with the first element (29). Then, the process is repeated for the remaining unsorted elements: 13 is swapped with 29, 14 remains in place, and finally, 29 and 37 are already in order."
+        },
+        {
+            "input": "[5, 3, 6, 2, 10]",
+            "output": "[2, 3, 5, 6, 10]",
+            "explanation": "Initially, the smallest number (2) is identified and swapped with the first element (5). Proceeding to the next unsorted numbers, 3 remains in place, 5 is in order, 6 remains, and 10 is placed last, resulting in a fully sorted array."
+        }
+    ],
+    "constraints": [
+        "The input array will contain integers only.",
+        "The length of the array will be between 1 and 1000."
+    ],
+    "tags": [
+        "Sorting",
+        "Algorithm",
+        "Array"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Apple"
+    ],
+    "similar_problems": [
+        "bubble_sort",
+        "insertion_sort",
+        "merge_sort"
+    ],
+    "hints": [
+        "Consider how many passes you need to make through the array.",
+        "Keep track of the index of the minimum element found.",
+        "Think about how to swap elements in the array.",
+        "Remember that this algorithm has a time complexity of O(n^2)."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

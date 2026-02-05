@@ -1,0 +1,54 @@
+{
+    "id": "add_two_numbers",
+    "title": "Add Two Numbers",
+    "description": "You are given two non-empty linked lists representing two non-negative integers. The digits are stored in reverse order and each of their nodes contains a single digit. Add the two numbers and return it as a linked list. You may assume the two numbers do not contain any leading zero, except the number 0 itself. Each linked list node is represented as <code>ListNode</code> with a value <code>val</code> and a pointer to the next node <code>next</code>.",
+    "difficulty": "Medium",
+    "category": "Linked List, Math",
+    "examples": [
+        {
+            "input": "l1 = [2,4,3], l2 = [5,6,4]",
+            "output": "[7,0,8]",
+            "explanation": "The numbers represented by the linked lists are 342 (from l1) and 465 (from l2). Adding these gives 807, which is represented as the linked list [7,0,8]."
+        },
+        {
+            "input": "l1 = [0], l2 = [0]",
+            "output": "[0]",
+            "explanation": "Both numbers are 0, so the sum is also 0, represented as a single node linked list [0]."
+        },
+        {
+            "input": "l1 = [9,9,9,9,9,9,9], l2 = [9,9,9]",
+            "output": "[8,9,9,0,0,0,1]",
+            "explanation": "The first number is 9999999 and the second is 999. Their sum is 10009998, which is represented as the linked list [8,9,9,0,0,0,1]."
+        }
+    ],
+    "constraints": [
+        "Each linked list represents a non-negative integer.",
+        "The number of nodes in each linked list is at most 100.",
+        "Each node's value is between 0 and 9."
+    ],
+    "tags": [
+        "Linked List",
+        "Math",
+        "Simulation"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Apple"
+    ],
+    "similar_problems": [
+        "add_binary",
+        "merge_two_sorted_lists",
+        "reverse_linked_list"
+    ],
+    "hints": [
+        "Consider how to handle carrying over when the sum exceeds 9.",
+        "Use a dummy head node to simplify the result linked list construction.",
+        "Make sure to process both linked lists until all nodes are consumed.",
+        "Don't forget to handle the case where there's still a carry after processing both lists."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

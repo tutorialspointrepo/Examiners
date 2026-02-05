@@ -1,0 +1,20 @@
+{
+    "id": "reverse_linked_list",
+    "problem_id": "reverse_linked_list",
+    "title": "Reverse Linked List - Iterative Technique",
+    "algorithm": [
+        "Step 1: Initialize three pointers: previous (prev) as null, current (curr) as head, and next as null.",
+        "Step 2: Iterate through the linked list while current is not null.",
+        "Step 3: In each iteration, store the next node (next = curr.next) to not lose reference.",
+        "Step 4: Reverse the link by pointing curr.next to prev (curr.next = prev).",
+        "Step 5: Move prev to the current node (prev = curr) and advance curr to the next node (curr = next).",
+        "Final step: When curr becomes null, return prev which will be the new head of the reversed linked list."
+    ],
+    "pseudocode": "ALGORITHM ReverseLinkedList\nBEGIN\n    DECLARE prev AS Node = NULL\n    DECLARE curr AS Node = head\n    DECLARE next AS Node\n\n    WHILE curr IS NOT NULL DO\n        next = curr.next\n        curr.next = prev\n        prev = curr\n        curr = next\n    END WHILE\n\n    RETURN prev\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize prev, curr, next]\n  │\n  ▼\n◊ Is curr NULL? ◊ ──NO──► [Store next]\n  │                        │\n  ▼                        ▼\n[Reverse link]          ◊ Yes ◊ ──► [Return prev]\n  │\n  ▼\n[Move pointers]\n  │\n  ▼\nREPEAT\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The core principle is to reverse the direction of the links in the linked list.\n\n**Approach Explanation:**\n1. **Main Strategy**: We utilize three pointers to traverse the list and reverse links simultaneously.\n2. **Key Components**: The prev pointer keeps track of the new head, curr processes the current node, and next preserves the reference to the next node.\n3. **Why It Works**: By continually redirecting the next pointers, we effectively reverse the list without losing access to subsequent nodes.\n4. **Edge Cases**: The algorithm handles empty lists (head is null) and single-node lists (returns the same node).\n\n**Alternative Approaches:** A recursive method also exists for reversing a linked list but may use more stack space.",
+    "complexity": "Time Complexity: O(n)\n- Each node is visited exactly once, where n is the number of nodes in the list.\n\nSpace Complexity: O(1)\n- The algorithm uses a constant amount of space irrespective of the input size.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(1)      │\n│ Recursive Method │    O(n)      │    O(n)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The iterative approach is preferred for its lower space usage.\n- It scales well with larger lists, avoiding stack overflow issues present in recursion.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,52 @@
+{
+    "id": "ugly_numbers",
+    "title": "Ugly Numbers",
+    "description": "An <code>ugly number</code> is a positive integer whose prime factors only include <code>2</code>, <code>3</code>, and <code>5</code>. Write a function to determine if a given integer <code>n</code> is an ugly number. Your function should return <code>true</code> if <code>n</code> is an ugly number, and <code>false</code> otherwise.",
+    "difficulty": "Easy",
+    "category": "Math, Number Theory",
+    "examples": [
+        {
+            "input": "6",
+            "output": "true",
+            "explanation": "The prime factorization of <code>6</code> is <code>2 * 3</code>, which only includes the primes <code>2</code> and <code>3</code>. Hence, <code>6</code> is an ugly number."
+        },
+        {
+            "input": "8",
+            "output": "true",
+            "explanation": "The prime factorization of <code>8</code> is <code>2 * 2 * 2</code>, which only includes the prime <code>2</code>. Thus, <code>8</code> is considered an ugly number."
+        },
+        {
+            "input": "14",
+            "output": "false",
+            "explanation": "The prime factorization of <code>14</code> is <code>2 * 7</code>. Since <code>7</code> is not among the allowed prime factors (<code>2</code>, <code>3</code>, <code>5</code>), <code>14</code> is not an ugly number."
+        }
+    ],
+    "constraints": [
+        "The input integer <code>n</code> will be within the range of <code>-2^31</code> to <code>2^31 - 1</code>."
+    ],
+    "tags": [
+        "Math",
+        "Number Theory",
+        "Easy"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "check_ugly_number",
+        "nth_ugly_number",
+        "ugly_number_ii"
+    ],
+    "hints": [
+        "Consider how you can divide the number by <code>2</code>, <code>3</code>, and <code>5</code> until it cannot be divided anymore.",
+        "If at any point the number becomes <code>1</code>, it is an ugly number.",
+        "Remember that negative numbers and zero cannot be ugly numbers.",
+        "Think about implementing a loop that continues dividing while possible."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

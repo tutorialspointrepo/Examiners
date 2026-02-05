@@ -1,0 +1,53 @@
+{
+    "id": "three_sum",
+    "title": "3Sum",
+    "description": "Given an array of integers <code>nums</code>, return all the <code>triplets</code> [<code>nums[i]</code>, <code>nums[j]</code>, <code>nums[k]</code>] such that <code>i != j</code>, <code>i != k</code>, and <code>j != k</code>, and <code>nums[i] + nums[j] + nums[k] == 0</code>. Notice that the solution set must not contain duplicate triplets.",
+    "difficulty": "Medium",
+    "category": "Array, Two Pointers",
+    "examples": [
+        {
+            "input": "[ -1, 0, 1, 2, -1, -4 ]",
+            "output": "[ [ -1, -1, 2 ], [ -1, 0, 1 ] ]",
+            "explanation": "The triplet [-1, -1, 2] sums to 0 and is valid. The triplet [-1, 0, 1] also sums to 0 and is valid. The triplet [-1, 1, 0] is a duplicate of [-1, 0, 1], so it is not included."
+        },
+        {
+            "input": "[0, 1, 1]",
+            "output": "[]",
+            "explanation": "There are no triplets in the array that sum to zero; thus, the output is an empty list."
+        },
+        {
+            "input": "[ -2, 0, 1, 1, 2 ]",
+            "output": "[ [ -2, 0, 2 ], [ -2, 1, 1 ] ]",
+            "explanation": "The triplet [-2, 0, 2] sums to 0 and is valid. The triplet [-2, 1, 1] also sums to 0 and is valid. No other combinations yield a valid triplet."
+        }
+    ],
+    "constraints": [
+        "The length of <code>nums</code> is at most <code>3000</code>.",
+        "Each element of <code>nums</code> is in the range [-10^5, 10^5]."
+    ],
+    "tags": [
+        "Array",
+        "Two Pointers",
+        "Hash Table"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Apple"
+    ],
+    "similar_problems": [
+        "two_sum",
+        "four_sum",
+        "3sum_closest"
+    ],
+    "hints": [
+        "Consider sorting the array first to simplify finding triplets.",
+        "Use a two-pointer technique after fixing one number to find pairs that sum to a target.",
+        "Be careful with duplicate values to avoid counting the same triplet multiple times.",
+        "Think about how changing the fixed number affects the search space for the remaining two numbers."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

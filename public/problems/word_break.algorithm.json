@@ -1,0 +1,20 @@
+{
+    "id": "word_break",
+    "problem_id": "word_break",
+    "title": "Word Break - Dynamic Programming",
+    "algorithm": [
+        "Step 1: Create a set of words from the given dictionary.",
+        "Step 2: Initialize a boolean array 'dp' of size n+1, where n is the length of the input string. Set dp[0] to true.",
+        "Step 3: Iterate through the string from index 1 to n.",
+        "Step 4: For each index i, check all previous indices j (from 0 to i) to see if the substring s[j:i] exists in the word set and if dp[j] is true.",
+        "Step 5: If both conditions are satisfied, set dp[i] to true and break the inner loop.",
+        "Final step: Return dp[n] which indicates if the string can be segmented into words from the dictionary."
+    ],
+    "pseudocode": "ALGORITHM WordBreak\nBEGIN\n    DECLARE word_set AS SET\n    DECLARE dp AS ARRAY OF BOOLEAN WITH SIZE n + 1\n    SET dp[0] = TRUE\n    FOR i FROM 1 TO n DO\n        FOR j FROM 0 TO i - 1 DO\n            IF dp[j] AND s[j:i] IN word_set THEN\n                SET dp[i] = TRUE\n                BREAK\n            END IF\n        END FOR\n    END FOR\n    RETURN dp[n]\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Create word set]\n  │\n  ▼\n[Initialize dp array]\n  │\n  ▼\nFOR i FROM 1 TO n ──► [Check substrings]\n  │\n  ▼\n◊ dp[j] is TRUE? ◊ ──YES──► [Set dp[i] to TRUE]\n  │                        │\n  ▼                        ▼\n[Continue checking]      END\n  │\n  ▼\nRETURN dp[n]\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** By storing results of subproblems in a boolean array, we avoid redundant calculations.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use dynamic programming to build up a solution from smaller subproblems.\n2. **Key Components**: The boolean array 'dp' tracks whether a substring can be segmented into dictionary words.\n3. **Why It Works**: The algorithm ensures that each substring is checked efficiently by leveraging previously computed results, enabling an optimal solution.\n4. **Edge Cases**: Handles cases where the input string is empty or contains characters not in the dictionary.\n\n**Alternative Approaches:** Recursive backtracking with memoization could be an alternative but is less efficient for longer strings.",
+    "complexity": "Time Complexity: O(n^2)\n- Each character of the string is checked against all previous characters.\n- The nested loop contributes to the quadratic time complexity.\n\nSpace Complexity: O(n)\n- The space used for the boolean dp array, which stores the results for substrings.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n^2)    │    O(n)      │\n│ Alternative 1   │    O(2^n)    │    O(n)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The algorithm scales well for moderate input sizes due to its polynomial time complexity.\n- For very large strings, consider optimizations like Trie data structures or limiting checks based on word lengths.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

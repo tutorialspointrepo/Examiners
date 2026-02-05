@@ -1,0 +1,53 @@
+{
+    "id": "paint_house",
+    "title": "Paint House",
+    "description": "You are given <code>n</code> houses in a row, each house can be painted with one of three colors: red, blue, or green. The cost to paint the <code>i</code>-th house with color <code>j</code> is given by a cost matrix <code>costs</code>, where <code>costs[i][j]</code> represents the cost of painting house <code>i</code> with color <code>j</code>. However, adjacent houses cannot be painted the same color. Your task is to find the minimum cost to paint all houses without violating the adjacent color rule.",
+    "difficulty": "Medium",
+    "category": "Dynamic Programming, Array",
+    "examples": [
+        {
+            "input": "[[17,2,17],[16,16,5],[14,3,19]]",
+            "output": "10",
+            "explanation": "In this example, you can paint house 0 with blue (cost 2), house 1 with green (cost 5), and house 2 with red (cost 3). The total cost is 2 + 5 + 3 = 10."
+        },
+        {
+            "input": "[[7,6,2],[4,2,5],[9,3,6]]",
+            "output": "8",
+            "explanation": "Here, the optimal painting would be house 0 painted red (cost 7), house 1 painted blue (cost 2), and house 2 painted red (cost 3). Total cost is 7 + 2 + 3 = 12."
+        },
+        {
+            "input": "[[1,2,3],[4,5,6],[7,8,9]]",
+            "output": "12",
+            "explanation": "The best approach is to paint house 0 green (cost 3), house 1 red (cost 4), and house 2 blue (cost 8). The total cost is 3 + 4 + 5 = 12."
+        }
+    ],
+    "constraints": [
+        "The number of houses <code>n</code> will be in the range [1, 100].",
+        "Each cost value <code>costs[i][j]</code> will be an integer in the range [0, 20]."
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "Array",
+        "Greedy"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "min_cost_climbing_stairs",
+        "paint_fence",
+        "house_robber"
+    ],
+    "hints": [
+        "Consider using a dynamic programming approach to build up the solution incrementally.",
+        "Keep track of the minimum cost for each house based on the previous house's colors.",
+        "Think about how you can use the results from previous computations to minimize current costs.",
+        "Explore whether a greedy strategy could also yield an optimal solution for a simplified version of the problem."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

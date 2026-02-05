@@ -1,0 +1,19 @@
+{
+    "id": "binary_tree_postorder",
+    "problem_id": "binary_tree_postorder",
+    "title": "Binary Tree Postorder - Tree Traversal",
+    "algorithm": [
+        "Step 1: Start at the root node of the binary tree.",
+        "Step 2: Recursively traverse the left subtree by calling the postorder function on the left child.",
+        "Step 3: Recursively traverse the right subtree by calling the postorder function on the right child.",
+        "Step 4: Visit the current node and process the value (e.g., add it to a list).",
+        "Final step: Return the list of values in postorder sequence."
+    ],
+    "pseudocode": "ALGORITHM PostorderTraversal(root)\nBEGIN\n    IF root IS NULL THEN\n        RETURN []\n    ENDIF\n    leftList = PostorderTraversal(root.left)\n    rightList = PostorderTraversal(root.right)\n    RETURN leftList + rightList + [root.value]\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Check if node is NULL]\n  │\n  ▼\n◊ Is NULL? ◊ ──YES──► END\n  │\n  ▼\n[Traverse left subtree]\n  │\n  ▼\n[Traverse right subtree]\n  │\n  ▼\n[Process current node]\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** Postorder traversal processes nodes in the order of left child, right child, then parent.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use recursion to traverse the tree in postorder manner.\n2. **Key Components**: The recursive function calls for left and right subtrees.\n3. **Why It Works**: Ensures that both children are visited before the parent node, adhering to postorder rules.\n4. **Edge Cases**: Handles empty trees by returning an empty list; single-node trees return a list with that single node.\n\n**Alternative Approaches:** Iterative methods using a stack can also achieve postorder traversal.",
+    "complexity": "Time Complexity: O(n)\n- Each node is visited exactly once, making the time complexity linear relative to the number of nodes.\n\nSpace Complexity: O(h)\n- The space complexity is determined by the height of the tree due to the recursion stack.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(h)       │\n│ Iterative Method│    O(n)      │    O(n)       │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The recursive implementation is simple and elegant but may hit stack limits for very deep trees.\n- The iterative approach can handle larger trees without risking a stack overflow, making it more scalable in specific situations.\n- Trade-offs include readability versus performance in terms of memory usage.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

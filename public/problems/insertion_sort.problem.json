@@ -1,0 +1,53 @@
+{
+    "id": "insertion_sort",
+    "title": "Insertion Sort",
+    "description": "Given an array of integers <code>nums</code>, implement the insertion sort algorithm to sort the array in non-decreasing order. The algorithm works by dividing the input list into a sorted and an unsorted region, then repeatedly taking an element from the unsorted region and inserting it into the correct position in the sorted region.",
+    "difficulty": "Easy",
+    "category": "Sorting, Algorithms",
+    "examples": [
+        {
+            "input": "[5, 2, 9, 1, 5, 6]",
+            "output": "[1, 2, 5, 5, 6, 9]",
+            "explanation": "Starting with the first element (5), it is already in the sorted region. Next, take 2 from the unsorted region and insert it before 5. Continue this process until all elements are inserted into their correct positions, resulting in the sorted array: [1, 2, 5, 5, 6, 9]."
+        },
+        {
+            "input": "[12, 11, 13, 5, 6]",
+            "output": "[5, 6, 11, 12, 13]",
+            "explanation": "Begin with the first element (12). Next, 11 is taken and inserted before 12. The process continues with 13 being correctly placed after 12, followed by 5 being inserted at the beginning, and finally 6 right after it, leading to the sorted array: [5, 6, 11, 12, 13]."
+        },
+        {
+            "input": "[3, 0, 2, 5, -1, 4, 1]",
+            "output": "[-1, 0, 1, 2, 3, 4, 5]",
+            "explanation": "Start with 3 in the sorted region. Insert 0 before it, then 2 between 0 and 3. Next, -1 is inserted at the start. Finally, place 4 after 3 and 5 at the end, giving the sorted array: [-1, 0, 1, 2, 3, 4, 5]."
+        }
+    ],
+    "constraints": [
+        "The array length <code>n</code> is in the range [1, 1000].",
+        "The values of <code>nums</code> are in the range [-10^3, 10^3]."
+    ],
+    "tags": [
+        "Array",
+        "Sorting",
+        "Algorithm"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "bubble_sort",
+        "selection_sort",
+        "merge_sort"
+    ],
+    "hints": [
+        "Consider how you would insert each element from the unsorted part into the sorted part.",
+        "Remember that insertion sort is efficient for small data sets or partially sorted data.",
+        "Think about how you can use nested loops for comparing and shifting elements.",
+        "Try to visualize the process of sorting by drawing the array and the current state of the sorted portion."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

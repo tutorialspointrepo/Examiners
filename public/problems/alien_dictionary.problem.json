@@ -1,0 +1,54 @@
+{
+    "id": "alien_dictionary",
+    "title": "Alien Dictionary",
+    "description": "Given a list of <code>words</code> sorted lexicographically by the rules of an alien language, return a string representing the order of letters in that language. If there is no valid ordering, return an empty string.",
+    "difficulty": "Medium",
+    "category": "Graph, Topological Sort",
+    "examples": [
+        {
+            "input": "[\"wrt\", \"wrf\", \"er\", \"ett\", \"rftt\"]",
+            "output": "\"wertf\"",
+            "explanation": "The valid order is 'w', 'e', 'r', 't', 'f'. The words imply 'w' comes before 'e', 'e' before 'r', and so on."
+        },
+        {
+            "input": "[\"z\", \"x\"]",
+            "output": "\"zx\"",
+            "explanation": "The order is straightforward as 'z' comes before 'x' based on the input."
+        },
+        {
+            "input": "[\"abc\", \"ab\"]",
+            "output": "\"\"",
+            "explanation": "This is an invalid ordering since 'abc' cannot come before 'ab'. Hence, the output is an empty string."
+        }
+    ],
+    "constraints": [
+        "The input list will have at most <code>100</code> words.",
+        "Each word will have a length of at most <code>100</code> characters.",
+        "All characters in a word are lowercase letters."
+    ],
+    "tags": [
+        "Graph",
+        "Topological Sort",
+        "String"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Apple"
+    ],
+    "similar_problems": [
+        "alien_dictionary_ii",
+        "valid_anagram",
+        "word_break"
+    ],
+    "hints": [
+        "Consider using a graph to represent character precedence.",
+        "Perform a topological sort on the characters based on the graph.",
+        "Look for cycles in the graph to determine if a valid order exists.",
+        "An alternative approach could be to use a priority queue for sorting characters."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

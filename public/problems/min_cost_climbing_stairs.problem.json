@@ -1,0 +1,53 @@
+{
+    "id": "min_cost_climbing_stairs",
+    "title": "Min Cost Climbing Stairs",
+    "description": "You are climbing a staircase. It takes <code>cost[i]</code> dollars to step on the <code>i</code>th step. Once you pay the cost, you can either climb one or two steps. Your goal is to reach the top of the staircase with the minimum cost. Write a function that returns the minimum cost to reach the top of the stairs.",
+    "difficulty": "Easy",
+    "category": "Dynamic Programming, Greedy",
+    "examples": [
+        {
+            "input": "[10, 15, 20]",
+            "output": "15",
+            "explanation": "Starting from step 0, you can skip step 1 (cost 15) and jump directly to step 2 (cost 20) for a total cost of 15. This is the minimum cost."
+        },
+        {
+            "input": "[1, 100, 1, 1, 1, 100, 1, 1, 100, 1]",
+            "output": "6",
+            "explanation": "The optimal path is to step on 0, 2, 3, 4, 5, and then 6. The costs are 1 + 1 + 1 + 100 + 1 + 1 = 6."
+        },
+        {
+            "input": "[0, 0, 0, 0]",
+            "output": "0",
+            "explanation": "Since all steps have a cost of 0, the minimum cost to reach the top is 0."
+        }
+    ],
+    "constraints": [
+        "The length of the input array <code>cost</code> will be between 2 and 1000.",
+        "Each element in <code>cost</code> will be in the range of [0, 1000]."
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "Greedy",
+        "Array"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Apple"
+    ],
+    "similar_problems": [
+        "climbing_stairs",
+        "minimum_path_sum",
+        "house_robber"
+    ],
+    "hints": [
+        "Consider using dynamic programming to keep track of the minimum cost at each step.",
+        "Start from the bottom and work your way up to the top of the stairs.",
+        "Think about how you can use previously computed results to find the current step's minimum cost.",
+        "You may want to keep track of costs for the last two steps to determine the current step cost."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

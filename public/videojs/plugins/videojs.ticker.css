@@ -1,0 +1,323 @@
+.vjs-news {
+	position:absolute;
+	left:0;
+	width:100%;
+	-webkit-transition: bottom .3s;
+	-moz-transition: bottom .3s;
+    -o-transition: bottom .3s;
+	-ms-transition: bottom .3s;
+    transition: bottom .3s;
+	-webkit-transition-delay: .3s;
+	-moz-transition-delay: .3s;
+	-ms-transition-delay: .3s;
+	-o-transition-delay: .3s;
+	transition-delay: .3s;
+	bottom:0;
+}
+.news-top .vjs-news {
+	top:0;
+	bottom:auto;
+}
+
+.vjs-news .news-toggle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    height: 25px;
+    width: 35px;
+    background: #002A5D;
+    z-index: 3;
+    text-align: center;
+    cursor: pointer;
+	pointer-events:auto;
+	border:solid 1px #002A5D;
+}
+ .vjs-news .toggle-rtl {
+	left:0;
+	right:auto;
+ }
+.vjs-user-inactive:not(.vjs-paused):not(.news-top) .vjs-news {
+	bottom:0 !important;
+}	
+.vjs-touch-inacive.vjs-paused:not(.news-top) .vjs-news {
+	bottom:0 !important;
+}
+
+.vjs-news .news-toggle .toggle-icon-down, .news-top .vjs-news .news-toggle .toggle-icon-up {
+	width: 0;
+    height: 0;
+    border-style: solid;
+    border-width: 10px 10px 0 10px;
+    border-color: #fff transparent transparent transparent;
+    position: absolute;
+    top: 8px;
+    left: 7px;
+}
+.vjs-news .news-toggle .toggle-icon-up, .news-top .vjs-news .news-toggle .toggle-icon-down  {
+	width: 0;
+	height: 0;
+	border-style: solid;
+	border-width: 0 10px 10px 10px;
+	border-color: transparent transparent #fff transparent;
+	position: absolute;
+    top: 7px;
+    left: 7px;
+}
+
+
+
+
+.vjs-news .left-block {
+    background: transparent;
+    z-index: 1;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+	width:85px;
+	text-align:center;
+	text-transform:uppercase;
+	font-size:14px;
+	pointer-events:none;
+}
+.vjs-rtl .vjs-news .left-block {
+	right:0;
+	left:auto;
+}
+
+.vjs-news .left-block .left-time {
+    bottom: 0;
+    width: 100%;
+    background: #002A5D;
+    color: #fff;
+    text-align: center;
+    line-height: 25px;
+    letter-spacing: 1px;
+    font-size: 16px;
+	padding:0 5px;
+}
+.vjs-1600 .vjs-news .left-block .left-time {
+	line-height: 30px;
+	font-size: 18px;
+}
+
+.vjs-news .left-block .left-logo {
+    padding: 5px;
+    color: #000;
+	pointer-events:auto;
+}
+.vjs-news .left-block .left-logo img {
+	border:0;
+	width:100%;
+	padding:0;
+	margin:0;
+}
+
+
+.vjs-news .vjs-news-title {
+	width:100%;
+	overflow:hidden;
+	background-color:#ffd544;
+	font-size:20px;
+	text-align:left;
+	letter-spacing:-1px;
+	color:#222;
+	padding:6px 10px 6px 90px;
+
+	border-top:solid 2px #ffff00;
+	display:flex;
+}
+.vjs-1600 .vjs-news .vjs-news-title {
+	font-size:22px;
+	bottom:30px;
+}
+
+.vjs-rtl .vjs-news .vjs-news-title {
+	padding:6px 90px 6px 10px;
+}
+
+.news-hidden .left-block, .news-hidden .vjs-news-title, .news-hidden .vjs-news-scroll {
+	height:0!important;
+	padding:0!important;
+	border:0!important;
+	opacity:0;
+	pointer-events:none;
+}
+.news-top .news-hidden .news-toggle {
+   top:0;
+}
+
+
+.vjs-news .no-logo, .vjs-rtl .vjs-news .no-logo { 
+	padding:6px 10px 6px 10px;
+}
+
+
+.vjs-news .vjs-news-title p {
+   margin:0;
+   overflow: hidden;
+   text-overflow: ellipsis;
+   white-space: nowrap;
+   text-align:left;
+   position:relative;
+   transition: opacity .5s;
+   display:flex;
+}
+.vjs-rtl .vjs-news .vjs-news-title p {
+	text-align:right;
+	direction:rtl;
+}
+.vjs-news .vjs-news-title a:hover {
+	text-decoration:none;
+}
+.vjs-news .vjs-news-title p .vjs-icon {
+	width:16px;
+	fill:#000;
+	margin-right:5px;
+	display:inline-flex;
+}
+.vjs-news .vjs-news-title a:hover .vjs-icon {
+	fill:#f00;
+}
+.news-top .vjs-news-title p {
+	text-align:center;
+	width:100%;
+	display:block;
+	user-select: none;
+}
+
+.vjs-news-scroll {
+	width:100%;
+
+	background:#fff;
+	position:relative;
+	height:25px;
+	left:0;
+	border-top: solid 1px #666;
+	pointer-events:auto;
+	font-family:Arial,sans-serif;
+	font-size:14px;	
+	color:#000;
+	display:flex;
+	flex-direction:row;
+
+}
+.vjs-news-scroll .marq {
+  width: 100%;
+  display: flex;
+  overflow: hidden;
+  user-select: none;
+}
+.vjs-news-scroll .marq .marq-group {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  white-space:nowrap;
+  transform: translate(85px);
+  animation-name: scroll-x;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.vjs-news-scroll .marq .group-rtl {
+	transform: translate(0);
+	animation-name: scroll-x-rtl;
+
+}
+.vjs-news-scroll .marq .group-nt {
+	transform: translate(0);
+	animation-name: scroll-x-nt;
+}
+.vjs-news-scroll .marq .group-nt-rtl {
+	transform: translate(0);
+	animation-name: scroll-x-nt-rtl;
+}
+
+.vjs-1600 .vjs-news-scroll {
+	font-size:18px;
+	line-height:30px;
+	height:30px;
+}
+
+.vjs-news a {
+	color:#000;
+	text-decoration:underline;
+
+}
+.vjs-news a:hover {
+	color:#000;
+	text-decoration:underline;
+}
+
+
+.vjs-news-scroll .marq .marq-group .break {
+	width: 8px;
+	font-size:0;
+    height: 8px;
+    display: inline-block;
+    margin: 0 5px;
+    background: #c00;
+    border-radius: 50%;
+	-webkit-border-radius: 50%;
+	-moz-border-radius: 50%;
+}
+.vjs-news-scroll .marq .marq-group .ct {
+	font-weight:bold;
+	padding: 0 5px;
+}
+.vjs-news-scroll .marq .marq-group .ct {
+	font-weight:bold;
+	padding: 0 5px;
+}
+.vjs-news-scroll .vjs-scroll-paused {
+  -webkit-animation-play-state: paused!important;
+  -moz-animation-play-state: paused!important;
+  -o-animation-play-state: paused!important;
+  animation-play-state: paused!important;
+  
+  
+}
+.news-item {
+  display: flex;
+  align-items: center;
+  margin-right: 5px;
+}
+.news-item span, .news-item a {
+	display:inline-block;
+}
+
+.vjs-news-hidden {
+	display:none!important;
+}
+
+@keyframes scroll-x {
+	0% {
+	  transform: translate(85px);
+	}
+	100% {
+	  transform: translate(calc(-100% + 85px));
+	}
+}
+@keyframes scroll-x-nt {
+	0% {
+	  transform: translate(0);
+	}
+	100% {
+	  transform: translate(calc(-100%));
+	}
+}
+@keyframes scroll-x-rtl {
+	0% {
+	  transform: translate(-85px);
+	}
+	100% {
+	  transform: translate(calc(100% - 85px));
+	}
+}
+@keyframes scroll-x-nt-rtl {
+	0% {
+	  transform: translate(0);
+	}
+	100% {
+	  transform: translate(calc(100%));
+	}
+}
+

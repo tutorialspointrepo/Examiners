@@ -1,0 +1,54 @@
+{
+    "id": "word_break",
+    "title": "Word Break",
+    "description": "Given a string <code>s</code> and a dictionary of strings <code>wordDict</code>, determine if <code>s</code> can be segmented into a space-separated sequence of one or more dictionary words. For example, the string <code>'leetcode'</code> can be segmented as <code>'leet'</code> <code>'code'</code>.",
+    "difficulty": "Medium",
+    "category": "Dynamic Programming, String",
+    "examples": [
+        {
+            "input": "s = 'leetcode', wordDict = ['leet', 'code']",
+            "output": "true",
+            "explanation": "The string <code>'leetcode'</code> can be segmented into <code>'leet'</code> and <code>'code'</code>, which are both in the dictionary."
+        },
+        {
+            "input": "s = 'applepenapple', wordDict = ['apple', 'pen']",
+            "output": "true",
+            "explanation": "The string <code>'applepenapple'</code> can be segmented into <code>'apple'</code>, <code>'pen'</code>, and <code>'apple'</code>, all of which are present in the dictionary."
+        },
+        {
+            "input": "s = 'catsandog', wordDict = ['cats', 'dog', 'sand', 'and', 'cat']",
+            "output": "false",
+            "explanation": "The string <code>'catsandog'</code> cannot be segmented completely using the provided dictionary as there is no valid segmentation for <code>'og'</code>."
+        }
+    ],
+    "constraints": [
+        "The length of <code>s</code> is at most 300.",
+        "The <code>wordDict</code> contains at most 1000 words.",
+        "Each word in <code>wordDict</code> consists of lowercase English letters."
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "String",
+        "Backtracking"
+    ],
+    "companies": [
+        "Google",
+        "Facebook",
+        "Apple",
+        "Amazon"
+    ],
+    "similar_problems": [
+        "word_break_ii",
+        "palindrome_partitioning",
+        "substring_with_concatenation_of_all_words"
+    ],
+    "hints": [
+        "Try to use dynamic programming to keep track of the possible segmentations.",
+        "Consider using a boolean array to represent whether a substring can be formed from the dictionary.",
+        "Think about how you can build up solutions for larger substrings using results from smaller substrings.",
+        "You might want to check each prefix of the string against the dictionary to see if it can lead to a valid segmentation."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

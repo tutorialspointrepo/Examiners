@@ -1,0 +1,40 @@
+{
+  "id": "anagram",
+  "title": "Valid Anagram",
+  "description": "Given two strings <code>s</code> and <code>t</code>, return <code>true</code> if <code>t</code> is an anagram of <code>s</code>, and <code>false</code> otherwise.\n\nAn anagram is a word or phrase formed by rearranging the letters of a different word or phrase, typically using all the original letters exactly once.",
+  "difficulty": "Easy",
+  "category": "Hash Table, String",
+  "examples": [
+    {
+      "input": "s = \"anagram\", t = \"nagaram\"",
+      "output": "true",
+      "explanation": "Both strings contain the same characters with the same frequency."
+    },
+    {
+      "input": "s = \"rat\", t = \"car\"",
+      "output": "false",
+      "explanation": "The strings have different characters, so they are not anagrams."
+    },
+    {
+      "input": "s = \"listen\", t = \"silent\"",
+      "output": "true",
+      "explanation": "Both strings contain the same characters: l, i, s, t, e, n."
+    }
+  ],
+  "constraints": [
+    "1 ≤ s.length, t.length ≤ 5 × 10⁴",
+    "s and t consist of lowercase English letters."
+  ],
+  "tags": ["Hash Table", "String", "Sorting"],
+  "companies": ["Amazon", "Google", "Facebook", "Microsoft"],
+  "similar_problems": ["group_anagrams", "find_anagrams_in_string", "anagram_mappings"],
+  "hints": [
+    "Compare the frequency of each character in both strings.",
+    "If the lengths are different, they cannot be anagrams.",
+    "You can sort both strings and compare them directly.",
+    "Use a hash map or array to count character frequencies."
+  ],
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z",
+  "version": "1.0"
+}

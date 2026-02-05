@@ -1,0 +1,53 @@
+{
+    "id": "move_zeroes",
+    "title": "Move Zeroes",
+    "description": "Given an array of integers <code>nums</code>, move all the <code>0</code>'s to the end of it while maintaining the relative order of the non-zero elements. Note that you must do this in-place without making a copy of the array.",
+    "difficulty": "Easy",
+    "category": "Array, Two Pointers",
+    "examples": [
+        {
+            "input": "[0, 1, 0, 3, 12]",
+            "output": "[1, 3, 12, 0, 0]",
+            "explanation": "The non-zero elements are <code>1</code>, <code>3</code>, and <code>12</code>. After moving the <code>0</code>'s to the end, we maintain the order of non-zero elements."
+        },
+        {
+            "input": "[0, 0, 1]",
+            "output": "[1, 0, 0]",
+            "explanation": "Here, the only non-zero element is <code>1</code>. After moving the <code>0</code>'s to the end, we get <code>[1, 0, 0]</code>."
+        },
+        {
+            "input": "[1, 2, 0, 0, 3, 4]",
+            "output": "[1, 2, 3, 4, 0, 0]",
+            "explanation": "The non-zero elements are <code>1</code>, <code>2</code>, <code>3</code>, and <code>4</code>. They are moved to the front while maintaining their order, followed by the <code>0</code>'s."
+        }
+    ],
+    "constraints": [
+        "The length of <code>nums</code> will be at most <code>2 * 10^4</code>.",
+        "All elements of <code>nums</code> are in the range <code>[-2^31, 2^31 - 1]</code>."
+    ],
+    "tags": [
+        "Array",
+        "Two Pointers",
+        "In-place"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "move_zeroes_to_end",
+        "sort_array_by_parity",
+        "partition_array"
+    ],
+    "hints": [
+        "Try to use a two-pointer approach to minimize space complexity.",
+        "One pointer can iterate through the array, while the other keeps track of the position for non-zero elements.",
+        "Remember to handle cases where there are no <code>0</code>'s or if the array is already sorted.",
+        "Consider what happens when you encounter multiple consecutive <code>0</code>'s."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

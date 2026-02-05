@@ -1,0 +1,41 @@
+{
+  "id": "binary_search",
+  "title": "Binary Search",
+  "description": "Given an array of integers <code>nums</code> which is sorted in ascending order, and an integer <code>target</code>, write a function to search <code>target</code> in <code>nums</code>.\n\nIf <code>target</code> exists, then return its index. Otherwise, return -1.\n\nYou must write an algorithm with O(log n) runtime complexity.",
+  "difficulty": "Easy",
+  "category": "Array, Binary Search",
+  "examples": [
+    {
+      "input": "nums = [-1,0,3,5,9,12], target = 9",
+      "output": "4",
+      "explanation": "9 exists in nums and its index is 4"
+    },
+    {
+      "input": "nums = [-1,0,3,5,9,12], target = 2",
+      "output": "-1",
+      "explanation": "2 does not exist in nums so return -1"
+    },
+    {
+      "input": "nums = [-1,0,3,5,9,12], target = 12",
+      "output": "5",
+      "explanation": "12 exists in nums and its index is 5"
+    }
+  ],
+  "constraints": [
+    "1 ≤ nums.length ≤ 10⁴",
+    "-10⁴ < nums[i], target < 10⁴",
+    "All the integers in nums are unique.",
+    "nums is sorted in ascending order."
+  ],
+  "tags": ["Array", "Binary Search", "Divide and Conquer"],
+  "companies": ["Google", "Amazon", "Microsoft", "Facebook", "Apple"],
+  "similar_problems": ["search_insert_position", "find_first_last_position", "search_in_rotated_sorted_array"],
+  "hints": [
+    "The array is already sorted, take advantage of this information.",
+    "Use the divide and conquer approach. Eliminate half of the array during each iteration.",
+    "Be careful with the boundary conditions to avoid infinite loops."
+  ],
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z",
+  "version": "1.0"
+}

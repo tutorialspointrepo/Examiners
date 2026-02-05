@@ -78,18 +78,31 @@ interface Approach {
   complexity: {
     time: string;
     space: string;
+    timeExplain?: string;
+    spaceExplain?: string;
   };
   code: Record<string, string>;
   isOptimal?: boolean;
+  icon?: string;
+  summary?: string;
+  steps?: string[];
+  pros?: string[];
+  cons?: string[];
+  visualization?: {
+    title?: string;
+    description?: string;
+    svg?: string;
+    steps?: { stepNumber: number; title: string; description: string }[];
+  };
 }
 
 interface Analogy {
   icon: string;
   title: string;
-  scenario: string;
-  bruteForce: string;
-  optimal: string;
+  description: string;  // scenario/description from database
   keyInsight: string;
+  // Dynamic approach fields - can have any combination
+  approaches: { key: string; label: string; content: string }[];
 }
 
 interface Company {
@@ -125,6 +138,16 @@ interface ProblemData {
   likes: number;
   frequency: string;
   avgTime: string;
+  isSql?: boolean;
+  tableSchema?: any; // Table schema(s) for SQL problems - single object or array
+  // Problem visualization (separate from analogy)
+  visualize?: {
+    title?: string;
+    description?: string;
+    svg?: string;
+    conclusion?: string;
+    steps?: { stepNumber: number; title: string; description: string }[];
+  };
 }
 
 interface CodingLabProps {
@@ -153,6 +176,62 @@ interface TestResult {
   memory: string;
   status: string;
   running: boolean;
+  // SQL-specific fields
+  sqlInput?: any;
+  sqlExpectedOutput?: any;
+  sqlActualHeaders?: string[];
+  sqlActualRows?: any[];
+}
+
+// ==================== HELPER FUNCTIONS ====================
+
+/**
+ * Normalize SQL rows - handles both array and object formats from Firebase
+ * Firebase may store rows as {0: {...}, 1: {...}} instead of [{...}, {...}]
+ */
+function normalizeRows(rows: any): any[] {
+  if (!rows) return [];
+  if (Array.isArray(rows)) return rows;
+  if (typeof rows === 'object') {
+    return Object.keys(rows).sort((a, b) => Number(a) - Number(b)).map(key => rows[key]);
+  }
+  return [];
+}
+
+/**
+ * Strip HTML tags from a string and return well-formatted plain text
+ */
+function stripHtml(html: string): string {
+  if (!html) return '';
+  
+  // Replace block elements with newlines for better formatting
+  let text = html
+    // Add newlines before/after block elements
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<\/ul>/gi, '\n')
+    .replace(/<\/ol>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/h[1-6]>/gi, '\n\n')
+    // Add bullet points for list items
+    .replace(/<li[^>]*>/gi, '• ')
+    // Remove all remaining HTML tags
+    .replace(/<[^>]+>/g, '')
+    // Decode HTML entities
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    // Clean up excessive whitespace but preserve intentional line breaks
+    .replace(/[ \t]+/g, ' ')  // Multiple spaces/tabs to single space
+    .replace(/\n[ \t]+/g, '\n')  // Remove leading spaces on lines
+    .replace(/[ \t]+\n/g, '\n')  // Remove trailing spaces on lines
+    .replace(/\n{3,}/g, '\n\n')  // Max 2 consecutive newlines
+    .trim();
+  
+  return text;
 }
 
 // ==================== FIREBASE SERVICE ====================
@@ -171,13 +250,38 @@ function transformProblemData(data: any): ProblemData | null {
       explanation: ex.explanation || ''
     }));
 
-    // Transform test cases from Firebase format  
-    const testCases: TestCase[] = (data.testCases || []).map((tc: any, idx: number) => ({
-      id: tc.id || idx + 1,
-      params: tc.input || {},
-      expected_output: tc.expected || '',
-      explanation: tc.explanation || ''
-    }));
+    // Detect SQL problem
+    const isSql = (data.problemType === 'sql') || (data.category === 'Database') || !!data.tableSchema;
+
+    // Transform test cases from Firebase format
+    // For SQL problems: use examples as test cases (same as PHP template)
+    let testCases: TestCase[];
+    if (isSql) {
+      testCases = (data.examples || []).map((ex: any, idx: number) => ({
+        id: idx + 1,
+        params: {},
+        expected_output: '',
+        explanation: typeof ex.explanation === 'object' ? JSON.stringify(ex.explanation) : String(ex.explanation ?? ''),
+        // Store raw SQL data for table rendering
+        _sqlInput: ex.input || {},
+        _sqlExpectedOutput: ex.output || {}
+      }));
+    } else {
+      testCases = (data.testCases || []).map((tc: any, idx: number) => {
+        const params: Record<string, string> = {};
+        if (tc.input) {
+          Object.entries(tc.input).forEach(([k, v]: [string, any]) => {
+            params[k] = typeof v === 'object' ? JSON.stringify(v) : String(v ?? '');
+          });
+        }
+        return {
+          id: tc.id || idx + 1,
+          params,
+          expected_output: typeof tc.expected === 'object' ? JSON.stringify(tc.expected) : String(tc.expected ?? ''),
+          explanation: typeof tc.explanation === 'object' ? JSON.stringify(tc.explanation) : String(tc.explanation ?? '')
+        };
+      });
+    }
 
     // Transform approaches from Firebase format
     const approaches: Record<string, Approach> = {};
@@ -188,22 +292,67 @@ function transformProblemData(data: any): ProblemData | null {
           description: value.description || '',
           complexity: {
             time: value.complexity?.time || 'O(?)',
-            space: value.complexity?.space || 'O(?)'
+            space: value.complexity?.space || 'O(?)',
+            timeExplain: value.complexity?.timeExplain || '',
+            spaceExplain: value.complexity?.spaceExplain || ''
           },
           code: value.code || {},
-          isOptimal: key === 'one-pass-hash' || key === 'optimal' || value.isOptimal
+          isOptimal: key === 'one-pass-hash' || key === 'optimal' || value.isOptimal,
+          icon: value.icon || '',
+          summary: value.summary || '',
+          steps: value.steps || [],
+          pros: value.pros || [],
+          cons: value.cons || [],
+          visualization: value.visualization ? {
+            title: value.visualization.title || '',
+            description: value.visualization.description || '',
+            svg: value.visualization.svg || '',
+            steps: value.visualization.steps || []
+          } : undefined
         };
       });
     }
 
-    // Transform analogy from Firebase format
+    // Transform analogy from Firebase format - handle dynamic approach fields
+    const analogyApproaches: { key: string; label: string; content: string }[] = [];
+    
+    // Map of known approach keys to their display labels and icons
+    const approachLabels: Record<string, { label: string; icon: string }> = {
+      bruteForce: { label: 'Brute Force Approach', icon: '🐢' },
+      optimal: { label: 'Optimal Approach', icon: '⚡' },
+      twoPass: { label: 'Two Pass Approach', icon: '🔄' },
+      twoPointers: { label: 'Two Pointers Approach', icon: '👆👆' },
+      hashMap: { label: 'Hash Map Approach', icon: '🗺️' },
+      binarySearch: { label: 'Binary Search Approach', icon: '🔍' },
+      dynamicProgramming: { label: 'Dynamic Programming', icon: '📊' },
+      greedy: { label: 'Greedy Approach', icon: '🎯' },
+      divideConquer: { label: 'Divide & Conquer', icon: '✂️' },
+      slidingWindow: { label: 'Sliding Window', icon: '🪟' },
+      bfs: { label: 'BFS Approach', icon: '🌊' },
+      dfs: { label: 'DFS Approach', icon: '🌲' }
+    };
+    
+    // Extract all approach fields from analogy (skip known non-approach fields)
+    const skipFields = ['icon', 'title', 'description', 'keyInsight', 'scenario'];
+    if (data.analogy) {
+      Object.entries(data.analogy).forEach(([key, value]) => {
+        if (!skipFields.includes(key) && typeof value === 'string' && value.trim()) {
+          const labelInfo = approachLabels[key] || { label: key.replace(/([A-Z])/g, ' $1').trim(), icon: '💡' };
+          analogyApproaches.push({
+            key,
+            label: `${labelInfo.icon} ${labelInfo.label}`,
+            content: value as string
+          });
+        }
+      });
+    }
+    
     const analogy: Analogy = {
       icon: data.analogy?.icon || '💡',
       title: data.analogy?.title || 'Understanding the Problem',
-      scenario: data.analogy?.description || '',
-      bruteForce: data.analogy?.bruteForce || '',
-      optimal: data.analogy?.optimal || data.analogy?.twoPass || '',
-      keyInsight: data.analogy?.keyInsight || ''
+      description: data.analogy?.description || data.analogy?.scenario || '',
+      keyInsight: data.analogy?.keyInsight || '',
+      approaches: analogyApproaches
     };
 
     // Transform companies
@@ -237,10 +386,21 @@ function transformProblemData(data: any): ProblemData | null {
       params: data.params || [],
       defaultCode: data.defaultCode || {},
       relatedProblems,
-      views: data.views || data.stats?.views || 0,
-      likes: data.likes || data.stats?.likes || 0,
-      frequency: data.frequency || data.stats?.frequency || 'Medium',
-      avgTime: data.avgTime || data.stats?.avgTime || '~20 min'
+      isSql,
+      tableSchema: data.tableSchema || null,
+      // Prioritize stats field values over root level values
+      views: data.stats?.views || data.views || 0,
+      likes: data.stats?.likes || data.likes || 0,
+      frequency: data.stats?.frequency || data.frequency || 'Medium',
+      avgTime: data.stats?.avgTime || data.avgTime || '~20 min',
+      // Problem visualization (root level visualize field)
+      visualize: data.visualize ? {
+        title: data.visualize.title || '',
+        description: data.visualize.description || '',
+        svg: data.visualize.svg || '',
+        conclusion: data.visualize.conclusion || '',
+        steps: data.visualize.steps || []
+      } : undefined
     };
   } catch (error) {
     console.error('Error transforming problem data:', error);
@@ -321,10 +481,18 @@ async function executeCode(
 // ==================== COMPONENT ====================
 const CodingLab: React.FC<CodingLabProps> = ({ 
   brandTheme,
+  currentUser,
   problemSlug = 'two-sum'
 }) => {
-  // Use problemSlug prop or default
-  const PROBLEM_ID = problemSlug;
+  // Current problem slug - can be changed to load different problems
+  const [currentProblemSlug, setCurrentProblemSlug] = useState(problemSlug);
+  
+  // Sync problemSlug prop with state when it changes from parent
+  useEffect(() => {
+    if (problemSlug && problemSlug !== currentProblemSlug) {
+      setCurrentProblemSlug(problemSlug);
+    }
+  }, [problemSlug]);
   
   // State
   const [problem, setProblem] = useState<ProblemData | null>(null);
@@ -339,6 +507,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
   const [activeOutputTab, setActiveOutputTab] = useState<'output' | 'stdin' | 'testcases'>('output');
   const [stdinInput, setStdinInput] = useState('');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    description: true,
     io: true,
     constraints: true,
     hints: false,
@@ -349,6 +518,8 @@ const CodingLab: React.FC<CodingLabProps> = ({
     solutionVisualization: true,
     related: true,
     companies: true,
+    tableSchema: true,
+    solutionSummary: true,
   });
   const [aiMessages, setAiMessages] = useState<{ role: 'user' | 'assistant'; content: string }[]>([]);
   const [aiInput, setAiInput] = useState('');
@@ -358,12 +529,14 @@ const CodingLab: React.FC<CodingLabProps> = ({
   const [isLiked, setIsLiked] = useState(false);
   const [solutionLanguage, setSolutionLanguage] = useState('c');
   const [showVisualizationModal, setShowVisualizationModal] = useState(false);
+  const [showProblemVisualizationModal, setShowProblemVisualizationModal] = useState(false);
   const [leftPanelWidth, setLeftPanelWidth] = useState(50); // percentage
   const [isResizing, setIsResizing] = useState(false);
   const [editorState, setEditorState] = useState<'normal' | 'maximized' | 'minimized'>('normal');
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showTestCasesPanel, setShowTestCasesPanel] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
+  const [solutionCodeCopied, setSolutionCodeCopied] = useState(false);
   const [outputPanelState, setOutputPanelState] = useState<'normal' | 'expanded' | 'minimized'>('normal');
   const [executionStats, setExecutionStats] = useState<{ time: string; memory: string } | null>(null);
   const [editorHeight, setEditorHeight] = useState(70); // percentage of available space
@@ -371,6 +544,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
   const [aiOperationLoading, setAiOperationLoading] = useState<string | null>(null); // Track which AI operation is loading
   const [showAIResultModal, setShowAIResultModal] = useState(false);
   const [aiResultContent, setAiResultContent] = useState<{ title: string; content: string; operation: string } | null>(null);
+  const [problemAttemptRefreshTrigger, setProblemAttemptRefreshTrigger] = useState(0); // Trigger to refresh problems list attempts
   
   // Slash command state
   const [showSlashMenu, setShowSlashMenu] = useState(false);
@@ -382,6 +556,11 @@ const CodingLab: React.FC<CodingLabProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
   const monacoEditorRef = useRef<any>(null); // Reference to Monaco editor instance
+
+  // PGlite (PostgreSQL in browser) for SQL problems
+  const pgliteRef = useRef<any>(null);
+  const [pgliteReady, setPgliteReady] = useState(false);
+  const [pgliteLoading, setPgliteLoading] = useState(false);
 
   // Resizer mouse event handlers
   useEffect(() => {
@@ -452,22 +631,68 @@ const CodingLab: React.FC<CodingLabProps> = ({
     const loadProblem = async () => {
       setIsLoading(true);
       setError(null);
+      // Reset states when loading new problem
+      setOutput('');
+      setCurrentView('problem');
+      setRightPanelMode('editor');
+      setAiMessages([]);
+      
+      // Cleanup PGlite when switching problems
+      if (pgliteRef.current) {
+        try { await pgliteRef.current.close(); } catch (e) { /* ignore */ }
+        pgliteRef.current = null;
+        setPgliteReady(false);
+        setPgliteLoading(false);
+      }
+      setAiInput('');
+      
       try {
-        console.log('🔄 Fetching problem:', PROBLEM_ID);
-        const data = await codingLabService.getProblem(PROBLEM_ID);
-        console.log('📦 Fetched data:', data);
+        console.log('🔄 Fetching problem:', currentProblemSlug);
+        
+        // First check raw Firebase data
+        const rawData = await firebaseService.getCodingProblem(currentProblemSlug);
+        console.log('📦 Raw Firebase data:', rawData);
+        console.log('📦 Raw data keys:', rawData ? Object.keys(rawData) : 'null');
+        console.log('📦 Raw description:', rawData?.description);
+        console.log('📦 Raw constraints:', rawData?.constraints);
+        console.log('📦 Raw examples:', rawData?.examples);
+        console.log('📦 Raw approaches:', rawData?.approaches);
+        console.log('📦 Raw analogy:', rawData?.analogy);
+        console.log('📦 Raw related:', rawData?.related);
+        console.log('📦 Raw visualize:', rawData?.visualize);
+        console.log('📦 Raw visualize.steps:', rawData?.visualize?.steps);
+        console.log('📦 Raw stats:', rawData?.stats);
+        
+        const data = await codingLabService.getProblem(currentProblemSlug);
+        console.log('📦 Transformed data:', data);
+        console.log('📦 Transformed description:', data?.description);
+        console.log('📦 Transformed constraints:', data?.constraints);
+        console.log('📦 Transformed examples:', data?.examples);
+        console.log('📦 Transformed approaches:', data?.approaches);
+        console.log('📦 Transformed analogy:', data?.analogy);
+        console.log('📦 Transformed relatedProblems:', data?.relatedProblems);
+        console.log('📦 Transformed visualize:', data?.visualize);
+        console.log('📦 Transformed visualize.steps:', data?.visualize?.steps);
+        console.log('📦 Transformed stats - views:', data?.views, 'likes:', data?.likes, 'frequency:', data?.frequency, 'avgTime:', data?.avgTime);
+        console.log('📦 Transformed testCases:', data?.testCases);
         
         if (data) {
           setProblem(data);
           // Set first approach as selected
           const firstApproach = Object.keys(data.approaches || {})[0];
           if (firstApproach) setSelectedApproach(firstApproach);
-          // Set default code for selected language
-          if (data.defaultCode?.[selectedLanguage]) {
+          // For SQL problems, force SQL language
+          if (data.isSql) {
+            setSolutionLanguage('sql');
+            setSelectedLanguage('sql');
+            if (data.defaultCode?.['sql']) {
+              setCode(data.defaultCode['sql']);
+            }
+          } else if (data.defaultCode?.[selectedLanguage]) {
             setCode(data.defaultCode[selectedLanguage]);
           }
           // Initialize test results
-          setTestResults(data.testCases?.map((tc, idx) => ({
+          setTestResults(data.testCases?.map((tc: any, idx: number) => ({
             id: idx,
             params: { ...tc.params },
             expected: tc.expected_output,
@@ -477,14 +702,26 @@ const CodingLab: React.FC<CodingLabProps> = ({
             time: '0',
             memory: '0 KB',
             status: 'Not Run',
-            running: false
+            running: false,
+            // SQL-specific: carry raw input/output for table rendering
+            sqlInput: tc._sqlInput || undefined,
+            sqlExpectedOutput: tc._sqlExpectedOutput || undefined
           })) || []);
           
+          // Pre-populate Stdin with first test case (coding problems only)
+          if (!data.isSql && data.testCases?.length > 0) {
+            const firstTC = data.testCases[0];
+            const stdinValue = Object.values(firstTC.params || {}).join('\n');
+            if (stdinValue.trim()) {
+              setStdinInput(stdinValue);
+            }
+          }
+          
           // Check like status
-          const hasLiked = await codingLabService.checkLikeStatus(PROBLEM_ID);
+          const hasLiked = await codingLabService.checkLikeStatus(currentProblemSlug);
           setIsLiked(hasLiked);
         } else {
-          setError(`Problem "${PROBLEM_ID}" not found in database`);
+          setError(`Problem "${currentProblemSlug}" not found in database`);
         }
       } catch (err: any) {
         console.error('❌ Error loading problem:', err);
@@ -495,7 +732,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
     };
 
     loadProblem();
-  }, [PROBLEM_ID]);
+  }, [currentProblemSlug]);
 
   // Update code when language changes
   useEffect(() => {
@@ -509,7 +746,340 @@ const CodingLab: React.FC<CodingLabProps> = ({
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
 
+  // ==================== PGlite SQL Functions ====================
+  
+  /** Initialize PGlite and create tables from problem.tableSchema */
+  const initPGliteForProblem = async (problemData: ProblemData): Promise<boolean> => {
+    if (pgliteRef.current) return true; // Already initialized
+    
+    setPgliteLoading(true);
+    setOutput('🐘 Initializing PostgreSQL database...\n⏳ Please wait (first time may take a few seconds)...');
+    
+    try {
+      const { PGlite } = await import('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js' as any);
+      pgliteRef.current = new PGlite();
+      await pgliteRef.current.waitReady;
+      
+      const tableSchema = problemData.tableSchema;
+      if (tableSchema) {
+        const isMultiTable = Array.isArray(tableSchema);
+        const schemas = isMultiTable ? tableSchema : [tableSchema];
+        
+        // Create all tables
+        for (const schema of schemas) {
+          let columns = schema.columns;
+          if (columns && typeof columns === 'object' && !Array.isArray(columns)) {
+            columns = Object.keys(columns).sort((a: string, b: string) => Number(a) - Number(b)).map((key: string) => columns[key]);
+          }
+          if (!columns || columns.length === 0) continue;
+          
+          const tableName = schema.tableName || 'Table';
+          let createSQL = `CREATE TABLE IF NOT EXISTS ${tableName} (`;
+          createSQL += columns.map((col: any) => {
+            let type = (col.type || 'TEXT').toUpperCase();
+            if (type.includes('ENUM')) type = 'TEXT';
+            if (type.includes('INT')) type = 'INTEGER';
+            if (type.includes('VARCHAR')) type = 'TEXT';
+            if (type.includes('DATE')) type = 'TEXT';
+            return `${col.name} ${type}`;
+          }).join(', ');
+          createSQL += ')';
+          
+          await pgliteRef.current.query(createSQL);
+          console.log(`✅ Table ${tableName} created`);
+        }
+        
+        // Insert data from first example
+        const examples = problemData.examples;
+        if (examples && examples.length > 0) {
+          const firstExample = examples[0];
+          if (firstExample?.input) {
+            await insertSqlTestData(firstExample.input, schemas);
+          }
+        }
+      }
+      
+      setPgliteReady(true);
+      setPgliteLoading(false);
+      setOutput('🐘 PostgreSQL Ready\n✓ Database initialized. Click "Run" to execute your SQL query.');
+      return true;
+    } catch (initError: any) {
+      console.error('PGlite initialization error:', initError);
+      setPgliteLoading(false);
+      setOutput(`❌ Failed to initialize PostgreSQL database.\n\nError: ${initError.message}\n\n💡 Please check your internet connection and try again.`);
+      return false;
+    }
+  };
+  
+  /** Insert test data into PGlite tables (handles both multi-table and single-table formats) */
+  const insertSqlTestData = async (input: any, schemas: any[]) => {
+    if (!pgliteRef.current || !input) return;
+    
+    // Multi-table format: input.tables array
+    if (input.tables && Array.isArray(input.tables)) {
+      for (const tableData of input.tables) {
+        const tableName = tableData.name;
+        const headers = tableData.headers || [];
+        let rows = normalizeRows(tableData.rows);
+        
+        for (const row of rows) {
+          const vals = headers.map((header: string, i: number) => {
+            const val = row['i' + i];
+            if (val === null || val === undefined) return 'NULL';
+            if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+            return val;
+          });
+          const insertSQL = `INSERT INTO ${tableName} (${headers.join(', ')}) VALUES (${vals.join(', ')})`;
+          await pgliteRef.current.query(insertSQL);
+        }
+      }
+    }
+    // Single-table format: input.headers and input.rows
+    else if (input.headers && input.rows) {
+      const tableName = schemas[0]?.tableName || 'Table';
+      const headers = input.headers;
+      let rows = normalizeRows(input.rows);
+      
+      for (const row of rows) {
+        const vals = headers.map((header: string, i: number) => {
+          const val = row['i' + i];
+          if (val === null || val === undefined) return 'NULL';
+          if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+          return val;
+        });
+        const insertSQL = `INSERT INTO ${tableName} (${headers.join(', ')}) VALUES (${vals.join(', ')})`;
+        await pgliteRef.current.query(insertSQL);
+      }
+    }
+  };
+  
+  /** Compare SQL results (headers + rows) against expected output */
+  const compareSqlResults = (actualHeaders: string[], actualRows: any[], expectedHeaders: string[], expectedRows: any[]): boolean => {
+    const normalizedActualHeaders = actualHeaders.map(h => h.toLowerCase());
+    const normalizedExpectedHeaders = expectedHeaders.map(h => h.toLowerCase());
+    
+    if (normalizedActualHeaders.length !== normalizedExpectedHeaders.length) return false;
+    
+    const normalizedExpectedRows = normalizeRows(expectedRows);
+    if (actualRows.length !== normalizedExpectedRows.length) return false;
+    
+    for (let i = 0; i < normalizedExpectedRows.length; i++) {
+      const expectedRow = normalizedExpectedRows[i];
+      const actualRow = actualRows[i];
+      
+      for (let j = 0; j < expectedHeaders.length; j++) {
+        const expectedVal = expectedRow['i' + j];
+        const headerName = expectedHeaders[j];
+        const actualKey = actualHeaders.find(h => h.toLowerCase() === headerName.toLowerCase()) || actualHeaders[j];
+        const actualVal = actualRow[actualKey];
+        
+        // Compare values
+        if (!compareSqlValues(actualVal, expectedVal)) return false;
+      }
+    }
+    return true;
+  };
+  
+  /** Compare two SQL values (handles null, numeric, string) */
+  const compareSqlValues = (actual: any, expected: any): boolean => {
+    if (actual === null && expected === null) return true;
+    if (actual === null || expected === null) return false;
+    
+    const actualStr = String(actual).trim().toLowerCase();
+    const expectedStr = String(expected).trim().toLowerCase();
+    if (actualStr === expectedStr) return true;
+    
+    const actualNum = parseFloat(actual);
+    const expectedNum = parseFloat(expected);
+    if (!isNaN(actualNum) && !isNaN(expectedNum)) {
+      return Math.abs(actualNum - expectedNum) < 0.0001;
+    }
+    return false;
+  };
+  
+  /** Run user's SQL code in PGlite (for the "Run" button output panel) */
+  const runSqlCode = async () => {
+    if (!problem) return;
+    
+    setIsRunning(true);
+    setActiveOutputTab('output');
+    setOutput('🔄 Executing SQL...');
+    setExecutionStats(null);
+    
+    // Small delay to allow UI to update before heavy PGlite processing
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Initialize PGlite if needed
+    if (!pgliteRef.current) {
+      const success = await initPGliteForProblem(problem);
+      if (!success) { setIsRunning(false); return; }
+    }
+    
+    try {
+      const startTime = performance.now();
+      
+      // Remove comments, split by semicolon
+      const codeWithoutComments = code
+        .split('\n')
+        .map((line: string) => {
+          const commentIndex = line.indexOf('--');
+          if (commentIndex !== -1) return line.substring(0, commentIndex).trim();
+          return line;
+        })
+        .join('\n');
+      
+      const statements = codeWithoutComments.split(';').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+      
+      let outputText = '';
+      for (const statement of statements) {
+        if (!statement) continue;
+        try {
+          const result = await pgliteRef.current.query(statement);
+          const upperStatement = statement.toUpperCase().trim();
+          
+          if (upperStatement.startsWith('SELECT') || upperStatement.startsWith('TABLE') || upperStatement.startsWith('WITH')) {
+            if (result && result.rows && result.rows.length > 0) {
+              const columns = result.fields?.map((f: any) => f.name) || Object.keys(result.rows[0]);
+              const colWidths = columns.map((col: string) => {
+                const maxDataWidth = Math.max(...result.rows.map((row: any) => String(row[col] ?? 'NULL').length));
+                return Math.max(col.length, maxDataWidth, 4);
+              });
+              const header = columns.map((col: string, i: number) => col.padEnd(colWidths[i])).join(' │ ');
+              const separator = colWidths.map((w: number) => '─'.repeat(w)).join('─┼─');
+              const rows = result.rows.map((row: any) =>
+                columns.map((col: string, i: number) => String(row[col] ?? 'NULL').padEnd(colWidths[i])).join(' │ ')
+              ).join('\n');
+              outputText += `\n${header}\n${separator}\n${rows}\n\n(${result.rows.length} row${result.rows.length !== 1 ? 's' : ''})\n`;
+            } else {
+              outputText += `\n(0 rows)\n`;
+            }
+          } else if (upperStatement.startsWith('INSERT')) {
+            const count = result?.affectedRows ?? result?.rowCount ?? 1;
+            outputText += `\n✅ INSERT ${count} row${count !== 1 ? 's' : ''}\n`;
+          } else if (upperStatement.startsWith('UPDATE')) {
+            const count = result?.affectedRows ?? result?.rowCount ?? 0;
+            outputText += `\n✅ UPDATE ${count} row${count !== 1 ? 's' : ''}\n`;
+          } else if (upperStatement.startsWith('DELETE')) {
+            const count = result?.affectedRows ?? result?.rowCount ?? 0;
+            outputText += `\n✅ DELETE ${count} row${count !== 1 ? 's' : ''}\n`;
+          } else if (upperStatement.startsWith('CREATE TABLE')) {
+            const tName = statement.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)/i)?.[1] || 'table';
+            outputText += `\n✅ Table "${tName}" created successfully\n`;
+          } else if (upperStatement.startsWith('DROP TABLE')) {
+            const tName = statement.match(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(\w+)/i)?.[1] || 'table';
+            outputText += `\n✅ Table "${tName}" dropped successfully\n`;
+          } else {
+            outputText += `\n✅ Query executed successfully\n`;
+          }
+        } catch (stmtError: any) {
+          outputText += `\n❌ Error: ${stmtError.message}\n`;
+        }
+      }
+      
+      const endTime = performance.now();
+      const execTime = ((endTime - startTime) / 1000).toFixed(3);
+      
+      setOutput(`🐘 PostgreSQL (PGlite)\n════════════════════════════════\n${outputText}\n════════════════════════════════`);
+      setExecutionStats({ time: `${execTime}s`, memory: 'In-Browser' });
+    } catch (error: any) {
+      setOutput(`❌ SQL Error: ${error.message}`);
+      setExecutionStats(null);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+  
+  /** Run a single SQL test case: truncate → insert test data → run query → compare */
+  const runSingleSqlTestCase = async (index: number) => {
+    if (!problem || !problem.tableSchema) return;
+    
+    // Initialize PGlite if needed
+    if (!pgliteRef.current) {
+      const success = await initPGliteForProblem(problem);
+      if (!success) return;
+    }
+    
+    const testCase = testResults[index];
+    if (!testCase) return;
+    
+    // Set running state
+    setTestResults(prev => prev.map((r, i) => i === index ? { ...r, running: true, passed: null } : r));
+    
+    // Small delay to allow UI to update before heavy PGlite processing
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    try {
+      const tableSchema = problem.tableSchema;
+      const isMultiTable = Array.isArray(tableSchema);
+      const schemas = isMultiTable ? tableSchema : [tableSchema];
+      
+      // Step 1: Truncate all tables
+      for (const schema of schemas) {
+        const tableName = schema?.tableName || 'Table';
+        try { await pgliteRef.current.query(`DELETE FROM ${tableName}`); } catch (e) { /* ignore */ }
+      }
+      
+      // Step 2: Insert this test case's data
+      const sqlInput = testCase.sqlInput;
+      if (sqlInput) {
+        await insertSqlTestData(sqlInput, schemas);
+      }
+      
+      // Step 3: Run user's query
+      const startTime = performance.now();
+      const result = await pgliteRef.current.query(code);
+      const endTime = performance.now();
+      const execTime = (endTime - startTime).toFixed(2);
+      
+      // Step 4: Compare with expected output
+      const actualRows = result.rows || [];
+      const actualHeaders = actualRows.length > 0 ? Object.keys(actualRows[0]) : [];
+      
+      const expectedHeaders = testCase.sqlExpectedOutput?.headers || [];
+      const expectedRowsRaw = testCase.sqlExpectedOutput?.rows || [];
+      
+      const isCorrect = compareSqlResults(actualHeaders, actualRows, expectedHeaders, expectedRowsRaw);
+      
+      setTestResults(prev => {
+        const newResults = prev.map((r, i) => i === index ? {
+          ...r,
+          actual: JSON.stringify(actualRows),
+          passed: isCorrect,
+          error: null,
+          time: `${execTime}ms`,
+          memory: 'In-Browser',
+          status: isCorrect ? 'Accepted' : 'Wrong Answer',
+          running: false,
+          sqlActualHeaders: actualHeaders,
+          sqlActualRows: actualRows
+        } : r);
+        setTimeout(() => recordProblemAttempt(newResults), 50);
+        return newResults;
+      });
+    } catch (err: any) {
+      setTestResults(prev => {
+        const newResults = prev.map((r, i) => i === index ? {
+          ...r,
+          passed: false,
+          error: err.message,
+          status: 'Error',
+          running: false
+        } : r);
+        setTimeout(() => recordProblemAttempt(newResults), 50);
+        return newResults;
+      });
+    }
+  };
+  
+  // ==================== End PGlite SQL Functions ====================
+
   const runCode = async () => {
+    // For SQL problems, use PGlite instead of Judge0
+    if (problem?.isSql) {
+      await runSqlCode();
+      return;
+    }
+    
     setIsRunning(true);
     setActiveOutputTab('output');
     setOutput('⏳ Running code...');
@@ -518,7 +1088,9 @@ const CodingLab: React.FC<CodingLabProps> = ({
     try {
       const result = await executeCode(code, selectedLanguage, stdinInput);
       if (result.error) {
-        setOutput(`❌ ${result.status}\n${result.error}`);
+        // Show status only if it's different from the error message
+        const statusText = result.status && result.status !== 'Error' ? `❌ ${result.status}\n` : '❌ Error\n';
+        setOutput(`${statusText}${result.error}`);
         setExecutionStats(null);
       } else {
         setOutput(result.output);
@@ -535,7 +1107,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
   };
 
   const handleLike = async () => {
-    const result = await codingLabService.toggleLike(PROBLEM_ID, isLiked);
+    const result = await codingLabService.toggleLike(currentProblemSlug, isLiked);
     if (result.success) {
       setIsLiked(result.liked);
       setProblem(prev => prev ? { ...prev, likes: result.totalLikes } : prev);
@@ -1046,6 +1618,12 @@ const CodingLab: React.FC<CodingLabProps> = ({
 
   // Run a single test case
   const runSingleTestCase = async (index: number) => {
+    // For SQL problems, use PGlite path
+    if (problem?.isSql) {
+      await runSingleSqlTestCase(index);
+      return;
+    }
+    
     const testCase = testResults[index];
     if (!testCase) return;
 
@@ -1059,29 +1637,169 @@ const CodingLab: React.FC<CodingLabProps> = ({
       
       const result = await executeCode(code, selectedLanguage, stdin);
       
-      // Normalize outputs for comparison
+      // Normalize outputs for comparison - handle non-string expected values
       const actualOutput = (result.output || '').trim();
-      const expectedOutput = (testCase.expected || '').trim();
-      const passed = actualOutput === expectedOutput;
+      const expectedRaw = testCase.expected;
+      const expectedOutput = typeof expectedRaw === 'string' 
+        ? expectedRaw.trim() 
+        : JSON.stringify(expectedRaw);
+      
+      // Smart output comparison - handles common variations
+      const compareOutputs = (actual: string, expected: string): boolean => {
+        if (actual === null || actual === undefined) actual = '';
+        if (expected === null || expected === undefined) expected = '';
+        
+        // Convert to strings and trim whitespace
+        actual = String(actual).trim();
+        expected = String(expected).trim();
+        
+        // 1. Exact match (fast path)
+        if (actual === expected) return true;
+        
+        // 2. Case-insensitive match (String == string == STRING)
+        const actualLower = actual.toLowerCase();
+        const expectedLower = expected.toLowerCase();
+        
+        if (actualLower === expectedLower) return true;
+        
+        // 3. Boolean normalization (True/true/TRUE/1/0/False/false/FALSE)
+        const boolMap: Record<string, string> = {
+          'true': 'true', 'True': 'true', 'TRUE': 'true', '1': 'true',
+          'false': 'false', 'False': 'false', 'FALSE': 'false', '0': 'false'
+        };
+        if (boolMap[actual] !== undefined && boolMap[expected] !== undefined) {
+          return boolMap[actual] === boolMap[expected];
+        }
+        
+        // 4. Numeric comparison (handles "20" vs "20.0" vs "20.00", "11" vs "11.0")
+        const actualNum = parseFloat(actual);
+        const expectedNum = parseFloat(expected);
+        if (!isNaN(actualNum) && !isNaN(expectedNum)) {
+          // Check if both are purely numeric
+          if (/^-?\d+\.?\d*$/.test(actual) && /^-?\d+\.?\d*$/.test(expected)) {
+            return Math.abs(actualNum - expectedNum) < 1e-9;
+          }
+        }
+        
+        // 5. Array/JSON comparison (normalize spacing and formatting)
+        if ((actual.startsWith('[') && actual.endsWith(']')) || 
+            (actual.startsWith('{') && actual.endsWith('}'))) {
+          try {
+            const actualJson = JSON.parse(actual);
+            const expectedJson = JSON.parse(expected);
+            
+            // Deep comparison with case-insensitive string elements
+            const deepCompare = (a: any, b: any): boolean => {
+              if (typeof a === 'string' && typeof b === 'string') {
+                return a.toLowerCase() === b.toLowerCase();
+              }
+              if (typeof a === 'number' && typeof b === 'number') {
+                return Math.abs(a - b) < 1e-9;
+              }
+              if (Array.isArray(a) && Array.isArray(b)) {
+                if (a.length !== b.length) return false;
+                return a.every((val, idx) => deepCompare(val, b[idx]));
+              }
+              if (typeof a === 'object' && typeof b === 'object' && a !== null && b !== null) {
+                const keysA = Object.keys(a);
+                const keysB = Object.keys(b);
+                if (keysA.length !== keysB.length) return false;
+                return keysA.every(key => deepCompare(a[key], b[key]));
+              }
+              return a === b;
+            };
+            
+            if (deepCompare(actualJson, expectedJson)) return true;
+            
+            // Fallback to stringified comparison
+            return JSON.stringify(actualJson) === JSON.stringify(expectedJson);
+          } catch (e) {
+            // Not valid JSON, try normalizing whitespace
+            const normalizeJson = (s: string) => s.replace(/\s+/g, '').replace(/,/g, ', ').replace(/:/g, ': ');
+            return normalizeJson(actual) === normalizeJson(expected);
+          }
+        }
+        
+        // 6. Whitespace normalization (multiple spaces, newlines, tabs)
+        const normalizeWs = (s: string) => s.replace(/\s+/g, ' ').trim();
+        if (normalizeWs(actual) === normalizeWs(expected)) return true;
+        
+        // 7. Handle trailing newlines from stdout
+        if (actual.replace(/\n+$/, '') === expected.replace(/\n+$/, '')) return true;
+        
+        // 8. Case-insensitive + whitespace normalized
+        if (normalizeWs(actualLower) === normalizeWs(expectedLower)) return true;
+        
+        return false;
+      };
+      
+      const passed = compareOutputs(actualOutput, expectedOutput);
 
-      setTestResults(prev => prev.map((r, i) => i === index ? {
-        ...r,
-        actual: actualOutput,
-        passed: result.error ? false : passed,
-        error: result.error || null,
-        time: result.time || '0',
-        memory: result.memory || '0 KB',
-        status: result.error ? 'Error' : (passed ? 'Accepted' : 'Wrong Answer'),
-        running: false
-      } : r));
+      setTestResults(prev => {
+        const newResults = prev.map((r, i) => i === index ? {
+          ...r,
+          actual: actualOutput,
+          passed: result.error ? false : passed,
+          error: result.error || null,
+          time: result.time || '0',
+          memory: result.memory || '0 KB',
+          status: result.error ? 'Error' : (passed ? 'Accepted' : 'Wrong Answer'),
+          running: false
+        } : r);
+        
+        // Record attempt after state update
+        setTimeout(() => recordProblemAttempt(newResults), 50);
+        
+        return newResults;
+      });
     } catch (err: any) {
-      setTestResults(prev => prev.map((r, i) => i === index ? {
-        ...r,
-        passed: false,
-        error: err.message,
-        status: 'Error',
-        running: false
-      } : r));
+      setTestResults(prev => {
+        const newResults = prev.map((r, i) => i === index ? {
+          ...r,
+          passed: false,
+          error: err.message,
+          status: 'Error',
+          running: false
+        } : r);
+        
+        // Record attempt even on error
+        setTimeout(() => recordProblemAttempt(newResults), 50);
+        
+        return newResults;
+      });
+    }
+  };
+
+  // Helper: Record problem attempt to database
+  const recordProblemAttempt = async (results: TestResult[]) => {
+    const userId = currentUser?.userId;
+    const slug = problem?.slug;
+    
+    console.log('🔍 Recording attempt - userId:', userId, 'slug:', slug);
+    
+    if (!userId || !slug) {
+      console.log('⚠️ Cannot record attempt: missing userId or problemSlug', { userId, slug });
+      return;
+    }
+
+    const passedCount = results.filter(r => r.passed === true).length;
+    const totalCount = results.length;
+    const allPassed = passedCount === totalCount && totalCount > 0;
+    const status: 'attempted' | 'completed' = allPassed ? 'completed' : 'attempted';
+
+    try {
+      await firebaseService.recordProblemAttempt(userId, slug, status, {
+        language: selectedLanguage,
+        passedTests: passedCount,
+        totalTests: totalCount,
+      });
+      
+      // Trigger refresh of problems list
+      setProblemAttemptRefreshTrigger(prev => prev + 1);
+      
+      console.log(`✅ Recorded ${status} for problem ${slug} (${passedCount}/${totalCount} passed)`);
+    } catch (error) {
+      console.error('Error recording attempt:', error);
     }
   };
 
@@ -1090,6 +1808,16 @@ const CodingLab: React.FC<CodingLabProps> = ({
     for (let i = 0; i < testResults.length; i++) {
       await runSingleTestCase(i);
     }
+    
+    // Record attempt after all tests complete
+    // Need to get fresh state after all tests have run
+    setTimeout(async () => {
+      // Get the latest testResults from state
+      setTestResults(currentResults => {
+        recordProblemAttempt(currentResults);
+        return currentResults;
+      });
+    }, 100);
   };
 
   // Add a new test case
@@ -1405,8 +2133,9 @@ const CodingLab: React.FC<CodingLabProps> = ({
             <h1 className="text-2xl font-bold text-gray-900">{problem.title}</h1>
             <button 
               onClick={() => {
-                const allExpanded = expandedSections.io && expandedSections.constraints && expandedSections.visualization && expandedSections.complexity && expandedSections.related;
+                const allExpanded = expandedSections.description && expandedSections.io && expandedSections.constraints && expandedSections.visualization && expandedSections.complexity && expandedSections.related;
                 setExpandedSections({
+                  description: !allExpanded,
                   io: !allExpanded,
                   constraints: !allExpanded,
                   hints: !allExpanded,
@@ -1414,8 +2143,10 @@ const CodingLab: React.FC<CodingLabProps> = ({
                   complexity: !allExpanded,
                   related: !allExpanded,
                   companies: !allExpanded,
+                  tableSchema: !allExpanded,
                   approaches: expandedSections.approaches,
-                  code: expandedSections.code
+                  code: expandedSections.code,
+                  solutionSummary: expandedSections.solutionSummary
                 });
               }} 
               className="w-7 h-7 flex items-center justify-center border border-blue-300 rounded-lg hover:bg-blue-50 transition-all"
@@ -1424,7 +2155,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
             >
               <FontAwesomeIcon 
                 icon={faChevronDown} 
-                className={`w-3 h-3 transition-transform duration-300 ${(expandedSections.io && expandedSections.constraints && expandedSections.visualization && expandedSections.complexity && expandedSections.related) ? '' : '-rotate-90'}`}
+                className={`w-3 h-3 transition-transform duration-300 ${(expandedSections.description && expandedSections.io && expandedSections.constraints && expandedSections.visualization && expandedSections.complexity && expandedSections.related) ? '' : '-rotate-90'}`}
                 style={{ color: brandTheme.colors.primary }}
               />
             </button>
@@ -1459,10 +2190,116 @@ const CodingLab: React.FC<CodingLabProps> = ({
           </div>
 
           {/* Problem Description */}
-          <p className="text-gray-700 leading-relaxed text-base" dangerouslySetInnerHTML={{ __html: problem.description }}></p>
+          <div 
+            className="flex justify-between items-center cursor-pointer select-none mb-3" 
+            onClick={() => toggleSection('description')}
+          >
+            <h2 className="flex items-center gap-3 text-xl font-bold text-gray-900">
+              <FontAwesomeIcon icon={faCircleInfo} className="w-5 h-5 text-gray-400" />
+              Problem Description
+            </h2>
+            <FontAwesomeIcon icon={faChevronDown} className={`w-4 h-4 transition-transform duration-300 ${expandedSections.description ? '' : '-rotate-90'}`} style={{ color: brandTheme.colors.primary }} />
+          </div>
+          {expandedSections.description && (
+          <div 
+            className="text-gray-700 leading-relaxed text-base max-w-none
+              [&>p]:mb-3 [&>ul]:my-3 [&>ul]:pl-5 [&>ul]:list-disc 
+              [&>ol]:my-3 [&>ol]:pl-5 [&>ol]:list-decimal
+              [&>li]:mb-1 [&_li]:mb-1
+              [&_code]:bg-gray-100 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm [&_code]:font-mono [&_code]:text-gray-800
+              [&_code]:before:content-none [&_code]:after:content-none"
+            dangerouslySetInnerHTML={{ __html: problem.description }}
+          />
+          )}
         </div>
 
         <div className="h-px bg-gray-100 mx-6"></div>
+
+        {/* Table Schema Section - SQL Problems Only */}
+        {problem.isSql && problem.tableSchema && (
+          <>
+            <div className="px-6 py-5">
+              <div 
+                className="flex justify-between items-center cursor-pointer select-none" 
+                onClick={() => toggleSection('tableSchema')}
+              >
+                <h2 className="flex items-center gap-3 text-xl font-bold text-gray-900">
+                  <FontAwesomeIcon icon={faLayerGroup} className="w-5 h-5 text-gray-400" />
+                  Table Schema
+                </h2>
+                <FontAwesomeIcon icon={faChevronDown} className={`w-4 h-4 transition-transform duration-300 ${expandedSections.tableSchema ? '' : '-rotate-90'}`} style={{ color: brandTheme.colors.primary }} />
+              </div>
+              
+              {expandedSections.tableSchema && (
+                <div className="mt-4 space-y-5">
+                  {(Array.isArray(problem.tableSchema) ? problem.tableSchema : [problem.tableSchema]).map((schema: any, si: number) => {
+                    const columns = schema.columns 
+                      ? (Array.isArray(schema.columns) ? schema.columns : Object.keys(schema.columns).sort((a: string, b: string) => Number(a) - Number(b)).map((key: string) => schema.columns[key]))
+                      : [];
+                    const primaryKey = schema.primaryKey || '';
+                    
+                    return (
+                      <div key={si} className="rounded-xl border border-gray-200 overflow-hidden bg-white">
+                        {/* Table Name Header */}
+                        <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200">
+                          <FontAwesomeIcon icon={faLayerGroup} className="w-4 h-4" style={{ color: brandTheme.colors.primary }} />
+                          <span className="font-bold text-gray-800">{schema.tableName || 'Table'}</span>
+                        </div>
+                        
+                        {/* Columns Table */}
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-gray-50/80">
+                                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">Column Name</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">Type</th>
+                                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">Description</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {columns.map((col: any, ci: number) => (
+                                <tr key={ci} className="border-b border-gray-100 last:border-b-0">
+                                  <td className="px-4 py-2.5">
+                                    <code className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs font-mono font-medium">{col.name}</code>
+                                    {primaryKey && primaryKey.includes(col.name) && (
+                                      <span className="ml-1.5 px-1.5 py-0.5 bg-orange-400 text-white text-[10px] font-bold rounded">PK</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-2.5">
+                                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs font-mono">{col.type || 'TEXT'}</span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-xs text-gray-600">{col.description || ''}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        
+                        {/* Primary Key & Notes */}
+                        {(primaryKey || schema.notes) && (
+                          <div className="px-4 py-2.5 bg-green-50/50 border-t border-gray-100">
+                            {primaryKey && (
+                              <div className="flex items-center gap-2 text-xs text-gray-600 border-l-3 border-green-500 pl-2" style={{ borderLeft: '3px solid #22c55e' }}>
+                                <span className="font-bold text-gray-700">Primary Key:</span> {primaryKey}
+                              </div>
+                            )}
+                            {schema.notes && (
+                              <div className={`flex items-center gap-2 text-xs text-gray-600 ${primaryKey ? 'mt-1.5' : ''}`}>
+                                <span className="font-bold text-gray-700">Note:</span> {schema.notes}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="h-px bg-gray-100 mx-6"></div>
+          </>
+        )}
 
         {/* Input & Output Section */}
         <div className="px-6 py-5">
@@ -1480,48 +2317,192 @@ const CodingLab: React.FC<CodingLabProps> = ({
           {expandedSections.io && (
             <div className="mt-4 space-y-4">
               {problem.examples?.map((example, idx) => (
-                <div key={idx} className="rounded-xl overflow-hidden border border-gray-200" style={{ background: '#fefdfb' }}>
-                  {/* Terminal Header */}
-                  <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 border-b border-gray-200">
-                    <span className="w-3 h-3 rounded-full bg-red-400"></span>
-                    <span className="w-3 h-3 rounded-full bg-yellow-400"></span>
-                    <span className="w-3 h-3 rounded-full bg-green-400"></span>
-                    <span className="ml-3 text-sm text-gray-500 font-mono">example_{idx + 1}.py — Python</span>
-                  </div>
-                  {/* Terminal Body */}
-                  <div className="p-4 font-mono text-xs">
-                    <div className="flex items-start gap-2 mb-3">
-                      <span className="text-green-600 font-bold">$</span>
-                      <span className="text-orange-500">Input:</span>
-                      <span className="text-gray-800">
-                        {typeof example.input === 'string' 
-                          ? example.input 
-                          : Object.entries(example.input).map(([k, v]) => `${k} = ${v}`).join(', ')}
-                      </span>
+                problem.isSql && ((example.input as any)?.headers || (example.input as any)?.tables) ? (
+                  /* ===== SQL Example: Clean card layout ===== */
+                  <div key={idx} className="rounded-xl overflow-hidden border border-gray-200 bg-white">
+                    {/* Example Header */}
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-200">
+                      <span className="text-sm font-semibold text-gray-700">Example {idx + 1}</span>
+                      <span className="text-[10px] text-gray-400 font-medium px-2 py-0.5 rounded-full bg-gray-100">SQL</span>
                     </div>
-                    <div className="flex items-start gap-2">
-                      <span className="text-green-600 font-bold">›</span>
-                      <span className="text-orange-500">Output:</span>
-                      <span className="text-gray-800">{example.output}</span>
-                    </div>
-                    {example.explanation && (
-                      <div className="mt-4 p-3 rounded-lg border-l-4 border-yellow-400" style={{ background: '#fffbeb' }}>
-                        <div className="flex items-start gap-2 font-mono text-xs">
-                          <span className="text-yellow-600">✓</span>
-                          <span className="text-orange-500">Note:</span>
-                          <span className="text-gray-700">{example.explanation}</span>
+                    
+                    <div className="p-4 space-y-4">
+                      {/* Input Section */}
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                          <FontAwesomeIcon icon={faLayerGroup} className="w-3 h-3" />
+                          Input {(example.input as any)?.tables ? 'Tables' : 'Table'}
+                        </div>
+                        {(example.input as any)?.tables && Array.isArray((example.input as any).tables) ? (
+                          /* Multi-table */
+                          <div className="space-y-3">
+                            {(example.input as any).tables.map((t: any, ti: number) => (
+                              <div key={ti}>
+                                <div className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                                  {t.name}
+                                </div>
+                                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr className="bg-gray-50">
+                                        {(t.headers || []).map((h: string, hi: number) => (
+                                          <th key={hi} className="px-3 py-2 text-left text-gray-500 font-semibold border-b border-gray-200 text-[11px]">{h}</th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {normalizeRows(t.rows).map((row: any, ri: number) => (
+                                        <tr key={ri} className="border-b border-gray-100 last:border-b-0">
+                                          {(t.headers || []).map((_: string, ci: number) => {
+                                            const val = row['i' + ci];
+                                            return <td key={ci} className="px-3 py-1.5 text-gray-700 font-mono text-xs">{val === null || val === undefined ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>;
+                                          })}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (example.input as any)?.headers ? (
+                          /* Single-table */
+                          <div className="overflow-x-auto rounded-lg border border-gray-200">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="bg-gray-50">
+                                  {((example.input as any).headers || []).map((h: string, hi: number) => (
+                                    <th key={hi} className="px-3 py-2 text-left text-gray-500 font-semibold border-b border-gray-200 text-[11px]">{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {normalizeRows((example.input as any).rows).map((row: any, ri: number) => (
+                                  <tr key={ri} className="border-b border-gray-100 last:border-b-0">
+                                    {((example.input as any).headers || []).map((_: string, ci: number) => {
+                                      const val = row['i' + ci];
+                                      return <td key={ci} className="px-3 py-1.5 text-gray-700 font-mono text-xs">{val === null || val === undefined ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>;
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : null}
+                      </div>
+                      
+                      {/* Output Section */}
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-2.5 text-[11px] font-semibold text-gray-400 uppercase tracking-wider">
+                          <FontAwesomeIcon icon={faCheck} className="w-3 h-3 text-green-500" />
+                          <span className="text-green-600">Output</span>
+                        </div>
+                        <div className="overflow-x-auto rounded-lg border border-green-200 bg-green-50/30">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-green-50">
+                                {((example.output as any)?.headers || []).map((h: string, hi: number) => (
+                                  <th key={hi} className="px-3 py-2 text-left text-green-700 font-semibold border-b border-green-200 text-[11px]">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {normalizeRows((example.output as any)?.rows).map((row: any, ri: number) => (
+                                <tr key={ri} className="border-b border-green-100 last:border-b-0">
+                                  {((example.output as any)?.headers || []).map((_: string, ci: number) => {
+                                    const val = row['i' + ci];
+                                    return <td key={ci} className="px-3 py-1.5 text-gray-700 font-mono text-xs">{val === null || val === undefined ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>;
+                                  })}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
                         </div>
                       </div>
-                    )}
+                      
+                      {/* Explanation */}
+                      {example.explanation && (
+                        <div className="p-3 rounded-lg bg-amber-50/70 border border-amber-200/60 text-xs text-gray-600 leading-relaxed">
+                          <span className="font-semibold text-amber-600">Note: </span>
+                          {typeof example.explanation === 'object' ? JSON.stringify(example.explanation) : stripHtml(String(example.explanation))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  /* ===== Regular coding example: Terminal style ===== */
+                  <div key={idx} className="rounded-xl overflow-hidden border border-gray-200" style={{ background: '#fefdfb' }}>
+                    {/* Terminal Header */}
+                    <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 border-b border-gray-200">
+                      <span className="w-3 h-3 rounded-full bg-red-400"></span>
+                      <span className="w-3 h-3 rounded-full bg-yellow-400"></span>
+                      <span className="w-3 h-3 rounded-full bg-green-400"></span>
+                      <span className="ml-3 text-sm text-gray-500 font-mono">{example.title || `example_${idx + 1}.py`}</span>
+                    </div>
+                    {/* Terminal Body */}
+                    <div className="p-4 font-mono text-xs">
+                      <div className="flex items-start gap-2 mb-3">
+                        <span className="text-green-600 font-bold">$</span>
+                        <span className="text-orange-500">Input:</span>
+                        <span className="text-gray-800">
+                          {typeof example.input === 'string' 
+                            ? example.input 
+                            : Object.entries(example.input).map(([k, v]) => `${k} = ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ')}
+                        </span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <span className="text-green-600 font-bold">›</span>
+                        <span className="text-orange-500">Output:</span>
+                        <span className="text-gray-800">{typeof example.output === 'object' ? JSON.stringify(example.output) : example.output}</span>
+                      </div>
+                      {example.explanation && (
+                        <div className="mt-4 p-3 rounded-lg border-l-4 border-yellow-400" style={{ background: '#fffbeb' }}>
+                          <div className="flex items-start gap-2 font-mono text-xs">
+                            <span className="text-yellow-600">✓</span>
+                            <span className="text-orange-500">Note:</span>
+                            <span className="text-gray-700">{typeof example.explanation === 'object' ? JSON.stringify(example.explanation) : stripHtml(String(example.explanation))}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
               ))}
             </div>
           )}
         </div>
 
-        {/* Visualization Section */}
-        {problem.analogy && (
+        {/* Constraints Section - Right after Input/Output */}
+        {problem.constraints?.length > 0 && (
+          <div className="px-6 py-5">
+            <div 
+              className="flex justify-between items-center cursor-pointer select-none" 
+              onClick={() => toggleSection('constraints')}
+            >
+              <h2 className="flex items-center gap-3 text-xl font-bold text-gray-900">
+                <FontAwesomeIcon icon={faTriangleExclamation} className="w-5 h-5 text-gray-400" />
+                Constraints
+              </h2>
+              <FontAwesomeIcon icon={faChevronDown} className={`w-4 h-4 transition-transform duration-300 ${expandedSections.constraints ? '' : '-rotate-90'}`} style={{ color: brandTheme.colors.primary }} />
+            </div>
+            {expandedSections.constraints && (
+              <div className="mt-4 p-5 rounded-xl border border-gray-200 bg-gray-50">
+                <ul className="space-y-3">
+                  {problem.constraints.map((c, i) => (
+                    <li key={i} className="flex items-start gap-3 text-gray-700 text-sm">
+                      <span className="text-gray-400 mt-0.5">•</span>
+                      <span dangerouslySetInnerHTML={{ __html: c }} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Visualization Section - Only shows visualize.svg from database */}
+        {problem.visualize?.svg && (
           <div className="px-6 py-5">
             <div 
               className="flex justify-between items-center cursor-pointer select-none" 
@@ -1536,263 +2517,33 @@ const CodingLab: React.FC<CodingLabProps> = ({
             
             {expandedSections.visualization && (
               <div className="mt-4 space-y-4">
-                {/* SVG Visualization Box */}
-                <div className="rounded-xl border border-gray-200 p-3 cursor-pointer hover:shadow-md transition-shadow" style={{ background: '#f9fbfd' }}>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" className="w-full">
-                    <defs>
-                      <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-                        <feDropShadow dx="2" dy="4" stdDeviation="3" floodOpacity="0.2"/>
-                      </filter>
-                      <linearGradient id="shelfGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                        <stop offset="0%" stopColor="#e0e0e0"/>
-                        <stop offset="100%" stopColor="#bdbdbd"/>
-                      </linearGradient>
-                    </defs>
-                    <rect width="800" height="500" fill="#f9fbfd" rx="10"/>
-                    <text x="400" y="35" fontFamily="Arial" fontSize="22" fontWeight="bold" textAnchor="middle" fill="#333">Two Sum: The Smart Shopper Method</text>
-                    <text x="400" y="60" fontFamily="Arial" fontSize="14" textAnchor="middle" fill="#666">Array: [2, 7, 11, 15] | Target: 9</text>
-                    
-                    {/* Gift Card */}
-                    <g transform="translate(50, 90)">
-                      <rect width="140" height="75" rx="8" fill="#ffecb3" stroke="#ffc107" strokeWidth="2" filter="url(#shadow)"/>
-                      <text x="70" y="28" fontFamily="Arial" fontSize="13" fontWeight="bold" fill="#f57f17" textAnchor="middle">🎁 GIFT CARD</text>
-                      <text x="70" y="55" fontFamily="Arial" fontSize="28" fontWeight="bold" fill="#333" textAnchor="middle">$9</text>
-                    </g>
-                    
-                    {/* Thinking bubble */}
-                    <g transform="translate(240, 105)">
-                      <path d="M0,0 H175 A10,10 0 0 1 185,10 V65 A10,10 0 0 1 175,75 H35 L18,92 L18,75 H10 A10,10 0 0 1 0,65 V10 A10,10 0 0 1 10,0 Z" fill="#fff" stroke="#333" strokeWidth="2" filter="url(#shadow)"/>
-                      <text x="92" y="24" fontFamily="Arial" fontSize="12" fill="#333" textAnchor="middle">💭 Thinking...</text>
-                      <text x="92" y="50" fontFamily="Arial" fontSize="15" fontWeight="bold" fill="#d32f2f" textAnchor="middle">$9 - $7 = Need $2</text>
-                    </g>
-                    
-                    {/* Store Shelf */}
-                    <g transform="translate(50, 220)">
-                      <rect x="-10" y="55" width="450" height="18" fill="url(#shelfGradient)" rx="4"/>
-                      <text x="-10" y="-20" fontFamily="Arial" fontSize="16" fontWeight="bold" fill="#333">🛒 Store Shelf (Array)</text>
-                      
-                      {/* Item $2 - Seen */}
-                      <g transform="translate(15, 0)">
-                        <rect width="75" height="55" rx="5" fill="#e3f2fd" stroke="#2196f3" strokeWidth="2" filter="url(#shadow)"/>
-                        <text x="37" y="33" fontFamily="Arial" fontSize="20" fontWeight="bold" fill="#1565c0" textAnchor="middle">$2</text>
-                        <text x="37" y="85" fontFamily="Arial" fontSize="11" textAnchor="middle" fill="#666">Index 0</text>
-                        <text x="37" y="-8" fontFamily="Arial" fontSize="10" fill="#1565c0" fontStyle="italic" textAnchor="middle">Seen</text>
-                      </g>
-                      
-                      {/* Item $7 - Current */}
-                      <g transform="translate(115, 0)">
-                        <rect width="75" height="55" rx="5" fill="#fff3e0" stroke="#ff9800" strokeWidth="3" filter="url(#shadow)"/>
-                        <text x="37" y="33" fontFamily="Arial" fontSize="20" fontWeight="bold" fill="#e65100" textAnchor="middle">$7</text>
-                        <text x="37" y="85" fontFamily="Arial" fontSize="11" textAnchor="middle" fill="#666">Index 1</text>
-                        <text x="37" y="-8" fontFamily="Arial" fontSize="11" fill="#e65100" fontWeight="bold" textAnchor="middle">Current</text>
-                      </g>
-                      
-                      {/* Items $11 and $15 - Dimmed */}
-                      <g transform="translate(215, 0)" opacity="0.4">
-                        <rect width="75" height="55" rx="5" fill="#f5f5f5" stroke="#999"/>
-                        <text x="37" y="33" fontFamily="Arial" fontSize="20" textAnchor="middle" fill="#999">$11</text>
-                        <text x="37" y="85" fontFamily="Arial" fontSize="11" textAnchor="middle" fill="#999">Index 2</text>
-                      </g>
-                      <g transform="translate(315, 0)" opacity="0.4">
-                        <rect width="75" height="55" rx="5" fill="#f5f5f5" stroke="#999"/>
-                        <text x="37" y="33" fontFamily="Arial" fontSize="20" textAnchor="middle" fill="#999">$15</text>
-                        <text x="37" y="85" fontFamily="Arial" fontSize="11" textAnchor="middle" fill="#999">Index 3</text>
-                      </g>
-                    </g>
-                    
-                    {/* Notebook (Hash Map) */}
-                    <g transform="translate(530, 180)">
-                      <rect width="220" height="200" rx="6" fill="#fff" stroke="#333" strokeWidth="2" filter="url(#shadow)"/>
-                      <rect x="8" y="-8" width="8" height="216" rx="2" fill="#ddd"/>
-                      <circle cx="12" cy="15" r="4" fill="#333"/>
-                      <text x="110" y="28" fontFamily="Arial" fontSize="15" fontWeight="bold" fill="#333" textAnchor="middle">📓 Notebook</text>
-                      <text x="110" y="45" fontFamily="Arial" fontSize="11" fill="#666" textAnchor="middle">(Hash Map)</text>
-                      <line x1="30" y1="58" x2="200" y2="58" stroke="#ccc"/>
-                      <text x="60" y="78" fontFamily="Arial" fontSize="12" fontWeight="bold" fill="#333">Price</text>
-                      <text x="155" y="78" fontFamily="Arial" fontSize="12" fontWeight="bold" fill="#333">Location</text>
-                      <line x1="30" y1="85" x2="200" y2="85" stroke="#333" strokeWidth="2"/>
-                      <rect x="28" y="95" width="175" height="32" fill="#e3f2fd" rx="4"/>
-                      <text x="65" y="116" fontFamily="Arial" fontSize="15" fontWeight="bold" fill="#1565c0">$2</text>
-                      <text x="155" y="116" fontFamily="Arial" fontSize="15" fontWeight="bold" fill="#1565c0">0</text>
-                      <text x="110" y="155" fontFamily="Arial" fontSize="11" fill="#00aa00" textAnchor="middle" fontWeight="bold">✓ MATCH FOUND!</text>
-                      <text x="110" y="175" fontFamily="Arial" fontSize="10" fill="#666" textAnchor="middle">Found $2 at index 0</text>
-                    </g>
-                    
-                    {/* Result Box */}
-                    <g transform="translate(100, 410)">
-                      <rect width="600" height="70" fill="#e8f5e9" stroke="#4caf50" strokeWidth="2" rx="8" filter="url(#shadow)"/>
-                      <text x="300" y="28" fontFamily="Arial" fontSize="17" fontWeight="bold" textAnchor="middle" fill="#2e7d32">✅ Perfect Match Found!</text>
-                      <text x="300" y="52" fontFamily="Arial" fontSize="13" textAnchor="middle" fill="#333">Return [0, 1] — Items at indices 0 and 1 cost $2 + $7 = $9</text>
-                    </g>
-                  </svg>
-                </div>
-                
-                {/* Understanding Steps - with primary color left border */}
-                <div className="rounded-xl border-l-4" style={{ borderColor: brandTheme.colors.primary, background: 'rgb(254, 253, 251)' }}>
-                  <div className="p-5">
-                    <div className="flex items-center gap-2 mb-5">
-                      <FontAwesomeIcon icon={faLightbulb} style={{ color: brandTheme.colors.primary }} className="w-5 h-5" />
-                      <span className="font-bold text-gray-900">Understanding the Visualization</span>
-                    </div>
-                    
-                    <div className="space-y-5">
-                      {/* Step 1 */}
-                      <div className="flex gap-4 items-start">
-                        <div className="w-7 h-7 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ background: brandTheme.gradients.primary }}>
-                          1
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-900 mb-1 text-sm">🛍️ Pick up first item ($2)</div>
-                          <div className="text-gray-600 text-sm leading-relaxed">
-                            We see an item costing $2 at position 0. We write it down in our notebook and continue shopping.
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Step 2 */}
-                      <div className="flex gap-4 items-start">
-                        <div className="w-7 h-7 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ background: brandTheme.gradients.primary }}>
-                          2
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-900 mb-1 text-sm">🛍️ Pick up second item ($7)</div>
-                          <div className="text-gray-600 text-sm leading-relaxed">
-                            We see an item costing $7 at position 1. We quickly calculate: $9 - $7 = need $2
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Step 3 */}
-                      <div className="flex gap-4 items-start">
-                        <div className="w-7 h-7 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ background: brandTheme.gradients.primary }}>
-                          3
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-900 mb-1 text-sm">📓 Check our notebook</div>
-                          <div className="text-gray-600 text-sm leading-relaxed">
-                            We look in our notebook - YES! We saw a $2 item earlier at position 0!
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {/* Step 4 */}
-                      <div className="flex gap-4 items-start">
-                        <div className="w-7 h-7 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0" style={{ background: brandTheme.gradients.primary }}>
-                          4
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-900 mb-1 text-sm">✅ Done! Return [0, 1]</div>
-                          <div className="text-gray-600 text-sm leading-relaxed">
-                            We found our pair! Items at positions 0 and 1 cost exactly $9 together. Mission accomplished in just ONE walk through the store!
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    {/* Key Takeaway */}
-                    <div className="mt-5 p-4 rounded-lg flex items-start gap-3" style={{ background: `linear-gradient(135deg, ${brandTheme.colors.primary}15, ${brandTheme.colors.primary}08)`, border: `1px solid ${brandTheme.colors.primary}30` }}>
-                      <div className="w-9 h-9 rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: brandTheme.colors.primary }}>
-                        <FontAwesomeIcon icon={faCheck} className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="font-semibold mb-1 text-sm" style={{ color: brandTheme.colors.primary }}>Key Takeaway</div>
-                        <div className="text-sm leading-relaxed" style={{ color: brandTheme.colors.primary }}>
-                          🎯 Key Insight: By keeping a notebook (hash map) of items we've seen, we only need to walk through the store ONCE instead of checking every possible pair. This is why the optimal solution is O(n) instead of O(n²)!
-                        </div>
-                      </div>
-                    </div>
+                {/* Problem Overview SVG from visualize field */}
+                <div 
+                  className="rounded-xl border border-gray-200 overflow-hidden cursor-pointer hover:shadow-lg transition-shadow" 
+                  style={{ background: '#f9fbfd' }}
+                  onClick={() => setShowProblemVisualizationModal(true)}
+                >
+                  {/* Tap to expand bar */}
+                  <div className="p-3 text-center text-xs text-gray-400 border-b border-gray-100 flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                    </svg>
+                    Tap to expand
                   </div>
+                  {problem.visualize.title && (
+                    <div className="p-3 border-b border-gray-100 bg-gray-50/50">
+                      <h3 className="font-semibold text-gray-900">{problem.visualize.title}</h3>
+                      {problem.visualize.description && (
+                        <p className="text-sm text-gray-600 mt-1">{problem.visualize.description}</p>
+                      )}
+                    </div>
+                  )}
+                  <div className="p-4 overflow-x-auto [&>svg]:max-w-full [&>svg]:h-auto [&>svg]:mx-auto" dangerouslySetInnerHTML={{ __html: problem.visualize.svg }} />
                 </div>
               </div>
             )}
           </div>
         )}
-
-        {/* Time & Space Complexity Section */}
-        <div className="px-6 py-5">
-          <div 
-            className="flex justify-between items-center cursor-pointer select-none" 
-            onClick={() => toggleSection('complexity')}
-          >
-            <h2 className="flex items-center gap-3 text-xl font-bold text-gray-900">
-              <FontAwesomeIcon icon={faChartLine} className="w-5 h-5 text-gray-400" />
-              Time & Space Complexity
-            </h2>
-            <FontAwesomeIcon icon={faChevronDown} className={`w-4 h-4 transition-transform duration-300 ${expandedSections.complexity ? '' : '-rotate-90'}`} style={{ color: brandTheme.colors.primary }} />
-          </div>
-          
-          {expandedSections.complexity && (
-            <div className="mt-4 space-y-4">
-              {/* Time Complexity Card */}
-              <div className="rounded-xl border overflow-hidden" style={{ borderColor: `${brandTheme.colors.primary}40` }}>
-                <div className="p-4" style={{ background: `linear-gradient(135deg, ${brandTheme.colors.primary}08 0%, ${brandTheme.colors.secondary}05 100%)` }}>
-                  <div className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Time Complexity</div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-2xl">⏱️</div>
-                    <span className={`text-3xl font-bold font-mono ${getComplexityColor('O(n)', 'time')}`}>O(n)</span>
-                  </div>
-                </div>
-                <div className="p-4 bg-white">
-                  <p className="text-gray-600 text-sm leading-relaxed mb-4">
-                    We make only ONE pass through the array. For each element, hash map lookup and insertion are O(1) operations. Total: n elements × O(1) = O(n).
-                  </p>
-                  {/* Progress Bars */}
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500 w-5">n</span>
-                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-green-500" style={{ width: '40%' }}></div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500 w-5">2n</span>
-                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-green-500" style={{ width: '80%' }}></div>
-                      </div>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium bg-green-100 text-green-600">
-                    <span>✓</span> Linear Growth
-                  </span>
-                </div>
-              </div>
-
-              {/* Space Complexity Card */}
-              <div className="rounded-xl border overflow-hidden" style={{ borderColor: `${brandTheme.colors.primary}40` }}>
-                <div className="p-4" style={{ background: `linear-gradient(135deg, ${brandTheme.colors.primary}08 0%, ${brandTheme.colors.secondary}05 100%)` }}>
-                  <div className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-2">Space Complexity</div>
-                  <div className="flex items-center gap-3">
-                    <FontAwesomeIcon icon={faMicrochip} className={`w-6 h-6 ${getComplexityColor('O(n)', 'space')}`} />
-                    <span className={`text-3xl font-bold font-mono ${getComplexityColor('O(n)', 'space')}`}>O(n)</span>
-                  </div>
-                </div>
-                <div className="p-4 bg-white">
-                  <p className="text-gray-600 text-sm leading-relaxed mb-4">
-                    In the worst case, we might store all n elements in the hash map before finding the solution. Space usage grows linearly with input size.
-                  </p>
-                  {/* Progress Bars */}
-                  <div className="space-y-2 mb-4">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500 w-5">n</span>
-                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-yellow-500" style={{ width: '60%' }}></div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-500 w-5">2n</span>
-                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-yellow-500" style={{ width: '100%' }}></div>
-                      </div>
-                    </div>
-                  </div>
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-600">
-                    <span>⚡</span> Linear Space
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
 
         {/* Related Problems Section */}
         {problem.relatedProblems?.length > 0 && (
@@ -1810,10 +2561,10 @@ const CodingLab: React.FC<CodingLabProps> = ({
             {expandedSections.related && (
               <div className="mt-4">
                 {problem.relatedProblems.map((rp, i) => (
-                  <a 
+                  <div 
                     key={i} 
-                    href={`${rp.slug}.htm`}
-                    className="flex items-center py-4 border-b border-gray-100 hover:bg-gray-50 transition-colors group"
+                    onClick={() => setCurrentProblemSlug(rp.slug)}
+                    className="flex items-center py-4 border-b border-gray-100 hover:bg-gray-50 transition-colors group cursor-pointer"
                   >
                     <span className="text-sm text-gray-400 font-mono w-10">#{i + 1}</span>
                     <span className="flex-1 text-gray-800 font-medium text-sm group-hover:text-green-600 transition-colors">{rp.title}</span>
@@ -1824,38 +2575,12 @@ const CodingLab: React.FC<CodingLabProps> = ({
                     }`}>
                       {rp.difficulty}
                     </span>
-                  </a>
+                  </div>
                 ))}
               </div>
             )}
           </div>
         )}
-
-        {/* Constraints Section */}
-        <div className="px-6 py-5">
-          <div 
-            className="flex justify-between items-center cursor-pointer select-none" 
-            onClick={() => toggleSection('constraints')}
-          >
-            <h2 className="flex items-center gap-3 text-xl font-bold text-gray-900">
-              <FontAwesomeIcon icon={faTriangleExclamation} className="w-5 h-5 text-gray-400" />
-              Constraints
-            </h2>
-            <FontAwesomeIcon icon={faChevronDown} className={`w-4 h-4 transition-transform duration-300 ${expandedSections.constraints ? '' : '-rotate-90'}`} style={{ color: brandTheme.colors.primary }} />
-          </div>
-          {expandedSections.constraints && (
-            <div className="mt-4 p-5 rounded-xl border border-gray-200 bg-gray-50">
-              <ul className="space-y-4">
-                {problem.constraints?.map((c, i) => (
-                  <li key={i} className="flex items-start gap-3 text-gray-700 text-sm">
-                    <span className="text-gray-400 mt-0.5">•</span>
-                    <span dangerouslySetInnerHTML={{ __html: c }} />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
 
         {/* Asked in (Companies) - Inline with header */}
         {problem.companies?.length > 0 && (
@@ -1931,17 +2656,17 @@ const CodingLab: React.FC<CodingLabProps> = ({
       <div className="flex-shrink-0 bg-white border-t border-gray-200 px-6 py-3 flex items-center justify-between text-sm">
         <div className="flex items-center gap-2">
           <FontAwesomeIcon icon={faEye} className="w-4 h-4 text-gray-400" />
-          <span className="font-semibold text-gray-800">{formatNumber(problem.views || 12)}</span>
+          <span className="font-semibold text-gray-800">{formatNumber(problem.views)}</span>
           <span className="text-gray-500">Views</span>
         </div>
         <div className="flex items-center gap-2">
           <FontAwesomeIcon icon={faFire} className="w-4 h-4 text-orange-500" />
-          <span className="font-semibold text-gray-800">{problem.frequency || 'Very High'}</span>
+          <span className="font-semibold text-gray-800">{problem.frequency}</span>
           <span className="text-gray-500">Frequency</span>
         </div>
         <div className="flex items-center gap-2">
           <FontAwesomeIcon icon={faClock} className="w-4 h-4 text-gray-400" />
-          <span className="font-semibold text-gray-800">{problem.avgTime || '~15 min'}</span>
+          <span className="font-semibold text-gray-800">{problem.avgTime}</span>
           <span className="text-gray-500">Avg. Time</span>
         </div>
         <button 
@@ -1954,7 +2679,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
             className={`w-4 h-4 transition-transform ${isLiked ? 'text-green-500 scale-110' : 'text-gray-400'}`} 
           />
           <span className={`font-semibold ${isLiked ? 'text-green-600' : 'text-gray-800'}`}>
-            {formatNumber(problem.likes || 0)}
+            {formatNumber(problem.likes)}
           </span>
           <span className="text-gray-500">Likes</span>
         </button>
@@ -1987,9 +2712,10 @@ const CodingLab: React.FC<CodingLabProps> = ({
               <h1 className="text-2xl font-bold text-gray-900">{problem.title} — Solution</h1>
               <button 
                 onClick={() => {
-                  const allExpanded = expandedSections.approaches && expandedSections.code && expandedSections.complexity && expandedSections.constraints;
+                  const allExpanded = expandedSections.solutionSummary && expandedSections.approaches && expandedSections.code && expandedSections.complexity && expandedSections.constraints;
                   setExpandedSections(prev => ({
                     ...prev,
+                    solutionSummary: !allExpanded,
                     approaches: !allExpanded,
                     code: !allExpanded,
                     complexity: !allExpanded,
@@ -2002,16 +2728,28 @@ const CodingLab: React.FC<CodingLabProps> = ({
               >
                 <FontAwesomeIcon 
                   icon={faChevronDown} 
-                  className={`w-3 h-3 text-amber-600 transition-transform duration-300 ${(expandedSections.approaches && expandedSections.code) ? '' : '-rotate-90'}`}
+                  className={`w-3 h-3 text-amber-600 transition-transform duration-300 ${(expandedSections.solutionSummary && expandedSections.approaches && expandedSections.code) ? '' : '-rotate-90'}`}
                 />
               </button>
             </div>
             {/* Solution Summary */}
-            <p className="text-gray-700 leading-relaxed">
+            <div 
+              className="flex justify-between items-center cursor-pointer select-none" 
+              onClick={() => toggleSection('solutionSummary')}
+            >
+              <h2 className="flex items-center gap-3 text-xl font-bold text-gray-900">
+                <FontAwesomeIcon icon={faCircleInfo} className="w-5 h-5 text-gray-400" />
+                Solution Summary
+              </h2>
+              <FontAwesomeIcon icon={faChevronDown} className={`w-4 h-4 text-amber-600 transition-transform duration-300 ${expandedSections.solutionSummary ? '' : '-rotate-90'}`} />
+            </div>
+            {expandedSections.solutionSummary && (
+            <p className="text-gray-700 leading-relaxed mt-3">
               The optimal solution uses a <strong>Hash Map</strong> to achieve O(n) time complexity. 
               Instead of checking every pair (brute force <strong>O(n²)</strong>), we store each number 
               and check if its complement (target - current number) already exists in the map.
             </p>
+            )}
           </div>
 
           {/* Common Approaches Table */}
@@ -2094,104 +2832,73 @@ const CodingLab: React.FC<CodingLabProps> = ({
               </div>
               {expandedSections.visualization && (
                 <div className="mt-4 p-5 bg-white rounded-xl border border-amber-200">
+                  {/* Summary */}
+                  {currentApproach.summary && (
+                    <p className="text-gray-800 font-medium mb-3">{currentApproach.summary}</p>
+                  )}
                   <p className="text-gray-700 leading-relaxed mb-4">{currentApproach.description}</p>
                   
-                  {/* Step by Step Walkthrough */}
-                  <div className="p-4 bg-amber-50/50 rounded-lg border-l-4 border-amber-400">
-                    <div className="flex items-center gap-2 mb-3 text-amber-700 font-semibold">
-                      <FontAwesomeIcon icon={faLightbulb} className="w-4 h-4" />
-                      Step-by-Step Walkthrough
+                  {/* Step by Step Walkthrough from Database */}
+                  {currentApproach.steps && currentApproach.steps.length > 0 && (
+                    <div className="p-4 bg-amber-50/50 rounded-lg border-l-4 border-amber-400 mb-4">
+                      <div className="flex items-center gap-2 mb-3 text-amber-700 font-semibold">
+                        <FontAwesomeIcon icon={faLightbulb} className="w-4 h-4" />
+                        Step-by-Step Walkthrough
+                      </div>
+                      <div className="space-y-3">
+                        {currentApproach.steps.map((step, idx) => (
+                          <div key={idx} className="flex gap-3 items-start">
+                            <div className={`w-7 h-7 rounded-full text-white flex items-center justify-center text-sm font-semibold flex-shrink-0 ${
+                              idx === currentApproach.steps!.length - 1 
+                                ? 'bg-gradient-to-br from-green-500 to-green-600' 
+                                : 'bg-gradient-to-br from-amber-500 to-amber-600'
+                            }`}>
+                              {idx + 1}
+                            </div>
+                            <div>
+                              <div className="text-gray-700 text-sm">{step}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="space-y-3">
-                      {currentApproach.name?.toLowerCase().includes('hash') ? (
-                        <>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">1</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">Initialize Hash Map</div>
-                              <div className="text-gray-500 text-xs">Create empty map to store {'{'}value → index{'}'}</div>
-                            </div>
+                  )}
+                  
+                  {/* Pros and Cons */}
+                  {(currentApproach.pros?.length > 0 || currentApproach.cons?.length > 0) && (
+                    <div className="grid grid-cols-2 gap-4">
+                      {currentApproach.pros && currentApproach.pros.length > 0 && (
+                        <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                          <div className="flex items-center gap-2 mb-2 text-green-700 font-semibold text-sm">
+                            <span>✓</span> Pros
                           </div>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">2</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">Iterate Through Array</div>
-                              <div className="text-gray-500 text-xs">For each element, calculate complement = target - current</div>
-                            </div>
+                          <ul className="space-y-1">
+                            {currentApproach.pros.map((pro, idx) => (
+                              <li key={idx} className="text-green-700 text-xs flex items-start gap-1">
+                                <span className="mt-1">•</span>
+                                <span>{pro}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {currentApproach.cons && currentApproach.cons.length > 0 && (
+                        <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                          <div className="flex items-center gap-2 mb-2 text-red-700 font-semibold text-sm">
+                            <span>✗</span> Cons
                           </div>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">3</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">Check Complement</div>
-                              <div className="text-gray-500 text-xs">If complement exists in map, return both indices</div>
-                            </div>
-                          </div>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">4</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">✅ Store Current Element</div>
-                              <div className="text-gray-500 text-xs">Add current {'{'}value → index{'}'} to map and continue</div>
-                            </div>
-                          </div>
-                        </>
-                      ) : currentApproach.name?.toLowerCase().includes('pointer') ? (
-                        <>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">1</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">Sort Array (preserve indices)</div>
-                              <div className="text-gray-500 text-xs">Create pairs of (value, original_index) and sort by value</div>
-                            </div>
-                          </div>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">2</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">Initialize Pointers</div>
-                              <div className="text-gray-500 text-xs">Set left = 0, right = n - 1</div>
-                            </div>
-                          </div>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">3</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">Calculate Sum</div>
-                              <div className="text-gray-500 text-xs">sum = nums[left] + nums[right]</div>
-                            </div>
-                          </div>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">4</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">✅ Adjust Pointers</div>
-                              <div className="text-gray-500 text-xs">If sum {'<'} target: left++, if sum {'>'} target: right--, else found!</div>
-                            </div>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">1</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">Start Processing</div>
-                              <div className="text-gray-500 text-xs">Begin with the first element</div>
-                            </div>
-                          </div>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">2</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">Apply Algorithm Logic</div>
-                              <div className="text-gray-500 text-xs">{currentApproach.description?.slice(0, 80)}</div>
-                            </div>
-                          </div>
-                          <div className="flex gap-3 items-start">
-                            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-green-500 to-green-600 text-white flex items-center justify-center text-sm font-semibold flex-shrink-0">3</div>
-                            <div>
-                              <div className="font-semibold text-gray-800 text-sm">✅ Return Result</div>
-                              <div className="text-gray-500 text-xs">Return the solution indices</div>
-                            </div>
-                          </div>
-                        </>
+                          <ul className="space-y-1">
+                            {currentApproach.cons.map((con, idx) => (
+                              <li key={idx} className="text-red-700 text-xs flex items-start gap-1">
+                                <span className="mt-1">•</span>
+                                <span>{con}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       )}
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2591,10 +3298,35 @@ const CodingLab: React.FC<CodingLabProps> = ({
                   </h2>
                   {/* Language Pills */}
                   <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    {LANGUAGE_CONFIG.map(lang => (
+                    {(problem?.isSql 
+                      ? [{ id: 'sql', name: 'SQL', extension: 'sql' }] 
+                      : LANGUAGE_CONFIG
+                    ).map(lang => (
                       <button
                         key={lang.id}
-                        onClick={() => setSolutionLanguage(lang.id)}
+                        onClick={() => {
+                          setSolutionLanguage(lang.id);
+                          setSelectedLanguage(lang.id);
+                          // Update editor with default code for the selected language
+                          if (problem?.defaultCode?.[lang.id]) {
+                            setCode(problem.defaultCode[lang.id]);
+                          }
+                          // Reset test results to initial state
+                          if (problem?.testCases) {
+                            setTestResults(problem.testCases.map((tc, idx) => ({
+                              id: idx,
+                              params: { ...tc.params },
+                              expected: tc.expected_output,
+                              actual: '',
+                              passed: null,
+                              error: null,
+                              time: '0',
+                              memory: '0 KB',
+                              status: 'Not Run',
+                              running: false
+                            })));
+                          }
+                        }}
                         className={`px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
                           solutionLanguage === lang.id 
                             ? 'bg-amber-600 text-white' 
@@ -2624,10 +3356,20 @@ const CodingLab: React.FC<CodingLabProps> = ({
                       solution.{LANGUAGE_CONFIG.find(l => l.id === solutionLanguage)?.extension} — {LANGUAGE_CONFIG.find(l => l.id === solutionLanguage)?.name}
                     </span>
                     <button 
-                      onClick={() => navigator.clipboard.writeText(currentApproach.code?.[solutionLanguage] || '')}
-                      className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-1"
+                      onClick={() => {
+                        setCode(currentApproach.code?.[solutionLanguage] || '');
+                        setSolutionCodeCopied(true);
+                        setTimeout(() => setSolutionCodeCopied(false), 2000);
+                      }}
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded transition-all text-sm ${
+                        solutionCodeCopied 
+                          ? 'text-green-600 bg-green-50' 
+                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                      }`}
+                      title={solutionCodeCopied ? 'Copied to Editor!' : 'Copy to Editor'}
                     >
-                      📋 Copy
+                      <FontAwesomeIcon icon={solutionCodeCopied ? faCheck : faCopy} className="w-3.5 h-3.5" />
+                      <span>{solutionCodeCopied ? 'Copied!' : 'Copy to Editor'}</span>
                     </button>
                   </div>
                   {/* Terminal Body - Light Theme with max height */}
@@ -2811,30 +3553,66 @@ const CodingLab: React.FC<CodingLabProps> = ({
     
     return (
     <div className="h-full overflow-y-auto bg-white p-6">
-      <div className="flex items-center gap-3 mb-5">
-        <span className="text-3xl">{problem.analogy?.icon || '🔍'}</span>
-        <h3 className="text-xl font-semibold text-gray-900">{problem.analogy?.title || 'Real World Analogy'}</h3>
-      </div>
-      <div className="p-5 rounded-xl border-l-4 border-amber-400 mb-5" style={{ backgroundColor: 'rgb(254, 253, 251)' }}>
-        <div className="text-gray-700 leading-relaxed">
-          <div className="text-amber-700 font-semibold text-lg mb-3">{problem.analogy?.title}</div>
-          <p className="mb-4">{problem.analogy?.scenario}</p>
-          <p className="mb-4">
-            <strong className="text-gray-900">Brute Force Way:</strong>{' '}
-            {renderInlineMarkdown(problem.analogy?.bruteForce || '')}
-          </p>
-          <p>
-            <strong className="text-gray-900">Optimal Way:</strong>{' '}
-            {renderInlineMarkdown(problem.analogy?.optimal || '')}
-          </p>
+      {/* Analogy Card - Same design as left panel */}
+      <div className="rounded-xl border border-gray-200 p-5 mb-5" style={{ background: '#f9fbfd' }}>
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-3xl">{problem.analogy?.icon || '💡'}</span>
+          <h3 className="text-lg font-bold text-gray-900">{problem.analogy?.title || 'Understanding the Problem'}</h3>
         </div>
+        {problem.analogy?.description && (
+          <p className="text-gray-700 leading-relaxed">{problem.analogy.description}</p>
+        )}
       </div>
-      <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-        <div className="text-sm text-gray-600">
-          <span className="text-blue-700 font-semibold">💡 Key Insight:</span>{' '}
-          {renderInlineMarkdown(problem.analogy?.keyInsight || '')}
+      
+      {/* Understanding Approaches - Dynamic */}
+      {problem.analogy?.approaches && problem.analogy.approaches.length > 0 && (
+        <div className="rounded-xl border-l-4 mb-5" style={{ borderColor: brandTheme.colors.primary, background: 'rgb(254, 253, 251)' }}>
+          <div className="p-5">
+            <div className="flex items-center gap-2 mb-5">
+              <FontAwesomeIcon icon={faLightbulb} style={{ color: brandTheme.colors.primary }} className="w-5 h-5" />
+              <span className="font-bold text-gray-900">Understanding the Approaches</span>
+            </div>
+            
+            <div className="space-y-5">
+              {problem.analogy.approaches.map((approach, idx) => (
+                <div key={approach.key} className="flex gap-4 items-start">
+                  <div 
+                    className="w-7 h-7 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                    style={{ 
+                      background: idx === 0 ? '#f97316' : 
+                                 idx === problem.analogy.approaches.length - 1 ? brandTheme.gradients.primary : 
+                                 '#6b7280'
+                    }}
+                  >
+                    {idx + 1}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-gray-900 mb-1 text-sm">{approach.label}</div>
+                    <div className="text-gray-600 text-sm leading-relaxed">
+                      {approach.content}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {/* Key Insight */}
+            {problem.analogy.keyInsight && (
+              <div className="mt-5 p-4 rounded-lg flex items-start gap-3" style={{ background: `linear-gradient(135deg, ${brandTheme.colors.primary}15, ${brandTheme.colors.primary}08)`, border: `1px solid ${brandTheme.colors.primary}30` }}>
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: brandTheme.colors.primary }}>
+                  <FontAwesomeIcon icon={faCheck} className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-semibold mb-1 text-sm" style={{ color: brandTheme.colors.primary }}>Key Insight</div>
+                  <div className="text-sm leading-relaxed" style={{ color: brandTheme.colors.primary }}>
+                    {problem.analogy.keyInsight}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
     );
   };
@@ -2852,7 +3630,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
             <button 
               onClick={() => {
                 setAiMessages([{ role: 'assistant', content: "Hi there! I'm your AI Reading Assistant. Ask me about the content!" }]);
-                setAiInput(`Please Simplify the following problem statement for me.\n\n${problem?.description || ''}`);
+                setAiInput(`Please Simplify the following problem statement for me.\n\n${stripHtml(problem?.description || '')}`);
               }}
               className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700"
             >
@@ -3066,10 +3844,36 @@ const CodingLab: React.FC<CodingLabProps> = ({
             <FontAwesomeIcon icon={faCode} className="w-3 h-3 text-gray-400" />
             <select 
               value={selectedLanguage}
-              onChange={(e) => setSelectedLanguage(e.target.value)}
+              onChange={(e) => {
+                const newLang = e.target.value;
+                setSelectedLanguage(newLang);
+                setSolutionLanguage(newLang);
+                // Update editor with default code for the selected language
+                if (problem?.defaultCode?.[newLang]) {
+                  setCode(problem.defaultCode[newLang]);
+                }
+                // Reset test results to initial state
+                if (problem?.testCases) {
+                  setTestResults(problem.testCases.map((tc, idx) => ({
+                    id: idx,
+                    params: { ...tc.params },
+                    expected: tc.expected_output,
+                    actual: '',
+                    passed: null,
+                    error: null,
+                    time: '0',
+                    memory: '0 KB',
+                    status: 'Not Run',
+                    running: false
+                  })));
+                }
+              }}
               className="bg-transparent text-gray-600 cursor-pointer focus:outline-none text-xs"
             >
-              {LANGUAGE_CONFIG.map(lang => (
+              {(problem?.isSql 
+                ? [{ id: 'sql', name: 'SQL', extension: 'sql' }] 
+                : LANGUAGE_CONFIG
+              ).map(lang => (
                 <option key={lang.id} value={lang.id}>{lang.name}</option>
               ))}
             </select>
@@ -3406,8 +4210,69 @@ const CodingLab: React.FC<CodingLabProps> = ({
               className="w-full h-full bg-transparent text-gray-800 font-mono text-sm resize-none focus:outline-none"
             />
           ) : (
-            <div className="text-sm text-gray-500">
-              <p>Test cases will appear here...</p>
+            /* Test Cases Tab Content */
+            <div className="space-y-3 overflow-y-auto">
+              {testResults.length === 0 ? (
+                <p className="text-gray-500 text-sm italic">No test cases available</p>
+              ) : (
+                testResults.map((result, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`p-3 rounded-lg border ${
+                      result.passed === true 
+                        ? 'bg-green-50 border-green-200' 
+                        : result.passed === false 
+                        ? 'bg-red-50 border-red-200' 
+                        : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-sm text-gray-700">Test Case {idx + 1}</span>
+                      {result.passed === true && (
+                        <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded-full">✓ Passed</span>
+                      )}
+                      {result.passed === false && (
+                        <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full">✗ Failed</span>
+                      )}
+                      {result.passed === null && (
+                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">Not Run</span>
+                      )}
+                    </div>
+                    <div className="space-y-1.5 text-xs font-mono">
+                      {problem?.isSql && result.sqlExpectedOutput ? (
+                        <>
+                          <div>
+                            <span className="text-gray-500">Expected: </span>
+                            <span className="text-green-700">[{(result.sqlExpectedOutput?.headers || []).join(', ')}] → {normalizeRows(result.sqlExpectedOutput?.rows).length} row(s)</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <span className="text-gray-500">Input: </span>
+                            <span className="text-gray-800">
+                              {Object.entries(result.params || {}).map(([key, val]) => `${key}=${val}`).join(', ')}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Expected: </span>
+                            <span className="text-green-700">{result.expected}</span>
+                          </div>
+                        </>
+                      )}
+                      {result.actual && (
+                        <div>
+                          <span className="text-gray-500">Output: </span>
+                          <span className={result.passed ? 'text-green-700' : 'text-red-600'}>{result.actual}</span>
+                        </div>
+                      )}
+                      {result.error && (
+                        <div className="text-red-600 mt-1">{result.error}</div>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>
@@ -3577,11 +4442,11 @@ const CodingLab: React.FC<CodingLabProps> = ({
       {/* Visualization Modal */}
       {showVisualizationModal && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
           onClick={() => setShowVisualizationModal(false)}
         >
           <div 
-            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden"
+            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden z-[10001]"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -3846,18 +4711,103 @@ const CodingLab: React.FC<CodingLabProps> = ({
         </div>
       )}
 
+      {/* Problem Visualization Modal */}
+      {showProblemVisualizationModal && problem?.visualize?.svg && (
+        <div 
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowProblemVisualizationModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-hidden z-[10001]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {problem.visualize.title || 'Problem Visualization'}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setShowProblemVisualizationModal(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors"
+              >
+                <FontAwesomeIcon icon={faXmark} className="w-4 h-4" />
+              </button>
+            </div>
+            
+            {/* Modal Body */}
+            <div className="p-6 overflow-auto max-h-[calc(90vh-120px)]" style={{ background: '#f8f9fa' }}>
+              {/* Description */}
+              {problem.visualize.description && (
+                <p className="text-gray-600 mb-4">{problem.visualize.description}</p>
+              )}
+              
+              {/* SVG Visualization */}
+              <div 
+                className="bg-white rounded-xl border border-gray-200 p-4 overflow-x-auto [&>svg]:max-w-full [&>svg]:h-auto [&>svg]:mx-auto"
+                dangerouslySetInnerHTML={{ __html: problem.visualize.svg }} 
+              />
+              
+              {/* Steps */}
+              {problem.visualize.steps && problem.visualize.steps.length > 0 && (
+                <div className="mt-6 space-y-4">
+                  <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                    <FontAwesomeIcon icon={faLightbulb} className="w-4 h-4" style={{ color: brandTheme.colors.primary }} />
+                    Understanding the Visualization
+                  </h4>
+                  {problem.visualize.steps.map((step, idx) => (
+                    <div key={idx} className="flex gap-4 items-start">
+                      <div 
+                        className="w-7 h-7 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                        style={{ background: brandTheme.colors.primary }}
+                      >
+                        {step.stepNumber || idx + 1}
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-900 mb-1 text-sm">{step.title}</div>
+                        <div className="text-gray-600 text-sm leading-relaxed">{step.description}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Conclusion */}
+              {problem.visualize.conclusion && (
+                <div className="mt-5 p-4 rounded-lg flex items-start gap-3" style={{ background: `linear-gradient(135deg, ${brandTheme.colors.primary}15, ${brandTheme.colors.primary}08)`, border: `1px solid ${brandTheme.colors.primary}30` }}>
+                  <div className="w-9 h-9 rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: brandTheme.colors.primary }}>
+                    <FontAwesomeIcon icon={faCheck} className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-semibold mb-1 text-sm" style={{ color: brandTheme.colors.primary }}>Key Takeaway</div>
+                    <div className="text-sm leading-relaxed" style={{ color: brandTheme.colors.primary }} dangerouslySetInnerHTML={{ __html: problem.visualize.conclusion.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 text-center text-sm text-gray-500">
+              🔍 Pinch / Scroll to zoom
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Help Modal - Slide in from right like profile modal */}
       {showHelpModal && (
         <>
           {/* Overlay */}
           <div 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000] transition-opacity duration-200"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] transition-opacity duration-200"
             onClick={() => setShowHelpModal(false)}
           />
           
           {/* Sidebar Panel */}
           <div 
-            className="fixed right-2 top-2 bottom-2 w-[calc(100%-16px)] sm:w-[35rem] bg-white shadow-2xl z-[2001] rounded-2xl overflow-hidden flex flex-col"
+            className="fixed right-2 top-2 bottom-2 w-[calc(100%-16px)] sm:w-[35rem] bg-white shadow-2xl z-[10001] rounded-2xl overflow-hidden flex flex-col"
             style={{ animation: 'slideInRight 0.3s ease-out' }}
           >
             {/* Modal Header */}
@@ -3956,13 +4906,13 @@ const CodingLab: React.FC<CodingLabProps> = ({
         <>
           {/* Overlay */}
           <div 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[1998]"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000]"
             onClick={() => setShowTestCasesPanel(false)}
           />
           
           {/* Panel */}
           <div 
-            className="fixed right-2 top-2 bottom-2 w-[calc(100%-16px)] sm:w-[35rem] bg-white z-[1999] flex flex-col rounded-2xl shadow-2xl overflow-hidden"
+            className="fixed right-2 top-2 bottom-2 w-[calc(100%-16px)] sm:w-[35rem] bg-white z-[10001] flex flex-col rounded-2xl shadow-2xl overflow-hidden"
             style={{ animation: 'slideInRight 0.3s ease-out' }}
           >
             {/* Panel Header */}
@@ -4058,66 +5008,132 @@ const CodingLab: React.FC<CodingLabProps> = ({
                   
                   {/* Test Case Body */}
                   <div className="p-4 space-y-3">
-                    {/* Input params - get keys from the params object itself */}
-                    {Object.keys(result.params || {}).map((paramName, pi) => (
-                      <div key={pi} className="flex items-center gap-2">
-                        <span className="text-sm font-mono text-gray-600 min-w-[60px]">{paramName}</span>
-                        <span className="text-gray-400">=</span>
-                        <input
-                          type="text"
-                          value={result.params[paramName] || ''}
-                          onChange={(e) => updateTestCaseParam(idx, paramName, e.target.value)}
-                          placeholder={paramName === 'nums' ? '[2, 7, 11, 15]' : paramName === 'target' ? '9' : ''}
-                          className="flex-1 px-3 py-1.5 text-sm font-mono bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-green-400"
-                        />
-                      </div>
-                    ))}
-                    
-                    {/* If no params, show message */}
-                    {Object.keys(result.params || {}).length === 0 && (
-                      <div className="text-sm text-gray-400 italic">No input parameters</div>
-                    )}
-                    
-                    {/* Separator */}
-                    <div className="border-t border-dashed border-gray-200 my-2"></div>
-                    
-                    {/* Expected output */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-mono text-green-600 min-w-[60px]">expected</span>
-                      <span className="text-gray-400">=</span>
-                      <input
-                        type="text"
-                        value={result.expected || ''}
-                        onChange={(e) => updateTestCaseExpected(idx, e.target.value)}
-                        placeholder="[0, 1]"
-                        className="flex-1 px-3 py-1.5 text-sm font-mono bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-green-400"
-                      />
-                    </div>
-                    
-                    {/* Actual output (if run) */}
-                    {result.passed !== null && (
+                    {problem?.isSql && result.sqlInput ? (
+                      /* ===== SQL Test Case: Table rendering ===== */
                       <>
+                        {/* Input Table(s) */}
+                        <div>
+                          <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <span className="text-green-500">→</span> Input {result.sqlInput?.tables ? 'Tables' : 'Table'}
+                          </div>
+                          {result.sqlInput?.tables && Array.isArray(result.sqlInput.tables) ? (
+                            result.sqlInput.tables.map((t: any, ti: number) => (
+                              <div key={ti} className="mb-3">
+                                {t.name && <div className="text-xs text-gray-500 font-semibold mb-1">{t.name}</div>}
+                                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                                  <table className="w-full text-xs font-mono">
+                                    <thead><tr className="bg-gray-100">{(t.headers || []).map((h: string, hi: number) => <th key={hi} className="px-3 py-1.5 text-left text-gray-600 font-semibold border-b border-gray-200">{h}</th>)}</tr></thead>
+                                    <tbody>{normalizeRows(t.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">{(t.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-3 py-1.5 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="overflow-x-auto rounded-lg border border-gray-200">
+                              <table className="w-full text-xs font-mono">
+                                <thead><tr className="bg-gray-100">{(result.sqlInput?.headers || []).map((h: string, hi: number) => <th key={hi} className="px-3 py-1.5 text-left text-gray-600 font-semibold border-b border-gray-200">{h}</th>)}</tr></thead>
+                                <tbody>{normalizeRows(result.sqlInput?.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">{(result.sqlInput?.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-3 py-1.5 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="border-t border-dashed border-gray-200 my-2"></div>
+
+                        {/* Expected Output Table */}
+                        <div>
+                          <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <span className="text-amber-500">◎</span> Expected Output
+                          </div>
+                          <div className="overflow-x-auto rounded-lg border border-green-200">
+                            <table className="w-full text-xs font-mono">
+                              <thead><tr className="bg-green-50">{(result.sqlExpectedOutput?.headers || []).map((h: string, hi: number) => <th key={hi} className="px-3 py-1.5 text-left text-green-700 font-semibold border-b border-green-200">{h}</th>)}</tr></thead>
+                              <tbody>{normalizeRows(result.sqlExpectedOutput?.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-green-100 hover:bg-green-50/50">{(result.sqlExpectedOutput?.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-3 py-1.5 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                            </table>
+                          </div>
+                        </div>
+
+                        {/* Actual Output (after run) */}
+                        {result.passed !== null && result.sqlActualHeaders && (
+                          <div>
+                            <div className="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: result.passed ? '#40A944' : '#ef4444' }}>
+                              <span>{result.passed ? '✓' : '✗'}</span> Your Output
+                            </div>
+                            <div className={`overflow-x-auto rounded-lg border ${result.passed ? 'border-green-200' : 'border-red-200'}`}>
+                              <table className="w-full text-xs font-mono">
+                                <thead><tr className={result.passed ? 'bg-green-50' : 'bg-red-50'}>{(result.sqlActualHeaders || []).map((h: string, hi: number) => <th key={hi} className={`px-3 py-1.5 text-left font-semibold border-b ${result.passed ? 'text-green-700 border-green-200' : 'text-red-700 border-red-200'}`}>{h}</th>)}</tr></thead>
+                                <tbody>{(result.sqlActualRows || []).length === 0 ? (
+                                  <tr><td colSpan={(result.sqlActualHeaders || []).length || 1} className="px-3 py-2 text-center text-gray-400 italic">No rows returned</td></tr>
+                                ) : (result.sqlActualRows || []).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100">{(result.sqlActualHeaders || []).map((h: string, ci: number) => { const val = row[h]; return <td key={ci} className="px-3 py-1.5 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                        {result.error && <div className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{result.error}</div>}
+                      </>
+                    ) : (
+                      /* ===== Coding Test Case: param=value style ===== */
+                      <>
+                        {/* Input params */}
+                        {Object.keys(result.params || {}).map((paramName, pi) => (
+                          <div key={pi} className="flex items-center gap-2">
+                            <span className="text-sm font-mono text-gray-600 min-w-[60px]">{paramName}</span>
+                            <span className="text-gray-400">=</span>
+                            <input
+                              type="text"
+                              value={result.params[paramName] || ''}
+                              onChange={(e) => updateTestCaseParam(idx, paramName, e.target.value)}
+                              placeholder={paramName === 'nums' ? '[2, 7, 11, 15]' : paramName === 'target' ? '9' : ''}
+                              className="flex-1 px-3 py-1.5 text-sm font-mono bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-green-400"
+                            />
+                          </div>
+                        ))}
+                        
+                        {Object.keys(result.params || {}).length === 0 && (
+                          <div className="text-sm text-gray-400 italic">No input parameters</div>
+                        )}
+                        
+                        <div className="border-t border-dashed border-gray-200 my-2"></div>
+                        
+                        {/* Expected output */}
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-mono text-gray-600 min-w-[60px]">output</span>
+                          <span className="text-sm font-mono text-green-600 min-w-[60px]">expected</span>
                           <span className="text-gray-400">=</span>
-                          <span className={`flex-1 px-3 py-1.5 text-sm font-mono rounded-lg ${
-                            result.passed ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
-                          }`}>
-                            {result.actual || result.error || '(empty)'}
-                          </span>
+                          <input
+                            type="text"
+                            value={result.expected || ''}
+                            onChange={(e) => updateTestCaseExpected(idx, e.target.value)}
+                            placeholder="[0, 1]"
+                            className="flex-1 px-3 py-1.5 text-sm font-mono bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-green-400"
+                          />
                         </div>
                         
-                        {/* Metrics */}
-                        <div className="flex items-center gap-4 mt-2">
-                          <span className="flex items-center gap-1 text-xs text-gray-400">
-                            <FontAwesomeIcon icon={faClock} className="w-3 h-3" />
-                            {result.time}
-                          </span>
-                          <span className="flex items-center gap-1 text-xs text-gray-400">
-                            <FontAwesomeIcon icon={faMicrochip} className="w-3 h-3" />
-                            {result.memory}
-                          </span>
-                        </div>
+                        {/* Actual output (if run) */}
+                        {result.passed !== null && (
+                          <>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-mono text-gray-600 min-w-[60px]">output</span>
+                              <span className="text-gray-400">=</span>
+                              <span className={`flex-1 px-3 py-1.5 text-sm font-mono rounded-lg ${
+                                result.passed ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+                              }`}>
+                                {result.actual || result.error || '(empty)'}
+                              </span>
+                            </div>
+                            
+                            {/* Metrics */}
+                            <div className="flex items-center gap-4 mt-2">
+                              <span className="flex items-center gap-1 text-xs text-gray-400">
+                                <FontAwesomeIcon icon={faClock} className="w-3 h-3" />
+                                {result.time}
+                              </span>
+                              <span className="flex items-center gap-1 text-xs text-gray-400">
+                                <FontAwesomeIcon icon={faMicrochip} className="w-3 h-3" />
+                                {result.memory}
+                              </span>
+                            </div>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
@@ -4136,10 +5152,15 @@ const CodingLab: React.FC<CodingLabProps> = ({
               </button>
               <button 
                 onClick={runAllTestCases}
-                className="flex items-center gap-2 px-5 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 transition"
+                disabled={testResults.some(r => r.running)}
+                className="flex items-center gap-2 px-5 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 disabled:opacity-50 transition"
               >
-                <FontAwesomeIcon icon={faPlay} className="w-4 h-4" />
-                Run All
+                {testResults.some(r => r.running) ? (
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                ) : (
+                  <FontAwesomeIcon icon={faPlay} className="w-4 h-4" />
+                )}
+                {testResults.some(r => r.running) ? 'Running...' : 'Run All'}
               </button>
             </div>
           </div>

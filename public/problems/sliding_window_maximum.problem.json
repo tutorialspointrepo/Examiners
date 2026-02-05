@@ -1,0 +1,54 @@
+{
+    "id": "sliding_window_maximum",
+    "title": "Sliding Window Maximum",
+    "description": "Given an integer array <code>nums</code> and an integer <code>k</code>, return the maximum sliding window for each sliding window of size <code>k</code>. You must solve the problem in O(n) time complexity.",
+    "difficulty": "Hard",
+    "category": "Array, Sliding Window",
+    "examples": [
+        {
+            "input": "[1,3,-1,-3,5,3,6,7], 3",
+            "output": "[3,3,5,5,6,7]",
+            "explanation": "For the first window <code>[1,3,-1]</code>, the maximum is <code>3</code>. For the second window <code>[3,-1,-3]</code>, the maximum is still <code>3</code>. This continues through the array."
+        },
+        {
+            "input": "[1,-1], 1",
+            "output": "[1,-1]",
+            "explanation": "Each element is its own window. The maximum for the first window <code>[1]</code> is <code>1</code> and for <code>[-1]</code> is <code>-1</code>."
+        },
+        {
+            "input": "[9,10,9,-7,-4,-8,0,4,1,-2], 5",
+            "output": "[10,10,9,4,4]",
+            "explanation": "The maximums for sliding windows are calculated as follows: <code>[9,10,9,-7,-4]</code> gives <code>10</code>, <code>[10,9,-7,-4,-8]</code> gives <code>10</code>, etc."
+        }
+    ],
+    "constraints": [
+        "<code>1 <= nums.length <= 10^5</code>",
+        "<code>-10^4 <= nums[i] <= 10^4</code>",
+        "<code>1 <= k <= nums.length</code>"
+    ],
+    "tags": [
+        "Array",
+        "Sliding Window",
+        "Deque"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "maximum_of_sliding_window",
+        "min_sliding_window",
+        "sliding_window_average"
+    ],
+    "hints": [
+        "Consider using a deque to maintain the indices of the maximum elements.",
+        "You only need to keep indices of elements that are within the current window.",
+        "Make sure to remove indices that are out of the current window's range.",
+        "Think about how to efficiently update the maximum when the window slides."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

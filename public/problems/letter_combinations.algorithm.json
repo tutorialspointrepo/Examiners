@@ -1,0 +1,20 @@
+{
+    "id": "letter_combinations",
+    "problem_id": "letter_combinations",
+    "title": "Letter Combinations - Backtracking",
+    "algorithm": [
+        "Step 1: Create a mapping of digits to corresponding letters based on a phone keypad.",
+        "Step 2: Define a recursive function that takes the current digit index and the current combination as arguments.",
+        "Step 3: If the current index equals the length of the input digits, add the current combination to the results list.",
+        "Step 4: If not, retrieve the letters corresponding to the current digit and iterate over each letter.",
+        "Step 5: For each letter, append it to the current combination and call the recursive function with the next index.",
+        "Final step: Return the results list containing all possible letter combinations."
+    ],
+    "pseudocode": "ALGORITHM LetterCombinations\nBEGIN\n    DECLARE mappings AS MAP[2-9] TO ['abc', 'def', 'ghi', 'jkl', 'mno', 'pqrs', 'tuv', 'wxyz']\n    DECLARE results AS LIST OF STRING\n    FUNCTION backtrack(index, combination)\n        IF index = LENGTH(digits) THEN\n            ADD combination TO results\n            RETURN\n        ENDIF\n        DECLARE letters AS mappings[digit[index]]\n        FOR letter IN letters DO\n            CALL backtrack(index + 1, combination + letter)\n        ENDFOR\n    ENDFUNCTION\n    CALL backtrack(0, '')\n    RETURN results\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Create digit-letter mapping]\n  │\n  ▼\n◊ Check if index equals length? ◊ ──YES──► [Add combination to results]\n  │                        │\n  ▼                        ▼\n[Retrieve letters]       [Return results]\n  │\n  ▼\n[For each letter]\n  │\n  ▼\n[Append letter and call backtrack]\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The problem can be solved using backtracking to explore all possible combinations of letters.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use a recursive function to build combinations by appending letters for each digit.\n2. **Key Components**: The mapping of digits to letters is crucial for determining valid combinations.\n3. **Why It Works**: Backtracking allows us to explore all potential combinations while efficiently discarding invalid paths when reaching the end of the recursion.\n4. **Edge Cases**: Handle cases where the input string is empty, returning an empty list.\n\n**Alternative Approaches:** Iterative approaches could be considered, but they might be less intuitive and harder to implement for this specific problem.",
+    "complexity": "Time Complexity: O(4^N)\n- Each digit maps to 3 or 4 letters, leading to exponential growth in combinations as the number of digits (N) increases.\n- The total number of combinations generated is proportional to the product of the lengths of the letter mappings.\n\nSpace Complexity: O(N)\n- The space used in the recursion stack can go up to N in depth, where N is the number of digits.\n- Additionally, the output list will store all combinations, contributing to space usage.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(4^N)    │    O(N)      │\n│ Alternative 1   │    O(2^N)    │    O(N)      │\n│ Alternative 2   │    O(N!)     │    O(N)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The algorithm performs well for small inputs but can become inefficient for larger inputs due to exponential time complexity.\n- Scalability considerations highlight the need for optimizations in cases with long digit strings.\n- Trade-offs involve clarity and ease of implementation with backtracking versus complex iterative solutions.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

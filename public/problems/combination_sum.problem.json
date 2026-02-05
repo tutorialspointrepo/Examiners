@@ -1,0 +1,55 @@
+{
+    "id": "combination_sum",
+    "title": "Combination Sum",
+    "description": "Given an array of <code>candidates</code> and a target <code>target</code>, return all unique combinations of <code>candidates</code> where the chosen numbers sum to <code>target</code>. You may use the same number from <code>candidates</code> an unlimited number of times. The solution set must not contain duplicate combinations.",
+    "difficulty": "Medium",
+    "category": "Backtracking, Array",
+    "examples": [
+        {
+            "input": "candidates = [2,3,6,7], target = 7",
+            "output": "[[2,2,3],[7]]",
+            "explanation": "The combinations that sum to 7 are [2, 2, 3] and [7]. Other combinations such as [3, 4] do not exist since 4 is not in the candidates."
+        },
+        {
+            "input": "candidates = [2,3,5], target = 8",
+            "output": "[[2,2,2,2],[2,3,3],[3,5]]",
+            "explanation": "The combinations that sum to 8 include [2, 2, 2, 2], [2, 3, 3], and [3, 5]. Each combination is unique and sums up to the target."
+        },
+        {
+            "input": "candidates = [1], target = 1",
+            "output": "[[1]]",
+            "explanation": "The only combination that sums to 1 is [1] itself. There are no other candidates to consider."
+        }
+    ],
+    "constraints": [
+        "<code>1 <= candidates.length <= 30</code>",
+        "<code>1 <= candidates[i] <= 200</code>",
+        "<code>All elements of <code>candidates</code> are unique.</code>",
+        "<code>1 <= target <= 500</code>"
+    ],
+    "tags": [
+        "Backtracking",
+        "Array",
+        "Recursion"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Apple"
+    ],
+    "similar_problems": [
+        "combination_sum_ii",
+        "subset_sum",
+        "permutations"
+    ],
+    "hints": [
+        "Consider using backtracking to explore all possible combinations.",
+        "You can start from each candidate and recursively try to reach the target.",
+        "Ensure that you handle duplicates by managing the starting index for candidates.",
+        "Think about how to efficiently manage the recursion and backtrack when necessary."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

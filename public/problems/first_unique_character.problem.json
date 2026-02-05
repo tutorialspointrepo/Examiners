@@ -1,0 +1,53 @@
+{
+    "id": "first_unique_character",
+    "title": "First Unique Character in a String",
+    "description": "Given a string <code>s</code>, find the first non-repeating character in it and return its index. If it does not exist, return <code>-1</code>.",
+    "difficulty": "Easy",
+    "category": "String, Hash Table",
+    "examples": [
+        {
+            "input": "'leetcode'",
+            "output": "0",
+            "explanation": "The first non-repeating character is 'l', which is at index 0."
+        },
+        {
+            "input": "'loveleetcode'",
+            "output": "2",
+            "explanation": "The first non-repeating character is 'v', which is at index 2."
+        },
+        {
+            "input": "'aabb'",
+            "output": "-1",
+            "explanation": "There are no non-repeating characters in the string, so the output is -1."
+        }
+    ],
+    "constraints": [
+        "You must implement an algorithm with O(n) time complexity.",
+        "The input string will have a length of at most 10^5."
+    ],
+    "tags": [
+        "String",
+        "Hash Table",
+        "Counting"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Apple"
+    ],
+    "similar_problems": [
+        "first_repeating_character",
+        "last_unique_character",
+        "find_the_duplicate_number"
+    ],
+    "hints": [
+        "Consider using a hash table to store character counts.",
+        "Iterate through the string twice; first for counting, second for finding the index.",
+        "Pay attention to edge cases where all characters repeat.",
+        "Think about how to handle strings with varying character sets."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

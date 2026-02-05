@@ -1,0 +1,21 @@
+{
+    "id": "longest_common_prefix",
+    "problem_id": "longest_common_prefix",
+    "title": "Longest Common Prefix - String Comparison",
+    "algorithm": [
+        "Step 1: Check if the input list of strings is empty. If it is, return an empty string.",
+        "Step 2: Assume the first string in the list as the initial prefix.",
+        "Step 3: Iterate through the remaining strings in the list one by one.",
+        "Step 4: For each string, compare it with the current prefix character by character.",
+        "Step 5: If a mismatch is found, truncate the prefix to the matching portion.",
+        "Step 6: Continue this process until all strings have been compared.",
+        "Final step: Return the longest common prefix found."
+    ],
+    "pseudocode": "ALGORITHM LongestCommonPrefix\nBEGIN\n    IF strings is empty THEN\n        RETURN \"\"\n    ENDIF\n\n    prefix := strings[0]\n    FOR i FROM 1 TO length(strings) - 1 DO\n        WHILE strings[i] does not start with prefix DO\n            prefix := substring(prefix, 0, length(prefix) - 1)\n        ENDWHILE\n    ENDFOR\n\n    RETURN prefix\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Check if input is empty?]\n  │\n  ▼\n◊ Yes ◊ ──► RETURN \"\" ──► END\n  │\n  ▼\n◊ No ◊\n  │\n  ▼\n[Assume first string as prefix]\n  │\n  ▼\n[Iterate through each string]\n  │\n  ▼\n◊ Does it match prefix? ◊ ──YES──► Next string\n  │                        │\n  ▼                        ▼\n[Truncate prefix]       END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The longest common prefix can be found by comparing characters of the strings in the input list.\n\n**Approach Explanation:**\n1. **Main Strategy**: We iterate through the list of strings and reduce the prefix as needed while checking each string.\n2. **Key Components**: The initial prefix is set to the first string; we dynamically adjust it based on subsequent strings.\n3. **Why It Works**: The prefix is shortened whenever a mismatch is found, ensuring only common characters are retained.\n4. **Edge Cases**: If the list is empty, we handle it immediately by returning an empty string. If there are strings of different lengths, comparisons stop at the shortest length.\n\n**Alternative Approaches:** Other methods include sorting the strings and then comparing the first and last elements, but this is less efficient due to the additional sorting step.",
+    "complexity": "Time Complexity: O(S)\n- Where S is the sum of all characters in all strings. Each character is compared at most once.\n\nSpace Complexity: O(1)\n- We use a constant amount of space for the prefix variable and no additional data structures.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(S)      │    O(1)      │\n│ Sorting Method  │    O(S log N)│    O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- This algorithm performs well in practice for typical input sizes due to its linear nature.\n- It scales well with the number of strings and their lengths.\n- The trade-offs involve simplicity vs. alternative methods that may offer better performance under specific conditions.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

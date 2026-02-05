@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<title>Videojs/Nuevo - Watermark</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>Youtube Tech Example</h1>
+	<link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+	<script src="../plugins/youtube.js"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid" controls preload playsinline webkit-playsinline>
+				<source src="https://www.youtube.com/watch?v=VbAyLxGC42o" type="video/youtube">
+			</video>
+		</div>
+	</div>
+
+
+	<script>
+	var player1 = videojs('player_1', {license: licenseKey, tech:["youtube"]});
+	player1.nuevo();
+	</script>
+
+<h2>Code Setup Source (Watermark logo)</h2>
+<pre>
+<span class="comment">&lt;!--Loading player skin, videojs and nuevo plugin inside &lt;body&gt; tag --&gt;</span>
+&lt;link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" /&gt;
+&lt;script src="../video.min.js"&gt;&lt;/script&gt;
+&lt;script src="../nuevo.min.js"&gt;&lt;/script&gt;
+&lt;script src="../plugins/youtube.js"&gt;&lt;/script&gt;
+
+<span class="comment">&lt;!--Video tag setup--&gt;</span>
+&lt;video id="<span class="mark">player_1</span>" class="video-js vjs-fluid" controls preload playsinline&gt;
+	&lt;source src="https://www.youtube.com/watch?v=VbAyLxGC42o" type="video/youtube"&gt;
+&lt;/video&gt;
+
+<span class="comment">&lt;!--Initialize videojs and Nuevo plugin--&gt;</span>
+&lt;script&gt;
+const player1 = videojs('player_1', {license: "key", tech:["youtube"]});
+player1.nuevoPlugin();
+&lt;/script&gt;
+</pre>
+
+
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

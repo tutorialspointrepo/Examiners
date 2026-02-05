@@ -1,0 +1,53 @@
+{
+    "id": "number_islands",
+    "title": "Number of Islands",
+    "description": "Given a 2D grid consisting of '1's (land) and '0's (water), return the number of islands. An island is surrounded by water and is formed by connecting adjacent lands horizontally or vertically. You may assume all four edges of the grid are all surrounded by water. A cell can only belong to one island.<br>For example, in the grid:<br><code>grid = [[1,1,0,0,0],<br>              [1,1,0,0,1],<br>              [0,0,0,1,1],<br>              [0,0,0,0,0]]</code><br>the output should be <code>3</code>.",
+    "difficulty": "Medium",
+    "category": "Depth-First Search, Graph",
+    "examples": [
+        {
+            "input": "[[1,1,0,0,0],[1,1,0,0,1],[0,0,0,1,1],[0,0,0,0,0]]",
+            "output": "3",
+            "explanation": "There are three islands in the grid: one at (0,0), one at (1,4), and one at (2,3)."
+        },
+        {
+            "input": "[[1,1,1,1,0],[1,0,0,1,0],[1,1,0,0,0],[0,0,0,0,0]]",
+            "output": "1",
+            "explanation": "There is one contiguous island in the grid that connects through (0,0) to (2,0)."
+        },
+        {
+            "input": "[[0,0,0,0],[0,0,0,0],[0,0,0,0]]",
+            "output": "0",
+            "explanation": "There are no islands in the grid as all cells are water."
+        }
+    ],
+    "constraints": [
+        "The grid dimensions will be between 1 and 300.",
+        "Each element in the grid will be either '0' or '1'."
+    ],
+    "tags": [
+        "Depth-First Search",
+        "Graph",
+        "Matrix"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "number_of_connected_components",
+        "surrounded_regions",
+        "max_area_of_island"
+    ],
+    "hints": [
+        "Consider using Depth-First Search (DFS) to explore the grid.",
+        "You may modify the grid during traversal to mark visited cells.",
+        "Make sure to handle edge cases where the grid is entirely water or land.",
+        "An alternative approach could involve using Breadth-First Search (BFS) instead of DFS."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

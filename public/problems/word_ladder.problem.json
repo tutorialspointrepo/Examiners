@@ -1,0 +1,55 @@
+{
+    "id": "word_ladder",
+    "title": "Word Ladder",
+    "description": "Given two words <code>beginWord</code> and <code>endWord</code>, and a dictionary of words, find the length of the shortest transformation sequence from <code>beginWord</code> to <code>endWord</code>. A transformation sequence is formed by changing exactly one letter at a time such that each transformed word must exist in the dictionary. Note that you cannot transform the <code>beginWord</code> into itself.",
+    "difficulty": "Medium",
+    "category": "Graph, String",
+    "examples": [
+        {
+            "input": "<code>beginWord = \"hit\", endWord = \"cog\", wordList = [\"hot\",\"dot\",\"dog\",\"lot\",\"log\",\"cog\"]</code>",
+            "output": "5",
+            "explanation": "The shortest transformation sequence is: <code>hit -> hot -> dot -> dog -> cog</code>. This sequence has a length of 5."
+        },
+        {
+            "input": "<code>beginWord = \"hit\", endWord = \"cog\", wordList = [\"hot\",\"dot\",\"dog\",\"lot\",\"log\"]</code>",
+            "output": "0",
+            "explanation": "Since <code>endWord</code> is not in the <code>wordList</code>, no transformation sequence is possible, hence the output is 0."
+        },
+        {
+            "input": "<code>beginWord = \"a\", endWord = \"c\", wordList = [\"a\",\"b\",\"c\"]</code>",
+            "output": "2",
+            "explanation": "The shortest transformation sequence is: <code>a -> b -> c</code>. Thus, the length of the sequence is 2."
+        }
+    ],
+    "constraints": [
+        "All words have the same length.",
+        "All words contain only lowercase alphabetic characters.",
+        "The <code>wordList</code> contains unique words.",
+        "The <code>beginWord</code> and <code>endWord</code> are not the same."
+    ],
+    "tags": [
+        "Graph",
+        "BFS",
+        "String"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "minimum_genetic_mutation",
+        "word_ladder_ii",
+        "transform_string"
+    ],
+    "hints": [
+        "Consider using breadth-first search (BFS) to explore all possible transformations.",
+        "You can represent the words as nodes and their transformations as edges in a graph.",
+        "Keep track of visited words to avoid cycles in your search.",
+        "Think about how to efficiently generate all possible transformations of a given word."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

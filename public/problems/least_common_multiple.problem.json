@@ -1,0 +1,53 @@
+{
+    "id": "least_common_multiple",
+    "title": "Least Common Multiple",
+    "description": "Given two positive integers <code>a</code> and <code>b</code>, calculate the least common multiple (<code>LCM</code>) of these two numbers. The <code>LCM</code> of <code>a</code> and <code>b</code> is the smallest positive integer that is divisible by both <code>a</code> and <code>b</code>.",
+    "difficulty": "Easy",
+    "category": "Mathematics, Number Theory",
+    "examples": [
+        {
+            "input": "a = 4, b = 6",
+            "output": "12",
+            "explanation": "The multiples of 4 are {4, 8, 12, 16, ...} and the multiples of 6 are {6, 12, 18, 24, ...}. The smallest common multiple is 12."
+        },
+        {
+            "input": "a = 15, b = 10",
+            "output": "30",
+            "explanation": "The multiples of 15 are {15, 30, 45, ...} and the multiples of 10 are {10, 20, 30, ...}. The smallest common multiple is 30."
+        },
+        {
+            "input": "a = 7, b = 5",
+            "output": "35",
+            "explanation": "The multiples of 7 are {7, 14, 21, 28, 35, ...} and the multiples of 5 are {5, 10, 15, 20, 25, 30, 35, ...}. The smallest common multiple is 35."
+        }
+    ],
+    "constraints": [
+        "<code>a</code> and <code>b</code> are positive integers (1 \u2264 <code>a</code>, <code>b</code> \u2264 10^6)",
+        "The solution should be computed efficiently."
+    ],
+    "tags": [
+        "Math",
+        "Number Theory",
+        "Basic Algorithms"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "greatest_common_divisor",
+        "find_gcd_and_lcm",
+        "lcm_of_array"
+    ],
+    "hints": [
+        "Consider using the relationship between GCD and LCM.",
+        "The formula for LCM can be defined as: <code>LCM(a, b) = (a * b) / GCD(a, b)</code>.",
+        "Think about how to compute the GCD efficiently.",
+        "You may want to handle large products carefully to avoid overflow."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

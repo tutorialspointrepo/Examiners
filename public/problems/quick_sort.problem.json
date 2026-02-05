@@ -1,0 +1,53 @@
+{
+    "id": "quick_sort",
+    "title": "Quick Sort",
+    "description": "Implement the <code>quick_sort</code> algorithm to sort an array of integers. The <code>quick_sort</code> algorithm uses a divide-and-conquer strategy to efficiently sort elements. Choose a <code>pivot</code> element from the array, partition the other elements into two sub-arrays according to whether they are less than or greater than the <code>pivot</code>, and recursively apply the same logic to the sub-arrays.",
+    "difficulty": "Medium",
+    "category": "Sorting, Divide and Conquer",
+    "examples": [
+        {
+            "input": "[3, 6, 8, 10, 1, 2, 1]",
+            "output": "[1, 1, 2, 3, 6, 8, 10]",
+            "explanation": "In this example, the <code>quick_sort</code> algorithm picks a pivot (e.g., 6) and partitions the array into elements less than 6 and those greater than 6, resulting in smaller sub-arrays. After recursively sorting these sub-arrays, we achieve a fully sorted array."
+        },
+        {
+            "input": "[10, 7, 8, 9, 1, 5]",
+            "output": "[1, 5, 7, 8, 9, 10]",
+            "explanation": "Here, selecting 8 as a pivot divides the array into [7, 1, 5] and [10, 9]. Sorting each sub-array recursively leads us to the final sorted array."
+        },
+        {
+            "input": "[1, 2, 3, 4, 5]",
+            "output": "[1, 2, 3, 4, 5]",
+            "explanation": "Since the array is already sorted, the <code>quick_sort</code> algorithm will recognize that no swaps are needed, maintaining the original order throughout the recursive calls."
+        }
+    ],
+    "constraints": [
+        "The input array can contain negative numbers.",
+        "The size of the input array is between 1 and 10^4."
+    ],
+    "tags": [
+        "Sorting",
+        "Divide and Conquer",
+        "Recursion"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Apple"
+    ],
+    "similar_problems": [
+        "merge_sort",
+        "bubble_sort",
+        "heap_sort"
+    ],
+    "hints": [
+        "Consider choosing different pivot strategies to optimize performance.",
+        "Think about how you can partition the array around the pivot effectively.",
+        "Be mindful of cases with duplicate elements and how they affect sorting.",
+        "Explore iterative implementations to avoid recursion depth issues."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

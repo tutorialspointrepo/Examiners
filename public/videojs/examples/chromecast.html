@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs/Nuevo - Chromecast</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>Chromecast Plugin Advanced</h1>
+
+	<link href="../skins/treso/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+	<script src="../plugins/videojs-chromecast.js"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid vjs-default-skin" controls preload playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+
+
+
+	<script>
+	var player = videojs('player_1', {license:licenseKey});
+	player.nuevo({ 
+			title: "Nuevo plugin for VideoJs Player", 
+	});
+	player.chromecast({
+		overlayButton:true,
+		metaTitle:"Coffee is Great",
+		metaSubtitle:"Coffee is a language in itself.",
+	});
+	</script>
+
+
+<h2>Basic Code Setup</h2>
+<pre>
+<span class="comment">&lt;!--Load skin, videojs, nuevo and chromecast related plugins--&gt;</span>
+&lt;link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" /&gt;
+&lt;script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"&gt;&lt;/script&gt;
+&lt;script src="../video.min.js"&gt;&lt;/script&gt;
+&lt;script src="../nuevo.min.js"&gt;&lt;/script&gt;
+&lt;script src="../plugins/videojs-chromecast.js"&gt;&lt;/script&gt;
+
+<span class="comment">&lt;!--Video tag setup--&gt;</span>
+&lt;video id="<span class="mark">player_one</span>" class="video-js vjs-fluid vjs-default-skin" controls preload playsinline poster="../examples/assets/images/coffee.jpg"&gt;
+	&lt;source src="../examples/assets/video/coffee.mp4" type="video/mp4"&gt;
+	&lt;source src="../examples/assets/video/coffee.webm" type="video/webm"&gt;
+&lt;/video&gt;
+
+<span class="comment">&lt;!--Initialize the player and plugin--&gt;</span>
+&lt;script&gt;
+	var player = videojs('<span class="mark">player_1</span>, {license: "key"})';
+	player.nuevo({ 
+		//option_name: option_value, option_name: value
+	}); 
+	player.chromecast({
+		metaTitle: "Coffee is Great!",
+		metaSubtitle: "Coffee is a language in itself."
+	});
+&lt;/script&gt;
+</pre>
+<br />
+
+By default the Chromecast button appears in the control bar. You can also display such button in the top-left corner of the player:
+<pre>
+	player.chromecast({ overlayButton:true });
+</pre>
+
+<br>
+The title displayed on TV by default is taken from video title, thumbnail from video poster. The Chromecast plugin allows you to define separate title, description and thumbnail to display on TV.
+<pre>
+	player.chromecast({ metaTitle: "Video title", metaSubtitle: "Video subtitle", metaThumbnail: "//path-to-thumbnail.jpg" });
+</pre>
+
+<b>metaThumbnail</b> option must be absolute URL of the thumbnail image.<br><br>
+There are few more advanced options, like fixed player while casting and video ads playback, described on <a class="under" href ="https://www.nuevodevel.com/nuevo/showcase/chromecast-pro" target="_blank">this demo</a>.<br />
+The usage of Chromecast subtitles has been explained in detail on <a class="under" target="_blank" href="https://www.nuevodevel.com/nuevo/showcase/chromecast-captions">another demo</a> by Nuevodevel.com.
+
+
+<br><br /><b>Requirements and limitations:</b>
+<ol>
+<li>Chromecast Plugin works fine with browsers that supports Chromecast (desktop Chrome, Edge, Opera, Chrome on Android). Chromecast plugin also works on desktop Edge Chromium browser if you enable specific Edge extension "Load Media Router".</li>
+<li>Google does not support non-secure origins (HTTP) with Chromecast.</li>
+<li>Media file URL must be absolute path with https protocol.</li>
+<li>Check video formats supported by Chromecast on <a "target="_blank" href="https://developers.google.com/cast/docs/media">https://developers.google.com/cast/docs/media</a>.</li>
+<li>For adaptive media streaming, Google Cast requires the presence of CORS headers. When VTT tracks (captions) included, server with tracks hosted also requires CORS enabled. Read more on <a target="_blank" href="https://developers.google.com/cast/docs/chrome_sender/advanced#cors_requirements">https://developers.google.com/cast/docs/chrome_sender/advanced#cors_requirements</a>. CORS headers is also required if media files are located on other than production server.</li>
+</ul>
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

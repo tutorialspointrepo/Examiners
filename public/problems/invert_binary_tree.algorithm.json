@@ -1,0 +1,20 @@
+{
+    "id": "invert_binary_tree",
+    "problem_id": "invert_binary_tree",
+    "title": "Invert Binary Tree - Tree Manipulation",
+    "algorithm": [
+        "Step 1: Start with the root of the binary tree.",
+        "Step 2: If the current node is null, return null.",
+        "Step 3: Swap the left and right children of the current node.",
+        "Step 4: Recursively call the invert function on the left child.",
+        "Step 5: Recursively call the invert function on the right child.",
+        "Final step: Return the current node after inverting its children."
+    ],
+    "pseudocode": "ALGORITHM InvertBinaryTree\nBEGIN\n    IF node IS NULL THEN\n        RETURN NULL\n    ENDIF\n    // Swap the left and right children\n    temp = node.left\n    node.left = node.right\n    node.right = temp\n    // Recursively invert the left and right subtrees\n    InvertBinaryTree(node.left)\n    InvertBinaryTree(node.right)\n    RETURN node\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Check if node is null]\n  │\n  ▼\n◊ Is Node Null? ◊ ──YES──► [RETURN NULL]\n  │\n  │NO\n  ▼\n[Swap left and right children]\n  │\n  ▼\n[Recursively invert left subtree]\n  │\n  ▼\n[Recursively invert right subtree]\n  │\n  ▼\n[RETURN node]\n  │\n  ▼\n END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The core principle of this algorithm is that inverting a binary tree involves swapping the left and right children recursively.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use recursion to traverse the tree and swap nodes.\n2. **Key Components**: The base case checks for null nodes to prevent errors, while swapping operations are performed at each node.\n3. **Why It Works**: By ensuring both children of each node are processed, the entire structure of the tree is inverted correctly.\n4. **Edge Cases**: The algorithm efficiently handles edge cases like empty trees or trees with only one node.\n\n**Alternative Approaches:** An iterative approach using a queue or stack could also be employed to achieve the same result without recursion.",
+    "complexity": "Time Complexity: O(n)\n- Each node in the tree is visited exactly once, leading to linear time complexity.\n- Best/average/worst case scenarios all involve visiting all n nodes.\n\nSpace Complexity: O(h)\n- The space complexity is determined by the height of the tree due to recursive stack calls.\n- In the worst case (unbalanced tree), it can go up to O(n), while in the best case (balanced tree), it would be O(log n).\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(h)       │\n│ Alternative 1   │    O(n)      │    O(n)       │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The recursive approach is straightforward and easy to implement but may lead to stack overflow for very deep trees.\n- The iterative approach can handle larger trees without risking stack overflow, but is slightly more complex to implement.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

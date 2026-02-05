@@ -1,0 +1,53 @@
+{
+    "id": "largest_rectangle",
+    "title": "Largest Rectangle in Histogram",
+    "description": "Given an array of integers <code>heights</code> representing the histogram's bar heights where the width of each bar is 1, return the area of the largest rectangle that can be formed within the histogram.",
+    "difficulty": "Hard",
+    "category": "Stack, Array",
+    "examples": [
+        {
+            "input": "[2,1,5,6,2,3]",
+            "output": "10",
+            "explanation": "The largest rectangle can be formed with heights [5, 6] which gives an area of 5 * 2 = 10."
+        },
+        {
+            "input": "[2,4]",
+            "output": "4",
+            "explanation": "The largest rectangle is formed by the height 4 which results in an area of 4 * 1 = 4."
+        },
+        {
+            "input": "[0,9]",
+            "output": "9",
+            "explanation": "The largest rectangle can be formed with the height 9 at index 1 which gives an area of 9 * 1 = 9."
+        }
+    ],
+    "constraints": [
+        "1 <= heights.length <= 10^5",
+        "0 <= heights[i] <= 10^4"
+    ],
+    "tags": [
+        "Array",
+        "Stack",
+        "Dynamic Programming"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "largest_rectangle_area",
+        "maximal_rectangle",
+        "trapping_rain_water"
+    ],
+    "hints": [
+        "Consider using a stack to keep track of the indices of the histogram bars.",
+        "Iterate through the heights and calculate areas when you encounter a shorter bar.",
+        "Remember to handle the case where the remaining bars in the stack need to be processed after the loop.",
+        "Think about how you can use the indices stored in the stack to calculate the width of the rectangle."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

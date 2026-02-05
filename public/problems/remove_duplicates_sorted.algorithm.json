@@ -1,0 +1,20 @@
+{
+    "id": "remove_duplicates_sorted",
+    "problem_id": "remove_duplicates_sorted",
+    "title": "Remove Duplicates from Sorted Array - Two Pointers",
+    "algorithm": [
+        "Step 1: Initialize a pointer 'i' at index 0 to track the position of unique elements.",
+        "Step 2: Iterate through the array starting from index 1 with a pointer 'j'.",
+        "Step 3: For each element at index 'j', check if it is different from the element at index 'i'.",
+        "Step 4: If it is different, increment 'i' and set array[i] to array[j].",
+        "Step 5: Continue this process until 'j' reaches the end of the array.",
+        "Final step: Return 'i + 1' as the count of unique elements."
+    ],
+    "pseudocode": "ALGORITHM RemoveDuplicatesSorted\nBEGIN\n    i := 0\n    FOR j FROM 1 TO length(array) - 1 DO\n        IF array[j] ≠ array[i] THEN\n            i := i + 1\n            array[i] := array[j]\n        ENDIF\n    ENDFOR\n    RETURN i + 1\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize i = 0]\n  │\n  ▼\nFOR j = 1 TO length(array) - 1\n  │\n  ▼\n◊ Is array[j] ≠ array[i]? ◊ ──YES──► [i := i + 1, array[i] := array[j]]\n  │                        │\n  ▼                        ▼\n[Increment j]           [Continue loop]\n  │\n  ▼\nEND FOR\n  │\n  ▼\nRETURN i + 1\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The input array is sorted, allowing us to easily identify duplicates by comparing adjacent elements.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use two pointers to track unique elements while iterating through the sorted array.\n2. **Key Components**: Pointer 'i' for the last unique element found and pointer 'j' for current element being evaluated.\n3. **Why It Works**: Since duplicates are adjacent in a sorted array, we only need to check the current element against the last unique one.\n4. **Edge Cases**: If the array has zero or one element, return the length immediately as there are no duplicates.\n\n**Alternative Approaches:** Another method could involve using a Set data structure, but this would not be optimal in terms of space complexity.",
+    "complexity": "Time Complexity: O(n)\n- Each element is processed once in a single pass through the array.\n\nSpace Complexity: O(1)\n- No additional space is used apart from variables for indexing.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(1)      │\n│ Alternative 1   │    O(n)      │    O(n)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The algorithm is highly efficient for large arrays due to linear time complexity.\n- It is scalable since it uses constant space, making it suitable for environments with limited memory.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

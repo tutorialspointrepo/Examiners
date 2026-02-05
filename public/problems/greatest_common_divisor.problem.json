@@ -1,0 +1,53 @@
+{
+    "id": "greatest_common_divisor",
+    "title": "Greatest Common Divisor",
+    "description": "Given two integers <code>a</code> and <code>b</code>, return their greatest common divisor (GCD). The GCD of two numbers is the largest positive integer that divides both numbers without leaving a remainder.",
+    "difficulty": "Easy",
+    "category": "Mathematics, Number Theory",
+    "examples": [
+        {
+            "input": "a = 48, b = 18",
+            "output": "6",
+            "explanation": "The divisors of 48 are {1, 2, 3, 4, 6, 8, 12, 16, 24, 48} and the divisors of 18 are {1, 2, 3, 6, 9, 18}. The largest common divisor is 6."
+        },
+        {
+            "input": "a = 56, b = 98",
+            "output": "14",
+            "explanation": "The divisors of 56 are {1, 2, 4, 7, 8, 14, 28, 56} and the divisors of 98 are {1, 2, 7, 14, 49, 98}. The largest common divisor is 14."
+        },
+        {
+            "input": "a = 101, b = 10",
+            "output": "1",
+            "explanation": "The only positive integer that divides both 101 and 10 is 1, thus the GCD is 1."
+        }
+    ],
+    "constraints": [
+        "<code>a</code> and <code>b</code> are positive integers.",
+        "<code>1 <= a, b <= 10^9"
+    ],
+    "tags": [
+        "Mathematics",
+        "Number Theory",
+        "GCD"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "find_gcd",
+        "euclidean_algorithm",
+        "gcd_of_array"
+    ],
+    "hints": [
+        "Consider using the Euclidean algorithm for an efficient solution.",
+        "You can reduce the problem by replacing the larger number with its remainder when divided by the smaller number.",
+        "Think about how to handle very large numbers within the constraints.",
+        "Explore built-in functions in your programming language that might simplify this task."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs Context Menu</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>Context Menu on right click</h1>
+
+	<div class="info">Native context pop-up menu when you right click over player is replaced by custom Nuevo simple menu with 3 basic options (play/pause, mute/unmute and fullscreen) and branding link.
+	You can replace Nuevo branding link with own brand. </div>
+
+	<link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+
+
+
+	<script>
+	const player1 = videojs('player_1', {license:licenseKey});
+	player1.nuevo({ 
+		contextUrl: 'https://www.wikipedia.org/',
+		contextText: 'The Free Ecyclopedia',
+		contextIcon: '//www.wikipedia.org/static/favicon/wikipedia.ico'
+	});
+	</script>
+
+<h2>Player Code Example</h2>
+<pre>
+
+<span class="comment">&lt;!--Initialize the player and Nuevo plugin--&gt;</span>
+&lt;script&gt;
+	const player1 = videojs('player_1', {license: "key"});
+	player1.nuevo({ 
+		contextUrl: 'https://www.wikipedia.org',
+		contextText: 'The Free Ecyclopedia',
+		contextIcon: '//www.wikipedia.org/static/favicon/wikipedia.ico',
+	}); 
+&lt;/script&gt;
+</pre>
+<br />
+
+<div class="info">You can also disable right click context menu at all.</div>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_2" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+
+	<script>
+	const player2 = videojs('player_2', {license:licenseKey});
+	player2.nuevo({ 
+		contextMenu:false,
+		singlePlay:true
+	});
+	</script>
+
+<h2>Player Code Setup</h2>
+<pre>
+
+<span class="comment">&lt;!--Initialize the player and Nuevo plugin--&gt;</span>
+&lt;script&gt;
+	var player2 = videojs('player_2', {license: "key");
+	player2.nuevo({ 
+		<span class="mark">contextMenu: false,</span> 
+		singlePlay:true
+	}); 
+&lt;/script&gt;
+</pre>
+<br />
+<div class="info">Finally you can order to show browsers default menu</div>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_3" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+
+	<script>
+	var player3 = videojs('player_3', {license:licenseKey});
+	player3.nuevo({ 
+		contextMenu:"default",
+		singlePlay:true
+	});
+	</script>
+
+<h2>Player Code Setup</h2>
+<pre>
+
+<span class="comment">&lt;!--Initialize the player and Nuevo plugin--&gt;</span>
+&lt;script&gt;
+	var player3 = videojs('player_3', {license: "key"});
+	player3.nuevo({ 
+		<span class="mark">contextMenu: "default",</span>
+		singlePlay:true
+	}); 
+&lt;/script&gt;
+</pre>
+
+<br />
+<b>Note:</b> Each instance of the player with the nuevo plugin make use of <q>singlePlay</q> enabled option. This allows to play only one player at the same time and pause others automatically.
+
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

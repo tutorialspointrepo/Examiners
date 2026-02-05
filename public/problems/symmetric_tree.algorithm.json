@@ -1,0 +1,20 @@
+{
+    "id": "symmetric_tree",
+    "problem_id": "symmetric_tree",
+    "title": "Symmetric Tree - Recursive Technique",
+    "algorithm": [
+        "Step 1: Define a function that takes two nodes as parameters, left and right.",
+        "Step 2: If both nodes are null, return true (they are symmetric).",
+        "Step 3: If one node is null and the other is not, return false (not symmetric).",
+        "Step 4: Compare the values of the two nodes. If they are not equal, return false.",
+        "Step 5: Recursively call the function for the left child of the left node and the right child of the right node, and for the right child of the left node and the left child of the right node.",
+        "Final step: Return the result of the recursive calls."
+    ],
+    "pseudocode": "ALGORITHM SymmetricTree\nBEGIN\n    FUNCTION isSymmetric(left, right)\n        IF left IS NULL AND right IS NULL THEN\n            RETURN TRUE\n        END IF\n        IF left IS NULL OR right IS NULL THEN\n            RETURN FALSE\n        END IF\n        IF left.value != right.value THEN\n            RETURN FALSE\n        END IF\n        RETURN isSymmetric(left.left, right.right) AND isSymmetric(left.right, right.left)\n    END FUNCTION\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Check if both nodes are NULL]\n  │\n  ▼\n◊ Both NULL? ◊ ──YES──► RETURN TRUE\n  │                        │\n  ▼                        ▼\n[Check if one is NULL]   RETURN FALSE\n  │\n  ▼\n◊ One NULL? ◊ ──YES──► RETURN FALSE\n  │\n  ▼\n[Check values]\n  │\n  ▼\n◊ Values equal? ◊ ──NO──► RETURN FALSE\n  │                        │\n  ▼                        ▼\n[Recursion calls]        RETURN isSymmetric(left.left, right.right) AND isSymmetric(left.right, right.left)\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The tree is symmetric if the left subtree is a mirror reflection of the right subtree.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use a recursive function to compare nodes in a mirrored manner.\n2. **Key Components**: Handle the base cases where nodes are null or values do not match.\n3. **Why It Works**: The recursive calls ensure that each level of the tree is compared correctly for symmetry.\n4. **Edge Cases**: A single node tree (root only) is symmetric, while trees with different values or structures are not.\n\n**Alternative Approaches:** An iterative approach using a queue or stack can also be implemented to check for symmetry.",
+    "complexity": "Time Complexity: O(n)\n- Each node is visited once, leading to linear time complexity.\n\nSpace Complexity: O(h)\n- Where h is the height of the tree due to the recursive call stack.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(h)       │\n│ Iterative Method│    O(n)      │    O(n)       │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The recursive method is straightforward but may lead to stack overflow for very deep trees.\n- The iterative method avoids recursion depth issues and can be more efficient in terms of space in some cases.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

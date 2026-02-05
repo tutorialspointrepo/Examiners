@@ -1,0 +1,53 @@
+{
+    "id": "number_connected_components",
+    "title": "Number of Connected Components in an Undirected Graph",
+    "description": "Given an undirected graph represented as an array of <code>edges</code>, where each edge is a pair of vertices, determine the number of connected components in the graph. A connected component is a subset of the graph where there is a path between any two vertices in this subset.",
+    "difficulty": "Medium",
+    "category": "Graph, Depth-First Search",
+    "examples": [
+        {
+            "input": "edges = [[1, 2], [2, 3], [4, 5]]",
+            "output": "2",
+            "explanation": "There are two connected components: one containing vertices 1, 2, and 3, and another containing vertices 4 and 5."
+        },
+        {
+            "input": "edges = [[1, 2], [2, 1], [3, 4]]",
+            "output": "2",
+            "explanation": "The graph has two connected components: {1, 2} and {3, 4}, thus the total count of connected components is 2."
+        },
+        {
+            "input": "edges = []",
+            "output": "0",
+            "explanation": "An empty graph with no edges has no connected components, resulting in a count of 0."
+        }
+    ],
+    "constraints": [
+        "The number of edges will be between 0 and 1000.",
+        "Each edge is represented by two distinct integers ranging from 1 to n, where n is the number of vertices."
+    ],
+    "tags": [
+        "Graph",
+        "Depth-First Search",
+        "Union Find"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "number_of_islands",
+        "connected_components_in_a_undirected_graph",
+        "find_if_path_exists_in_graph"
+    ],
+    "hints": [
+        "Consider using Depth-First Search or Breadth-First Search to explore the graph.",
+        "You may want to keep track of visited nodes to avoid counting them multiple times.",
+        "Think about how you can represent the graph using an adjacency list or matrix.",
+        "Union-Find can also be a useful approach to find connected components efficiently."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

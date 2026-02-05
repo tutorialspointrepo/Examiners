@@ -1,0 +1,24 @@
+{
+    "id": "evaluate_postfix",
+    "problem_id": "evaluate_postfix",
+    "title": "Evaluate Postfix Expression - Stack-Based Evaluation",
+    "algorithm": [
+        "Step 1: Initialize an empty stack to hold operands.",
+        "Step 2: Iterate through each token in the postfix expression.",
+        "Step 3: For each token, check if it is a number:",
+        "    - If yes, convert it to a number and push it onto the stack.",
+        "Step 4: If the token is an operator (e.g., +, -, *, /):",
+        "    - Pop the top two numbers from the stack.",
+        "    - Apply the operator to these two numbers.",
+        "    - Push the result back onto the stack.",
+        "Step 5: After processing all tokens, the result will be the only number left in the stack.",
+        "Final step: Return the result from the stack."
+    ],
+    "pseudocode": "ALGORITHM EvaluatePostfix\nBEGIN\n    DECLARE stack AS EMPTY STACK\n    FOR EACH token IN postfix_expression DO\n        IF IsNumber(token) THEN\n            PUSH token TO stack\n        ELSE\n            operand2 = POP stack\n            operand1 = POP stack\n            result = ApplyOperator(operand1, operand2, token)\n            PUSH result TO stack\n        ENDIF\n    ENDFOR\n    RETURN POP stack\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize empty stack]\n  │\n  ▼\n[Iterate through each token]\n  │\n  ▼\n◊ Is number? ◊ ──YES──► [Push to stack]\n  │                      │\n  ▼                      ▼\n[Pop two operands]     [Apply operator]\n  │                      │\n  ▼                      ▼\n[Push result to stack]  END\n  │\n  ▼\n[Pop final result]\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The postfix notation (Reverse Polish Notation) allows for straightforward evaluation using a stack, as operators directly follow their operands.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use a stack to manage operands and apply operators as they are encountered in the expression.\n2. **Key Components**: The use of a stack ensures that the last two operands can be accessed easily when an operator is encountered.\n3. **Why It Works**: The structure of postfix notation ensures that all operands are available before an operator is applied.\n4. **Edge Cases**: Handles expressions with varying numbers of operands and operators, ensuring correct order of operations.\n\n**Alternative Approaches:** Infix to postfix conversion followed by evaluation or using expression trees.",
+    "complexity": "Time Complexity: O(n)\n- The algorithm processes each token in the postfix expression exactly once, making the time complexity linear with respect to the number of tokens.\n\nSpace Complexity: O(n)\n- The maximum size of the stack at any point is proportional to the number of operands in the expression; thus, the space complexity is also linear.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(n)       │\n│ Alternative 1   │    O(n)      │    O(n)       │\n│ Alternative 2   │    O(n log n)│    O(n)       │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The algorithm is efficient for real-time evaluation of postfix expressions, making it suitable for calculators and expression evaluators.\n- Scalability is excellent due to linear time complexity, allowing for the evaluation of large expressions without significant performance degradation.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

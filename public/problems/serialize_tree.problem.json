@@ -1,0 +1,53 @@
+{
+    "id": "serialize_tree",
+    "title": "Serialize and Deserialize Binary Tree",
+    "description": "Design an algorithm to <code>serialize</code> a binary tree into a string and <code>deserialize</code> a string back to a binary tree. The <code>serialize</code> function should convert the tree into a format that can be easily stored, while the <code>deserialize</code> function should reconstruct the original tree from that format.",
+    "difficulty": "Medium",
+    "category": "Tree, Design",
+    "examples": [
+        {
+            "input": "Input: root = [1,2,3,null,null,4,5]  (represents the tree)\nOutput: serialized = '1,2,3,#,#,4,5,#,#,#'\nDeserialized Output: the same tree structure.",
+            "output": "serialized = '1,2,3,#,#,4,5,#,#,#'",
+            "explanation": "The tree is serialized by performing a level-order traversal where 'null' is represented by '#'. The output string captures the structure of the tree."
+        },
+        {
+            "input": "Input: root = []\nOutput: serialized = '#'\nDeserialized Output: null.",
+            "output": "serialized = '#'",
+            "explanation": "An empty tree is represented as '#', indicating there are no nodes in the tree."
+        },
+        {
+            "input": "Input: root = [1]\nOutput: serialized = '1,#,#'\nDeserialized Output: the single node tree.",
+            "output": "serialized = '1,#,#'",
+            "explanation": "A tree with a single node is serialized as '1,#,#', where '#' indicates the absence of children."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the tree is in the range [0, 10^4].",
+        "Each node's value is in the range [-1000, 1000]."
+    ],
+    "tags": [
+        "Tree",
+        "Serialization",
+        "DFS"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "binary_tree_traversal",
+        "invert_binary_tree",
+        "construct_binary_tree"
+    ],
+    "hints": [
+        "Consider using pre-order or level-order traversal for serialization.",
+        "You may use a delimiter to separate values in the serialized string.",
+        "Think about how you will handle null children in your serialization scheme.",
+        "You can use a queue or stack during deserialization to reconstruct the tree."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,53 @@
+{
+    "id": "intersection_linked_lists",
+    "title": "Intersection of Two Linked Lists",
+    "description": "Given the heads of two singly linked lists, <code>headA</code> and <code>headB</code>, return the node where the two lists intersect. If the two linked lists have no intersection at all, return <code>null</code>. For simplicity, you may assume that there are no cycles in the linked lists. Note that your solution should be <code>O(n)</code> time complexity and <code>O(1)</code> space complexity.",
+    "difficulty": "Medium",
+    "category": "Linked List, Two Pointers",
+    "examples": [
+        {
+            "input": "headA = [4,1,8,4,5], headB = [5,0,1,8,4,5]",
+            "output": "8",
+            "explanation": "The linked lists intersect at the node with value <code>8</code>."
+        },
+        {
+            "input": "headA = [1,9,1,2,4], headB = [3,2,4]",
+            "output": "2",
+            "explanation": "The intersection occurs at the node with value <code>2</code>."
+        },
+        {
+            "input": "headA = [2,6,4], headB = [1,5]",
+            "output": "null",
+            "explanation": "There is no intersection between the two linked lists."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in both linked lists is in the range [0, 10^4].",
+        "The values of the nodes are within the range [-10^4, 10^4]."
+    ],
+    "tags": [
+        "Linked List",
+        "Two Pointers",
+        "Intersection"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "merge_two_sorted_lists",
+        "linked_list_cycle",
+        "reverse_linked_list"
+    ],
+    "hints": [
+        "Consider using the two-pointer technique to traverse both lists.",
+        "If one pointer reaches the end of a list, redirect it to the beginning of the other list.",
+        "Keep track of the length of both linked lists to handle different lengths.",
+        "Check for intersections after aligning the pointers at the same distance from the end."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

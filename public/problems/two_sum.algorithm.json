@@ -1,0 +1,21 @@
+{
+  "id": "two_sum",
+  "problem_id": "two_sum",
+  "title": "Two Sum - Hash Map Solution",
+  "algorithm": [
+    "Create a hash map to store value-index pairs",
+    "Iterate through the array with index i",
+    "For each element nums[i], calculate complement = target - nums[i]",
+    "Check if complement exists in hash map",
+    "If found, return [complement_index, i]",
+    "If not found, store nums[i] and its index i in hash map",
+    "Continue until solution is found"
+  ],
+  "pseudocode": "ALGORITHM TwoSum\nBEGIN\n    CREATE hashMap\n    FOR i = 0 TO length(nums) - 1 DO\n        complement = target - nums[i]\n        IF complement EXISTS IN hashMap THEN\n            RETURN [hashMap[complement], i]\n        END IF\n        hashMap[nums[i]] = i\n    END FOR\n    RETURN [] // No solution found\nEND",
+  "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize HashMap]\n  │\n  ▼\n[Set i = 0]\n  │\n  ▼\n◊ i < array.length? ◊ ──NO──► [Return \"No Solution\"]\n  │ YES                            │\n  ▼                                ▼\n[complement = target - nums[i]]   END\n  │\n  ▼\n◊ complement in HashMap? ◊ ──YES──► [Return indices]\n  │ NO                               │\n  ▼                                  ▼\n[HashMap[nums[i]] = i]            END\n  │\n  ▼\n[i = i + 1]\n  │\n  ▼\n[Loop back to condition check]\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+  "approach": "The Two Sum problem can be solved efficiently using a hash map approach:\n\n**Key Insight:** Instead of checking every pair (O(n²)), we can use a hash map to store elements we've seen and their indices.\n\n**Approach Explanation:**\n1. **Hash Map Strategy**: As we iterate through the array, we store each element and its index in a hash map.\n\n2. **Complement Calculation**: For each element at index i, we calculate what value we need (complement = target - current_element) to reach the target sum.\n\n3. **Lookup Operation**: We check if this complement already exists in our hash map. If it does, we've found our pair!\n\n4. **Single Pass**: This approach requires only one pass through the array, making it very efficient.\n\n**Why This Works:**\n- When we're at index i and find that the complement exists in our hash map, it means we've already seen the other number we need\n- The hash map gives us O(1) lookup time, so we can quickly check if the complement exists\n- We store the index along with the value, so we can return the positions as required\n\n**Edge Cases Handled:**\n- Each element can only be used once (we check the hash map before adding current element)\n- The problem guarantees exactly one solution exists",
+  "complexity": "Time Complexity: O(n)\n- We traverse the array exactly once\n- Hash map operations (insertion and lookup) are O(1) on average\n- Overall: O(n) where n is the number of elements\n\nSpace Complexity: O(n)\n- In the worst case, we store all n elements in the hash map\n- This happens when the solution is the last two elements we check\n- Hash map requires O(n) space for n key-value pairs\n\n**Complexity Analysis:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ Brute Force     │     O(n²)    │     O(1)      │\n│ Hash Map        │     O(n)     │     O(n)      │\n│ Two Pointers*   │   O(n log n) │     O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n*Two pointers requires sorting first, which changes the indices\n\n**Trade-off Analysis:**\n- We trade space for time: using O(n) extra space to achieve O(n) time\n- This is generally preferred as the time improvement (from O(n²) to O(n)) is more significant than the space cost\n- Hash map approach is optimal for this problem",
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z",
+  "version": "1.0"
+}

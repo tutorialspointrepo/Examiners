@@ -1,0 +1,63 @@
+{
+    "id": "letter_case_permutation",
+    "title": "Letter Case Permutation",
+    "description": "Given a string <code>s</code>, you can change the case of each letter in <code>s</code>. Return all possible permutations of <code>s</code> that result from changing the case of the letters. The output should be in any order.",
+    "difficulty": "Medium",
+    "category": "Backtracking, String Manipulation",
+    "examples": [
+        {
+            "input": "a1b2",
+            "output": [
+                "a1b2",
+                "a1B2",
+                "A1b2",
+                "A1B2"
+            ],
+            "explanation": "For the input <code>'a1b2'</code>, we can change the letters <code>'a'</code> and <code>'b'</code> to either lowercase or uppercase. This results in 4 combinations: <code>'a1b2'</code>, <code>'a1B2'</code>, <code>'A1b2'</code>, and <code>'A1B2'</code>."
+        },
+        {
+            "input": "3z4",
+            "output": [
+                "3z4",
+                "3Z4"
+            ],
+            "explanation": "In the input <code>'3z4'</code>, the letter <code>'z'</code> can only be changed to uppercase, leading to 2 combinations: <code>'3z4'</code> and <code>'3Z4'</code>."
+        },
+        {
+            "input": "12345",
+            "output": [
+                "12345"
+            ],
+            "explanation": "The input <code>'12345'</code> does not contain any letters, hence the only permutation is itself: <code>'12345'</code>."
+        }
+    ],
+    "constraints": [
+        "The input string <code>s</code> will have a length of at most 12.",
+        "The string <code>s</code> will only contain alphanumeric characters."
+    ],
+    "tags": [
+        "Backtracking",
+        "String",
+        "Recursion"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Apple"
+    ],
+    "similar_problems": [
+        "letter_case_permutation_ii",
+        "generate_parentheses",
+        "subsets"
+    ],
+    "hints": [
+        "Consider using backtracking to explore all combinations.",
+        "You can use recursion to build the permutations character by character.",
+        "Think about how to handle digits, since they do not change case.",
+        "Using a list to collect results can be helpful to manage the permutations generated."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

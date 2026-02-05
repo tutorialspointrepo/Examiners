@@ -1,0 +1,53 @@
+{
+    "id": "symmetric_tree",
+    "title": "Symmetric Tree",
+    "description": "Given a binary tree, check whether it is a mirror of itself (i.e., symmetric around its center). A tree is symmetric if the left subtree is a mirror reflection of the right subtree. You can implement this by checking if the left and right subtrees are mirrors of each other recursively. <code>TreeNode</code> is defined as follows:<br/><code>class TreeNode { int val; TreeNode left; TreeNode right; }</code>",
+    "difficulty": "Easy",
+    "category": "Tree, Recursion",
+    "examples": [
+        {
+            "input": "[1,2,2,3,4,4,3]",
+            "output": "true",
+            "explanation": "The tree is symmetric because the left subtree <code>[2,3,4]</code> is a mirror reflection of the right subtree <code>[2,4,3]</code>."
+        },
+        {
+            "input": "[1,2,2,null,3,null,3]",
+            "output": "false",
+            "explanation": "The left subtree <code>[2,null,3]</code> is not a mirror reflection of the right subtree <code>[2,3,null]</code>, hence the tree is not symmetric."
+        },
+        {
+            "input": "[1]",
+            "output": "true",
+            "explanation": "A single node tree is symmetric as there are no children to compare."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the tree is in the range [0, 100].",
+        "The value of a node is an integer."
+    ],
+    "tags": [
+        "Tree",
+        "Recursion",
+        "Binary Tree"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "is_balanced_tree",
+        "invert_binary_tree",
+        "binary_tree_level_order_traversal"
+    ],
+    "hints": [
+        "Consider using a recursive approach to compare the left and right subtrees.",
+        "You may want to write a helper function that checks if two trees are mirrors of each other.",
+        "Pay attention to null nodes; they can be part of a symmetric structure.",
+        "Think about edge cases such as empty trees or trees with only one node."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

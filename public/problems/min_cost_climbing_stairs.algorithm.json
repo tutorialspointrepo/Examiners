@@ -1,0 +1,20 @@
+{
+    "id": "min_cost_climbing_stairs",
+    "problem_id": "min_cost_climbing_stairs",
+    "title": "Min Cost Climbing Stairs - Dynamic Programming",
+    "algorithm": [
+        "Step 1: Initialize an array 'cost' representing the cost to reach each step.",
+        "Step 2: Set the first two steps as the initial costs: cost[0] = energy[0], cost[1] = energy[1].",
+        "Step 3: Iterate through the energy array starting from index 2.",
+        "Step 4: For each step i, calculate the cost to reach it as the minimum of the cost to reach the previous step or the step before that plus the current step's energy.",
+        "Step 5: After filling the cost array, the minimal cost to reach the top can be found in the last two positions of the cost array.",
+        "Final step: Return the minimum of cost[n-1] and cost[n-2]."
+    ],
+    "pseudocode": "ALGORITHM MinCostClimbingStairs\nBEGIN\n    DECLARE n AS INTEGER = LENGTH(energy)\n    DECLARE cost[n] AS INTEGER\n    cost[0] = energy[0]\n    cost[1] = energy[1]\n    FOR i FROM 2 TO n-1 DO\n        cost[i] = MIN(cost[i-1], cost[i-2]) + energy[i]\n    END FOR\n    RETURN MIN(cost[n-1], cost[n-2])\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize cost array]\n  │\n  ▼\n◊ Iterate through energy array ◊\n  │                        │\n  ▼                        ▼\n[Calculate cost]         [Check next step]\n  │                        │\n  ▼                        ▼\n[Fill cost array]       END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The minimum cost to reach the top is derived from the accumulated costs of the previous steps.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use dynamic programming to build up the solution from the base cases (first two steps).\n2. **Key Components**: The cost array stores the minimum cost to reach each step, allowing us to avoid redundant calculations.\n3. **Why It Works**: By only considering the last two steps at each iteration, we ensure an optimal solution through a bottom-up approach.\n4. **Edge Cases**: The algorithm handles cases where there are fewer than two steps directly, preventing out-of-bounds errors.\n\n**Alternative Approaches:** A recursive approach with memoization could also solve the problem, but it may have higher time complexity due to repeated computations.",
+    "complexity": "Time Complexity: O(n)\n- The algorithm iterates through the energy array once, calculating costs for each step.\n- Best case and worst case scenarios are both linear due to the single loop.\n\nSpace Complexity: O(n)\n- The space used by the cost array scales with the number of steps (n).\n- Memory allocation is proportional to the input size.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(n)       │\n│ Recursive w/ Memoization │ O(n)      │ O(n)         │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The dynamic programming approach is efficient for large inputs compared to naive recursive methods.\n- It is memory efficient if optimized to use only a constant amount of space.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

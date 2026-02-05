@@ -1,0 +1,53 @@
+{
+    "id": "encode_decode",
+    "title": "Encode and Decode Strings",
+    "description": "You are given a list of <code>strings</code>. Your task is to design an algorithm that encodes these strings into a single <code>string</code> and decodes it back to the original list. The encoded <code>string</code> must be easily reversible. Implement your solution using the <code>encode</code> and <code>decode</code> methods.",
+    "difficulty": "Medium",
+    "category": "String, Design",
+    "examples": [
+        {
+            "input": "[\"Hello\", \"World\"]",
+            "output": "\"5#Hello5#World\"",
+            "explanation": "The encoded string uses a length prefix followed by the actual string. Here, '5' represents the length of 'Hello' and 'World', so the output is '5#Hello5#World'."
+        },
+        {
+            "input": "[\"Leet\", \"Code\"]",
+            "output": "\"4#Leet4#Code\"",
+            "explanation": "Each string is prefixed with its length. 'Leet' and 'Code' both have a length of 4, hence they are encoded as '4#Leet4#Code'."
+        },
+        {
+            "input": "[\"Encode\", \"this\", \"string!\"]",
+            "output": "\"6#Encode4#this8#string!\"",
+            "explanation": "Here, 'Encode' has a length of 6, 'this' has a length of 4, and 'string!' has a length of 8. The resulting encoded string is '6#Encode4#this8#string!'."
+        }
+    ],
+    "constraints": [
+        "The input list has at most 10^4 strings.",
+        "Each string has a length of at most 10^4 characters."
+    ],
+    "tags": [
+        "String",
+        "Design",
+        "Encoding"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "serialize_deserialize",
+        "string_compression",
+        "run_length_encoding"
+    ],
+    "hints": [
+        "Consider how you will represent the length of each string in the encoded format.",
+        "Think about a delimiter that can separate lengths from the actual strings.",
+        "Ensure that your decoding process correctly identifies string boundaries.",
+        "Test your solution with edge cases, such as empty strings or very long strings."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

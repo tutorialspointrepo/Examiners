@@ -1,0 +1,18 @@
+{
+    "id": "construct_tree",
+    "problem_id": "construct_tree",
+    "title": "Construct Tree - Recursive Construction",
+    "algorithm": [
+        "Step 1: Start with the given data structure that defines the tree nodes.",
+        "Step 2: If the current node's data is null, return null (base case).",
+        "Step 3: Create a new node with the given value from the data structure.",
+        "Step 4: Recursively construct the left subtree using the left child data.",
+        "Step 5: Recursively construct the right subtree using the right child data.",
+        "Step 6: Connect the left and right subtrees to the current node.",
+        "Final step: Return the newly constructed node."
+    ],
+    "pseudocode": "ALGORITHM ConstructTree\nBEGIN\n    IF current_node_data IS NULL THEN\n        RETURN NULL\n    END IF\n    new_node = NEW Node(current_node_data)\n    new_node.left = ConstructTree(left_child_data)\n    new_node.right = ConstructTree(right_child_data)\n    RETURN new_node\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\nIS current_node_data NULL?\n  │\n  ├── YES ──► RETURN NULL\n  │\n  ▼\nCREATE new_node with current_node_data\n  │\n  ▼\nnew_node.left = ConstructTree(left_child_data)\n  │\n  ▼\nnew_node.right = ConstructTree(right_child_data)\n  │\n  ▼\nRETURN new_node\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The algorithm recursively constructs a binary tree from a given node data structure.\n\n**Approach Explanation:**\n1. **Main Strategy**: Utilize recursion to build the tree from the bottom up.\n2. **Key Components**: Each function call handles one node and its children based on provided data.\n3. **Why It Works**: By handling base cases and recursively constructing subtrees, each node is correctly connected to form the full tree.\n4. **Edge Cases**: Handles null nodes by returning null, ensuring no invalid nodes are created.\n\n**Alternative Approaches:** Iterative methods using stacks or queues can also be employed to construct trees.",
+    "complexity": "Time Complexity: O(n)\n- The algorithm processes each node exactly once, leading to linear time complexity.\n- n is the number of nodes in the tree.\n\nSpace Complexity: O(h)\n- Space is primarily used for the recursion stack, where h is the height of the tree.\n- In the worst case (unbalanced tree), this can be O(n).\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(h)       │\n│ Alternative 1   │    O(n)      │    O(n)       │\n│ Alternative 2   │    O(n log n)│    O(log n)   │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The recursive nature allows for simple implementation but may lead to stack overflow for very deep trees.\n- Iterative approaches may be more efficient in terms of space for large trees."
+}

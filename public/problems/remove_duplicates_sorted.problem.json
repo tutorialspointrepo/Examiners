@@ -1,0 +1,53 @@
+{
+    "id": "remove_duplicates_sorted",
+    "title": "Remove Duplicates from Sorted Array",
+    "description": "Given a sorted array <code>nums</code>, remove the duplicates in-place such that each element appears only once and returns the new length. Do not allocate extra space for another array. The relative order of the elements should be kept the same.",
+    "difficulty": "Easy",
+    "category": "Array, Two Pointers",
+    "examples": [
+        {
+            "input": "[1, 1, 2]",
+            "output": "2",
+            "explanation": "After removing duplicates, the array becomes [1, 2]. The new length is 2."
+        },
+        {
+            "input": "[0,0,1,1,1,2,2,3,3,4]",
+            "output": "5",
+            "explanation": "The modified array is [0, 1, 2, 3, 4], and the new length is 5."
+        },
+        {
+            "input": "[1, 2, 2]",
+            "output": "2",
+            "explanation": "Removing duplicates results in [1, 2], so the new length is 2."
+        }
+    ],
+    "constraints": [
+        "The input array is guaranteed to be sorted.",
+        "The number of elements in <code>nums</code> is in the range [0, 3 * 10^4]."
+    ],
+    "tags": [
+        "Array",
+        "Two Pointers",
+        "In-Place Modification"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Apple"
+    ],
+    "similar_problems": [
+        "remove_duplicates_unsorted",
+        "merge_sorted_arrays",
+        "rotate_array"
+    ],
+    "hints": [
+        "Use two pointers to track the position of unique elements.",
+        "Iterate through the array and compare adjacent elements.",
+        "Remember to only modify the elements up to the new length.",
+        "Consider how you would handle edge cases with very few elements."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,21 @@
+{
+    "id": "non_overlapping_intervals",
+    "problem_id": "non_overlapping_intervals",
+    "title": "Non-overlapping Intervals - Greedy Algorithm",
+    "algorithm": [
+        "Step 1: Sort the list of intervals based on the end times.",
+        "Step 2: Initialize a variable to track the end time of the last added interval.",
+        "Step 3: Iterate through the sorted intervals.",
+        "Step 4: For each interval, check if its start time is greater than or equal to the end time of the last added interval.",
+        "Step 5: If true, add this interval to the result and update the last added interval's end time.",
+        "Step 6: Continue this process for all intervals.",
+        "Final step: Return the list of non-overlapping intervals."
+    ],
+    "pseudocode": "ALGORITHM NonOverlappingIntervals\nBEGIN\n    SORT intervals by end time\n    last_end_time = -infinity\n    result = []\n    FOR each interval IN intervals DO\n        IF interval.start >= last_end_time THEN\n            APPEND interval TO result\n            last_end_time = interval.end\n        ENDIF\n    END FOR\n    RETURN result\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Sort intervals by end time]\n  │\n  ▼\n[Initialize last_end_time]\n  │\n  ▼\n◊ Check each interval ◊ ──YES──► [Add interval to result]\n  │                        │\n  ▼                        ▼\n[Update last_end_time]     [Continue]\n  │                         │\n  ▼                         ▼\n[Move to next interval]   END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** By sorting the intervals by their end times, we can minimize the number of overlapping intervals.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use a greedy strategy to always select the interval that ends first, allowing more room for subsequent intervals.\n2. **Key Components**: Sorting the intervals is crucial; it ensures we can make optimal choices at each step.\n3. **Why It Works**: This method works because selecting the earliest finishing interval allows us to maximize the remaining time for other intervals.\n4. **Edge Cases**: The algorithm correctly handles cases where there are no intervals or where all intervals overlap completely.\n\n**Alternative Approaches:** One could use dynamic programming to solve this problem, but it would be less efficient than the greedy approach used here.",
+    "complexity": "Time Complexity: O(n log n)\n- The sorting step dominates the algorithm's runtime.\n- Each comparison during sorting takes logarithmic time, while the iteration through the intervals takes linear time.\n\nSpace Complexity: O(n)\n- Space is needed to store the result of non-overlapping intervals.\n- The auxiliary space used for sorting may vary depending on the sorting algorithm implemented.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n log n) │    O(n)      │\n│ Alternative DP  │    O(n^2)    │    O(n)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The greedy algorithm is efficient for large datasets since it runs in O(n log n).\n- It scales well with input size due to its linear traversal after sorting.\n- Trade-offs include simplicity and clarity of the greedy approach versus the complexity of dynamic programming solutions.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

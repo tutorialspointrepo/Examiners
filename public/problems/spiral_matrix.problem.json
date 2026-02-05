@@ -1,0 +1,53 @@
+{
+    "id": "spiral_matrix",
+    "title": "Spiral Matrix",
+    "description": "Given an <code>m x n</code> matrix, return all elements of the matrix in spiral order. The elements should be traversed starting from the top-left corner and going right, down, left, and up repeatedly until all elements are visited.",
+    "difficulty": "Medium",
+    "category": "Matrix, Array",
+    "examples": [
+        {
+            "input": "[[1, 2, 3], [4, 5, 6], [7, 8, 9]]",
+            "output": "[1, 2, 3, 6, 9, 8, 7, 4, 5]",
+            "explanation": "The spiral order starts at 1, goes right to 3, then down to 6, then right to 9, then left to 8, then left to 7, then up to 4, and finally up to 5."
+        },
+        {
+            "input": "[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]",
+            "output": "[1, 2, 3, 4, 8, 12, 11, 10, 9, 5, 6, 7]",
+            "explanation": "Starting from 1, we go right to 4, then down to 8, then right to 12, then left to 11, then left to 10, down to 9, and finally traversing back to 5, 6, and 7."
+        },
+        {
+            "input": "[[1]]",
+            "output": "[1]",
+            "explanation": "A single element matrix simply returns that element as it is already in spiral order."
+        }
+    ],
+    "constraints": [
+        "The input matrix will have dimensions <code>m x n</code>, where <code>1 <= m, n <= 10^4</code>.",
+        "The total number of elements in the matrix does not exceed <code>10^4</code>."
+    ],
+    "tags": [
+        "Matrix",
+        "Array",
+        "Simulation"
+    ],
+    "companies": [
+        "Google",
+        "Apple",
+        "Microsoft",
+        "LinkedIn"
+    ],
+    "similar_problems": [
+        "matrix_rotation",
+        "zigzag_conversion",
+        "spiral_order_matrix"
+    ],
+    "hints": [
+        "Try to simulate the traversal with direction changes.",
+        "Use a loop to keep track of the boundaries for the spiral traversal.",
+        "Consider using a boolean array or set to mark visited elements.",
+        "Think about how you can reduce the dimensions of the matrix after completing each layer."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

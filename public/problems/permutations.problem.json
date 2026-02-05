@@ -1,0 +1,53 @@
+{
+    "id": "permutations",
+    "title": "Permutations of a Sequence",
+    "description": "Given an array of <code>nums</code> containing <code>n</code> distinct integers, return all possible permutations of the array. You can return the answer in any order.",
+    "difficulty": "Medium",
+    "category": "Backtracking, Array",
+    "examples": [
+        {
+            "input": "[1, 2, 3]",
+            "output": "[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]",
+            "explanation": "The input array contains three distinct integers. The total number of permutations is 3! = 6. Each permutation is a unique arrangement of the numbers."
+        },
+        {
+            "input": "[0, 1]",
+            "output": "[[0,1],[1,0]]",
+            "explanation": "With two distinct integers, the possible arrangements are straightforward. There are 2! = 2 permutations: [0, 1] and [1, 0]."
+        },
+        {
+            "input": "[1]",
+            "output": "[[1]]",
+            "explanation": "A single element has only one arrangement. Thus, the output is simply [[1]]. There are 1! = 1 permutation."
+        }
+    ],
+    "constraints": [
+        "The input array <code>nums</code> must have at most 6 elements.",
+        "Each element of <code>nums</code> is a distinct integer."
+    ],
+    "tags": [
+        "Backtracking",
+        "Array",
+        "Recursion"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "generate_parentheses",
+        "combinations",
+        "subsets"
+    ],
+    "hints": [
+        "Consider using recursion to explore all arrangements of the elements.",
+        "Use a boolean array to track which elements are included in the current permutation.",
+        "Think about how to construct permutations by swapping elements in-place.",
+        "Remember to backtrack after exploring each permutation to restore the original state."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

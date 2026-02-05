@@ -1,0 +1,39 @@
+{
+  "id": "climbing_stairs",
+  "title": "Climbing Stairs",
+  "description": "You are climbing a staircase. It takes <code>n</code> steps to reach the top.\n\nEach time you can either climb 1 or 2 steps. In how many distinct ways can you climb to the top?",
+  "difficulty": "Easy",
+  "category": "Dynamic Programming",
+  "examples": [
+    {
+      "input": "n = 2",
+      "output": "2",
+      "explanation": "There are two ways to climb to the top.\n1. 1 step + 1 step\n2. 2 steps"
+    },
+    {
+      "input": "n = 3",
+      "output": "3",
+      "explanation": "There are three ways to climb to the top.\n1. 1 step + 1 step + 1 step\n2. 1 step + 2 steps\n3. 2 steps + 1 step"
+    },
+    {
+      "input": "n = 4",
+      "output": "5",
+      "explanation": "There are five ways to climb to the top.\n1. 1+1+1+1\n2. 1+1+2\n3. 1+2+1\n4. 2+1+1\n5. 2+2"
+    }
+  ],
+  "constraints": [
+    "1 ≤ n ≤ 45"
+  ],
+  "tags": ["Dynamic Programming", "Math", "Memoization"],
+  "companies": ["Google", "Amazon", "Microsoft", "Facebook"],
+  "similar_problems": ["min_cost_climbing_stairs", "fibonacci_number", "n_th_tribonacci_number"],
+  "hints": [
+    "To reach nth step, you could have come from (n-1)th step or (n-2)th step.",
+    "This is essentially a Fibonacci sequence problem.",
+    "Try to identify the base cases first.",
+    "You can solve this using dynamic programming to avoid redundant calculations."
+  ],
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z",
+  "version": "1.0"
+}

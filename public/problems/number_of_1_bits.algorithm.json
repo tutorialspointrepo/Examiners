@@ -1,0 +1,17 @@
+{
+    "id": "number_of_1_bits",
+    "problem_id": "number_of_1_bits",
+    "title": "Number of 1 Bits - Bit Manipulation",
+    "algorithm": [
+        "Step 1: Initialize a counter variable to zero.",
+        "Step 2: Iterate through each bit of the given integer n using a loop.",
+        "Step 3: In each iteration, check if the least significant bit (LSB) is 1 by performing a bitwise AND operation with 1.",
+        "Step 4: If the LSB is 1, increment the counter by 1.",
+        "Step 5: Right shift n by one position to process the next bit.",
+        "Final step: Return the value of the counter."
+    ],
+    "pseudocode": "ALGORITHM NumberOf1Bits\nBEGIN\n    DECLARE count AS INTEGER = 0\n    WHILE n > 0 DO\n        IF (n AND 1) = 1 THEN\n            count = count + 1\n        ENDIF\n        n = n >> 1\n    ENDWHILE\n    RETURN count\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize counter]\n  │\n  ▼\n◊ Is n > 0? ◊ ──YES──► [Check LSB]\n  │                        │\n  ▼                        ▼\n[Increment counter]     [Right shift n]\n  │                        │\n  ▼                        ▼\n◊ Loop back? ◊ ──YES──► [END]\n  │\n  ▼\n[Return count]\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The number of 1 bits in a binary representation can be calculated using bitwise operations.\n\n**Approach Explanation:**\n1. **Main Strategy**: The algorithm uses bit manipulation to count the number of set bits (1s) in an integer's binary form.\n2. **Key Components**: The use of bitwise AND to check each bit and right shifting to move to the next.\n3. **Why It Works**: Each right shift effectively divides the number by 2, allowing us to examine each bit sequentially.\n4. **Edge Cases**: Handles cases where n is 0 (result should be 0) or negative numbers (in two's complement representation).\n\n**Alternative Approaches:** Other methods include using lookup tables or Brian Kernighan's algorithm that reduces the number of iterations for counting 1s.",
+    "complexity": "Time Complexity: O(b)\n- Where b is the number of bits in the integer (typically 32 or 64 bits). Each bit is processed once.\n- Best, average, and worst case scenarios all involve processing b bits.\n\nSpace Complexity: O(1)\n- Only a fixed amount of space is used for the counter, regardless of the input size.\n- No additional data structures are needed.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(b)      │    O(1)      │\n│ Alternative 1   │    O(b)      │    O(1)      │\n│ Alternative 2   │    O(k)      │    O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- This algorithm performs well for typical integers, executing in linear time relative to the number of bits.\n- It is efficient in terms of space as it requires minimal memory allocation.\n- Scalability is generally good for standard integer sizes used in programming languages."
+}

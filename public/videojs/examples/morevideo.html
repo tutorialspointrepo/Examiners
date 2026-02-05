@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs/Nuevo - More videos gallery</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container" style="max-width:940px">
+	<h1>More videos gallery plugin</h1>
+	<link href="../skins/treso/videojs.min.css" rel="stylesheet" type="text/css" />
+	<link href="../plugins/morevideo.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+	<script src="../plugins/morevideo.js?ct=8"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid" controls preload playsinline webkit-playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+
+
+	<script>
+		var more_list = [
+		{thumb: '../examples/assets/images/thumbs/surf.jpg',url: '//www.nuevodevel.com/nuevo/demo/surf',title: 'Surfing is beatiful', duration:'04:12'},
+		{thumb: '../examples/assets/images/thumbs/big_buck.jpg',url: '//www.nuevodevel.com/nuevo/demo/big_buck',title: 'Big Buck Bunny', duration: '02:17'},
+		{thumb: '../examples/assets/images/thumbs/animals.jpg',url: '//www.nuevodevel.com/nuevo/demo/animals',title: 'Animals are amazing!', duration: '03:03'},
+		{thumb: '../examples/assets/images/thumbs/freeride.jpg',url: '//www.nuevodevel.com/nuevo/demo/freeride',title: 'Free Ride', duration: '05:50'},
+		{thumb: '../examples/assets/images/thumbs/australia.jpg',url: '//www.nuevodevel.com/nuevo/demo/australia',title: 'Welcome to Australia', duration: '02:29'}, 
+		{thumb: '../examples/assets/images/thumbs/base_jump.jpg',url: '//www.nuevodevel.com/nuevo/demo/base_jump',title: 'Incredible BASE Jump', duration: '03:20'},
+		{thumb: '../examples/assets/images/thumbs/alaska.jpg',url: '//www.nuevodevel.com/nuevo/demo/alaska',title: 'The beauty of Alasca', duration: '02:54'},
+		{thumb: '../examples/assets/images/thumbs/cymaticjazz.jpg',url: '//www.nuevodevel.com/nuevo/demo/cymaticjazz',title: 'LG Cymatic Jazz Demo', duration: '02:35'},
+		{thumb: '../examples/assets/images/thumbs/serenity.jpg',url: '//www.nuevodevel.com/nuevo/demo/serenity',title: 'Serenity Movie Trailer', duration: '02:13'},
+		{thumb: '../examples/assets/images/thumbs/newyorkcity.jpg',url: '//www.nuevodevel.com/nuevo/demo/newyorkcity',title: 'New York City 4K', duration: '01:07'},
+		{thumb: '../examples/assets/images/thumbs/thailand.jpg',url: '//www.nuevodevel.com/nuevo/demo/thailand',title: 'Thailand Retrospective', duration: '02:06'},
+		{thumb: '../examples/assets/images/thumbs/titanic.jpg',url: '//www.nuevodevel.com/nuevo/demo/titanic',title: 'Titanic 2 - Jack`s Back 2019 Trailer', duration: '04:09'}
+		];
+		var player = videojs('player_1', {license:licenseKey});
+		player.nuevo({contextMenu: false});
+		player.morevideo(more_list);
+	</script>
+
+<div class="explain">
+Fully responsive, mobile friendly gallery slider of suggested videos.
+</div>
+<h2>Code Source</h2>
+<pre>
+<span class="comment">&lt;!--Load player skin, videojs and nuevo plugin inside &ltbody&gt; tag--&gt;</span>
+&lt;link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" /&gt;
+&lt;link href="../plugins/morevideo.css" rel="stylesheet" type="text/css" /&gt;
+&lt;script src="../video.min.js"&gt;&lt;/script&gt;
+&lt;script src="../nuevo.min.js"&gt;&lt;/script&gt;
+&lt;script src="../plugins/morevideo.js"&gt;&lt;/script&gt;
+
+<span class="comment">&lt;!--Video tag setup--&gt;</span>
+&lt;video id="<span class="mark">player_1</span>" class="video-js vjs-fluid" controls playsinline poster="../examples/assets/images/ski.jpg"&gt;
+	&lt;source src="//opencdn.b-cdn.net/video/hls/ski/playlist.m3u8" type="application/x-mpegURL"&gt;
+&lt;/video&gt;
+
+<span class="comment">&lt;!--Gallery video items array setup--&gt;</span>
+&lt;script&gt;
+  var more_list = [
+	....
+  ];
+  <span class="comment">&lt;!--Initialize the player and plugin--&gt;</span>
+  var player = videojs('player_1', {license: "key"});
+  player.nuevo();
+  player.morevideo(more_list);
+&lt;/script&gt;
+</pre>
+
+
+
+The Gallery plugin can showup on each pause event, exactly the same as on Youtube embed player. Once Gallery is closed manually it does not appear any more. To activate such Gallery layout you need to apply appropriate option.
+<h2>Code Source</h2>
+<pre>
+  player.morevideo(more_list, {onpause:true});
+</pre>
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_2" class="video-js vjs-fluid" controls preload playsinline webkit-playsinline poster="../examples/assets/images/ski.jpg">
+			<source src='//opencdn.b-cdn.net/video/hls/ski/playlist.m3u8', type='application/x-mpegURL'/>
+			</video>
+		</div>
+	</div>
+
+
+	<script>
+		var player2 = videojs('player_2', {license:licenseKey});
+		player2.nuevo({contextMenu:false});
+		player2.morevideo(more_list,{onpause:true});
+	</script>
+
+<br>
+Creating an array of videos gallery (more_list) is exactly the same as related videos array. For each video item you need to provide video thumbnail, title, duration and url. You may check what related videos array is in the HTML source code.
+
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

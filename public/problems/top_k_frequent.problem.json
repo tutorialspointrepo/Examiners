@@ -1,0 +1,54 @@
+{
+    "id": "top_k_frequent",
+    "title": "Top K Frequent Elements",
+    "description": "Given an integer array <code>nums</code> and an integer <code>k</code>, return the <code>k</code> most frequent elements. You may return the answer in any order.",
+    "difficulty": "Medium",
+    "category": "Array, Hash Table",
+    "examples": [
+        {
+            "input": "nums = [1,1,1,2,2,3], k = 2",
+            "output": "[1,2]",
+            "explanation": "The number 1 appears 3 times and the number 2 appears 2 times in the array. Therefore, the two most frequent elements are 1 and 2."
+        },
+        {
+            "input": "nums = [1], k = 1",
+            "output": "[1]",
+            "explanation": "There is only one element in the array, which is 1. Hence, it is the most frequent element."
+        },
+        {
+            "input": "nums = [4,1,-1,2,-1,2,3], k = 2",
+            "output": "[-1,2]",
+            "explanation": "The number -1 appears 2 times, and the number 2 appears 2 times as well. Both are the most frequent elements with the same frequency."
+        }
+    ],
+    "constraints": [
+        "1 <= nums.length <= 10^5",
+        "-10^4 <= nums[i] <= 10^4",
+        "k is in the range [1, the number of unique elements in the array]."
+    ],
+    "tags": [
+        "Array",
+        "Hash Table",
+        "Sorting"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "top_k_elements",
+        "most_frequent_element",
+        "find_k_most_frequent"
+    ],
+    "hints": [
+        "Consider using a hash map to count the frequency of each element.",
+        "Think about how you can efficiently retrieve the top <code>k</code> elements from your frequency data.",
+        "Consider edge cases where all elements are unique or the same.",
+        "You might want to explore different data structures that can help you maintain order while counting."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

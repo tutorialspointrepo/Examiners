@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs Playlist example</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>Nuevo Playlist in separate container </h1>
+
+	<link href="../skins/treso/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+	<script src="../plugins/nuevo.thumbnails.js"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-16-9" controls preload playsinline poster="../examples/assets/images/nuevo.jpg"></video>
+		</div>
+	</div>
+    <div id="playlist"></div>
+
+
+	<script>
+	const player = videojs('player_1', {license:licenseKey});
+	player.nuevo({ 
+		playlistID: "playlist"
+	});
+	var myplaylist = [
+		{
+		  sources: [{ 
+		     src:"https://opencdn.b-cdn.net/video/hls/nuevo/playlist.m3u8",
+			  type: 'application/x-mpegURL'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/nuevo.jpg',
+		  title: 'Nuevodevel demo video',
+		  description: "Nuevodevel presents the most advanced videojs plugin",
+		  duration: '00:50'
+	}, {
+		  sources: [{
+			src: '//opencdn.b-cdn.net/video/big_buck_720.mp4',
+			type: 'video/mp4',res: '720',label: '720p'
+		  }, {
+			src: '//opencdn.b-cdn.net/video/big_buck_480.mp4',
+			type: 'video/mp4',res: '480',label: '480p'
+		  }, {
+			src: '//opencdn.b-cdn.net/video/big_buck_360.mp4',
+			type: 'video/mp4',res: '360',label: '360p', default: 1
+		  },{
+			src: '//opencdn.b-cdn.net/video/big_buck_240.mp4',
+			type: 'video/mp4',res: '240',label: '240p'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/big_buck.jpg',
+		  slideImage: '../examples/assets/images/slides/big_buck.jpg',
+		  title: 'Big Buck Bunny',
+		  description: "Open movie by Blender Foundation",
+		  duration: '02:17'
+    }, {
+		  sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/coffee/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/coffee.jpg',
+		  title: 'A cup of coffee',
+		  description: 'Coffee is a language in itself',
+		  slideImage: '../examples/assets/images/slides/coffee.jpg',
+		  duration: '01:32',
+    }, {
+		  sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/tos/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/tears.jpg',
+		  title: 'Tears of Steel',
+		  description: 'Sci-fi short movie by the Blender Foundation',
+		  duration: '12:14',
+		  tracks: [
+			{ kind:"captions", src: "../examples/assets/tracks/steel_en.vtt", srclang:"en", label:"English", default: "true" },
+			{ kind:"captions", src: "../examples/assets/tracks/steel_de.vtt", srclang:"de", label:"German"}
+		  ]
+	}, {
+		  sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/people/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/people.jpg',
+		  slideImage: '../examples/assets/images/slides/people.jpg',
+		  title: 'People are amazing!',
+		  duration: '01:13'
+	}
+];
+
+player.playlist(myplaylist);
+
+
+	</script>
+
+<div class="info"><br>It is possible to include Nuevo playlist into any separate container, for example under the player. You only need to provide playlist container's ID and optionally playlist's height (pixels).
+Once container for the playlist and playlist array are defined you are fine to setup video element, initialize player and Nuevo plugin with the playlist.
+</div>
+
+<h2>Code Source</h2>
+<pre>
+<span class="comment">&lt;!--Setup video element--&gt;</span>
+&lt;video id="<span class="mark">player_1</span>" class="video-js vjs-16-9" controls playsinline poster="../examples/assets/images/nuevo.jpg"&gt;&lt;/video&gt;
+&lt;div id="playlist"&gt;&lt;/div&gt;
+
+<span class="comment">&lt;!--Initialize player with nuevo plugin and your playlist--&gt;</span>
+&lt;script&gt;
+	var player = videojs('player_1', {license: "key"});
+	player.nuevo({ playlistID: "playlist" });
+	player.playlist(myplaylist);
+&lt;/script&gt;
+</pre>
+
+<br />
+
+
+<div class="info">Maximum height of the playlist is 300 pixels. You can easily change it through Nuevo plugin's option <q>playlistMaxH</q>.
+<pre>
+&lt;script&gt;
+	var player = videojs('player_1', {license: "key"});
+	player.nuevo({ playlistID: "playlist", playlistMaxH:400 });
+	player.playlist(myplaylist);
+&lt;/script&gt;
+</pre>
+
+<br>
+Nuevo playlist features multiple public functions to manage playlist, insert or delete media items programmatically. All functions are described on <a target="_blank" href="https://www.nuevodevel.com/nuevo/playlistsdk">Nuevodevel playlist SDK demo page.</a>
+
+</div>
+
+
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

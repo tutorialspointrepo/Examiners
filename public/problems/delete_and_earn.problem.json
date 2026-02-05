@@ -1,0 +1,53 @@
+{
+    "id": "delete_and_earn",
+    "title": "Delete and Earn",
+    "description": "You are given an integer array <code>nums</code>. You can earn points by deleting elements from the array. When you delete an element <code>x</code>, you earn <code>x</code> points, but then you must also delete all instances of <code>x - 1</code> and <code>x + 1</code> from the array. Your goal is to maximize the points you earn. Return the maximum points you can earn by performing these operations optimally.",
+    "difficulty": "Medium",
+    "category": "Dynamic Programming, Array",
+    "examples": [
+        {
+            "input": "[3, 4, 2]",
+            "output": "6",
+            "explanation": "Deleting <code>3</code> earns <code>3</code> points, and you can't delete <code>2</code> (which is <code>3 - 1</code>), so you can then delete <code>4</code> for another <code>4</code> points. The total points earned is <code>3 + 4 = 7</code>."
+        },
+        {
+            "input": "[2, 2, 3, 3, 3, 4]",
+            "output": "9",
+            "explanation": "You can delete <code>3</code> to earn <code>9</code> points (deleting all <code>3</code>'s gives you <code>3 * 3 = 9</code>), and you can't delete <code>2</code> or <code>4</code> after that. Thus, the maximum points is <code>9</code>."
+        },
+        {
+            "input": "[1, 1, 1, 2, 2, 3]",
+            "output": "6",
+            "explanation": "By deleting <code>1</code> first, you earn <code>3</code> points (since there are three <code>1</code>'s). Then you cannot delete <code>2</code> (because <code>1 - 1 = 0</code> is not in the array) or <code>3</code>. Therefore, the total points earned is <code>3</code>."
+        }
+    ],
+    "constraints": [
+        "The length of <code>nums</code> is at most <code>2 * 10^4</code>.",
+        "Each element of <code>nums</code> is in the range <code>[1, 10^4]</code>."
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "Array",
+        "Greedy"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Microsoft"
+    ],
+    "similar_problems": [
+        "robber_houses",
+        "maximum_subarray_sum",
+        "house_robber_ii"
+    ],
+    "hints": [
+        "Consider using a frequency array to keep track of the points available for each number.",
+        "Think about the relationship between choosing to delete a number and its neighboring numbers.",
+        "Use a dynamic programming approach to store the maximum points achievable at each step.",
+        "Consider edge cases with small arrays or repeated elements."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

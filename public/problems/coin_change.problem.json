@@ -1,0 +1,54 @@
+{
+    "id": "coin_change",
+    "title": "Coin Change",
+    "description": "Given an integer array <code>coins</code> representing coins of different denominations and an integer <code>amount</code> representing a total amount of money, return the fewest number of coins that you need to make up that amount. If that amount of money cannot be made up by any combination of the coins, return <code>-1</code>. You may assume that you have an infinite number of each kind of coin.",
+    "difficulty": "Medium",
+    "category": "Dynamic Programming, Greedy Algorithms",
+    "examples": [
+        {
+            "input": "coins = [1, 2, 5], amount = 11",
+            "output": "3",
+            "explanation": "The best way to make amount 11 is to use two coins of denomination 5 and one coin of denomination 1 (5 + 5 + 1 = 11), resulting in a total of 3 coins."
+        },
+        {
+            "input": "coins = [2], amount = 3",
+            "output": "-1",
+            "explanation": "It is impossible to make amount 3 with only coin of denomination 2, hence the output is -1."
+        },
+        {
+            "input": "coins = [1], amount = 0",
+            "output": "0",
+            "explanation": "Since the amount is 0, no coins are needed to make up this amount, thus the answer is 0."
+        }
+    ],
+    "constraints": [
+        "<code>1 <= coins.length <= 12</code>",
+        "<code>1 <= coins[i] <= 2^31 - 1</code>",
+        "<code>0 <= amount <= 10^4</code>"
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "Greedy",
+        "Array"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Apple"
+    ],
+    "similar_problems": [
+        "minimum_coin_change",
+        "combination_sum",
+        "coin_change_2"
+    ],
+    "hints": [
+        "Consider using a dynamic programming approach to build up solutions for smaller amounts.",
+        "Use an array where the index represents the amount, and store the minimum coins needed at each index.",
+        "Think about how you can update your dp array based on the available coin denominations.",
+        "Remember to handle cases where it's not possible to form the given amount with the available coins."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

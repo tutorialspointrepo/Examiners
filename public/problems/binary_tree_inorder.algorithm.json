@@ -1,0 +1,19 @@
+{
+    "id": "binary_tree_inorder",
+    "problem_id": "binary_tree_inorder",
+    "title": "Binary Tree Inorder Traversal - Depth First Search",
+    "algorithm": [
+        "Step 1: If the current node is null, return from the function.",
+        "Step 2: Recursively call the inorder function on the left child of the current node.",
+        "Step 3: Process the current node (e.g., print its value or add it to a list).",
+        "Step 4: Recursively call the inorder function on the right child of the current node.",
+        "Final step: Ensure all nodes are processed in the correct order."
+    ],
+    "pseudocode": "ALGORITHM BinaryTreeInorder\nBEGIN\n    FUNCTION Inorder(node)\n        IF node IS NULL THEN\n            RETURN\n        ENDIF\n        Inorder(node.left)\n        // Process the current node\n        PRINT node.value\n        Inorder(node.right)\n    END FUNCTION\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n◊ Is node NULL? ◊ ──YES──► [RETURN]\n  │\n  ▼\n[Call Inorder on Left Child]\n  │\n  ▼\n[Process Current Node]\n  │\n  ▼\n[Call Inorder on Right Child]\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The inorder traversal visits nodes in a left-root-right sequence, yielding sorted order for binary search trees.\n\n**Approach Explanation:**\n1. **Main Strategy**: Utilize recursion to navigate the binary tree in the inorder sequence.\n2. **Key Components**: Base case handling and recursive calls for both left and right children.\n3. **Why It Works**: The depth-first search ensures all nodes are visited in the correct order by processing left children before the root and right children afterward.\n4. **Edge Cases**: Handles empty trees (null root) gracefully without errors.\n\n**Alternative Approaches:** Iterative traversal using a stack can also be implemented for inorder traversal.",
+    "complexity": "Time Complexity: O(n)\n- Each node in the tree is visited once.\n- The total number of operations corresponds to the number of nodes in the tree.\n\nSpace Complexity: O(h)\n- Where h is the height of the tree, due to recursive function call stack.\n- In a balanced tree, h = log(n); in an unbalanced tree, h can be n.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(h)       │\n│ Iterative       │    O(n)      │    O(n)       │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The recursive method is straightforward but may lead to stack overflow for deep trees in languages without tail call optimization.\n- The iterative method can handle deeper trees more robustly, trading off additional space for non-recursive execution.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

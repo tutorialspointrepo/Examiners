@@ -1,0 +1,53 @@
+{
+    "id": "decode_ways",
+    "title": "Decode Ways",
+    "description": "Given a string <code>s</code> consisting of digits, determine the total number of ways to decode it. A mapping of '1' to 'A', '2' to 'B', ..., '26' to 'Z' is used. For example, '12' can be decoded as 'AB' (1 2) or 'L' (12). Your task is to find the number of distinct ways to decode the input string <code>s</code>.",
+    "difficulty": "Medium",
+    "category": "Dynamic Programming, String",
+    "examples": [
+        {
+            "input": "'12'",
+            "output": "2",
+            "explanation": "The string '12' can be decoded as 'AB' (1 2) or 'L' (12), resulting in 2 distinct ways."
+        },
+        {
+            "input": "'226'",
+            "output": "3",
+            "explanation": "The string '226' can be decoded as 'BBF' (2 2 6), 'BZ' (2 26), or 'VF' (22 6), leading to 3 distinct ways."
+        },
+        {
+            "input": "'06'",
+            "output": "0",
+            "explanation": "The string '06' cannot be decoded because '0' does not map to any letter and cannot be preceded by a valid digit. Hence, the output is 0."
+        }
+    ],
+    "constraints": [
+        "The input string <code>s</code> consists only of digits and its length is between 1 and 100.",
+        "Leading zeros are not allowed in valid encodings."
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "String",
+        "Recursion"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Apple",
+        "Microsoft"
+    ],
+    "similar_problems": [
+        "decode_ways_ii",
+        "ways_to_decode",
+        "count_decodings"
+    ],
+    "hints": [
+        "Consider using dynamic programming to store intermediate results.",
+        "Think about how to handle single-digit and two-digit mappings separately.",
+        "Pay attention to edge cases such as leading zeros in the input.",
+        "Recursion with memoization could be an effective approach to optimize your solution."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

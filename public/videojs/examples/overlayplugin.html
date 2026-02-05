@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs/Nuevo - Basic example</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>Overlay plugin</h1>
+
+	<link href="../skins/treso/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+	<script src="../plugins/overlay.js"></script>
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/big_buck.jpg">
+				<source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+			</video>
+		</div>
+	</div>
+
+
+
+	<script>
+	const player = videojs('player_1', {license: licenseKey});
+	player.nuevo({ 
+			title: "Nuevo plugin for VideoJs Player",
+			url: "https://www.nuevodevel.com/nuevo"
+	});
+	const overlaylist=[
+		{txt:"Overlay text at top-left position.",offsetY:10, start:2,duration:8},
+		{txt:"Overlay text at bottom-right position.", position: 'bottom-right',background:'#c00',start:3,duration:7},
+		{txt:"Enjoy Overlay Plugin!", color:"black", position: 'top-center',offsetY:10,background:'gold',fontSize:22,start:17,duration:38},
+		{img:"https://nvdata.b-cdn.net/img/cnt2.jpg",close:true,url:'https://www.nuevodevel.com/nuevo/order',start:10,position:"center",border:"white",duration:7},
+		{id:"f3",video:"https://opencdn.b-cdn.net/rss/rssover.mp4",close:true,start:18,position:"center-right",offsetX:10,border:"#ccc"}		
+	];
+	player.overlay(overlaylist);	
+	
+	</script>
+
+<center><br/>Full description of the Overlay plugin including available options you can find on <a target="blank" href="https://www.nuevodevel.com/nuevo/showcase/overlay">Nuevodevel demo</a> website page.</center>
+<h2>Example Code Setup</h2>
+<pre>
+
+<span class="comment">&lt;!--Load player skin, videojs and nuevo plugin inside &lt;body&gt; tag --&gt;</span>
+&lt;link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" /&gt;
+&lt;script src="../video.min.js"&gt;&lt;/script&gt;
+&lt;script src="../nuevo.min.js"&gt;&lt;/script&gt;
+&lt;script src="../plugins/overlay.js"&gt;&lt;/script&gt;
+
+<span class="comment">&lt;!--Video tag setup--&gt;</span>
+&lt;video id="<span class="mark">player_one</span>" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/big_buck.jpg"&gt;
+	&lt;source src="http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4"&gt;
+&lt;/video&gt;
+
+<span class="comment">&lt;!--Initialize the player and the plugin--&gt;</span>
+&lt;script&gt;
+	var player = videojs('<span class="mark">player_one</span>', {license: "key"});
+	player.nuevo({ 
+		//option_name: option_value, option_name: value
+	}); 
+	const overlaylist=[
+		{txt:"Overlay text at top-left position.",offsetY:10, start:2,duration:8},
+		{txt:"Overlay text at bottom-right position.", position: 'bottom-right',background:'#c00',start:3,duration:7},
+		{txt:"Enjoy Overlay Plugin!.",color:"black",position:'top-center',offsetY:10,background:'gold',fontSize:22,start:17,duration:38},
+		{img:"https://nvdata.b-cdn.net/img/cnt2.jpg",close:true,url:'https://www.nuevodevel.com/nuevo/order',start:10,position:"center",border:"white",duration:7},
+		{id:"f3",video:"https://opencdn.b-cdn.net/rss/rssover.mp4",close:true,start:18,position:"center-right",offsetX:10,border:"#ccc"}		
+	];
+	player.overlay(overlaylist);	
+&lt;/script&gt;
+</pre>
+
+
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

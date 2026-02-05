@@ -1,0 +1,53 @@
+{
+    "id": "power_of_four",
+    "title": "Power of Four",
+    "description": "Given an integer <code>n</code>, determine if it is a power of four. An integer <code>n</code> is a power of four if there exists an integer <code>x</code> such that <code>n == 4^x</code> (i.e., <code>n</code> can be expressed as 4 raised to the power of some integer).",
+    "difficulty": "Easy",
+    "category": "Math, Bit Manipulation",
+    "examples": [
+        {
+            "input": "n = 16",
+            "output": "true",
+            "explanation": "16 can be expressed as 4^2 (4 * 4), thus it is a power of four."
+        },
+        {
+            "input": "n = 5",
+            "output": "false",
+            "explanation": "5 cannot be expressed as 4 raised to any integer power, therefore it is not a power of four."
+        },
+        {
+            "input": "n = 64",
+            "output": "true",
+            "explanation": "64 can be expressed as 4^3 (4 * 4 * 4), confirming that it is indeed a power of four."
+        }
+    ],
+    "constraints": [
+        "<code>n</code> is a 32-bit signed integer.",
+        "<code>n</code> must be greater than or equal to 0."
+    ],
+    "tags": [
+        "Math",
+        "Bit Manipulation",
+        "Recursion"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "is_power_of_two",
+        "power_of_three",
+        "check_power_of_n"
+    ],
+    "hints": [
+        "Consider how powers of four are structured in binary representation.",
+        "You might find it helpful to use logarithmic properties to solve this problem.",
+        "Think about the relationship between powers of two and powers of four.",
+        "Check if <code>n</code> is greater than zero before proceeding with further checks."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

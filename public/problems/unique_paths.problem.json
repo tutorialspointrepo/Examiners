@@ -1,0 +1,53 @@
+{
+    "id": "unique_paths",
+    "title": "Unique Paths",
+    "description": "Given a <code>m x n</code> grid, you can only move either down or right at any point in time. Your task is to find the number of unique paths from the top-left corner to the bottom-right corner of the grid.",
+    "difficulty": "Medium",
+    "category": "Dynamic Programming, Combinatorics",
+    "examples": [
+        {
+            "input": "m = 3, n = 7",
+            "output": "28",
+            "explanation": "From the top-left corner, there are multiple ways to reach the bottom-right corner by moving down and right. The total unique paths calculated using dynamic programming methods leads to 28."
+        },
+        {
+            "input": "m = 3, n = 2",
+            "output": "3",
+            "explanation": "There are 3 unique paths for a 3x2 grid: right-down-down, down-right-down, and down-down-right. Each path corresponds to a different combination of moves leading to the bottom-right corner."
+        },
+        {
+            "input": "m = 7, n = 3",
+            "output": "28",
+            "explanation": "For a 7x3 grid, similar to the previous calculations, the number of unique paths calculated through combinatorial methods results again in 28."
+        }
+    ],
+    "constraints": [
+        "1 <= m, n <= 100",
+        "The input values are integers representing the dimensions of the grid."
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "Grid",
+        "Combinatorics"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "climbing_stairs",
+        "minimum_path_sum",
+        "distinct_subsequences"
+    ],
+    "hints": [
+        "Consider breaking the problem down into subproblems.",
+        "Think about how many ways you can reach each cell in the grid.",
+        "You may want to use a DP array to store intermediate results.",
+        "Remember that each cell can only be reached from the cell above it or the cell to the left."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,53 @@
+{
+    "id": "bubble_sort",
+    "title": "Bubble Sort",
+    "description": "Implement the <code>bubble_sort</code> algorithm to sort an array of integers in ascending order. The algorithm repeatedly steps through the list, compares adjacent elements and swaps them if they are in the wrong order. This process is repeated until the list is sorted.",
+    "difficulty": "Easy",
+    "category": "Sorting, Algorithm",
+    "examples": [
+        {
+            "input": "[5, 3, 8, 4, 2]",
+            "output": "[2, 3, 4, 5, 8]",
+            "explanation": "In the first pass, the largest element (8) moves to the end. Subsequent passes continue to bubble up the next largest elements until the entire array is sorted."
+        },
+        {
+            "input": "[1, 4, 3, 2]",
+            "output": "[1, 2, 3, 4]",
+            "explanation": "The algorithm compares each pair of adjacent elements. After the first pass, the largest element (4) is at its correct position, and then it continues sorting the rest until every element is in order."
+        },
+        {
+            "input": "[10, 9, 8, 7, 6]",
+            "output": "[6, 7, 8, 9, 10]",
+            "explanation": "Since the input is sorted in descending order, each pass through the array will swap every adjacent pair, leading to the smallest element ending up at the start after all passes are complete."
+        }
+    ],
+    "constraints": [
+        "You may assume the input array has at least one element.",
+        "The length of the array will not exceed 10^4."
+    ],
+    "tags": [
+        "Sorting",
+        "Algorithm",
+        "Array"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "selection_sort",
+        "insertion_sort",
+        "merge_sort"
+    ],
+    "hints": [
+        "Consider how many passes through the array are needed in the worst case.",
+        "Think about how you can optimize the algorithm by stopping early if no swaps occur during a pass.",
+        "What happens if the array is already sorted?",
+        "Can you find a way to reduce the number of comparisons on each pass?"
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

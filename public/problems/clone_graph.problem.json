@@ -1,0 +1,54 @@
+{
+    "id": "clone_graph",
+    "title": "Clone Graph",
+    "description": "Given a reference of a node in a <code>connected</code> undirected graph, return a <code>deep copy</code> (clone) of the graph. Each node in the graph contains a value (<code>val</code>) and a list of its neighbors (<code>neighbors</code>). The graph is guaranteed to be non-empty, meaning at least one node exists.",
+    "difficulty": "Medium",
+    "category": "Graph, Depth-First Search",
+    "examples": [
+        {
+            "input": "Input: adjList = [[2,4],[1,3],[2],[1]]",
+            "output": "Output: [[2,4],[1,3],[2],[1]]",
+            "explanation": "The original graph consists of 4 nodes with the following connections: Node 1 is connected to Nodes 2 and 4, Node 2 to Nodes 1 and 3, Node 3 to Node 2, and Node 4 to Node 1. The deep copy will have the same structure."
+        },
+        {
+            "input": "Input: adjList = [[]]",
+            "output": "Output: [[]]",
+            "explanation": "The input graph consists of a single node with no neighbors. The clone will also contain this single node with an empty neighbor list."
+        },
+        {
+            "input": "Input: adjList = [[2],[1]]",
+            "output": "Output: [[2],[1]]",
+            "explanation": "The graph consists of two nodes, each connected to the other. The clone will preserve this relationship, resulting in the same structure."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the graph is between 0 and 100.",
+        "Each node's value is unique and can be between 1 and 100.",
+        "The graph is connected and undirected."
+    ],
+    "tags": [
+        "Graph",
+        "Depth-First Search",
+        "Breadth-First Search"
+    ],
+    "companies": [
+        "Google",
+        "Microsoft",
+        "Facebook",
+        "Uber"
+    ],
+    "similar_problems": [
+        "graph_clone",
+        "copy_linked_list_with_random_pointer",
+        "number_of_islands"
+    ],
+    "hints": [
+        "Consider using a hash map to keep track of copied nodes.",
+        "You can use either DFS or BFS for traversing and cloning the graph.",
+        "Make sure to handle cycles in the graph properly to avoid infinite loops.",
+        "Think about how to create new nodes while ensuring that the neighbors are correctly set."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -882,6 +882,19 @@ export interface ExamActivityLog {
   updatedAt: Date;
 }
 
+// Add this interface near your other AI-related interfaces
+export interface LogicAnalysisResult {
+  id: string;
+  problem_id: string;
+  title: string;
+  algorithm: string[];
+  pseudocode: string;
+  flowchart: string;
+  approach: string;
+  complexity: string;
+  created_at: string;
+}
+
 /**
  * Question interface - Used both server-side and client-side
  * 
@@ -1092,8 +1105,11 @@ export interface CourseListing {
   tagLine: string;
   complexityLevel: number;
   totalUnits: number;
+  totalChapters: number;
   totalLectures: number;
   totalDuration: number;
+  totalExercises?: number;
+  totalQuizzes?: number;
   prices: {
     INR: { originalPrice: number; discountedPrice: number };
     USD: { originalPrice: number; discountedPrice: number };
@@ -1108,12 +1124,22 @@ export interface CourseListing {
   status: string;
   isPublished: boolean;
   enrollmentCount: number;
-  collegeEnrollmentCounts?: Record<string, number>;
   completedCount: number;
   rating: {
     average: number;
     totalRatings: number;
   };
+}
+
+// College Course Assignment - tracks courses assigned to colleges with enrollment counts
+export interface CollegeCourse {
+  collegeId: string;
+  courseId: number;
+  courseSlug: string;
+  enrollmentCount: number;
+  assignedAt: any;
+  assignedBy: string;
+  updatedAt?: any;
 }
 
 export interface CourseDetails {
@@ -1123,26 +1149,67 @@ export interface CourseDetails {
   updatedDate: string | null;
 }
 
-export interface CourseLecture {
-  lectureId: string;
+// Lecture summary (in curriculum - light)
+export interface CourseLectureSummary {
+  lectureId: number;
   lectureName: string;
-  lectureType: 'Video' | 'Text' | 'Quiz' | 'Exercise' | 'Assessment';
+  lectureType: string;
   lectureOrder: number;
   durationInSeconds: number;
   videoUrl: string | null;
-  textContent: string | null;
-  quizQuestions: any[] | null;
-  exerciseQuestions: any[] | null;
-  assessmentQuestions: any[] | null;
-  attachments: any[];
 }
 
+// Chapter with lecture summaries (in curriculum)
+export interface CourseChapter {
+  chapterId: string;
+  chapterName: string;
+  chapterOrder: number;
+  totalLectures: number;
+  lectures: CourseLectureSummary[];
+}
+
+// Unit with chapters (in curriculum)
 export interface CourseUnit {
   unitId: string;
   unitName: string;
   unitOrder: number;
-  totalLectures: number;
-  lectures: Record<string, CourseLecture>;
+  totalChapters: number;
+  chapters: CourseChapter[];
+}
+
+// Lecture heavy data (in lectures subcollection - lazy loaded)
+export interface LectureContent {
+  lectureId: number;
+  chapterId: string;
+  unitId: string;
+  quizQuestions?: any;
+  exerciseQuestions?: any;
+  assessmentQuestions?: any;
+  textContent?: string;
+  attachments?: string[];
+}
+
+// Full lecture = summary + content
+export interface CourseLecture extends CourseLectureSummary {
+  chapterId?: string;
+  unitId?: string;
+  quizQuestions?: any;
+  exerciseQuestions?: any;
+  assessmentQuestions?: any;
+  textContent?: string;
+  attachments?: string[];
+}
+
+// Course feedback/review
+export interface CourseFeedback {
+  feedbackId: string;
+  userId: string;
+  userName: string;
+  userInitials: string;
+  rating: 'helpful' | 'needs-improvement' | 'excellent';
+  comment: string;
+  createdAt: any;
+  updatedAt?: any;
 }
 
 export interface FullCourse extends CourseListing {
@@ -12672,6 +12739,52 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
     }
   }
 
+
+// Add this method inside your FirebaseService class
+/**
+ * Generate Logic Analysis for a custom problem using AI
+ * Returns algorithm, pseudocode, flowchart, approach, and complexity analysis
+ * @param problemStatement - The problem description (max 500 characters)
+ * @returns Promise with LogicAnalysisResult
+ */
+async generateLogicAnalysis(
+  problemStatement: string
+): Promise<{ success: boolean; data?: LogicAnalysisResult; error?: string }> {
+  try {
+    if (!this.functions) throw new Error('Functions not initialized');
+    
+    if (!problemStatement || problemStatement.length > 500) {
+      return {
+        success: false,
+        error: 'Problem statement is required and must be 500 characters or less'
+      };
+    }
+    
+    const generateLogicAnalysisFn = httpsCallable(this.functions, 'generateLogicAnalysis');
+    const result = await generateLogicAnalysisFn({ problemStatement });
+    const data = result.data as { success: boolean; data: LogicAnalysisResult };
+    
+    if (data.success && data.data) {
+      console.log('✅ Logic analysis generated successfully');
+      return {
+        success: true,
+        data: data.data
+      };
+    }
+    
+    return {
+      success: false,
+      error: 'Failed to generate analysis'
+    };
+  } catch (error: any) {
+    console.error('Error calling generateLogicAnalysis:', error);
+    return {
+      success: false,
+      error: error.message || 'AI service is temporarily unavailable'
+    };
+  }
+}
+
   // ==========================================
   // STUDENT ENROLLMENTS
   // ==========================================
@@ -13045,52 +13158,46 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
         throw new Error('Firestore not initialized');
       }
 
-      let q = query(
-        collection(this.firestore, 'problems'),
-        orderBy('number', 'asc'),
-        limit(limitCount + 1)
-      );
-
+      // Build query constraints array
+      const constraints: any[] = [];
+      
       // Apply filters
       if (filters?.difficulty && filters.difficulty !== 'All') {
-        q = query(
-          collection(this.firestore, 'problems'),
-          where('difficulty', '==', filters.difficulty),
-          orderBy('number', 'asc'),
-          limit(limitCount + 1)
-        );
+        constraints.push(where('difficulty', '==', filters.difficulty));
       }
-
       if (filters?.category && filters.category !== 'All') {
-        q = query(
-          collection(this.firestore, 'problems'),
-          where('category', '==', filters.category),
-          orderBy('number', 'asc'),
-          limit(limitCount + 1)
-        );
+        constraints.push(where('category', '==', filters.category));
       }
-
       if (filters?.tags && filters.tags.length > 0) {
-        q = query(
-          collection(this.firestore, 'problems'),
-          where('tags', 'array-contains-any', filters.tags),
-          orderBy('number', 'asc'),
-          limit(limitCount + 1)
-        );
+        constraints.push(where('tags', 'array-contains-any', filters.tags));
       }
-
-      // Pagination
+      
+      // Always order by number for consistent pagination
+      constraints.push(orderBy('number', 'asc'));
+      
+      // Pagination - startAfter must come after orderBy
       if (lastDoc) {
-        q = query(q, startAfter(lastDoc));
+        constraints.push(startAfter(lastDoc));
       }
-
+      
+      // Limit (+1 to check if there are more)
+      constraints.push(limit(limitCount + 1));
+      
+      // Build and execute query
+      const q = query(collection(this.firestore, 'problems'), ...constraints);
       const snapshot = await getDocs(q);
+      
       const problems: any[] = [];
       const hasMore = snapshot.docs.length > limitCount;
       const docsToReturn = hasMore ? snapshot.docs.slice(0, limitCount) : snapshot.docs;
 
       docsToReturn.forEach((docSnap) => {
-        problems.push({ id: docSnap.id, ...docSnap.data() });
+        const data = docSnap.data();
+        problems.push({ 
+          id: docSnap.id, 
+          slug: data.slug || docSnap.id,
+          ...data 
+        });
       });
 
       return {
@@ -13100,6 +13207,10 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       };
     } catch (error) {
       console.error('Error fetching coding problems:', error);
+      if (error instanceof Error && error.message.includes('index')) {
+        console.log('💡 Index required! Create composite index: problems collection with fields used in filter + number (Asc)');
+        console.log('💡 Go to Firebase Console > Firestore > Indexes to create the required index');
+      }
       return { problems: [], lastDoc: null, hasMore: false };
     }
   }
@@ -13133,6 +13244,198 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       console.error('Error searching coding problems:', error);
       return [];
     }
+  }
+
+  /**
+   * Get total count of coding problems (efficient using getCountFromServer)
+   */
+  async getCodingProblemsCount(): Promise<number> {
+    try {
+      if (!this.firestore) {
+        throw new Error('Firestore not initialized');
+      }
+
+      // Use getCountFromServer for efficient counting without downloading documents
+      const countSnapshot = await getCountFromServer(collection(this.firestore, 'problems'));
+      return countSnapshot.data().count;
+    } catch (error) {
+      console.error('Error getting problems count:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Submit an exercise for evaluation
+   * Saves to course_enrollments/{enrollmentId}/exerciseSubmissions/{lectureId}_{exerciseId}
+   * Also adds lectureId to progress.completedLectures array
+   */
+  async submitExercise(
+    enrollmentId: string,
+    submissionId: string,  // Format: lectureId_exerciseId
+    submissionData: {
+      visibilityId: string;
+      lectureId: string;
+      exerciseId: number;
+      submittedCode: string;
+      submittedAt: Date;
+      status: 'pending' | 'evaluated';
+      attempts: number;
+    }
+  ): Promise<void> {
+    try {
+      console.log(`📝 Submitting exercise: ${submissionId} for enrollment: ${enrollmentId}`);
+      
+      // Save to exerciseSubmissions subcollection
+      const submissionRef = doc(
+        this.firestore!,
+        'course_enrollments',
+        enrollmentId,
+        'exerciseSubmissions',
+        submissionId
+      );
+      
+      await setDoc(submissionRef, {
+        ...submissionData,
+        submittedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      
+      // Update progress.completedLectures array (use lectureId only, not submissionId)
+      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      await updateDoc(enrollmentRef, {
+        'progress.completedLectures': arrayUnion(parseInt(submissionData.lectureId) || submissionData.lectureId),
+        'progress.lastLectureId': submissionData.lectureId,
+        'progress.lastAccessedAt': serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      
+      console.log(`✅ Exercise submitted successfully`);
+    } catch (error) {
+      console.error('❌ Error submitting exercise:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get exercise submission for a specific exercise
+   * @param submissionId - Format: lectureId_exerciseId
+   */
+  async getExerciseSubmission(
+    enrollmentId: string,
+    submissionId: string
+  ): Promise<any | null> {
+    try {
+      console.log(`📖 Getting exercise submission: ${submissionId} for enrollment: ${enrollmentId}`);
+      
+      const submissionRef = doc(
+        this.firestore!,
+        'course_enrollments',
+        enrollmentId,
+        'exerciseSubmissions',
+        submissionId
+      );
+      
+      const snapshot = await getDoc(submissionRef);
+      
+      if (snapshot.exists()) {
+        console.log(`✅ Found exercise submission`);
+        return { id: snapshot.id, ...snapshot.data() };
+      }
+      
+      console.log(`ℹ️ No exercise submission found`);
+      return null;
+    } catch (error) {
+      console.error('❌ Error getting exercise submission:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Call Cloud Function to queue exercise for AI evaluation (via Pub/Sub)
+   * Returns immediately - evaluation happens in background
+   */
+  async evaluateExercise(params: {
+    enrollmentId: string;
+    visibilityId: string;  // Format: lectureId_exerciseId (e.g., "495771_189")
+    submittedCode: string;
+    exerciseTitle?: string;
+    questionDescription?: string;
+    correctAnswer?: string;
+    progLanguage?: string;
+  }): Promise<any> {
+    try {
+      console.log(`🚀 Queueing AI evaluation for: ${params.visibilityId}`);
+      
+      // Call the Pub/Sub publisher function (returns immediately)
+      const submitExerciseForEvaluation = httpsCallable(this.functions!, 'submitExerciseForEvaluation');
+      const result = await submitExerciseForEvaluation(params);
+      
+      console.log(`✅ Exercise queued for evaluation`);
+      return result.data;
+    } catch (error) {
+      console.error('❌ Error queueing exercise evaluation:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get all exercise submissions for an enrollment
+   */
+  async getAllExerciseSubmissions(enrollmentId: string): Promise<any[]> {
+    try {
+      console.log(`📚 Getting all exercise submissions for enrollment: ${enrollmentId}`);
+      
+      const submissionsRef = collection(
+        this.firestore!,
+        'course_enrollments',
+        enrollmentId,
+        'exerciseSubmissions'
+      );
+      
+      const snapshot = await getDocs(submissionsRef);
+      const submissions = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      console.log(`✅ Found ${submissions.length} exercise submissions`);
+      return submissions;
+    } catch (error) {
+      console.error('❌ Error getting exercise submissions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Real-time listener for exercise submission updates
+   * Used to update UI when evaluation completes
+   */
+  onExerciseSubmissionUpdate(
+    enrollmentId: string,
+    submissionId: string,
+    callback: (submission: any) => void
+  ): () => void {
+    console.log(`👂 Setting up real-time listener for: ${submissionId}`);
+    
+    const submissionRef = doc(
+      this.firestore!,
+      'course_enrollments',
+      enrollmentId,
+      'exerciseSubmissions',
+      submissionId
+    );
+    
+    const unsubscribe = onSnapshot(submissionRef, (snapshot) => {
+      if (snapshot.exists()) {
+        callback({ id: snapshot.id, ...snapshot.data() });
+      } else {
+        callback(null);
+      }
+    }, (error) => {
+      console.error('❌ Real-time listener error:', error);
+    });
+    
+    return unsubscribe;
   }
 
   // ==========================================
@@ -13587,15 +13890,159 @@ async getCoursesPaginated(options: {
     }
   }
 
+  /**
+   * Get course curriculum structure (V2 - optimized)
+   * Returns units with chapters and lecture summaries (light data)
+   * videoUrl is included for instant video playback
+   */
   async getCourseCurriculum(slug: string): Promise<CourseUnit[]> {
     try {
+      console.log(`📚 Fetching curriculum for: ${slug}`);
       const curriculumRef = collection(this.firestore!, COLLECTIONS.COURSES, slug, 'curriculum');
       const q = query(curriculumRef, orderBy('unitOrder', 'asc'));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => doc.data() as CourseUnit);
+      
+      const units = snapshot.docs.map(doc => {
+        const data = doc.data();
+        // Ensure chapters array is sorted by chapterOrder
+        const chapters = (data.chapters || []).sort((a: any, b: any) => a.chapterOrder - b.chapterOrder);
+        // Ensure lectures in each chapter are sorted by lectureOrder
+        chapters.forEach((chapter: any) => {
+          if (chapter.lectures) {
+            chapter.lectures.sort((a: any, b: any) => a.lectureOrder - b.lectureOrder);
+          }
+        });
+        return {
+          ...data,
+          chapters
+        } as CourseUnit;
+      });
+      
+      console.log(`✅ Loaded ${units.length} units`);
+      return units;
     } catch (error) {
       console.error('Error fetching curriculum:', error);
       return [];
+    }
+  }
+
+  /**
+   * Get lecture heavy content (V2 - lazy loaded)
+   * Fetches quiz questions, exercises, assessments, text content, attachments
+   * Only called when user clicks on a quiz/exercise/assessment/text lecture
+   */
+  async getLectureContent(slug: string, lectureId: number): Promise<LectureContent | null> {
+    try {
+      console.log(`📝 Fetching lecture content: ${slug}/lectures/${lectureId}`);
+      const lectureRef = doc(this.firestore!, COLLECTIONS.COURSES, slug, 'lectures', String(lectureId));
+      const lectureDoc = await getDoc(lectureRef);
+      
+      if (!lectureDoc.exists()) {
+        console.log(`ℹ️ No heavy content for lecture ${lectureId}`);
+        return null;
+      }
+      
+      console.log(`✅ Loaded lecture content for ${lectureId}`);
+      return lectureDoc.data() as LectureContent;
+    } catch (error) {
+      console.error('Error fetching lecture content:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get course feedback (V2)
+   * Fetches all feedback/reviews for a course
+   */
+  async getCourseFeedback(slug: string): Promise<CourseFeedback[]> {
+    try {
+      console.log(`💬 Fetching feedback for: ${slug}`);
+      const feedbackRef = collection(this.firestore!, COLLECTIONS.COURSES, slug, 'feedback');
+      const q = query(feedbackRef, orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
+      
+      const feedback = snapshot.docs.map(doc => ({
+        feedbackId: doc.id,
+        ...doc.data()
+      })) as CourseFeedback[];
+      
+      console.log(`✅ Loaded ${feedback.length} feedback items`);
+      return feedback;
+    } catch (error) {
+      console.error('Error fetching course feedback:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Add course feedback (V2)
+   * Adds a new feedback/review for a course
+   */
+  async addCourseFeedback(slug: string, feedbackData: {
+    userId: string;
+    userName: string;
+    userInitials: string;
+    rating: 'helpful' | 'needs-improvement' | 'excellent';
+    comment: string;
+  }): Promise<string | null> {
+    try {
+      console.log(`💬 Adding feedback for: ${slug}`);
+      const feedbackRef = collection(this.firestore!, COLLECTIONS.COURSES, slug, 'feedback');
+      
+      const newFeedback = {
+        ...feedbackData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      
+      const docRef = await addDoc(feedbackRef, newFeedback);
+      console.log(`✅ Feedback added with ID: ${docRef.id}`);
+      return docRef.id;
+    } catch (error) {
+      console.error('Error adding course feedback:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update course feedback (V2)
+   * Updates an existing feedback (only within 1 hour of creation)
+   */
+  async updateCourseFeedback(slug: string, feedbackId: string, feedbackData: {
+    rating: 'helpful' | 'needs-improvement' | 'excellent';
+    comment: string;
+  }): Promise<boolean> {
+    try {
+      console.log(`📝 Updating feedback: ${slug}/feedback/${feedbackId}`);
+      const feedbackRef = doc(this.firestore!, COLLECTIONS.COURSES, slug, 'feedback', feedbackId);
+      
+      await updateDoc(feedbackRef, {
+        ...feedbackData,
+        updatedAt: serverTimestamp()
+      });
+      
+      console.log(`✅ Feedback updated`);
+      return true;
+    } catch (error) {
+      console.error('Error updating course feedback:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete course feedback (V2)
+   * Only the user who created the feedback or admin can delete
+   */
+  async deleteCourseFeedback(slug: string, feedbackId: string): Promise<boolean> {
+    try {
+      console.log(`🗑️ Deleting feedback: ${slug}/feedback/${feedbackId}`);
+      const feedbackRef = doc(this.firestore!, COLLECTIONS.COURSES, slug, 'feedback', feedbackId);
+      await deleteDoc(feedbackRef);
+      console.log(`✅ Feedback deleted`);
+      return true;
+    } catch (error) {
+      console.error('Error deleting course feedback:', error);
+      return false;
     }
   }
 
@@ -13723,14 +14170,38 @@ async getCoursesPaginated(options: {
         await batch.commit();
       }
 
-      // Update course enrollment counts (use slug as document ID)
+      // Update course enrollment counts
       if (enrolledCount > 0 && courseSlug) {
+        // Update global enrollmentCount in course document
         const courseRef = doc(this.firestore!, COLLECTIONS.COURSES, courseSlug);
         await updateDoc(courseRef, {
           enrollmentCount: increment(enrolledCount),
-          [`collegeEnrollmentCounts.${collegeId}`]: increment(enrolledCount),
           updatedAt: serverTimestamp(),
         });
+        
+        // Update or create college_courses document
+        const collegeCourseId = `${collegeId}_${courseSlug}`;
+        const collegeCourseRef = doc(this.firestore!, 'college_courses', collegeCourseId);
+        const collegeCourseDoc = await getDoc(collegeCourseRef);
+        
+        if (collegeCourseDoc.exists()) {
+          // Update existing document
+          await updateDoc(collegeCourseRef, {
+            enrollmentCount: increment(enrolledCount),
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          // Create new document
+          await setDoc(collegeCourseRef, {
+            collegeId,
+            courseId,
+            courseSlug,
+            enrollmentCount: enrolledCount,
+            assignedAt: serverTimestamp(),
+            assignedBy: enrolledBy,
+            updatedAt: serverTimestamp(),
+          });
+        }
       }
 
       console.log(`✅ Successfully enrolled ${enrolledCount} users to course ${courseId}`);
@@ -13752,10 +14223,13 @@ async getCoursesPaginated(options: {
 
   /**
    * Get a specific enrollment
+   * courseId should be numeric (as stored in course_enrollments)
    */
-  async getEnrollment(courseId: string, userId: string): Promise<any | null> {
+  async getEnrollment(courseId: number, userId: string): Promise<any | null> {
     try {
+      console.log(`🔍 Getting enrollment for courseId: ${courseId}, userId: ${userId}`);
       const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      
       const q = query(
         enrollmentsRef,
         where('courseId', '==', courseId),
@@ -13764,8 +14238,12 @@ async getCoursesPaginated(options: {
       );
       const snapshot = await getDocs(q);
       
-      if (snapshot.empty) return null;
+      if (snapshot.empty) {
+        console.log(`❌ No enrollment found`);
+        return null;
+      }
       
+      console.log(`✅ Enrollment found: ${snapshot.docs[0].id}`);
       return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
     } catch (error) {
       console.error('Error fetching enrollment:', error);
@@ -13775,30 +14253,90 @@ async getCoursesPaginated(options: {
 
   /**
    * Get enrollment count for a course filtered by college
-   * Uses aggregation query for efficiency - no document downloads
-   * Index required: course_enrollments - courseId (Asc), collegeId (Asc), status (Asc)
+   * Reads from college_courses collection
    */
-  async getCourseEnrollmentCountByCollege(courseId: string, collegeId: string): Promise<number> {
+  async getCourseEnrollmentCountByCollege(courseId: string, collegeId: string, courseSlug?: string): Promise<number> {
     try {
       console.log(`📊 Getting enrollment count for course: ${courseId}, college: ${collegeId}`);
-      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
       
-      const q = query(
-        enrollmentsRef,
-        where('courseId', '==', courseId),
-        where('collegeId', '==', collegeId),
-        where('status', '==', 'active')
-      );
+      // Try to get from college_courses collection
+      const slug = courseSlug || courseId;
+      const collegeCourseId = `${collegeId}_${slug}`;
+      const collegeCourseRef = doc(this.firestore!, 'college_courses', collegeCourseId);
+      const collegeCourseDoc = await getDoc(collegeCourseRef);
       
-      // Use getCountFromServer for efficient counting without downloading docs
-      const countSnapshot = await getCountFromServer(q);
-      const count = countSnapshot.data().count;
+      if (collegeCourseDoc.exists()) {
+        const count = collegeCourseDoc.data().enrollmentCount || 0;
+        console.log(`✅ Enrollment count from college_courses: ${count}`);
+        return count;
+      }
       
-      console.log(`✅ Enrollment count for course ${courseId}, college ${collegeId}: ${count}`);
-      return count;
+      console.log(`✅ No college_courses document found, returning 0`);
+      return 0;
     } catch (error) {
       console.error('Error getting course enrollment count:', error);
       return 0;
+    }
+  }
+
+  /**
+   * Get all courses assigned to a college (where enrollmentCount > 0)
+   * Returns CollegeCourse documents
+   */
+  async getCoursesForCollege(collegeId: string): Promise<CollegeCourse[]> {
+    try {
+      console.log(`📚 Getting courses for college: ${collegeId}`);
+      const collegeCoursesRef = collection(this.firestore!, 'college_courses');
+      const q = query(
+        collegeCoursesRef,
+        where('collegeId', '==', collegeId)
+      );
+      
+      const snapshot = await getDocs(q);
+      const collegeCourses = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as CollegeCourse[];
+      
+      console.log(`✅ Found ${collegeCourses.length} courses for college ${collegeId}`);
+      return collegeCourses;
+    } catch (error) {
+      console.error('Error getting courses for college:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get course details by numeric courseId
+   */
+  async getCoursesByCourseId(courseIds: number[]): Promise<CourseListing[]> {
+    try {
+      if (courseIds.length === 0) return [];
+      
+      console.log(`📚 Getting ${courseIds.length} courses by courseId`, courseIds);
+      const courses: CourseListing[] = [];
+      
+      // Firestore 'in' query supports max 30 items
+      const batchSize = 30;
+      for (let i = 0; i < courseIds.length; i += batchSize) {
+        const batchIds = courseIds.slice(i, i + batchSize);
+        
+        const q = query(
+          collection(this.firestore!, COLLECTIONS.COURSES),
+          where('courseId', 'in', batchIds)
+        );
+        
+        const snapshot = await getDocs(q);
+        snapshot.docs.forEach(docSnap => {
+          courses.push({ slug: docSnap.id, ...docSnap.data() } as CourseListing);
+        });
+      }
+      
+      console.log(`✅ Retrieved ${courses.length} courses`);
+      return courses;
+    } catch (error) {
+      console.error('Error getting courses by courseId:', error);
+      return [];
     }
   }
 
@@ -13925,6 +14463,224 @@ async getCoursesPaginated(options: {
   }
 
   /**
+   * Save quiz result to enrollment progress
+   */
+  async saveQuizResult(
+    enrollmentId: string,
+    quizData: {
+      lectureId: string;
+      lectureName: string;
+      score: number;
+      totalQuestions: number;
+      percentage: number;
+      answers: Record<number, number>;
+      timeTaken?: number;
+    }
+  ): Promise<boolean> {
+    try {
+      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      
+      const quizResult = {
+        ...quizData,
+        attemptedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await updateDoc(enrollmentRef, {
+        [`progress.quizResults.${quizData.lectureId}`]: quizResult,
+        'progress.lastAccessedAt': serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Error saving quiz result:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get quiz result for a specific lecture
+   */
+  async getQuizResult(
+    enrollmentId: string,
+    lectureId: string
+  ): Promise<any | null> {
+    try {
+      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      const enrollmentDoc = await getDoc(enrollmentRef);
+      
+      if (!enrollmentDoc.exists()) return null;
+      
+      const data = enrollmentDoc.data();
+      const quizResults = data?.progress?.quizResults;
+      
+      if (!quizResults || !quizResults[lectureId]) return null;
+      
+      return quizResults[lectureId];
+    } catch (error) {
+      console.error('Error fetching quiz result:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get paginated course enrollments for a student
+   */
+  async getStudentCourseEnrollmentsPaginated(options: {
+    userId: string;
+    limit?: number;
+    orderBy?: 'enrolledAt' | 'courseName';
+    orderDirection?: 'asc' | 'desc';
+    startAfterDoc?: any;
+    searchQuery?: string;
+  }): Promise<{ 
+    enrollments: {
+      enrollmentId: string;
+      courseId: string;
+      courseName?: string;
+      enrolledAt: any;
+      status: string;
+      progress: any;
+    }[];
+    totalCount: number;
+    lastDoc: any;
+  }> {
+    try {
+      const {
+        userId,
+        limit: limitCount = 10,
+        orderBy: orderField = 'enrolledAt',
+        orderDirection = 'desc',
+        startAfterDoc,
+        searchQuery,
+      } = options;
+
+      console.log('📚 Fetching paginated course enrollments for user:', userId);
+
+      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+
+      // If searching, fetch all and filter client-side
+      if (searchQuery && searchQuery.trim().length > 0) {
+        const searchLower = searchQuery.toLowerCase().trim();
+        
+        const q = query(
+          enrollmentsRef,
+          where('userId', '==', userId),
+          where('status', '==', 'active')
+        );
+
+        const snapshot = await getDocs(q);
+        
+        // Get all course IDs to fetch course details for search
+        const enrollmentData = snapshot.docs.map(docSnap => {
+          const data = docSnap.data();
+          return {
+            doc: docSnap,
+            enrollmentId: data.enrollmentId || docSnap.id,
+            courseId: data.courseId,
+            courseName: data.courseName || '',
+            enrolledAt: data.enrolledAt,
+            status: data.status || 'active',
+            progress: data.progress || {}
+          };
+        });
+
+        // If we don't have courseName in enrollment, fetch from courses
+        const courseIdsToFetch = enrollmentData
+          .filter(e => !e.courseName)
+          .map(e => typeof e.courseId === 'number' ? e.courseId : parseInt(e.courseId, 10))
+          .filter(id => !isNaN(id));
+        let courseNameMap = new Map<number, string>();
+        
+        if (courseIdsToFetch.length > 0) {
+          const courseDetails = await this.getCoursesByCourseId(courseIdsToFetch);
+          courseDetails.forEach(course => {
+            courseNameMap.set(course.courseId, course.courseName);
+          });
+        }
+
+        // Filter by search query
+        const filteredEnrollments = enrollmentData
+          .map(e => {
+            const numericCourseId = typeof e.courseId === 'number' ? e.courseId : parseInt(e.courseId, 10);
+            return {
+              ...e,
+              courseName: e.courseName || courseNameMap.get(numericCourseId) || ''
+            };
+          })
+          .filter(e => 
+            e.courseName?.toLowerCase().includes(searchLower) ||
+            String(e.courseId).toLowerCase().includes(searchLower)
+          );
+
+        return {
+          enrollments: filteredEnrollments.map(e => ({
+            enrollmentId: e.enrollmentId,
+            courseId: e.courseId,
+            courseName: e.courseName,
+            enrolledAt: e.enrolledAt,
+            status: e.status,
+            progress: e.progress
+          })),
+          totalCount: filteredEnrollments.length,
+          lastDoc: null
+        };
+      }
+
+      // Get total count
+      const countQuery = query(
+        enrollmentsRef,
+        where('userId', '==', userId),
+        where('status', '==', 'active')
+      );
+      const countSnapshot = await getCountFromServer(countQuery);
+      const totalCount = countSnapshot.data().count;
+
+      // Build paginated query
+      const constraints: any[] = [
+        where('userId', '==', userId),
+        where('status', '==', 'active'),
+        orderBy(orderField, orderDirection)
+      ];
+
+      if (startAfterDoc) {
+        constraints.push(startAfter(startAfterDoc));
+      }
+
+      constraints.push(limit(limitCount));
+
+      const q = query(enrollmentsRef, ...constraints);
+      const snapshot = await getDocs(q);
+
+      const enrollments = snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          enrollmentId: data.enrollmentId || docSnap.id,
+          courseId: data.courseId,
+          courseName: data.courseName,
+          enrolledAt: data.enrolledAt,
+          status: data.status || 'active',
+          progress: data.progress || {}
+        };
+      });
+
+      const lastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+
+      console.log('✅ Found', enrollments.length, 'enrollments, total:', totalCount);
+
+      return {
+        enrollments,
+        totalCount,
+        lastDoc
+      };
+    } catch (error) {
+      console.error('❌ Error fetching student course enrollments:', error);
+      return { enrollments: [], totalCount: 0, lastDoc: null };
+    }
+  }
+
+  /**
    * Update enrollment expiry date
    */
   async updateEnrollmentExpiry(
@@ -13961,20 +14717,27 @@ async getCoursesPaginated(options: {
         updatedAt: serverTimestamp(),
       });
 
-      // Decrement course enrollment counts
+      // Decrement global course enrollment count
       const courseDocId = courseSlug || courseId;
       const courseRef = doc(this.firestore!, COLLECTIONS.COURSES, courseDocId);
-      const updateData: any = {
+      await updateDoc(courseRef, {
         enrollmentCount: increment(-1),
         updatedAt: serverTimestamp(),
-      };
+      });
       
-      // Decrement college-specific count if collegeId exists in enrollment
-      if (enrollment.collegeId) {
-        updateData[`collegeEnrollmentCounts.${enrollment.collegeId}`] = increment(-1);
+      // Decrement college_courses enrollment count
+      if (enrollment.collegeId && courseSlug) {
+        const collegeCourseId = `${enrollment.collegeId}_${courseSlug}`;
+        const collegeCourseRef = doc(this.firestore!, 'college_courses', collegeCourseId);
+        const collegeCourseDoc = await getDoc(collegeCourseRef);
+        
+        if (collegeCourseDoc.exists()) {
+          await updateDoc(collegeCourseRef, {
+            enrollmentCount: increment(-1),
+            updatedAt: serverTimestamp(),
+          });
+        }
       }
-      
-      await updateDoc(courseRef, updateData);
 
       console.log(`✅ Successfully unenrolled user ${userId} from course ${courseId}`);
       return true;
@@ -14040,7 +14803,145 @@ async getCoursesPaginated(options: {
       return 0;
     }
   }
+
+  // ==================== CODING PROBLEM ATTEMPTS ====================
+
+  /**
+   * Record a problem attempt (when user runs any test case)
+   * @param userId - The user's ID
+   * @param problemSlug - The problem's slug/ID
+   * @param status - 'attempted' or 'completed'
+   */
+  async recordProblemAttempt(
+    userId: string,
+    problemSlug: string,
+    status: 'attempted' | 'completed',
+    additionalData?: {
+      language?: string;
+      passedTests?: number;
+      totalTests?: number;
+      executionTime?: string;
+    }
+  ): Promise<boolean> {
+    try {
+      if (!this.firestore) throw new Error('Firestore not initialized');
+      
+      const attemptRef = doc(this.firestore, 'problemsAttempt', `${userId}_${problemSlug}`);
+      const existingDoc = await getDoc(attemptRef);
+      
+      const now = serverTimestamp();
+      
+      if (existingDoc.exists()) {
+        const existingData = existingDoc.data();
+        // Only update if:
+        // 1. Current status is 'attempted' and new status is 'completed'
+        // 2. Or updating attempt count
+        if (existingData.status === 'completed' && status === 'attempted') {
+          // Don't downgrade from completed to attempted
+          console.log('🔒 Problem already completed, not downgrading to attempted');
+          return true;
+        }
+        
+        await updateDoc(attemptRef, {
+          status,
+          attemptCount: (existingData.attemptCount || 0) + 1,
+          lastAttemptAt: now,
+          ...(status === 'completed' && !existingData.completedAt ? { completedAt: now } : {}),
+          ...(additionalData?.language ? { lastLanguage: additionalData.language } : {}),
+          ...(additionalData?.passedTests !== undefined ? { passedTests: additionalData.passedTests } : {}),
+          ...(additionalData?.totalTests !== undefined ? { totalTests: additionalData.totalTests } : {}),
+          ...(additionalData?.executionTime ? { executionTime: additionalData.executionTime } : {}),
+        });
+      } else {
+        // Create new attempt record
+        await setDoc(attemptRef, {
+          userId,
+          problemSlug,
+          status,
+          attemptCount: 1,
+          firstAttemptAt: now,
+          lastAttemptAt: now,
+          ...(status === 'completed' ? { completedAt: now } : {}),
+          ...(additionalData?.language ? { lastLanguage: additionalData.language } : {}),
+          ...(additionalData?.passedTests !== undefined ? { passedTests: additionalData.passedTests } : {}),
+          ...(additionalData?.totalTests !== undefined ? { totalTests: additionalData.totalTests } : {}),
+          ...(additionalData?.executionTime ? { executionTime: additionalData.executionTime } : {}),
+        });
+      }
+      
+      console.log(`✅ Recorded problem attempt: ${userId} - ${problemSlug} - ${status}`);
+      return true;
+    } catch (error) {
+      console.error('Error recording problem attempt:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get user's problem attempts (for displaying in problems list)
+   * @param userId - The user's ID
+   * @returns Map of problemSlug -> attempt data
+   */
+  async getUserProblemAttempts(userId: string): Promise<Map<string, { status: 'attempted' | 'completed'; attemptCount: number }>> {
+    try {
+      if (!this.firestore) throw new Error('Firestore not initialized');
+      
+      const attemptsRef = collection(this.firestore, 'problemsAttempt');
+      const q = query(attemptsRef, where('userId', '==', userId));
+      const snapshot = await getDocs(q);
+      
+      const attemptsMap = new Map<string, { status: 'attempted' | 'completed'; attemptCount: number }>();
+      
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        attemptsMap.set(data.problemSlug, {
+          status: data.status,
+          attemptCount: data.attemptCount || 1,
+        });
+      });
+      
+      console.log(`✅ Fetched ${attemptsMap.size} problem attempts for user ${userId}`);
+      return attemptsMap;
+    } catch (error) {
+      console.error('Error fetching user problem attempts:', error);
+      return new Map();
+    }
+  }
+
+  /**
+   * Get user's problem attempt stats (solved count, attempted count)
+   * @param userId - The user's ID
+   */
+  async getUserProblemStats(userId: string): Promise<{ solved: number; attempted: number }> {
+    try {
+      if (!this.firestore) throw new Error('Firestore not initialized');
+      
+      const attemptsRef = collection(this.firestore, 'problemsAttempt');
+      const q = query(attemptsRef, where('userId', '==', userId));
+      const snapshot = await getDocs(q);
+      
+      let solved = 0;
+      let attempted = 0;
+      
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (data.status === 'completed') {
+          solved++;
+        } else if (data.status === 'attempted') {
+          attempted++;
+        }
+      });
+      
+      console.log(`✅ User ${userId} stats: ${solved} solved, ${attempted} attempted`);
+      return { solved, attempted };
+    } catch (error) {
+      console.error('Error fetching user problem stats:', error);
+      return { solved: 0, attempted: 0 };
+    }
+  }
 }
+
+
 
 // Export singleton instance
 export const firebaseService = FirebaseService.getInstance();

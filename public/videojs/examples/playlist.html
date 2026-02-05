@@ -1,0 +1,226 @@
+  <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs Playlist example</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>Videos Playlist through Videojs and Nuevo plugin  </h1>
+
+	<link href="../skins/treso/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+	<script src="../plugins/nuevo.thumbnails.js"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-16-9" controls preload playsinline webkit-playsinline poster="../examples/assets/images/ski.jpg"></video>
+		</div>
+	</div>
+
+
+
+	<div class="info"><br />
+	 
+	</div>
+
+	<script>
+	var player = videojs('player_1', {license:licenseKey});
+	player.nuevo();
+	var myplaylist = [
+	{
+		sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/ski/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		}],
+		 thumb: '../examples/assets/images/thumbs/ski.jpg',
+		 slideImage: '../examples/assets/images/slides/ski.jpg',
+		 title: 'Skiing is great!',
+		 duration: '01:49'
+	}, {
+		  sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/coffee/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/coffee.jpg',
+		  title: 'A cup of coffee',
+		  slideImage: '../examples/assets/images/slides/coffee.jpg',
+		  duration: '01:32',
+    }, {
+		  sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/tos/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/tears.jpg',
+		  title: 'Tears of Steel',
+		  duration: '12:14',
+		  tracks: [
+			{ kind:"captions", src: "../examples/assets/tracks/steel_en.vtt", srclang:"en", label:"English", default: "true" },
+			{ kind:"captions", src: "../examples/assets/tracks/steel_de.vtt", srclang:"de", label:"German"},
+			{ kind:"captions", src: "../examples/assets/tracks/steel_es.vtt", srclang:"es", label:"Spanish"}
+		  ]
+	}, {
+		  sources: [{
+			src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+			type: "video/mp4"
+		  }],
+		  thumb: '../examples/assets/images/thumbs/big_buck.jpg',
+		  slideImage: '../examples/assets/images/slides/big_buck.jpg',
+		  title: 'Big Buck Bunny',
+		  duration: '02:17'
+    },  {
+		  sources: [{ 
+		    src: '//opencdn.b-cdn.net/video/hls/fit/hls/playlist.m3u8',
+			type: 'application/x-mpegURL'}
+		  ],
+		  thumb: '../examples/assets/images/thumbs/fit.jpg',
+		  title: 'Push your limits, it’s up to you.',
+		  duration: '01:33'
+	}, {
+		  sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/people/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/people.jpg',
+		  slideImage: '../examples/assets/images/slides/people.jpg',
+		  title: 'People are amazing!',
+		  duration: '01:13'
+	}
+	
+	
+
+	
+];
+
+player.playlist(myplaylist);
+
+
+	</script>
+
+<div class="info">Original Playlist Plugin by <strong>Nuevodevel</strong> does not require to load any additional css or javascript files. All you need is to setup playlist javascript array of media items. 
+Playlist single item required parameters are: media file URL and thumb image URL. You may also consider to include other parameters, specific for single media item like: media unique id, title, duration, sprite image to show thumbs over progressbar, sprite image from VTT file for the same purpose, captions, chapters, etc.<br />
+Media files can be of different type supported by HTML5 and videojs. For standard MP4/WEBM media files you can include multiple source files URLs to support resolution switcher. Check playlist example used in video above. Notice how progressbar thumbs, captions or multiple sources can be defined for single items.
+</div>
+
+<h2>Playlist Array</h2>
+<pre>
+&lt;script&gt;
+  myplaylist = [
+		sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/ski/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		}],
+		 thumb: '../examples/assets/images/thumbs/ski.jpg',
+		 slideImage: '../examples/assets/images/slides/ski.jpg',
+		 title: 'Skiing is great!',
+		 duration: '01:49'
+	}, {
+		  sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/coffee/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/coffee.jpg',
+		  title: 'A cup of coffee',
+		  slideImage: '../examples/assets/images/slides/coffee.jpg',
+		  duration: '01:32',
+    }, {
+		  sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/tos/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/tears.jpg',
+		  title: 'Tears of Steel',
+		  duration: '12:14',
+		  tracks: [
+			{ kind:"captions", src: "../examples/assets/tracks/steel_en.vtt", srclang:"en", label:"English", default: "true" },
+			{ kind:"captions", src: "../examples/assets/tracks/steel_de.vtt", srclang:"de", label:"German"}
+		  ]
+	}, {
+		  sources: [{
+			src: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+			type: "video/mp4"
+		  }],
+		  thumb: '../examples/assets/images/thumbs/big_buck.jpg',
+		  slideImage: '../examples/assets/images/slides/big_buck.jpg',
+		  title: 'Big Buck Bunny',
+		  duration: '02:17'
+    },  {
+		  sources: [{ 
+		    src: '//opencdn.b-cdn.net/video/hls/fit/hls/playlist.m3u8',
+			type: 'application/x-mpegURL'}
+		  ],
+		  thumb: '../examples/assets/images/thumbs/fit.jpg',
+		  title: 'Push your limits, it’s up to you.!',
+		  duration: '01:33'
+	}, {
+		  sources: [{
+			src: '//opencdn.b-cdn.net/video/hls/people/playlist.m3u8',
+			type: 'application/x-mpegURL'
+		  }],
+		  thumb: '../examples/assets/images/thumbs/people.jpg',
+		  slideImage: '../examples/assets/images/slides/people.jpg',
+		  title: 'People are amazing!',
+		  duration: '01:13'
+	}
+];
+&lt/script&gt;
+</pre>
+<br />
+<div class="info">
+You can insert playlist array directly on your website or load it from external javascript file. Once playlist ready you are fine to setup video element, initialize player, Nuevo plugin and playlist.
+</div>
+<h2>Code Source</h2>
+<pre>
+<span class="comment">&lt;!--Setup video element--&gt;</span>
+&lt;video id="<span class="mark">player_1</span>" class="video-js vjs-fluid" controls preload playsinline webkit-playsinline poster="../examples/assets/images/poster.jpg"&gt;&lt;/video&gt;
+
+<span class="comment">&lt;!--Initialize player with nuevo plugin and your playlist--&gt;</span>
+&lt;script&gt;
+	var player = videojs('<span class="mark">player_1</span>, {license: "key"}');
+	player.nuevo({ 
+		//option_1: value
+	});
+	player.playlist(<span class="mark">myplaylist</span>);
+&lt;/script&gt;
+</pre>
+<br />
+Nuevo plugin includes several options for playlist and playlist UI. See Nuevo plugin setup and options description.
+<pre>
+	player.nuevo ({ 
+		playlistUI: true,  <span class="comment">// set <i>false</i> to hide playlist UI completely</span>
+		playlistShow: true, <span class="comment">// Set <i>false</i> to hide playlistUI when video player ready to show</span>
+		playlistAutoHide: true <span class="comment">// Set <i>false</i> to keep playlist UI visible when video starts playing</span>
+		playlistNavigation: false <span class="comment">// Set <i>true</i> to show playlist Next and Previous arrows</span>
+		playlistRepeat: false <span class="comment">// Set <i>true</i> to play first media file when last media file ended</span>
+	});
+</pre>
+<br />
+<div class="info">
+You can test playlist options on <a target="_blank" href="https://www.nuevodevel.com/nuevo/playlist">Nuevodevel playlist demo website</a>
+<br /><br />
+Nuevo playlist features multiple public functions to manage playlist, insert or delete media items programmatically. All functions are described on <a target="_blank" href="https://www.nuevodevel.com/nuevo/playlistsdk">Nuevodevel playlist SDK demo page.</a>
+
+</div>
+
+
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

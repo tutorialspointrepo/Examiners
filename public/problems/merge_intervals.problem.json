@@ -1,0 +1,53 @@
+{
+    "id": "merge_intervals",
+    "title": "Merge Intervals",
+    "description": "Given a collection of <code>intervals</code>, merge all overlapping <code>intervals</code> into one and return a new collection of <code>intervals</code>. Each <code>interval</code> is represented as a pair of integers, where the first integer is the start time and the second integer is the end time.",
+    "difficulty": "Medium",
+    "category": "Sorting, Array",
+    "examples": [
+        {
+            "input": "[[1,3],[2,6],[8,10],[15,18]]",
+            "output": "[[1,6],[8,10],[15,18]]",
+            "explanation": "The intervals [1,3] and [2,6] overlap, so they are merged to become [1,6]. The intervals [8,10] and [15,18] do not overlap with any other intervals, so they remain unchanged."
+        },
+        {
+            "input": "[[1,4],[4,5]]",
+            "output": "[[1,5]]",
+            "explanation": "The intervals [1,4] and [4,5] share a boundary, thus they can be merged into a single interval [1,5]."
+        },
+        {
+            "input": "[[1,4],[0,4]]",
+            "output": "[[0,4]]",
+            "explanation": "The intervals [1,4] and [0,4] overlap completely; hence, they merge into [0,4]."
+        }
+    ],
+    "constraints": [
+        "The input <code>intervals</code> array will have at most 10^4 elements.",
+        "Each <code>interval</code> will be a list of two integers where start \u2264 end."
+    ],
+    "tags": [
+        "Array",
+        "Sorting",
+        "Greedy"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "insert_interval",
+        "non_overlapping_intervals",
+        "meeting_rooms"
+    ],
+    "hints": [
+        "Consider sorting the intervals based on the starting times.",
+        "Use a loop to compare the current interval with the last added interval in the result.",
+        "Think about how to handle merging when intervals overlap.",
+        "What happens when the intervals are completely separate?"
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,53 @@
+{
+    "id": "power_of_two",
+    "title": "Power of Two",
+    "description": "Given an integer <code>n</code>, write a function that determines if <code>n</code> is a power of two. An integer <code>n</code> is a power of two if there exists an integer <code>x</code> such that <code>n == 2^x</code>. For example, <code>1</code> (which is <code>2^0</code>), <code>2</code> (which is <code>2^1</code>), and <code>4</code> (which is <code>2^2</code>) are all powers of two.",
+    "difficulty": "Easy",
+    "category": "Math, Bit Manipulation",
+    "examples": [
+        {
+            "input": "16",
+            "output": "true",
+            "explanation": "16 is <code>2^4</code>, thus it is a power of two."
+        },
+        {
+            "input": "5",
+            "output": "false",
+            "explanation": "5 cannot be expressed as <code>2^x</code> for any integer <code>x</code>, hence it is not a power of two."
+        },
+        {
+            "input": "0",
+            "output": "false",
+            "explanation": "0 is not a valid power of two since no integer <code>x</code> makes <code>2^x = 0</code>."
+        }
+    ],
+    "constraints": [
+        "<code>n</code> is a 32-bit signed integer.",
+        "<code>n</code> can be negative."
+    ],
+    "tags": [
+        "Math",
+        "Bit Manipulation",
+        "Number Theory"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "is_power_of_three",
+        "check_if_prime",
+        "find_next_power_of_two"
+    ],
+    "hints": [
+        "Consider how binary representation relates to powers of two.",
+        "Explore using bitwise operations to determine if <code>n</code> is a power of two.",
+        "Remember that only one bit should be set in the binary representation of a power of two.",
+        "Think about edge cases, especially when <code>n</code> is less than or equal to zero."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

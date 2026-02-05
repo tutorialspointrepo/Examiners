@@ -10,6 +10,7 @@ import UserProfile from './UserProfile';
 import CreateRoomModal from './CreateRoomModal';
 import BulkUploadRooms from './BulkUploadRooms';
 import BulkUploadUniversity from './BulkUploadUniversity';
+import ProblemsListModal from './ProblemsListModal';
 import Rooms from './Rooms';
 import RoomDetail from './RoomDetail';
 import Reports from './Reports';
@@ -67,6 +68,7 @@ import AuditUserList from './AuditUserList';
 import UserAudit from './UserAudit';
 import PreExamVerification from './PreExamVerification';
 import Learning from './Learning';
+import CourseCurriculum from './CourseCurriculum';
 
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -124,7 +126,8 @@ import {
   faImage,
   faClipboardCheck,
   faCode,
-  faAddressCard
+  faAddressCard,
+  faBrain
 } from '@fortawesome/sharp-light-svg-icons';
 
 import { 
@@ -1745,10 +1748,18 @@ function App() {
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [showLearning, setShowLearning] = useState(false);
   const [learningActiveMenu, setLearningActiveMenu] = useState<string>('courses');
+  
+  // Course Curriculum Page State
+  const [showCourseCurriculum, setShowCourseCurriculum] = useState(false);
+  const [courseCurriculumData, setCourseCurriculumData] = useState<{
+    courseName: string;
+    courseSlug: string;
+    curriculumData: any[];
+    isLoading: boolean;
+    enrollmentId?: string;
+  }>({ courseName: '', courseSlug: '', curriculumData: [], isLoading: false });
   const [showProblemsListModal, setShowProblemsListModal] = useState(false);
   const [selectedProblemSlug, setSelectedProblemSlug] = useState<string>('two-sum');
-  const [problemsSearchQuery, setProblemsSearchQuery] = useState('');
-  const [problemsCurrentPage, setProblemsCurrentPage] = useState(1);
   const [selectedSubject, setSelectedSubject] = useState<any | null>(null);
   const [selectedQuestionType, setSelectedQuestionType] = useState<'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code'>('all');
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
@@ -1829,7 +1840,8 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   }, [detectedSubdomain]);  // Only depends on subdomain, not currentUser
   // ===========================================================================
   
-  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(window.innerWidth <= 1400);
+  const [isLeftContentCollapsed, setIsLeftContentCollapsed] = useState(window.innerWidth <= 1400);
   const [isMainCollapsed, setIsMainCollapsed] = useState(false);
   const userInteractedLeft = useRef(false);
   const userInteractedMain = useRef(false);
@@ -1918,6 +1930,15 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
     features: []
   });
   
+  // Helper function to collapse sidebar if screen is small
+  const collapseIfSmallScreen = () => {
+    if (window.innerWidth <= 1400) {
+      userInteractedLeft.current = false;
+      setIsLeftCollapsed(true);
+      setIsLeftContentCollapsed(true);
+    }
+  };
+  
   // Check for existing session on page load
   useEffect(() => {
     const restoreSession = async () => {
@@ -1959,7 +1980,7 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
       }
     }
 }, [isAuthenticated, currentUser]);
-  
+
   // Check if user is using EXAMINERS Secure Browser
   const isUsingSecureBrowser = (): boolean => {
     const userAgent = navigator.userAgent;
@@ -3004,47 +3025,28 @@ const fetchCounts = async () => {
     };
   }, [isResizing]);
 
-  // Responsive collapsing based on right panel width
+  // Responsive collapsing based on screen width
   useEffect(() => {
-    const checkCollapse = () => {
-      // Skip auto-collapse for Calendar and LeaderBoard (no right panel)
-      if (activeItem === ACTIVE_ITEMS.CALENDAR || activeItem === ACTIVE_ITEMS.LEADERBOARD) {
-        return;
-      }
-      if (activeItem === ACTIVE_ITEMS.HALLTICKETS) {
-            return currentUser?.userType && 
-                   ['teacher', 'admin', 'principal', 'dean', 'system_admin'].includes(currentUser.userType);
-      }
-
-      // Calculate actual right panel width considering window size
-      const leftWidth = isLeftCollapsed ? 64 : 280;
-      const mainWidth = isMainCollapsed ? 64 : 400;
-      const calculatedRightWidth = window.innerWidth - leftWidth - mainWidth;
-      
-      // Update the actual right width state
-      setActualRightWidth(calculatedRightWidth);
-      
-      // If actual right panel width < 700px, collapse left sidebar (unless user manually expanded it)
-      if (calculatedRightWidth < 700 && !userInteractedLeft.current) {
+    const handleResize = () => {
+      if (window.innerWidth <= 1400 && !userInteractedLeft.current) {
         setIsLeftCollapsed(true);
-      } else if (calculatedRightWidth >= 700 && !userInteractedLeft.current && !isLeftCollapsed) {
-        setIsLeftCollapsed(false);
-      }
-
-      // If actual right panel width < 500px, collapse main content (unless user manually expanded it)
-      if (calculatedRightWidth < 500 && !userInteractedMain.current) {
-        setIsMainCollapsed(true);
-      } else if (calculatedRightWidth >= 500 && !userInteractedMain.current && !isMainCollapsed) {
-        setIsMainCollapsed(false);
+        setIsLeftContentCollapsed(true);
       }
     };
 
-    checkCollapse();
-
-    // Recalculate on window resize
-    window.addEventListener('resize', checkCollapse);
-    return () => window.removeEventListener('resize', checkCollapse);
-  }, [isLeftCollapsed, isMainCollapsed, activeItem]);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  // Sync content state when collapsed state changes (for smooth animation)
+  useEffect(() => {
+    if (isLeftCollapsed) {
+      setIsLeftContentCollapsed(true);
+    } else {
+      const timer = setTimeout(() => setIsLeftContentCollapsed(false), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [isLeftCollapsed]);
 
 // Close year dropdown when clicking outside
   useEffect(() => {
@@ -3191,6 +3193,46 @@ const fetchCounts = async () => {
 
   return (
     <BrandProvider theme={brandTheme}>
+      {/* COURSE CURRICULUM PAGE - Full screen, unmounts everything else */}
+      {showCourseCurriculum && (
+        <CourseCurriculum
+          courseName={courseCurriculumData.courseName}
+          courseSlug={courseCurriculumData.courseSlug}
+          curriculumData={courseCurriculumData.curriculumData}
+          isLoading={courseCurriculumData.isLoading}
+          enrollmentId={courseCurriculumData.enrollmentId}
+          onBack={() => {
+            setShowCourseCurriculum(false);
+            setCourseCurriculumData({ courseName: '', courseSlug: '', curriculumData: [], isLoading: false });
+            collapseIfSmallScreen();
+          }}
+          currentUser={currentUser}
+          collegeName={selectedCollege?.name || brandTheme.collegeName}
+          brandTheme={brandTheme}
+          onEditProfile={() => setShowUserProfile(true)}
+          onDownloadBrowser={() => setShowSecureBrowserModal(true)}
+          onViewLoginDetails={() => setShowLoginDetailsDialog(true)}
+          onAddUniversity={() => setIsBulkUploadUniversityOpen(true)}
+          onSignOut={handleLogout}
+          isSecureBrowser={isUsingSecureBrowser()}
+          onOpenCodingLab={() => {
+            setShowCourseCurriculum(false);
+            setCourseCurriculumData({ courseName: '', courseSlug: '', curriculumData: [], isLoading: false });
+            setShowLearning(true);
+            setLearningActiveMenu('codinglab');
+          }}
+          onOpenResumeBuilder={() => {
+            setShowCourseCurriculum(false);
+            setCourseCurriculumData({ courseName: '', courseSlug: '', curriculumData: [], isLoading: false });
+            setShowLearning(true);
+            setLearningActiveMenu('resumebuilder');
+          }}
+        />
+      )}
+
+      {/* Main App - Hidden when showing curriculum but stays mounted to preserve state */}
+      <div style={{ display: showCourseCurriculum ? 'none' : 'contents' }}>
+      <>
       {/* PRE-EXAM VERIFICATION MODAL */}
       {showPreExamVerification && pendingExam && currentUser && (
         <PreExamVerification
@@ -3413,22 +3455,19 @@ const fetchCounts = async () => {
                   onClick={() => setShowProblemsListModal(true)}
                   className="flex items-center space-x-3 px-3 py-2 hover:bg-gray-50 rounded-lg transition-colors cursor-pointer"
                 >
-                  <div 
-                    className="w-9 h-9 rounded-full flex items-center justify-center shadow-md"
-                    style={{ background: brandTheme.gradients.primary }}
-                  >
-                    <FontAwesomeIcon icon={faCode} className="text-white" />  
+                  <div className="relative w-6 h-6">
+                    <div className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 rounded" style={{ WebkitMaskImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 640 512\'%3E%3Cpath d=\'M392.8 1.2c-17-4.9-34.7 5-39.6 22l-128 448c-4.9 17 5 34.7 22 39.6s34.7-5 39.6-22l128-448c4.9-17-5-34.7-22-39.6zm80.6 120.1c-12.5 12.5-12.5 32.8 0 45.3L562.7 256l-89.4 89.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l112-112c12.5-12.5 12.5-32.8 0-45.3l-112-112c-12.5-12.5-32.8-12.5-45.3 0zm-306.7 0c-12.5-12.5-32.8-12.5-45.3 0l-112 112c-12.5 12.5-12.5 32.8 0 45.3l112 112c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L77.3 256l89.4-89.4c12.5-12.5 12.5-32.8 0-45.3z\'/%3E%3C/svg%3E")', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center', maskImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 640 512\'%3E%3Cpath d=\'M392.8 1.2c-17-4.9-34.7 5-39.6 22l-128 448c-4.9 17 5 34.7 22 39.6s34.7-5 39.6-22l128-448c4.9-17-5-34.7-22-39.6zm80.6 120.1c-12.5 12.5-12.5 32.8 0 45.3L562.7 256l-89.4 89.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0l112-112c12.5-12.5 12.5-32.8 0-45.3l-112-112c-12.5-12.5-32.8-12.5-45.3 0zm-306.7 0c-12.5-12.5-32.8-12.5-45.3 0l-112 112c-12.5 12.5-12.5 32.8 0 45.3l112 112c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L77.3 256l89.4-89.4c12.5-12.5 12.5-32.8 0-45.3z\'/%3E%3C/svg%3E")', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-semibold text-gray-900">Practice</p>
-                    <p className="text-xs text-gray-500">Coding problems & exercises</p>
+                    <p className="text-base font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">Coding Lab - Problems List</p>
+                    <p className="text-xs text-gray-500">Practice Coding Problems</p>
                   </div>
                 </button>
               </>
             )}
             
-            {/* Only show Create button for non-students (teachers/admins) - Hide when Coding Lab is active */}
-            {currentUser?.userType !== USER_TYPES.STUDENT && activeItem !== ACTIVE_ITEMS.CALENDAR && activeItem !== ACTIVE_ITEMS.LEADERBOARD && activeItem !== ACTIVE_ITEMS.REPORTS && activeItem !== ACTIVE_ITEMS.AUDIT && !(showLearning && learningActiveMenu === 'codinglab') && !(showLearning && learningActiveMenu === 'resumebuilder') && (
+            {/* Only show Create button for non-students (teachers/admins) - Hide when Coding Lab, Resume Builder, or Logic Builder is active */}
+            {currentUser?.userType !== USER_TYPES.STUDENT && activeItem !== ACTIVE_ITEMS.CALENDAR && activeItem !== ACTIVE_ITEMS.LEADERBOARD && activeItem !== ACTIVE_ITEMS.REPORTS && activeItem !== ACTIVE_ITEMS.AUDIT && !(showLearning && learningActiveMenu === 'codinglab') && !(showLearning && learningActiveMenu === 'resumebuilder') && !(showLearning && learningActiveMenu === 'logicbuilder') && (
               <>
                 <div className="w-px h-8 bg-gray-200"></div>
                 <button 
@@ -3492,15 +3531,28 @@ const fetchCounts = async () => {
               <>
                 <div className="w-px h-8 bg-gray-200"></div>
                 <div className="flex items-center space-x-3 px-3 py-2">
-                  <div 
-                    className="w-9 h-9 rounded-full flex items-center justify-center shadow-md"
-                    style={{ background: brandTheme.gradients.primary }}
-                  >
-                    <FontAwesomeIcon icon={faAddressCard} className="text-white" />  
+                  <div className="relative w-6 h-6">
+                    <div className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 rounded" style={{ WebkitMaskImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 576 512\'%3E%3Cpath d=\'M64 32C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64H512c35.3 0 64-28.7 64-64V96c0-35.3-28.7-64-64-64H64zm80 256h64c44.2 0 80 35.8 80 80c0 8.8-7.2 16-16 16H80c-8.8 0-16-7.2-16-16c0-44.2 35.8-80 80-80zm-32-96a64 64 0 1 1 128 0 64 64 0 1 1 -128 0zm256-32H496c8.8 0 16 7.2 16 16s-7.2 16-16 16H368c-8.8 0-16-7.2-16-16s7.2-16 16-16zm0 64H496c8.8 0 16 7.2 16 16s-7.2 16-16 16H368c-8.8 0-16-7.2-16-16s7.2-16 16-16zm0 64H496c8.8 0 16 7.2 16 16s-7.2 16-16 16H368c-8.8 0-16-7.2-16-16s7.2-16 16-16z\'/%3E%3C/svg%3E")', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center', maskImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 576 512\'%3E%3Cpath d=\'M64 32C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64H512c35.3 0 64-28.7 64-64V96c0-35.3-28.7-64-64-64H64zm80 256h64c44.2 0 80 35.8 80 80c0 8.8-7.2 16-16 16H80c-8.8 0-16-7.2-16-16c0-44.2 35.8-80 80-80zm-32-96a64 64 0 1 1 128 0 64 64 0 1 1 -128 0zm256-32H496c8.8 0 16 7.2 16 16s-7.2 16-16 16H368c-8.8 0-16-7.2-16-16s7.2-16 16-16zm0 64H496c8.8 0 16 7.2 16 16s-7.2 16-16 16H368c-8.8 0-16-7.2-16-16s7.2-16 16-16zm0 64H496c8.8 0 16 7.2 16 16s-7.2 16-16 16H368c-8.8 0-16-7.2-16-16s7.2-16 16-16z\'/%3E%3C/svg%3E")', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />
                   </div>
                   <div className="text-left">
-                    <p className="text-sm font-semibold text-gray-900">Resume Builder</p>
+                    <p className="text-base font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">Resume Builder</p>
                     <p className="text-xs text-gray-500">Build your professional resume</p>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Logic Builder Header */}
+            {showLearning && learningActiveMenu === 'logicbuilder' && (
+              <>
+                <div className="w-px h-8 bg-gray-200"></div>
+                <div className="flex items-center space-x-3 px-3 py-2">
+                  <div className="relative w-6 h-6">
+                    <div className="absolute inset-0 bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 rounded" style={{ WebkitMaskImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 512 512\'%3E%3Cpath d=\'M184 0c30.9 0 56 25.1 56 56V456c0 30.9-25.1 56-56 56c-28.9 0-52.7-21.9-55.7-50.1c-5.2 1.4-10.7 2.1-16.3 2.1c-35.3 0-64-28.7-64-64c0-7.4 1.3-14.6 3.6-21.2C21.4 367.4 0 338.2 0 304c0-31.9 18.7-59.5 45.8-72.3C37.1 220.8 32 207 32 192c0-30.7 21.6-56.3 50.4-62.6C80.8 123.9 80 118 80 112c0-29.9 20.6-55.1 48.3-62.1C131.3 21.9 155.1 0 184 0zM328 0c28.9 0 52.6 21.9 55.7 49.9c27.8 7 48.3 32.1 48.3 62.1c0 6-.8 11.9-2.4 17.4c28.8 6.2 50.4 31.9 50.4 62.6c0 15-5.1 28.8-13.8 39.7C493.3 244.5 512 272.1 512 304c0 34.2-21.4 63.4-51.6 74.8c2.3 6.6 3.6 13.8 3.6 21.2c0 35.3-28.7 64-64 64c-5.6 0-11.1-.7-16.3-2.1c-3 28.2-26.8 50.1-55.7 50.1c-30.9 0-56-25.1-56-56V56c0-30.9 25.1-56 56-56z\'/%3E%3C/svg%3E")', WebkitMaskSize: 'contain', WebkitMaskRepeat: 'no-repeat', WebkitMaskPosition: 'center', maskImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 512 512\'%3E%3Cpath d=\'M184 0c30.9 0 56 25.1 56 56V456c0 30.9-25.1 56-56 56c-28.9 0-52.7-21.9-55.7-50.1c-5.2 1.4-10.7 2.1-16.3 2.1c-35.3 0-64-28.7-64-64c0-7.4 1.3-14.6 3.6-21.2C21.4 367.4 0 338.2 0 304c0-31.9 18.7-59.5 45.8-72.3C37.1 220.8 32 207 32 192c0-30.7 21.6-56.3 50.4-62.6C80.8 123.9 80 118 80 112c0-29.9 20.6-55.1 48.3-62.1C131.3 21.9 155.1 0 184 0zM328 0c28.9 0 52.6 21.9 55.7 49.9c27.8 7 48.3 32.1 48.3 62.1c0 6-.8 11.9-2.4 17.4c28.8 6.2 50.4 31.9 50.4 62.6c0 15-5.1 28.8-13.8 39.7C493.3 244.5 512 272.1 512 304c0 34.2-21.4 63.4-51.6 74.8c2.3 6.6 3.6 13.8 3.6 21.2c0 35.3-28.7 64-64 64c-5.6 0-11.1-.7-16.3-2.1c-3 28.2-26.8 50.1-55.7 50.1c-30.9 0-56-25.1-56-56V56c0-30.9 25.1-56 56-56z\'/%3E%3C/svg%3E")', maskSize: 'contain', maskRepeat: 'no-repeat', maskPosition: 'center' }} />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-base font-bold bg-gradient-to-r from-pink-500 via-purple-500 to-blue-500 bg-clip-text text-transparent">Logic Builder</p>
+                    <p className="text-xs text-gray-500">Build and test logical flows</p>
                   </div>
                 </div>
               </>
@@ -3581,8 +3633,8 @@ const fetchCounts = async () => {
               </div>
             ) : null}
             
-            {/* Academic Year Dropdown - Hidden when Coding Lab is active */}
-            {!(showLearning && learningActiveMenu === 'codinglab') && (
+            {/* Academic Year Dropdown - Hidden when in Learning mode */}
+            {!showLearning && (
             <div className="relative year-dropdown-container">
               <button 
                 onClick={() => setIsYearDropdownOpen(!isYearDropdownOpen)}
@@ -3910,6 +3962,11 @@ const fetchCounts = async () => {
             selectedCollege={selectedCollege}
             onActiveMenuChange={(menuItem) => setLearningActiveMenu(menuItem)}
             selectedProblemSlug={selectedProblemSlug}
+            onOpenCurriculum={(data) => {
+              setCourseCurriculumData(data);
+              setShowCourseCurriculum(true);
+              collapseIfSmallScreen();
+            }}
           />
         ) : (
         <>
@@ -3918,8 +3975,8 @@ const fetchCounts = async () => {
           className={`h-full bg-gray-50 border-r border-gray-200 transition-all duration-300 ${isLeftCollapsed ? '' : 'w-64'} flex flex-col overflow-visible relative flex-shrink-0`}
           style={{ width: isLeftCollapsed ? '63px' : '256px', minWidth: isLeftCollapsed ? '63px' : '256px' }}
         >
-          <div className={`p-4 flex items-center ${isLeftCollapsed ? 'justify-center' : 'justify-between'}`}>
-            {isLeftCollapsed ? (
+          <div className={`p-4 flex items-center ${isLeftContentCollapsed ? 'justify-center' : 'justify-between'}`}>
+            {isLeftContentCollapsed ? (
               <button onClick={() => { userInteractedLeft.current = true; setIsLeftCollapsed(false); }} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                 <div className="flex flex-col space-y-1.5">
                   <div className="w-5 h-0.5 bg-gray-600"></div>
@@ -4047,11 +4104,11 @@ const fetchCounts = async () => {
               const isSectionCollapsed = collapsedSections[currentSection] ?? false;
               
               // Hide non-header items if their section is collapsed
-              if (!isHeader && isSectionCollapsed && !isLeftCollapsed) {
+              if (!isHeader && isSectionCollapsed && !isLeftContentCollapsed) {
                 return null;
               }
               
-              if (isHeader && isLeftCollapsed) {
+              if (isHeader && isLeftContentCollapsed) {
                 return (
                   <div key={item.id}>
                     {item.section !== 'management' && <div className="w-full h-px bg-gray-200 mb-2"></div>}
@@ -4066,7 +4123,7 @@ const fetchCounts = async () => {
               }
               
               // Render collapsible header
-              if (isHeader && !isLeftCollapsed) {
+              if (isHeader && !isLeftContentCollapsed) {
                 const isCollapsed = collapsedSections[item.id] ?? false;
                 return (
                   <div key={item.id} className="mb-1">
@@ -4151,7 +4208,7 @@ const fetchCounts = async () => {
                     }}
                     onMouseEnter={() => setHoveredCategory(item.id)}
                     onMouseLeave={() => setHoveredCategory(null)}
-                    className={`w-full flex items-center ${isLeftCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-3 rounded-lg transition-all relative
+                    className={`w-full flex items-center ${isLeftContentCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-3 rounded-lg transition-all relative
                       hover:bg-gray-50
                     `}
                     style={isActive ? { backgroundColor: `${brandTheme.colors.primary}10` } : {}}
@@ -4163,7 +4220,7 @@ const fetchCounts = async () => {
                       ></div>
                     )}
                     
-                    {isLeftCollapsed ? (
+                    {isLeftContentCollapsed ? (
                       <FontAwesomeIcon 
                         icon={Icon} 
                         className="text-gray-600"
@@ -4195,7 +4252,7 @@ const fetchCounts = async () => {
                     )}
                   </button>
                   
-                  {isLeftCollapsed && hoveredCategory === item.id && (
+                  {isLeftContentCollapsed && hoveredCategory === item.id && (
                     <div 
                       className="absolute left-full top-0 ml-2 bg-gray-900 text-white px-3 py-2.5 rounded-lg shadow-lg pointer-events-none min-w-[200px]"
                       style={{ zIndex: 1000 }}
@@ -9225,286 +9282,17 @@ const fetchCounts = async () => {
       }}
     />
 
-    {/* Problems List Modal - Slides from left */}
-    <div className={`fixed inset-0 z-[10000] flex items-start justify-start p-2 transition-opacity duration-300 ${
-      showProblemsListModal ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-    }`}>
-      {/* Overlay */}
-      <div 
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
-        onClick={() => setShowProblemsListModal(false)}
-      />
-      
-      {/* Panel - Slide in from left */}
-      <div 
-        className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[30rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
-          showProblemsListModal ? 'translate-x-0' : '-translate-x-full'
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div 
-          className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
-          style={{ background: brandTheme.gradients.primary }}
-        >
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center">
-              <FontAwesomeIcon icon={faListCheck} className="text-white" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-white">Problems List</h2>
-              <p className="text-xs text-white/70">Select a problem to practice</p>
-            </div>
-          </div>
-          <button 
-            onClick={() => setShowProblemsListModal(false)}
-            className="w-9 h-9 rounded-xl bg-white/20 hover:bg-white/30 flex items-center justify-center transition-all hover:rotate-90 duration-300"
-          >
-            <FontAwesomeIcon icon={faXmark} className="text-white" />
-          </button>
-        </div>
-        
-        {/* Search Bar */}
-        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search problems..."
-              value={problemsSearchQuery}
-              onChange={(e) => {
-                setProblemsSearchQuery(e.target.value);
-                setProblemsCurrentPage(1);
-              }}
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-100 transition-all"
-            />
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </div>
-        </div>
-        
-        {/* Problems List */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
-          {(() => {
-            const allProblems = [
-              { id: 1, title: 'Two Sum', difficulty: 'Easy', slug: 'two-sum', solved: true },
-              { id: 2, title: 'Add Two Numbers', difficulty: 'Medium', slug: 'add-two-numbers', solved: true },
-              { id: 3, title: 'Longest Substring Without Repeating Characters', difficulty: 'Medium', slug: 'longest-substring', solved: false },
-              { id: 4, title: 'Median of Two Sorted Arrays', difficulty: 'Hard', slug: 'median-sorted-arrays', solved: false },
-              { id: 5, title: 'Longest Palindromic Substring', difficulty: 'Medium', slug: 'longest-palindrome', solved: true },
-              { id: 6, title: 'Zigzag Conversion', difficulty: 'Medium', slug: 'zigzag-conversion', solved: false },
-              { id: 7, title: 'Reverse Integer', difficulty: 'Medium', slug: 'reverse-integer', solved: false },
-              { id: 8, title: 'String to Integer (atoi)', difficulty: 'Medium', slug: 'string-to-integer', solved: false },
-              { id: 9, title: 'Palindrome Number', difficulty: 'Easy', slug: 'palindrome-number', solved: true },
-              { id: 10, title: 'Regular Expression Matching', difficulty: 'Hard', slug: 'regex-matching', solved: false },
-              { id: 11, title: 'Container With Most Water', difficulty: 'Medium', slug: 'container-water', solved: false },
-              { id: 12, title: 'Integer to Roman', difficulty: 'Medium', slug: 'integer-to-roman', solved: false },
-              { id: 13, title: 'Roman to Integer', difficulty: 'Easy', slug: 'roman-to-integer', solved: true },
-              { id: 14, title: 'Longest Common Prefix', difficulty: 'Easy', slug: 'longest-prefix', solved: false },
-              { id: 15, title: '3Sum', difficulty: 'Medium', slug: '3sum', solved: false },
-              { id: 16, title: '3Sum Closest', difficulty: 'Medium', slug: '3sum-closest', solved: false },
-              { id: 17, title: 'Letter Combinations of a Phone Number', difficulty: 'Medium', slug: 'phone-combinations', solved: false },
-              { id: 18, title: '4Sum', difficulty: 'Medium', slug: '4sum', solved: false },
-              { id: 19, title: 'Remove Nth Node From End of List', difficulty: 'Medium', slug: 'remove-nth-node', solved: false },
-              { id: 20, title: 'Valid Parentheses', difficulty: 'Easy', slug: 'valid-parentheses', solved: true },
-              { id: 21, title: 'Merge Two Sorted Lists', difficulty: 'Easy', slug: 'merge-two-lists', solved: false },
-              { id: 22, title: 'Generate Parentheses', difficulty: 'Medium', slug: 'generate-parentheses', solved: false },
-              { id: 23, title: 'Merge k Sorted Lists', difficulty: 'Hard', slug: 'merge-k-lists', solved: false },
-              { id: 24, title: 'Swap Nodes in Pairs', difficulty: 'Medium', slug: 'swap-nodes', solved: false },
-              { id: 25, title: 'Reverse Nodes in k-Group', difficulty: 'Hard', slug: 'reverse-k-group', solved: false },
-              { id: 26, title: 'Remove Duplicates from Sorted Array', difficulty: 'Easy', slug: 'remove-duplicates', solved: true },
-              { id: 27, title: 'Remove Element', difficulty: 'Easy', slug: 'remove-element', solved: false },
-              { id: 28, title: 'Find the Index of the First Occurrence', difficulty: 'Easy', slug: 'find-first-occurrence', solved: false },
-              { id: 29, title: 'Divide Two Integers', difficulty: 'Medium', slug: 'divide-integers', solved: false },
-              { id: 30, title: 'Substring with Concatenation', difficulty: 'Hard', slug: 'substring-concat', solved: false },
-            ];
-
-            const filteredProblems = allProblems.filter(p =>
-              p.title.toLowerCase().includes(problemsSearchQuery.toLowerCase())
-            );
-
-            const problemsPerPage = 10;
-            const totalPages = Math.ceil(filteredProblems.length / problemsPerPage);
-            const startIndex = (problemsCurrentPage - 1) * problemsPerPage;
-            const paginatedProblems = filteredProblems.slice(startIndex, startIndex + problemsPerPage);
-
-            return (
-              <>
-                {paginatedProblems.map((prob, index) => (
-                  <div
-                    key={prob.id}
-                    onClick={() => {
-                      setSelectedProblemSlug(prob.slug);
-                      setShowProblemsListModal(false);
-                    }}
-                    className={`flex items-center justify-between px-5 py-3.5 cursor-pointer transition-all duration-200 border-b border-gray-100 hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50 group ${
-                      prob.slug === selectedProblemSlug ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-l-green-500' : ''
-                    }`}
-                    style={{ 
-                      animationDelay: `${index * 30}ms`,
-                      animation: showProblemsListModal ? 'fadeSlideIn 0.3s ease-out forwards' : 'none'
-                    }}
-                  >
-                    <div className="flex items-center gap-3">
-                      {/* Solved indicator */}
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        prob.solved 
-                          ? 'bg-green-500 text-white' 
-                          : 'border-2 border-gray-300'
-                      }`}>
-                        {prob.solved && (
-                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                          </svg>
-                        )}
-                      </div>
-                      <span className={`text-sm transition-colors ${
-                        prob.slug === selectedProblemSlug 
-                          ? 'font-semibold text-green-700' 
-                          : 'text-gray-700 group-hover:text-gray-900'
-                      }`}>
-                        {prob.id}. {prob.title}
-                      </span>
-                    </div>
-                    <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-transform group-hover:scale-105 ${
-                      prob.difficulty === 'Easy' ? 'bg-green-100 text-green-700' :
-                      prob.difficulty === 'Medium' ? 'bg-amber-100 text-amber-700' :
-                      'bg-red-100 text-red-700'
-                    }`}>
-                      {prob.difficulty === 'Medium' ? 'MED.' : prob.difficulty.toUpperCase()}
-                    </span>
-                  </div>
-                ))}
-
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between py-3 px-4 border-t border-gray-100 bg-gray-50/30">
-                    <button
-                      onClick={() => setProblemsCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={problemsCurrentPage === 1}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
-                    >
-                      <FontAwesomeIcon icon={faChevronLeft} className="w-3 h-3" />
-                      <span>Previous</span>
-                    </button>
-                    
-                    <div className="flex items-center gap-1">
-                      {/* First page */}
-                      <button
-                        onClick={() => setProblemsCurrentPage(1)}
-                        className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
-                          problemsCurrentPage === 1
-                            ? 'text-white shadow-md'
-                            : 'text-gray-600 hover:bg-gray-100'
-                        }`}
-                        style={problemsCurrentPage === 1 ? { background: brandTheme.gradients.primary } : {}}
-                      >
-                        1
-                      </button>
-                      
-                      {/* Left ellipsis */}
-                      {problemsCurrentPage > 3 && (
-                        <span className="px-1 text-gray-400">...</span>
-                      )}
-                      
-                      {/* Pages around current */}
-                      {Array.from({ length: 3 }, (_, i) => {
-                        const pageNum = problemsCurrentPage - 1 + i;
-                        if (pageNum <= 1 || pageNum >= totalPages) return null;
-                        return (
-                          <button
-                            key={pageNum}
-                            onClick={() => setProblemsCurrentPage(pageNum)}
-                            className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
-                              problemsCurrentPage === pageNum
-                                ? 'text-white shadow-md'
-                                : 'text-gray-600 hover:bg-gray-100'
-                            }`}
-                            style={problemsCurrentPage === pageNum ? { background: brandTheme.gradients.primary } : {}}
-                          >
-                            {pageNum}
-                          </button>
-                        );
-                      })}
-                      
-                      {/* Right ellipsis */}
-                      {problemsCurrentPage < totalPages - 2 && (
-                        <span className="px-1 text-gray-400">...</span>
-                      )}
-                      
-                      {/* Last page */}
-                      {totalPages > 1 && (
-                        <button
-                          onClick={() => setProblemsCurrentPage(totalPages)}
-                          className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
-                            problemsCurrentPage === totalPages
-                              ? 'text-white shadow-md'
-                              : 'text-gray-600 hover:bg-gray-100'
-                          }`}
-                          style={problemsCurrentPage === totalPages ? { background: brandTheme.gradients.primary } : {}}
-                        >
-                          {totalPages}
-                        </button>
-                      )}
-                    </div>
-                    
-                    <button
-                      onClick={() => setProblemsCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={problemsCurrentPage === totalPages}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
-                    >
-                      <span>Next</span>
-                      <FontAwesomeIcon icon={faChevronRight} className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-              </>
-            );
-          })()}
-        </div>
-        
-        {/* Footer Stats */}
-        <div className="px-5 py-4 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100 flex-shrink-0">
-          <div className="flex items-center justify-around text-center">
-            <div className="group cursor-default">
-              <div className="text-2xl font-bold text-green-600 group-hover:scale-110 transition-transform">24</div>
-              <div className="text-xs text-gray-500 font-medium">SOLVED</div>
-            </div>
-            <div className="w-px h-10 bg-gray-300"></div>
-            <div className="group cursor-default">
-              <div className="text-2xl font-bold text-amber-500 group-hover:scale-110 transition-transform">8</div>
-              <div className="text-xs text-gray-500 font-medium">ATTEMPTED</div>
-            </div>
-            <div className="w-px h-10 bg-gray-300"></div>
-            <div className="group cursor-default">
-              <div className="text-2xl font-bold text-gray-600 group-hover:scale-110 transition-transform">380</div>
-              <div className="text-xs text-gray-500 font-medium">TOTAL</div>
-            </div>
-          </div>
-        </div>
-      </div>
+    {/* Problems List Modal */}
+    <ProblemsListModal
+      isOpen={showProblemsListModal}
+      onClose={() => setShowProblemsListModal(false)}
+      selectedProblemSlug={selectedProblemSlug}
+      onSelectProblem={setSelectedProblemSlug}
+      brandTheme={brandTheme}
+      userId={currentUser?.userId}
+    />
+    </>
     </div>
-    
-    {/* Custom scrollbar styles and animations */}
-    <style>{`
-      .custom-scrollbar {
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-      }
-      .custom-scrollbar::-webkit-scrollbar {
-        display: none;
-      }
-      @keyframes fadeSlideIn {
-        from {
-          opacity: 0;
-          transform: translateX(-10px);
-        }
-        to {
-          opacity: 1;
-          transform: translateX(0);
-        }
-      }
-    `}</style>
     </BrandProvider>
   );
 }

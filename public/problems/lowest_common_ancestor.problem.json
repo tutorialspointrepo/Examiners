@@ -1,0 +1,54 @@
+{
+    "id": "lowest_common_ancestor",
+    "title": "Lowest Common Ancestor of a Binary Tree",
+    "description": "Given a binary tree, find the <code>lowest common ancestor</code> (LCA) of two given nodes in the tree. According to the definition of LCA on a binary tree, the lowest common ancestor is defined between two nodes <code>p</code> and <code>q</code> as the deepest node that is an ancestor of both <code>p</code> and <code>q</code>. An ancestor of a node is any predecessor node on the path from the root to that node.",
+    "difficulty": "Medium",
+    "category": "Tree, Depth-First Search",
+    "examples": [
+        {
+            "input": "root = [3,5,1,6,2,0,8,null,null,7,4], p = 5, q = 1",
+            "output": "3",
+            "explanation": "<code>3</code> is the ancestor of both <code>5</code> and <code>1</code>. It is the lowest such ancestor."
+        },
+        {
+            "input": "root = [3,5,1,6,2,0,8,null,null,7,4], p = 5, q = 4",
+            "output": "5",
+            "explanation": "<code>5</code> is the ancestor of <code>4</code> because <code>4</code> is a child of <code>2</code>, which is a child of <code>5</code>. Thus, <code>5</code> is the lowest common ancestor."
+        },
+        {
+            "input": "root = [1,2,3], p = 2, q = 3",
+            "output": "1",
+            "explanation": "<code>1</code> is the root and the ancestor of both <code>2</code> and <code>3</code>, making it their lowest common ancestor."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the tree is in the range [1, 10^5].",
+        "All <code>Node.val</code> values are unique.",
+        "Both <code>p</code> and <code>q</code> exist in the tree."
+    ],
+    "tags": [
+        "Tree",
+        "Depth-First Search",
+        "Binary Tree"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "binary_tree_paths",
+        "find_target_in_bst",
+        "validate_binary_search_tree"
+    ],
+    "hints": [
+        "Consider using a recursive approach to traverse the tree.",
+        "Keep track of whether you've found either <code>p</code> or <code>q</code> as you traverse.",
+        "If you find <code>p</code> and <code>q</code> in different subtrees, the current node is the LCA.",
+        "Try to visualize the tree to understand the relationships between nodes."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

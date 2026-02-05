@@ -1,0 +1,53 @@
+{
+    "id": "binary_tree_preorder",
+    "title": "Binary Tree Preorder Traversal",
+    "description": "Given the <code>root</code> of a binary tree, return its nodes' values in <code>preorder</code> traversal. Preorder traversal visits the root node first, then the left subtree, followed by the right subtree.",
+    "difficulty": "Medium",
+    "category": "Tree, Depth-First Search",
+    "examples": [
+        {
+            "input": "root = [1,null,2,3]",
+            "output": "[1,2,3]",
+            "explanation": "In this example, we start at the root (1), then go to the right child (2), and finally visit the left child of (2) which is (3). Hence, the order of traversal is [1,2,3]."
+        },
+        {
+            "input": "root = []",
+            "output": "[]",
+            "explanation": "An empty tree results in an empty list since there are no nodes to traverse."
+        },
+        {
+            "input": "root = [1,2,3,4,5,null,6,7]",
+            "output": "[1,2,4,7,5,3,6]",
+            "explanation": "Starting from the root (1), we visit the left subtree first. The traversal goes: 1 -> 2 -> 4 -> 7 -> 5 -> 3 -> 6."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the tree is in the range [0, 100].",
+        "Each node's value is unique."
+    ],
+    "tags": [
+        "Tree",
+        "Depth-First Search",
+        "Binary Tree"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "binary_tree_inorder",
+        "binary_tree_postorder",
+        "binary_tree_level_order"
+    ],
+    "hints": [
+        "Consider using recursion to simplify the traversal process.",
+        "Keep track of the order of visited nodes in a list.",
+        "Think about how you can implement this traversal both recursively and iteratively.",
+        "Make sure to handle edge cases, such as an empty tree."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

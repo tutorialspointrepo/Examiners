@@ -1,0 +1,53 @@
+{
+    "id": "reverse_linked_list",
+    "title": "Reverse Linked List",
+    "description": "Given the head of a singly linked list, reverse the list, and return the reversed list. You need to modify the pointers of the nodes in the list. The input linked list is represented as `<code>ListNode</code>`, where each node has a value and a pointer to the next node.",
+    "difficulty": "Easy",
+    "category": "Linked List, Recursion",
+    "examples": [
+        {
+            "input": "head = [1, 2, 3, 4, 5]",
+            "output": "[5, 4, 3, 2, 1]",
+            "explanation": "Starting from the head node (1), we iterate through the list, changing the next pointers of each node to point to the previous node. After processing all nodes, the new head will be the last node processed (5)."
+        },
+        {
+            "input": "head = [1]",
+            "output": "[1]",
+            "explanation": "Since there is only one node in the list, reversing it doesn't change its structure. Thus, the output is still [1]."
+        },
+        {
+            "input": "head = []",
+            "output": "[]",
+            "explanation": "An empty linked list remains empty when reversed, so the output is an empty list."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the list is in the range [0, 5000].",
+        "The value of each node is within the range [-5000, 5000]."
+    ],
+    "tags": [
+        "Linked List",
+        "Recursion",
+        "Two Pointers"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "reverse_nodes_in_k_group",
+        "merge_two_sorted_lists",
+        "linked_list_cycle"
+    ],
+    "hints": [
+        "Consider using a previous pointer to keep track of the last processed node.",
+        "Iterate through the list while adjusting the next pointers to reverse the direction.",
+        "Think about the base case for the recursion if you choose that method.",
+        "Try drawing the linked list to visualize the changes happening during reversal."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

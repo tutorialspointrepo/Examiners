@@ -1,0 +1,20 @@
+{
+    "id": "number_islands",
+    "problem_id": "number_islands",
+    "title": "Number of Islands - Depth First Search",
+    "algorithm": [
+        "Step 1: Initialize a counter to track the number of islands.",
+        "Step 2: Iterate through each cell in the grid. If a cell contains '1', it is part of an island.",
+        "Step 3: When an unvisited '1' is found, increment the island counter and call a DFS function to mark all connected '1's as visited.",
+        "Step 4: In the DFS function, explore all four possible directions (up, down, left, right) from the current cell.",
+        "Step 5: For each direction, if the adjacent cell is '1', recursively call the DFS on that cell.",
+        "Final step: After processing all cells, return the island counter as the result."
+    ],
+    "pseudocode": "ALGORITHM NumberOfIslands\nBEGIN\n    counter = 0\n    FOR each cell in grid DO\n        IF cell == '1' THEN\n            counter = counter + 1\n            DFS(cell)\n        END IF\n    END FOR\n    RETURN counter\nEND\n\nPROCEDURE DFS(cell)\nBEGIN\n    IF cell is out of bounds OR cell == '0' THEN\n        RETURN\n    END IF\n    cell = '0' // Mark as visited\n    DFS(up)\n    DFS(down)\n    DFS(left)\n    DFS(right)\nEND PROCEDURE",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Iterate through each cell in grid]\n  │\n  ▼\n◊ Is cell '1'? ◊ ──YES──► [Increment counter]\n  │                        │\n  ▼                        ▼\n[Call DFS on cell]        [Move to next cell]\n  │                        │\n  ▼                        ▼\n[Explore neighbors]       END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The algorithm operates on the principle of marking all cells of an island as visited to avoid counting them multiple times.\n\n**Approach Explanation:**\n1. **Main Strategy**: We leverage Depth First Search (DFS) to explore and mark all parts of an island.\n2. **Key Components**: The grid is processed cell by cell; DFS marks connected parts of the island starting from any unvisited land cell.\n3. **Why It Works**: By marking visited cells, we ensure that when we encounter another '1', it indicates a new island.\n4. **Edge Cases**: The algorithm correctly handles grids with no land or entirely filled grids.\n\n**Alternative Approaches:** Another common method is Breadth First Search (BFS), which uses a queue to explore nodes layer by layer.",
+    "complexity": "Time Complexity: O(m * n)\n- Each cell is processed once, either visited or skipped.\n- m is the number of rows and n is the number of columns in the grid.\n\nSpace Complexity: O(m * n)\n- The maximum depth of the recursion stack can go up to the number of cells in the worst case (in a single long island).\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(m*n)    │    O(m*n)     │\n│ Alternative BFS │    O(m*n)    │    O(m*n)     │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The algorithm performs well for moderately sized grids but can run into stack overflow issues in very large grids due to deep recursion.\n- Iterative approaches using BFS can be more memory efficient in such cases due to iterative nature avoiding recursive stack depth.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

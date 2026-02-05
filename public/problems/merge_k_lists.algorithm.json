@@ -1,0 +1,23 @@
+{
+    "id": "merge_k_lists",
+    "problem_id": "merge_k_lists",
+    "title": "Merge k Sorted Lists - Divide and Conquer",
+    "algorithm": [
+        "Step 1: Initialize a min-heap to store the head nodes of each list.",
+        "Step 2: Iterate through each of the k linked lists and add their head nodes to the min-heap.",
+        "Step 3: Create a dummy node to help build the resulting merged list.",
+        "Step 4: While the min-heap is not empty, do the following:",
+        "   a. Extract the minimum node from the heap (the smallest element among the heads).",
+        "   b. Append this node to the result list.",
+        "   c. If the extracted node has a next node, push that next node to the min-heap.",
+        "Step 5: Continue until all nodes are processed and the min-heap is empty.",
+        "Final step: Return the next node of the dummy node as the head of the merged list."
+    ],
+    "pseudocode": "ALGORITHM MergeKLists\nBEGIN\n    Initialize min-heap H\n    FOR each list in lists DO\n        Insert head of each list into H\n    END FOR\n    Initialize dummy node result\n    Initialize current pointer to dummy\n    WHILE H is not empty DO\n        node = ExtractMin(H)\n        current.next = node\n        current = current.next\n        IF node.next is not null THEN\n            Insert(node.next, H)\n        END IF\n    END WHILE\n    RETURN result.next\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize min-heap]\n  │\n  ▼\n[Insert heads of k lists]\n  │\n  ▼\n◊ Is min-heap empty? ◊ ──YES/NO──► [Extract min node]\n  │                        │\n  ▼                        ▼\n[Append node to result]   [Continue]\n  │\n  ▼\n[Check next node]\n  │\n  ▼\n[Insert next node if exists]\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The min-heap allows us to efficiently retrieve the smallest node across all lists at every iteration.\n\n**Approach Explanation:**\n1. **Main Strategy**: Use a priority queue (min-heap) to keep track of the smallest elements from each of the k sorted lists.\n2. **Key Components**: The dummy node simplifies the process of building the new linked list without special cases for the head.\n3. **Why It Works**: Each extraction from the heap ensures we always take the smallest available node, maintaining the sorted order.\n4. **Edge Cases**: Handles cases where some lists may be empty, ensuring they are not added to the heap initially.\n\n**Alternative Approaches:** One could merge lists pairwise using a brute force approach, but this would be less efficient than the heap-based method.",
+    "complexity": "Time Complexity: O(N log k)\n- N is the total number of nodes across all k lists.\n- Each insertion and extraction operation on the heap takes O(log k), hence for N nodes, it results in O(N log k).\n\nSpace Complexity: O(k)\n- We are storing at most k nodes in the heap at any time (one from each list).\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(N log k) │    O(k)      │\n│ Alternative 1   │    O(N log N) │    O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- This algorithm is efficient for merging multiple sorted lists, especially when k is small relative to N.\n- It scales well with large datasets and utilizes memory effectively by only requiring space proportional to k.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

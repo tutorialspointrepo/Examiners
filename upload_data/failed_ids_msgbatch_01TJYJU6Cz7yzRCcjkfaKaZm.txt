@@ -1,5 +1,3 @@
-4sum
-valid-parentheses
 swap-nodes-in-pairs
 longest-valid-parentheses
 sudoku-solver

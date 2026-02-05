@@ -1,0 +1,17 @@
+{
+    "id": "contains_duplicate",
+    "problem_id": "contains_duplicate",
+    "title": "Contains Duplicate - Set Approach",
+    "algorithm": [
+        "Step 1: Initialize an empty set to keep track of seen elements.",
+        "Step 2: Iterate over each element in the input list.",
+        "Step 3: For each element, check if it is already in the set.",
+        "Step 4: If it is in the set, return true (duplicate found).",
+        "Step 5: If it is not in the set, add the element to the set.",
+        "Final step: After the loop, return false (no duplicates found)."
+    ],
+    "pseudocode": "ALGORITHM ContainsDuplicate\nBEGIN\n    SET seenElements = {}\n    FOR each element IN inputList DO\n        IF element IN seenElements THEN\n            RETURN true\n        ENDIF\n        ADD element TO seenElements\n    ENDFOR\n    RETURN false\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize empty set]\n  │\n  ▼\n[Iterate through input list]\n  │\n  ▼\n◊ Element in set? ◊ ──YES──► RETURN true\n  │                        │\n  ▼                        ▼\n[Add element to set]    [Continue loop]\n  │\n  ▼\n[End of list reached] \n  │\n  ▼\nRETURN false\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The use of a set allows for O(1) average time complexity for lookups, making it efficient for detecting duplicates.\n\n**Approach Explanation:**\n1. **Main Strategy**: Utilize a hash set to store unique elements while iterating through the list.\n2. **Key Components**: The set data structure enables quick checks for existence of elements.\n3. **Why It Works**: Since sets do not allow duplicate entries, finding an existing entry indicates a duplicate in the original list.\n4. **Edge Cases**: Handles empty lists by returning false and works with lists of varying lengths.\n\n**Alternative Approaches:** Sorting the list first and checking adjacent elements can also identify duplicates, but is less efficient (O(n log n) time complexity).",
+    "complexity": "Time Complexity: O(n)\n- Each element is processed once, with constant time complexity for set operations.\n- Best, average, and worst case scenarios all operate in O(n).\n\nSpace Complexity: O(n)\n- In the worst case, all elements are unique, requiring space for all in the set.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(n)       │\n│ Sorting Method  │    O(n log n)│    O(1)       │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- In practice, this algorithm performs well with large datasets due to linear time complexity.\n- It scales efficiently as set operations are fast with average case O(1) retrieval times.\n- Trade-offs include increased space usage compared to methods that don't store all elements."
+}

@@ -1,0 +1,19 @@
+{
+    "id": "linked_list_cycle",
+    "problem_id": "linked_list_cycle",
+    "title": "Linked List Cycle - Two Pointer Technique",
+    "algorithm": [
+        "Step 1: Initialize two pointers, 'slow' and 'fast', to the head of the linked list.",
+        "Step 2: Move 'slow' pointer one step forward and 'fast' pointer two steps forward in each iteration.",
+        "Step 3: Check if 'slow' and 'fast' pointers meet; if they do, a cycle exists.",
+        "Step 4: If 'fast' reaches the end of the list (null), there is no cycle.",
+        "Final step: Return true if a cycle is detected, otherwise return false."
+    ],
+    "pseudocode": "ALGORITHM LinkedListCycle\nBEGIN\n    SET slow = head\n    SET fast = head\n    WHILE fast ≠ NULL AND fast.next ≠ NULL DO\n        SET slow = slow.next\n        SET fast = fast.next.next\n        IF slow = fast THEN\n            RETURN true\n    END WHILE\n    RETURN false\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize 'slow' and 'fast']\n  │\n  ▼\n◊ Is 'fast' NULL? ◊ ──NO──► [Move pointers]\n  │                        │\n  ▼                        ▼\n◊ Is 'slow' = 'fast'? ◊ ──YES──► [Cycle Detected]\n  │                        │\n  ▼                        ▼\n[Continue Loop]          [Return true]\n  │                        │\n  ▼                        ▼\n[Return false]         END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** By using two pointers at different speeds, we can determine if a cycle exists without extra space.\n\n**Approach Explanation:**\n1. **Main Strategy**: The 'slow' pointer moves at a normal pace, while the 'fast' pointer moves twice as fast. If a cycle exists, they will eventually meet.\n2. **Key Components**: The use of two pointers is crucial; it allows us to detect cycles in O(n) time with O(1) space.\n3. **Why It Works**: If there is a cycle, the fast pointer will enter the cycle and eventually catch up to the slow pointer.\n4. **Edge Cases**: An empty list or a list with only one element (head pointing to itself) should be handled appropriately.\n\n**Alternative Approaches:** A hash table could be used to store visited nodes, which would simplify detection but increase space complexity to O(n).",
+    "complexity": "Time Complexity: O(n)\n- Each pointer traverses the linked list at most once.\n- The worst-case scenario occurs when there is a cycle that includes all nodes.\n\nSpace Complexity: O(1)\n- No additional data structures are used; only two pointers are maintained.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n)      │    O(1)       │\n│ Hash Table      │    O(n)      │    O(n)       │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The two-pointer technique is optimal for detecting cycles due to its linear time complexity and constant space usage.\n- This method is scalable and efficient for large datasets compared to alternatives needing more memory.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

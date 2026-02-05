@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs/Nuevo - Preroll, Midroll, Postroll</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>Midroll Video Ads</h1>
+
+	<link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+	<script src="../plugins/vroll.js"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid" controls preload playsinline webkit-playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+
+    
+	<script>
+	var player = videojs('player_1', {license:licenseKey});
+	player.nuevo(); 	
+	player.vroll([
+		{src:"//opencdn.b-cdn.net/video/preroll.mp4",type:"video/mp4",href:"//www.nuevodevel.com/nuevo/order",offset:"0",skip:"5",id:"1"},	{src:"//opencdn.b-cdn.net/video/midroll1.mp4",type:"video/mp4",href:"//www.nuevodevel.com/nuevo/order",offset:"10",skip:"5",id:"2"},
+		{src:"//opencdn.b-cdn.net/video/midroll2.mp4",type:"video/mp4",href:"//www.nuevodevel.com/nuevo/order",offset:"50%",skip:"5",id:"3"},
+		{src:"//opencdn.b-cdn.net/video/postroll.mp4",type:"video/mp4",href:"//www.nuevodevel.com/nuevo/order",offset:"100%",skip:"5",id:"4"}]);
+	</script>
+
+<h2>Player Code setup</h2>
+<h3>Prerroll, Midroll (00:10), Midroll (50%), Postroll</h3>
+
+
+<pre>
+<span class="comment">&lt;!--Load playe and plugins javascript files--&gt;</span>
+&lt;script src="/videojs/video.min.js"&gt;&lt;/script&gt;
+&lt;script src="/videojs/nuevo.min.js"&gt;&lt;/script&gt;
+&lt;script src="/videojs/plugins/vroll.js"&gt;&lt;/script&gt;
+
+<span class="comment">&lt;!--Initialize player, Nuevo plugin and setup roll videos--&gt;</span>
+&lt;script&gt;
+	var player = videojs('player_one', {license: "key"});
+	player.nuevo(); 
+	player.vroll([
+		{
+			src: "//opencdn.b-cdn.net/video/preroll.mp4",
+			type: "video/mp4",
+			href: "https://url-to-go-on-click",
+			offset: '0',  <span class="comment">//must be '0' for preroll video</span>
+			skip: 5, <span class="comment">//optionally</span>
+			id: '1' <span class="comment">//useful for tracking roll video</span>
+		}, {
+			src: "//opencdn.b-cdn.net/video/midroll1.mp4",
+			type: "video/mp4",
+			href: "https://url-to-go-on-click",
+			offset: '10', <span class="comment">//midroll starts at 00:10</span>
+			skip: 5, <span class="comment">//optionally</span>
+			id: '2'
+		}
+			src: "//opencdn.b-cdn.net/video/midroll2.mp4",
+			type: "video/mp4",
+			href: "https://url-to-go-on-click",
+			offset: '50%', <span class="comment">//midroll starts at half of video</span>
+			skip: 5, <span class="comment">//optionally</span>
+			id: '3'
+		}
+			src: "//opencdn.b-cdn.net/video/postroll.mp4",
+			type: "video/mp4",
+			href: "https://url-to-go-on-click",
+			offset: '100%', <span class="comment">//must be '100%' for postroll video</span>
+			skip: 5, <span class="comment">//optionally</span>
+			id: '4'
+		}
+	]);
+&lt;/script&gt;
+</pre>
+<br />
+Preroll video must have option "offset: 0", psotroll video must have option "offset: 100%". <br />
+You can't use postroll video for live streams. You can't use offset percentage value for a live stream.<br />
+To play midroll video one after another just set the same "offset" value.
+<br /><br />
+
+<h3>Tracking video ad by ad ID</h3>
+Events aailable to track through JavaScript are "start", "paused", "resumed" "skipped", "completed", "error", "clicked", 
+<pre>
+&lt;script&gt;
+   player.on('vroll', function(event, data) {
+	  var ad_id = data.id;
+	  var action = data.action;
+   }
+&lt;/script&gt;
+</pre>
+Another method to track ad events is similar to VAST ads tracking. The user may define a tracking URL, and an event will be sent to this URL as a simple URL request.
+<pre>
+&lt;script&gt;
+	var player = videojs('player_one', {license: "keyy"});
+	player.nuevo(); 
+	player.vroll(
+		ads_array,
+		{track_url: "//url-to-track-events" }
+	);
+&lt;/script&gt;
+</pre>
+The first event tracked will be <q>adstart</q>, so the URL will be like: <span class="mark"><i>//url-to-track-events?event="adstart"</i></span>. Addtionally if ad_id is defined for single ad, the second request parameter will be ad id, e.g. <span class="mark"><i>//url-to-track-events?event="adstart"&id=ad_id</i></span>.<br>
+Events sent to trackUrl are: <i>error, adstart, firstQuartile, midpoint, thirdQuartile, skipped and completed</i>.
+<br><br>
+It is possible to define a custom clickable ad button instead of a clickable video element. The button may feature a custom icon and custom text and any background and text colors. For details check <a target="_blank" class="under" href="https://www.nuevodevel.com/nuevo/showcase/preroll">this Nuevodevel demo.</a>
+
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevodevl Software</a>. All rights reserved.
+</div>
+
+</body>
+</html>

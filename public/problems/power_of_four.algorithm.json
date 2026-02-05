@@ -1,0 +1,17 @@
+{
+    "id": "power_of_four",
+    "problem_id": "power_of_four",
+    "title": "Power of Four - Mathematical Check",
+    "algorithm": [
+        "Step 1: Check if the number is less than 1. If it is, return false immediately.",
+        "Step 2: While the number is greater than 1, check if it is divisible by 4.",
+        "Step 3: If it is divisible by 4, divide the number by 4.",
+        "Step 4: If the number becomes 1 after repeated division, return true.",
+        "Step 5: If at any point it is not divisible by 4, return false.",
+        "Final step: Return the result of the checks."
+    ],
+    "pseudocode": "ALGORITHM PowerOfFour\nBEGIN\n    IF number < 1 THEN\n        RETURN false\n    WHILE number > 1 DO\n        IF number MOD 4 ≠ 0 THEN\n            RETURN false\n        number ← number / 4\n    END WHILE\n    RETURN true\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Check if number < 1] ──→ NO ───► [While number > 1]\n  │                │            │\n  ▼                ▼            ▼\nRETURN false     [Check number MOD 4]\n                  │            │\n                  ▼            ▼\n             YES ──→ [Divide by 4] ──→ [End While]\n             │                        │\n             ▼                        ▼\n          RETURN true              RETURN false\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** A number is a power of four if it can be represented as 4^n for some non-negative integer n.\n\n**Approach Explanation:**\n1. **Main Strategy**: The algorithm repeatedly divides the input number by 4 until it either reaches 1 (indicating it's a power of four) or fails to be divisible by 4 (indicating it isn't).\n2. **Key Components**: The modulo operation checks whether the number can be evenly divided by 4, and the loop continues until we reach a conclusion.\n3. **Why It Works**: As powers of four grow exponentially, any non-power of four will eventually stop being divisible by 4.\n4. **Edge Cases**: The algorithm correctly handles cases where the input is 0, negative numbers, and positive integers that aren't powers of four.\n\n**Alternative Approaches:** One could also use logarithms to determine if log4(number) is an integer, but this may introduce floating-point inaccuracies.",
+    "complexity": "Time Complexity: O(log4(n))\n- Each division by 4 reduces the number significantly, leading to logarithmic time complexity.\n- In practice, this means the number of iterations is proportional to the logarithm of the number base 4.\n\nSpace Complexity: O(1)\n- The algorithm only uses a constant amount of space for variables and does not require additional data structures.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(log4(n)) │    O(1)      │\n│ Alternative 1   │    O(log(n))  │    O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- The algorithm performs very efficiently for large inputs due to its logarithmic nature.\n- It is scalable for checking multiple numbers since each check operates independently.\n- Trade-offs between simplicity in implementation and the potential for numerical precision issues in alternative methods like logarithmic checks."
+}

@@ -1,0 +1,54 @@
+{
+    "id": "word_search",
+    "title": "Word Search",
+    "description": "Given a <code>board</code> of characters and a <code>word</code>, find if the word exists in the grid. The word can be constructed from letters of sequentially adjacent cells, where <code>adjacent</code> cells are horizontally or vertically neighboring. The same letter cell may not be used more than once.",
+    "difficulty": "Medium",
+    "category": "Backtracking, Array",
+    "examples": [
+        {
+            "input": "board = [['A','B','C','E'], ['S','F','C','S'], ['A','D','E','E']]; word = 'ABCCED'",
+            "output": "true",
+            "explanation": "The word 'ABCCED' can be found by starting from (0,0) -> (0,1) -> (1,1) -> (1,2) -> (2,2) -> (2,3), following the letters in the grid."
+        },
+        {
+            "input": "board = [['A','B','C','E'], ['S','F','C','S'], ['A','D','E','E']]; word = 'SEE'",
+            "output": "true",
+            "explanation": "The word 'SEE' can be constructed starting from (2,2) -> (2,1) -> (1,1). Thus, it is present in the grid."
+        },
+        {
+            "input": "board = [['A','B','C','E'], ['S','F','C','S'], ['A','D','E','E']]; word = 'ABCB'",
+            "output": "false",
+            "explanation": "The word 'ABCB' cannot be formed since after choosing (0,0) -> (0,1), the next 'B' cannot be adjacent to the first due to the rules of adjacency. Therefore, it does not exist."
+        }
+    ],
+    "constraints": [
+        "The input matrix will have dimensions of m x n, where 1 <= m, n <= 6.",
+        "The characters in the board will only be uppercase English letters.",
+        "The word length will be at least 1 and at most 15."
+    ],
+    "tags": [
+        "Backtracking",
+        "Array",
+        "Depth-First Search"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "surrounded_regions",
+        "number_of_islands",
+        "word_search_ii"
+    ],
+    "hints": [
+        "Consider using Depth First Search (DFS) to explore potential paths for forming the word.",
+        "Track visited cells to avoid using the same letter cell multiple times.",
+        "Think about how you can efficiently backtrack when a path does not lead to a solution.",
+        "Try to implement a recursive function that checks each direction for each letter in the word."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

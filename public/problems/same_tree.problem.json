@@ -1,0 +1,53 @@
+{
+    "id": "same_tree",
+    "title": "Same Tree",
+    "description": "Given two binary trees, <code>p</code> and <code>q</code>, write a function to check if they are the same or not. Two binary trees are considered the same if they are structurally identical and the nodes have the same value.",
+    "difficulty": "Easy",
+    "category": "Tree, Depth-First Search",
+    "examples": [
+        {
+            "input": "p = [1,2,3], q = [1,2,3]",
+            "output": "true",
+            "explanation": "Both trees have the same structure and node values: root(1) with left child(2) and right child(3)."
+        },
+        {
+            "input": "p = [1,2], q = [1,null,2]",
+            "output": "false",
+            "explanation": "Tree <code>p</code> has a left child(2) while tree <code>q</code> has a right child(2), making them structurally different."
+        },
+        {
+            "input": "p = [], q = []",
+            "output": "true",
+            "explanation": "Both trees are empty, hence they are considered the same."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in both trees is in the range [0, 100].",
+        "Each node's value is an integer in the range [-100, 100]."
+    ],
+    "tags": [
+        "Tree",
+        "Depth-First Search",
+        "Binary Tree"
+    ],
+    "companies": [
+        "Google",
+        "Apple",
+        "Microsoft",
+        "Amazon"
+    ],
+    "similar_problems": [
+        "is_subtree",
+        "invert_binary_tree",
+        "maximum_depth_of_binary_tree"
+    ],
+    "hints": [
+        "Consider using recursion to traverse both trees simultaneously.",
+        "Check the value of each node first before checking their children.",
+        "Handle the case where one tree is null and the other is not carefully.",
+        "Think about how you can compare both trees in a single traversal."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

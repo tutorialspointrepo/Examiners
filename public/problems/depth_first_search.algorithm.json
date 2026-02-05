@@ -1,0 +1,20 @@
+{
+    "id": "depth_first_search",
+    "problem_id": "depth_first_search",
+    "title": "Depth First Search - Graph Traversal Technique",
+    "algorithm": [
+        "Step 1: Initialize a stack data structure to keep track of nodes to visit.",
+        "Step 2: Push the starting node onto the stack and mark it as visited.",
+        "Step 3: While the stack is not empty, repeat the following steps:",
+        "Step 4: Pop the top node from the stack and process it (e.g., print or store).",
+        "Step 5: For each unvisited neighbor of the popped node, push the neighbor onto the stack and mark it as visited.",
+        "Final step: Continue until the stack is empty, at which point all reachable nodes have been processed."
+    ],
+    "pseudocode": "ALGORITHM DepthFirstSearch\nBEGIN\n    DECLARE stack AS Stack\n    DECLARE visited AS Set\n    PUSH start_node TO stack\n    ADD start_node TO visited\n    WHILE NOT IS_EMPTY(stack) DO\n        current_node := POP(stack)\n        PROCESS(current_node)\n        FOR EACH neighbor IN GET_NEIGHBORS(current_node) DO\n            IF neighbor NOT IN visited THEN\n                PUSH neighbor TO stack\n                ADD neighbor TO visited\n            ENDIF\n        ENDFOR\n    ENDWHILE\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[PUSH start_node onto stack]\n  │\n  ▼\n◊ Is stack empty? ◊ ──NO──► [POP node from stack]\n  │                        │\n  ▼                        ▼\n[PROCESS node]         [GET neighbors]\n  │                        │\n  ▼                        ▼\n◊ Is neighbor unvisited? ◊ ──YES──► [PUSH neighbor onto stack]\n  │                        │\n  ▼                        ▼\n[Continue until stack is empty]  END\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The depth-first search explores as far down a branch as possible before backtracking.\n\n**Approach Explanation:**\n1. **Main Strategy**: Utilize a stack to manage the traversal order; this can be either a simple stack or a recursive call stack.\n2. **Key Components**: The use of a set to track visited nodes prevents cycles and redundant processing.\n3. **Why It Works**: DFS is ideal for exploring all paths in a graph and can reach deep nodes quickly due to its nature of going deep first.\n4. **Edge Cases**: Handles disconnected graphs by ensuring all nodes are visited if multiple components exist.\n\n**Alternative Approaches:** Breadth-first search (BFS) could be used for scenarios where the shortest path or level-order traversal is desired.",
+    "complexity": "Time Complexity: O(V + E)\n- Each vertex is visited once, and each edge is considered once during the traversal.\n\nSpace Complexity: O(V)\n- Space is used for the stack and the visited set, which can grow linearly with the number of vertices.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ Depth First Search │    O(V + E)   │    O(V)      │\n│ Breadth First Search │    O(V + E)   │    O(V)      │\n│ Dijkstra's Algorithm │    O((V + E) log V) │ O(V)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- DFS is memory efficient for deep graphs but may lead to stack overflow in very deep trees unless implemented iteratively.\n- It is less suitable for finding shortest paths compared to BFS or other algorithms like Dijkstra's.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

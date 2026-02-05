@@ -1,0 +1,40 @@
+{
+  "id": "intersection",
+  "title": "Intersection of Two Arrays",
+  "description": "Given two integer arrays <code>nums1</code> and <code>nums2</code>, return an array of their intersection. Each element in the result must be unique and you may return the result in any order.",
+  "difficulty": "Easy",
+  "category": "Array, Hash Table",
+  "examples": [
+    {
+      "input": "nums1 = [1,2,2,1], nums2 = [2,2]",
+      "output": "[2]",
+      "explanation": "The intersection contains only the element 2, appearing once in the result."
+    },
+    {
+      "input": "nums1 = [4,9,5], nums2 = [9,4,9,8,4]",
+      "output": "[9,4]",
+      "explanation": "The intersection contains elements 4 and 9. Order doesn't matter."
+    },
+    {
+      "input": "nums1 = [1,2,3], nums2 = [4,5,6]",
+      "output": "[]",
+      "explanation": "No common elements between the arrays."
+    }
+  ],
+  "constraints": [
+    "1 ≤ nums1.length, nums2.length ≤ 1000",
+    "0 ≤ nums1[i], nums2[i] ≤ 1000"
+  ],
+  "tags": ["Array", "Hash Table", "Two Pointers"],
+  "companies": ["Google", "Facebook", "Amazon", "Microsoft"],
+  "similar_problems": ["intersection_of_two_arrays_ii", "find_common_characters", "intersection_of_multiple_arrays"],
+  "hints": [
+    "Use a hash set to store elements from the first array.",
+    "Iterate through the second array and check if elements exist in the set.",
+    "Make sure each element appears only once in the result.",
+    "Consider sorting both arrays and using two pointers as an alternative approach."
+  ],
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z",
+   "version": "1.0"
+}

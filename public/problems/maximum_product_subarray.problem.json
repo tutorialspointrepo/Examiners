@@ -1,0 +1,53 @@
+{
+    "id": "maximum_product_subarray",
+    "title": "Maximum Product Subarray",
+    "description": "Given an integer array <code>nums</code>, find the contiguous subarray (containing at least one number) which has the largest product and return that product. It is guaranteed that the answer will fit in a 32-bit signed integer. You must solve this problem in O(n) time complexity.",
+    "difficulty": "Medium",
+    "category": "Array, Dynamic Programming",
+    "examples": [
+        {
+            "input": "[2, 3, -2, 4]",
+            "output": "6",
+            "explanation": "The subarray <code>[2, 3]</code> has the largest product of <code>6</code>."
+        },
+        {
+            "input": "[-2, 0, -1]",
+            "output": "0",
+            "explanation": "The maximum product is <code>0</code> because the empty subarray or the subarray containing <code>0</code> gives the highest product."
+        },
+        {
+            "input": "[\u22122, 3, 0, 2, \u22125, \u22122]",
+            "output": "3",
+            "explanation": "The subarray <code>[3]</code> has the largest product of <code>3</code>, as it is the only positive number."
+        }
+    ],
+    "constraints": [
+        "The length of <code>nums</code> will be in the range [1, 2 * 10^4].",
+        "Each element <code>nums[i]</code> is an integer in the range [-10^5, 10^5]."
+    ],
+    "tags": [
+        "Array",
+        "Dynamic Programming",
+        "Mathematics"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "maximum_sum_subarray",
+        "product_of_array_except_self",
+        "minimum_product_subarray"
+    ],
+    "hints": [
+        "Consider how the presence of negative numbers can affect the product.",
+        "Keep track of both the maximum and minimum products at each position.",
+        "Think about how to handle zeros within the array.",
+        "Look for a way to update your results in a single pass through the array."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

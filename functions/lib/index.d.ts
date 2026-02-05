@@ -1,5 +1,21 @@
 import * as functions from 'firebase-functions';
 export { processReportInstance } from './reports';
+export declare const generateLogicAnalysis: functions.HttpsFunction & functions.Runnable<any>;
+export declare const chatWithLearningAI: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * 📝 Submit Exercise for Evaluation (Pub/Sub Publisher)
+ * Saves submission to Firestore and queues for AI evaluation
+ * Returns immediately - evaluation happens in background
+ */
+export declare const submitExerciseForEvaluation: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * 🤖 Exercise Evaluation Worker (Pub/Sub Subscriber)
+ * Triggered automatically for each exercise submission
+ * Multiple instances run in PARALLEL for scalability
+ *
+ * NOTE: Pub/Sub has built-in retry on failure - no need for scheduled retry!
+ */
+export declare const exerciseEvaluationWorker: functions.CloudFunction<functions.pubsub.Message>;
 /**
  * 📝 Resume Content Enhancement with AI
  * Enhances resume summaries, job descriptions, and skills using GPT

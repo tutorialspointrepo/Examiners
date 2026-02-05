@@ -1,0 +1,54 @@
+{
+    "id": "copy_random_pointer",
+    "title": "Clone Graph with Random Pointers",
+    "description": "Given a linked list where each node contains a random pointer that can point to any node in the list or to null, you need to create a deep copy of the list. Each node in the original list has two pointers: <code>next</code> which points to the next node in the list and <code>random</code> which points to any node in the list or null. Your task is to return a deep copy of the list.",
+    "difficulty": "Medium",
+    "category": "Linked List, Depth-First Search",
+    "examples": [
+        {
+            "input": "Input: head = [[7,null],[13,0],[11,4],[10,2],[1,0]]",
+            "output": "[[7,null],[13,0],[11,4],[10,2],[1,0]]",
+            "explanation": "The original list has nodes with values 7, 13, 11, 10, and 1. The random pointers are set as follows: 13 points to the first node (value 7), 11 points to the fourth node (value 10), and so on. The copied list maintains the structure and relationships of the original."
+        },
+        {
+            "input": "Input: head = [[1,1],[2,1]]",
+            "output": "[[1,1],[2,1]]",
+            "explanation": "In this case, the first node points to itself with its random pointer, and the second node does the same. Therefore, the deep copy retains these relationships correctly."
+        },
+        {
+            "input": "Input: head = [[3,null],[2,3],[1,2]]",
+            "output": "[[3,null],[2,3],[1,2]]",
+            "explanation": "Here, the first node has no random pointer, while the second points to the third and the third points back to the second. The cloned list perfectly mirrors these pointers."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the linked list is in the range [0, 100].",
+        "Each node's value is unique.",
+        "A node can have any number of edges but will not point to itself."
+    ],
+    "tags": [
+        "Linked List",
+        "Depth-First Search",
+        "Hash Table"
+    ],
+    "companies": [
+        "Google",
+        "Facebook",
+        "Amazon",
+        "Microsoft"
+    ],
+    "similar_problems": [
+        "clone_graph",
+        "copy_list_with_random_pointer",
+        "flatten_binary_tree_to_linked_list"
+    ],
+    "hints": [
+        "Consider using a hash map to store the mapping between original nodes and their copies.",
+        "You may want to traverse the list twice: once to copy nodes and once to set random pointers.",
+        "Pay attention to the edge cases where random pointers may point to null.",
+        "Think about how you can use the existing structure of the list to minimize additional space usage."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

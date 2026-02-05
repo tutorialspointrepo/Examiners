@@ -1,0 +1,53 @@
+{
+    "id": "kth_smallest_bst",
+    "title": "Kth Smallest Element in a BST",
+    "description": "Given a binary search tree (BST), find the <code>k</code>th smallest element in it. You may assume that <code>k</code> is always valid, 1 \u2264 <code>k</code> \u2264 number of nodes in the BST.",
+    "difficulty": "Medium",
+    "category": "Binary Tree, Binary Search Tree",
+    "examples": [
+        {
+            "input": "root = [3,1,4,null,2], k = 1",
+            "output": "1",
+            "explanation": "The smallest element in the BST is 1. Thus, the 1st smallest element is 1."
+        },
+        {
+            "input": "root = [5,3,6,2,4,null,null,1], k = 3",
+            "output": "3",
+            "explanation": "In-order traversal of the BST gives us [1, 2, 3, 4, 5, 6]. The 3rd smallest element is 3."
+        },
+        {
+            "input": "root = [5,3,6,2,4,null,null,1], k = 4",
+            "output": "4",
+            "explanation": "In-order traversal of the BST gives us [1, 2, 3, 4, 5, 6]. The 4th smallest element is 4."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the BST is n.",
+        "1 \u2264 k \u2264 n"
+    ],
+    "tags": [
+        "Tree",
+        "Binary Search Tree",
+        "Recursion"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "kth_largest_bst",
+        "inorder_traversal_bst",
+        "find_minimum_bst"
+    ],
+    "hints": [
+        "Consider performing an in-order traversal of the BST.",
+        "Keep track of the count of nodes visited during the traversal.",
+        "Once you reach the <code>k</code>th node in the in-order sequence, you've found your answer.",
+        "Think about how to optimize the search process without traversing all nodes."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

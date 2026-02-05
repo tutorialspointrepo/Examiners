@@ -15,16 +15,17 @@ import {
   faChevronDown,
   faBookOpen,
   faBooks,
-  faCirclePlay,
-  faFileText,
-  faFilePdf,
-  faDumbbell,
-  faClipboardCheck,
   faLayerGroup,
   faBookBookmark,
   faBullseye,
   faAddressCard,
   faQuoteLeft,
+  faPlay,
+  faDumbbell,
+  faFileAlt,
+  faClipboardList,
+  faWrench,
+  faBrain,
 } from '@fortawesome/sharp-light-svg-icons';
 import Courses from './Courses';
 import LearningHome from './LearningHome';
@@ -32,6 +33,7 @@ import Classes from './Classes';
 import UserList from './UserList';
 import CodingLab from './CodingLab';
 import ResumeBuilderApp from './ResumeBuilderApp';
+import LogicBuilder from './LogicBuilder';
 import { firebaseService } from './services/firebase_service';
 
 // Course interface
@@ -48,6 +50,7 @@ export interface Course {
   progress: number;
   isEnrolled: boolean;
   notes?: number;
+  totalChapters?: number;
   assessments?: number;
   completedCount?: number;
   instructor?: string;
@@ -59,7 +62,6 @@ export interface Course {
   tagLine?: string;
   description?: string;
   language?: string;
-  collegeEnrollmentCounts?: Record<string, number>;
   enrollmentCount?: number;
 }
 
@@ -79,6 +81,7 @@ interface LearningProps {
   selectedCollege?: { id: string; name: string } | null;
   onActiveMenuChange?: (menuItem: string) => void;
   selectedProblemSlug?: string;
+  onOpenCurriculum?: (data: { courseName: string; courseSlug: string; curriculumData: any[]; isLoading: boolean; enrollmentId?: string }) => void;
 }
 
 // Helper function to decode HTML entities and render HTML
@@ -232,12 +235,77 @@ const ExpandableCard: React.FC<ExpandableCardProps> = ({
   );
 };
 
-const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCollege, onActiveMenuChange, selectedProblemSlug }) => {
-  const [activeMenuItem, setActiveMenuItem] = useState('courses');
-  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
+const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCollege, onActiveMenuChange, selectedProblemSlug, onOpenCurriculum }) => {
+  const [activeMenuItem, setActiveMenuItem] = useState('progress');
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(window.innerWidth < 1400);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [isCoursesCollapsed, setIsCoursesCollapsed] = useState(false);
+  const [isToolsCollapsed, setIsToolsCollapsed] = useState(true); // Tools section collapsed by default
+  
+  // Check if current user is a student
+  const isStudent = currentUser?.userType === 'student';
+  
+  // Cached curriculum for student view
+  const [cachedCurriculum, setCachedCurriculum] = useState<any[] | null>(null);
+  const [isLoadingCachedCurriculum, setIsLoadingCachedCurriculum] = useState(false);
+  const [expandedCurriculumUnits, setExpandedCurriculumUnits] = useState<string[]>([]);
+  const [expandedCurriculumChapters, setExpandedCurriculumChapters] = useState<string[]>([]);
+  
+  // Auto-collapse left panel when window width < 1400px
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1400) {
+        setIsLeftCollapsed(true);
+      }
+    };
+
+    // Set initial state
+    handleResize();
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  // Fetch and cache curriculum for student when course is selected
+  useEffect(() => {
+    const fetchCurriculumForStudent = async () => {
+      if (!isStudent || !selectedCourse?.id) {
+        setCachedCurriculum(null);
+        return;
+      }
+      
+      setIsLoadingCachedCurriculum(true);
+      try {
+        const curriculum = await firebaseService.getCourseCurriculum(selectedCourse.id);
+        // Transform curriculum data - V2 structure: unitName, chapterName, lectureName
+        const transformedCurriculum = curriculum.map((unit: any, unitIndex: number) => ({
+          id: unit.unitId || `unit-${unitIndex}`,
+          title: unit.unitName || unit.title || `Unit ${unitIndex + 1}`,
+          chapters: (unit.chapters || []).map((chapter: any, chapterIndex: number) => ({
+            id: chapter.chapterId || `chapter-${unitIndex}-${chapterIndex}`,
+            title: chapter.chapterName || chapter.title || `Chapter ${chapterIndex + 1}`,
+            lectures: (chapter.lectures || []).map((lecture: any, lectureIndex: number) => ({
+              id: lecture.lectureId || lecture.id || `lecture-${unitIndex}-${chapterIndex}-${lectureIndex}`,
+              title: lecture.lectureName || lecture.title || `Lecture ${lectureIndex + 1}`,
+              type: (lecture.lectureType || lecture.type || 'video').toLowerCase(),
+              duration: lecture.durationInSeconds 
+                ? `${Math.floor(lecture.durationInSeconds / 60)}:${String(lecture.durationInSeconds % 60).padStart(2, '0')}` 
+                : (lecture.duration || '')
+            }))
+          }))
+        }));
+        setCachedCurriculum(transformedCurriculum);
+      } catch (error) {
+        console.error('Error fetching curriculum for student:', error);
+        setCachedCurriculum(null);
+      } finally {
+        setIsLoadingCachedCurriculum(false);
+      }
+    };
+
+    fetchCurriculumForStudent();
+  }, [isStudent, selectedCourse?.id]);
   
   // College-specific enrollment count for selected course
   const [collegeEnrollmentCount, setCollegeEnrollmentCount] = useState<number>(0);
@@ -249,6 +317,9 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     coursePrerequisite?: string;
   } | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  
+  // Course info section collapse state (tagline + description + what you'll learn + prerequisites)
+  const [isCourseInfoExpanded, setIsCourseInfoExpanded] = useState(false);
 
   // Fetch course details when a course is selected
   useEffect(() => {
@@ -275,29 +346,56 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     fetchCourseDetails();
   }, [selectedCourse?.id]);
 
-  // Set college-specific enrollment count when course or college changes
+  // Clear selected course when college changes (for system admin)
+  useEffect(() => {
+    if (currentUser?.userType === 'system_admin') {
+      setSelectedCourse(null);
+      setCollegeEnrollmentCount(0);
+    }
+  }, [selectedCollege?.id]);
+
+  // Fetch college features
+  useEffect(() => {
+    const fetchCollegeFeatures = async () => {
+      let collegeIdToUse: string | null = null;
+      
+      if (currentUser?.userType === 'system_admin') {
+        collegeIdToUse = selectedCollege?.id || null;
+      } else {
+        collegeIdToUse = currentUser?.collegeId || null;
+      }
+      
+      if (!collegeIdToUse) {
+        setCollegeFeatures([]);
+        return;
+      }
+      
+      try {
+        const collegeData = await firebaseService.getCollege(collegeIdToUse);
+        if (collegeData?.features) {
+          setCollegeFeatures(collegeData.features);
+        } else {
+          setCollegeFeatures([]);
+        }
+      } catch (error) {
+        console.error('Error fetching college features:', error);
+        setCollegeFeatures([]);
+      }
+    };
+    
+    fetchCollegeFeatures();
+  }, [selectedCollege?.id, currentUser?.collegeId, currentUser?.userType]);
+
+  // Set college-specific enrollment count when course changes
   useEffect(() => {
     if (!selectedCourse) {
       setCollegeEnrollmentCount(0);
       return;
     }
     
-    // Determine college ID based on user type
-    let collegeIdToUse: string | null = null;
-    if (currentUser?.userType === 'system_admin') {
-      collegeIdToUse = selectedCollege?.id || null;
-    } else if (currentUser?.userType !== 'student') {
-      collegeIdToUse = currentUser?.collegeId || null;
-    }
-    
-    // Get count from collegeEnrollmentCounts map if available
-    if (collegeIdToUse && selectedCourse.collegeEnrollmentCounts) {
-      setCollegeEnrollmentCount(selectedCourse.collegeEnrollmentCounts[collegeIdToUse] || 0);
-    } else {
-      // Fallback to global enrollmentCount or students field
-      setCollegeEnrollmentCount(selectedCourse.enrollmentCount || 0);
-    }
-  }, [selectedCourse, selectedCollege, currentUser]);
+    // enrollmentCount now comes from college_courses and is already college-specific
+    setCollegeEnrollmentCount(selectedCourse.enrollmentCount || 0);
+  }, [selectedCourse]);
   
   // Users/Classes States
   const [selectedClassForUsers, setSelectedClassForUsers] = useState<string | null>(null);
@@ -305,6 +403,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
   
   // Enroll Modal States
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  const [enrollModalTab, setEnrollModalTab] = useState<'students' | 'administrators'>('students');
   const [isLoadingEnrollData, setIsLoadingEnrollData] = useState(false);
   const [isEnrolling, setIsEnrolling] = useState(false);
   const [enrollmentResult, setEnrollmentResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -323,12 +422,12 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
   const [isUpdatingExpiry, setIsUpdatingExpiry] = useState(false);
   const enrollUsersPerPage = 25;
   
-  // Curriculum Modal States
-  const [isCurriculumModalOpen, setIsCurriculumModalOpen] = useState(false);
-  const [isLoadingCurriculum, setIsLoadingCurriculum] = useState(false);
-  const [curriculumData, setCurriculumData] = useState<any[]>([]);
-  const [expandedSections, setExpandedSections] = useState<string[]>([]);
-  const [expandedChapters, setExpandedChapters] = useState<string[]>([]);
+  // Admin Assignment States (for administrators tab)
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
+  const [selectedAdmins, setSelectedAdmins] = useState<string[]>([]);
+  const [adminSearchQuery, setAdminSearchQuery] = useState('');
+  const [isLoadingAdmins, setIsLoadingAdmins] = useState(false);
+  const [isAssigningToAdmins, setIsAssigningToAdmins] = useState(false);
 
   // Student Progress Modal States
   const [selectedStudentForProgress, setSelectedStudentForProgress] = useState<any | null>(null);
@@ -380,6 +479,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
 
   // State for valid classes in enroll modal
   const [enrollValidClasses, setEnrollValidClasses] = useState<string[]>([]);
+  const [collegeFeatures, setCollegeFeatures] = useState<string[]>([]);
 
   // Fetch enrolled users when Enroll modal opens
   const openEnrollModal = async () => {
@@ -393,6 +493,9 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     setEnrollValidClasses([]);
     setEnrollmentEndDate('');
     setEnrollmentResult(null);
+    setAdminUsers([]);
+    setSelectedAdmins([]);
+    setAdminSearchQuery('');
     
     try {
       // Determine which college to use based on user type
@@ -419,7 +522,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
         setEnrollValidClasses(collegeData.validClasses);
       }
       
-      // Fetch users from the college (students only for enrollment)
+      // Fetch users from the college (all users)
       const users = await firebaseService.getUsersByCollege(collegeIdToUse);
       
       // Fetch already enrolled users for this course
@@ -474,27 +577,152 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
           };
         });
       
+      // Filter admin users (admin, teacher, dean, principal)
+      const adminTypes = ['admin', 'teacher', 'dean', 'principal'];
+      const adminUsersList = users
+        .filter(user => adminTypes.includes(user.userType))
+        .map(user => {
+          const enrollment = enrollmentMap.get(user.userId);
+          const isAssigned = !!enrollment;
+          return {
+            id: user.userId,
+            name: user.fullName || user.email?.split('@')[0] || 'Unknown',
+            email: user.email || '',
+            userType: user.userType,
+            avatar: (user.fullName || 'U').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2),
+            isAssigned,
+            assignedAt: enrollment?.enrolledAt || null,
+          };
+        });
+      
       console.log('📚 Total students:', studentUsers.length, 'Enrolled:', studentUsers.filter(u => u.isEnrolled).length);
+      console.log('👤 Total admins:', adminUsersList.length, 'Assigned:', adminUsersList.filter(u => u.isAssigned).length);
       setAvailableUsers(studentUsers);
+      setAdminUsers(adminUsersList);
     } catch (error) {
       console.error('Error fetching users:', error);
       setAvailableUsers([]);
+      setAdminUsers([]);
     } finally {
       setIsLoadingEnrollData(false);
     }
   };
 
-  // Fetch curriculum when Curriculum modal opens
-  const openCurriculumModal = async () => {
-    setIsCurriculumModalOpen(true);
+  // Fetch curriculum when Curriculum page opens
+  const openCurriculumPage = async () => {
+    // Call App.tsx callback to show curriculum page (this unmounts Learning)
+    if (onOpenCurriculum) {
+      // Use enrollmentId from selectedCourse if available (already fetched for students)
+      const enrollmentId = selectedCourse?.enrollmentId;
+      
+      // For students, use cached curriculum if available
+      if (isStudent && cachedCurriculum && cachedCurriculum.length > 0) {
+        // Transform cached curriculum to the format expected by CourseCurriculum
+        const transformedCurriculum = cachedCurriculum.map((unit: any) => ({
+          id: unit.id,
+          title: unit.title,
+          chapters: unit.chapters.map((chapter: any) => ({
+            id: chapter.id,
+            title: chapter.title,
+            items: chapter.lectures.map((lecture: any) => ({
+              id: lecture.id,
+              type: lecture.type,
+              title: lecture.title,
+              duration: lecture.duration,
+            }))
+          }))
+        }));
+        
+        onOpenCurriculum({
+          courseName: selectedCourse?.name || '',
+          courseSlug: selectedCourse?.id || '',
+          curriculumData: transformedCurriculum,
+          isLoading: false,
+          enrollmentId
+        });
+        return;
+      }
+      
+      onOpenCurriculum({
+        courseName: selectedCourse?.name || '',
+        courseSlug: selectedCourse?.id || '',
+        curriculumData: [],
+        isLoading: true,
+        enrollmentId
+      });
+      
+      try {
+        // Fetch real curriculum from Firebase (V2 structure)
+        const curriculum = await firebaseService.getCourseCurriculum(selectedCourse?.id);
+        
+        // Transform Firebase data to page format
+        // V2 structure: Unit.chapters is array, Chapter.lectures is array
+        const transformedCurriculum = curriculum.map((unit: any, unitIndex: number) => ({
+          id: unit.unitId || `unit-${unitIndex + 1}`,
+          title: unit.unitName || `Unit ${unitIndex + 1}`,
+          chapters: (unit.chapters || []).map((chapter: any) => ({
+            id: chapter.chapterId,
+            title: chapter.chapterName,
+            items: (chapter.lectures || []).map((lecture: any) => ({
+              id: lecture.lectureId,
+              type: (lecture.lectureType || 'video').toLowerCase(),
+              title: lecture.lectureName,
+              duration: lecture.durationInSeconds ? `${Math.floor(lecture.durationInSeconds / 60)}:${String(lecture.durationInSeconds % 60).padStart(2, '0')}` : '',
+              videoUrl: lecture.videoUrl || '',
+            }))
+          }))
+        }));
+        
+        // Update with loaded data
+        onOpenCurriculum({
+          courseName: selectedCourse?.name || '',
+          courseSlug: selectedCourse?.id || '',
+          curriculumData: transformedCurriculum,
+          isLoading: false,
+          enrollmentId
+        });
+      } catch (error) {
+        console.error('Error fetching curriculum:', error);
+        onOpenCurriculum({
+          courseName: selectedCourse?.name || '',
+          courseSlug: selectedCourse?.id || '',
+          curriculumData: [],
+          isLoading: false,
+          enrollmentId
+        });
+      }
+      return;
+    }
+    
+    // Fallback if no callback (shouldn't happen)
+    setShowCurriculumPage(true);
     setIsLoadingCurriculum(true);
-    setExpandedSections([]);
-    setExpandedChapters([]);
     
     try {
-      // TODO: Replace with actual API call
-      // const curriculum = await firebaseService.getCourseCurriculum(selectedCourse?.id);
+      // Fetch real curriculum from Firebase (V2 structure)
+      const curriculum = await firebaseService.getCourseCurriculum(selectedCourse?.id);
       
+      // Transform Firebase data to page format
+      // V2 structure: Unit.chapters is array, Chapter.lectures is array
+      const transformedCurriculum = curriculum.map((unit: any, unitIndex: number) => ({
+        id: unit.unitId || `unit-${unitIndex + 1}`,
+        title: unit.unitName || `Unit ${unitIndex + 1}`,
+        chapters: (unit.chapters || []).map((chapter: any) => ({
+          id: chapter.chapterId,
+          title: chapter.chapterName,
+          items: (chapter.lectures || []).map((lecture: any) => ({
+            id: lecture.lectureId,
+            type: (lecture.lectureType || 'video').toLowerCase(),
+            title: lecture.lectureName,
+            duration: lecture.durationInSeconds ? `${Math.floor(lecture.durationInSeconds / 60)}:${String(lecture.durationInSeconds % 60).padStart(2, '0')}` : '',
+            videoUrl: lecture.videoUrl || '',
+          }))
+        }))
+      }));
+      
+      setCurriculumData(transformedCurriculum);
+
+      /* COMMENTED OUT - Sample Data
       // Simulating API call with sample data
       await new Promise(resolve => setTimeout(resolve, 800));
       const sampleCurriculum = [
@@ -571,6 +799,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
       // Expand all sections and chapters by default
       setExpandedSections(sampleCurriculum.map(section => section.id));
       setExpandedChapters(sampleCurriculum.flatMap(section => section.chapters.map(chapter => chapter.id)));
+      END COMMENTED OUT */
     } catch (error) {
       console.error('Error fetching curriculum:', error);
       setCurriculumData([]);
@@ -579,50 +808,26 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     }
   };
 
-  const toggleSection = (sectionId: string) => {
-    setExpandedSections(prev => 
-      prev.includes(sectionId) ? prev.filter(id => id !== sectionId) : [...prev, sectionId]
-    );
-  };
-
-  const toggleChapter = (chapterId: string) => {
-    setExpandedChapters(prev => 
-      prev.includes(chapterId) ? prev.filter(id => id !== chapterId) : [...prev, chapterId]
-    );
-  };
-
-  const getItemIcon = (type: string) => {
-    switch(type) {
-      case 'video': return faCirclePlay;
-      case 'text': return faFileText;
-      case 'pdf': return faFilePdf;
-      case 'exercise': return faDumbbell;
-      case 'assessment': return faClipboardCheck;
-      default: return faFileLines;
-    }
-  };
-
-  const getItemColor = (type: string) => {
-    switch(type) {
-      case 'video': return '#8B5CF6';
-      case 'text': return '#3B82F6';
-      case 'pdf': return '#EF4444';
-      case 'exercise': return '#10B981';
-      case 'assessment': return '#F59E0B';
-      default: return '#6B7280';
-    }
-  };
-
   // Get unique classes and sections for filters
   const uniqueClasses = [...new Set(availableUsers.map(u => u.className))];
 
-  const filteredUsers = availableUsers.filter(user => {
-    const matchesSearch = user.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(userSearchQuery.toLowerCase());
-    const matchesClass = selectedClassFilter === 'all' || user.className === selectedClassFilter;
-    const matchesSection = selectedSectionFilter === 'all' || user.section === selectedSectionFilter;
-    return matchesSearch && matchesClass && matchesSection;
-  });
+  // Filter users based on search and class filter
+  const filteredUsers = selectedClassFilter === 'administrators' 
+    ? adminUsers.filter(user => {
+        const matchesSearch = user.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+          user.email.toLowerCase().includes(userSearchQuery.toLowerCase());
+        return matchesSearch;
+      })
+    : availableUsers.filter(user => {
+        const matchesSearch = user.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+          user.email.toLowerCase().includes(userSearchQuery.toLowerCase());
+        const matchesClass = selectedClassFilter === 'all' || user.className === selectedClassFilter;
+        const matchesSection = selectedSectionFilter === 'all' || user.section === selectedSectionFilter;
+        return matchesSearch && matchesClass && matchesSection;
+      });
+
+  // Check if we're in administrators mode
+  const isAdminMode = selectedClassFilter === 'administrators';
 
   // Pagination for enroll modal
   const totalEnrollPages = Math.ceil(filteredUsers.length / enrollUsersPerPage);
@@ -632,21 +837,40 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
   );
 
   const toggleUserSelection = (userId: string) => {
-    setSelectedUsers(prev => 
-      prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
-    );
-  };
-
-  // Get users available for selection (not already enrolled)
-  const selectableUsers = filteredUsers.filter(u => !u.isEnrolled);
-
-  const handleSelectAll = () => {
-    if (selectedUsers.length === selectableUsers.length && selectableUsers.length > 0) {
-      setSelectedUsers([]);
+    if (isAdminMode) {
+      setSelectedAdmins(prev => 
+        prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+      );
     } else {
-      setSelectedUsers(selectableUsers.map(u => u.id));
+      setSelectedUsers(prev => 
+        prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
+      );
     }
   };
+
+  // Get users available for selection (not already enrolled/assigned)
+  const selectableUsers = isAdminMode 
+    ? filteredUsers.filter((u: any) => !u.isAssigned)
+    : filteredUsers.filter((u: any) => !u.isEnrolled);
+
+  const handleSelectAll = () => {
+    if (isAdminMode) {
+      if (selectedAdmins.length === selectableUsers.length && selectableUsers.length > 0) {
+        setSelectedAdmins([]);
+      } else {
+        setSelectedAdmins(selectableUsers.map((u: any) => u.id));
+      }
+    } else {
+      if (selectedUsers.length === selectableUsers.length && selectableUsers.length > 0) {
+        setSelectedUsers([]);
+      } else {
+        setSelectedUsers(selectableUsers.map((u: any) => u.id));
+      }
+    }
+  };
+
+  // Get current selection count
+  const currentSelectionCount = isAdminMode ? selectedAdmins.length : selectedUsers.length;
 
   // Handle enrollment submission
   const handleEnrollUsers = async () => {
@@ -684,6 +908,17 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
           selectedUsers.includes(user.id) ? { ...user, isEnrolled: true } : user
         ));
         
+        // Update the enrollment count in UI
+        setCollegeEnrollmentCount(prev => prev + result.enrolledCount);
+        
+        // Update selectedCourse with new count
+        if (selectedCourse) {
+          setSelectedCourse({
+            ...selectedCourse,
+            enrollmentCount: (selectedCourse.enrollmentCount || 0) + result.enrolledCount
+          });
+        }
+        
         setEnrollmentResult({
           success: true,
           message: `Successfully enrolled ${result.enrolledCount} student${result.enrolledCount > 1 ? 's' : ''} to the course!`
@@ -696,6 +931,17 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
         setAvailableUsers(prev => prev.map(user => 
           selectedUsers.includes(user.id) ? { ...user, isEnrolled: true } : user
         ));
+        
+        // Update the enrollment count in UI
+        setCollegeEnrollmentCount(prev => prev + result.enrolledCount);
+        
+        // Update selectedCourse with new count
+        if (selectedCourse) {
+          setSelectedCourse({
+            ...selectedCourse,
+            enrollmentCount: (selectedCourse.enrollmentCount || 0) + result.enrolledCount
+          });
+        }
         
         setEnrollmentResult({
           success: true,
@@ -716,6 +962,72 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
       });
     } finally {
       setIsEnrolling(false);
+    }
+  };
+
+  // Handle assigning course to administrators
+  const handleAssignToAdmins = async () => {
+    if (selectedAdmins.length === 0 || !selectedCourse) return;
+    
+    setIsAssigningToAdmins(true);
+    setEnrollmentResult(null);
+    
+    try {
+      // Determine collegeId
+      let collegeId = '';
+      if (currentUser?.userType === 'system_admin') {
+        collegeId = selectedCollege?.id || '';
+      } else {
+        collegeId = currentUser?.collegeId || '';
+      }
+      
+      // For admins, we use the same enrollment mechanism but mark them differently
+      // This gives them access to the course and ability to assign it to students
+      const result = await firebaseService.enrollUsersToCourse(
+        selectedCourse.courseId || selectedCourse.id,
+        selectedAdmins,
+        currentUser?.userId || currentUser?.uid || '',
+        collegeId,
+        null, // No expiry for admins
+        'manual',
+        selectedCourse.id
+      );
+      
+      if (result.success && result.enrolledCount > 0) {
+        // Mark newly assigned admins in the list
+        setAdminUsers(prev => prev.map(user => 
+          selectedAdmins.includes(user.id) ? { ...user, isAssigned: true } : user
+        ));
+        
+        setEnrollmentResult({
+          success: true,
+          message: `Successfully assigned course to ${result.enrolledCount} administrator${result.enrolledCount > 1 ? 's' : ''}!`
+        });
+        setSelectedAdmins([]);
+      } else if (result.enrolledCount > 0) {
+        setAdminUsers(prev => prev.map(user => 
+          selectedAdmins.includes(user.id) ? { ...user, isAssigned: true } : user
+        ));
+        
+        setEnrollmentResult({
+          success: true,
+          message: `Assigned to ${result.enrolledCount} administrator${result.enrolledCount > 1 ? 's' : ''}. Some may already have access.`
+        });
+        setSelectedAdmins([]);
+      } else {
+        setEnrollmentResult({
+          success: false,
+          message: result.errors.length > 0 ? result.errors[0] : 'Failed to assign course. Please try again.'
+        });
+      }
+    } catch (error) {
+      console.error('Error assigning to admins:', error);
+      setEnrollmentResult({
+        success: false,
+        message: 'An error occurred while assigning course to administrators. Please try again.'
+      });
+    } finally {
+      setIsAssigningToAdmins(false);
     }
   };
 
@@ -756,25 +1068,20 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     }
   };
 
-  // Menu items
-  const menuItems = [
-    { id: 'courses', name: 'Courses', icon: faBooks, description: 'Browse all available courses' },
-    { id: 'students', name: 'Users', icon: faUsers, description: 'View and manage students' },
+  // Menu items - filter based on user type
+  const allMenuItems = [
     { id: 'progress', name: 'Study Progress', icon: faChartLine, description: 'Track learning progress' },
-    { id: 'curriculum', name: 'Curriculum', icon: faListCheck, description: 'Course curriculum details' },
-    { id: 'interviews', name: 'Interviews', icon: faComments, description: 'Interview preparation' },
+    { id: 'courses', name: 'Courses', icon: faBooks, description: 'Browse all available courses' },
+    { id: 'students', name: 'Users', icon: faUsers, description: 'View and manage students', hideForStudent: true },
+    { id: 'interviews', name: 'AI Interview', icon: faComments, description: 'AI-powered interview preparation' },
     { id: 'marksheet', name: 'Marksheet', icon: faFileLines, description: 'View marksheets' },
     { id: 'jobs', name: 'Job Listing', icon: faBriefcase, description: 'Browse job opportunities' },
-    { id: 'jdlearning', name: 'JD Based Learning', icon: faChartLine, description: 'Job description based learning' },
-    { id: 'resumebuilder', name: 'Resume Builder', icon: faAddressCard, description: 'Build your professional resume' },
   ];
-
-  // Bottom quick action icons
-  const bottomIcons = [
-    { id: 'code', icon: faCode, label: 'Coding Lab' },
-    { id: 'resumebuilder', icon: faAddressCard, label: 'Resume Builder' },
-    { id: 'ai', icon: faRobot, label: 'AI Assistant' },
-  ];
+  
+  // Filter out items that should be hidden for students
+  const menuItems = currentUser?.userType === 'student' 
+    ? allMenuItems.filter(item => !item.hideForStudent)
+    : allMenuItems;
 
   return (
     <div className="flex flex-1 h-full w-full overflow-hidden">
@@ -816,7 +1123,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
             <div className="px-3 py-2.5 mb-2 rounded-lg" style={{ backgroundColor: `${brandTheme.colors.primary}10` }}>
               <div className="flex items-center space-x-3">
                 <FontAwesomeIcon icon={faGraduationCap} style={{ color: brandTheme.colors.primary }} />
-                <span className="text-sm font-semibold" style={{ color: brandTheme.colors.primary }}>Training Programs</span>
+                <span className="text-sm font-semibold" style={{ color: brandTheme.colors.primary }}>Learning Programs</span>
               </div>
             </div>
           )}
@@ -892,38 +1199,215 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               );
             })}
           </div>
-        </nav>
 
-        {/* Bottom Icons */}
-        <div className="p-4 border-t border-gray-200">
-          <div className={`flex items-center ${isLeftCollapsed ? 'flex-col space-y-3' : 'justify-center space-x-4'}`}>
-            {bottomIcons.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => {
-                  if (item.id === 'code') {
-                    setActiveMenuItem('codinglab');
-                    setIsLeftCollapsed(true);
-                    if (onActiveMenuChange) onActiveMenuChange('codinglab');
-                  } else if (item.id === 'resumebuilder') {
-                    setActiveMenuItem('resumebuilder');
-                    setIsLeftCollapsed(true);
-                    if (onActiveMenuChange) onActiveMenuChange('resumebuilder');
-                  }
-                }}
-                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                  (item.id === 'code' && activeMenuItem === 'codinglab') || (item.id === 'resumebuilder' && activeMenuItem === 'resumebuilder')
-                    ? 'text-white'
-                    : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
-                }`}
-                style={(item.id === 'code' && activeMenuItem === 'codinglab') || (item.id === 'resumebuilder' && activeMenuItem === 'resumebuilder') ? { background: brandTheme.gradients.primary } : {}}
-                title={item.label}
-              >
-                <FontAwesomeIcon icon={item.icon} />
-              </button>
-            ))}
-          </div>
-        </div>
+          {/* Tools Section - Show if college has ResumeBuilder, LogicBuilder, or CodingLab features */}
+          {(collegeFeatures.includes('ResumeBuilder') || collegeFeatures.includes('LogicBuilder') || collegeFeatures.includes('CodingLab')) && (
+            <>
+              {/* Tools Header - Clickable to toggle */}
+              {!isLeftCollapsed && (
+                <div 
+                  className="px-3 py-2.5 mt-4 mb-2 rounded-lg cursor-pointer hover:opacity-80 transition-opacity" 
+                  style={{ backgroundColor: `${brandTheme.colors.primary}10` }}
+                  onClick={() => setIsToolsCollapsed(!isToolsCollapsed)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <FontAwesomeIcon icon={faWrench} style={{ color: brandTheme.colors.primary }} />
+                      <span className="text-sm font-semibold" style={{ color: brandTheme.colors.primary }}>Tools</span>
+                    </div>
+                    <FontAwesomeIcon 
+                      icon={faChevronDown} 
+                      className={`w-3 h-3 transition-transform duration-300 ${isToolsCollapsed ? '-rotate-90' : ''}`}
+                      style={{ color: brandTheme.colors.primary }} 
+                    />
+                  </div>
+                </div>
+              )}
+              {isLeftCollapsed && (
+                <div 
+                  className="py-4 mt-4 mb-2 flex flex-col items-center cursor-pointer hover:opacity-80 transition-opacity" 
+                  style={{ backgroundColor: `${brandTheme.colors.primary}10` }}
+                  onClick={() => setIsToolsCollapsed(!isToolsCollapsed)}
+                >
+                  <FontAwesomeIcon icon={faWrench} className="mb-3" style={{ color: brandTheme.colors.primary }} />
+                  <div 
+                    className="font-semibold text-sm tracking-wider"
+                    style={{ writingMode: 'vertical-rl', textOrientation: 'mixed', color: brandTheme.colors.primary }}
+                  >
+                    Tools
+                  </div>
+                </div>
+              )}
+
+              {/* Tools Menu Items - Only show when not collapsed */}
+              {!isToolsCollapsed && (
+              <div className="space-y-1">
+                {/* Coding Lab */}
+                {collegeFeatures.includes('CodingLab') && (
+                  <div className="relative mb-1">
+                    <button
+                      onClick={() => {
+                        setActiveMenuItem('codinglab');
+                        setIsLeftCollapsed(true);
+                        if (onActiveMenuChange) onActiveMenuChange('codinglab');
+                      }}
+                      onMouseEnter={() => setHoveredItem('tool-codinglab')}
+                      onMouseLeave={() => setHoveredItem(null)}
+                      className={`w-full flex items-center ${isLeftCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-3 rounded-lg transition-all relative hover:bg-gray-100`}
+                      style={activeMenuItem === 'codinglab' ? { backgroundColor: `${brandTheme.colors.primary}15` } : {}}
+                    >
+                      {activeMenuItem === 'codinglab' && (
+                        <div 
+                          className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
+                          style={{ backgroundColor: brandTheme.colors.primary }}
+                        />
+                      )}
+                      {isLeftCollapsed ? (
+                        <FontAwesomeIcon 
+                          icon={faCode} 
+                          className="text-gray-600"
+                          style={activeMenuItem === 'codinglab' ? { color: brandTheme.colors.primary } : {}}
+                        />
+                      ) : (
+                        <div className="flex items-center space-x-3 flex-1">
+                          <FontAwesomeIcon 
+                            icon={faCode} 
+                            className="text-gray-600"
+                            style={activeMenuItem === 'codinglab' ? { color: brandTheme.colors.primary } : {}}
+                          />
+                          <span 
+                            className={`text-sm ${activeMenuItem === 'codinglab' ? 'font-medium' : 'text-gray-900'}`}
+                            style={activeMenuItem === 'codinglab' ? { color: brandTheme.colors.primary } : {}}
+                          >
+                            Coding Lab
+                          </span>
+                        </div>
+                      )}
+                    </button>
+                    {isLeftCollapsed && hoveredItem === 'tool-codinglab' && (
+                      <div 
+                        className="absolute left-full top-0 ml-2 bg-gray-900 text-white px-3 py-2.5 rounded-lg shadow-lg pointer-events-none min-w-[200px]"
+                        style={{ zIndex: 1000 }}
+                      >
+                        <div className="font-semibold text-sm mb-0.5">Coding Lab Problems</div>
+                        <div className="text-xs text-gray-300 opacity-90">Practice coding problems</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Resume Builder */}
+                {collegeFeatures.includes('ResumeBuilder') && (
+                  <div className="relative mb-1">
+                    <button
+                      onClick={() => {
+                        setActiveMenuItem('resumebuilder');
+                        setIsLeftCollapsed(true);
+                        if (onActiveMenuChange) onActiveMenuChange('resumebuilder');
+                      }}
+                      onMouseEnter={() => setHoveredItem('tool-resumebuilder')}
+                      onMouseLeave={() => setHoveredItem(null)}
+                      className={`w-full flex items-center ${isLeftCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-3 rounded-lg transition-all relative hover:bg-gray-100`}
+                      style={activeMenuItem === 'resumebuilder' ? { backgroundColor: `${brandTheme.colors.primary}15` } : {}}
+                    >
+                      {activeMenuItem === 'resumebuilder' && (
+                        <div 
+                          className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
+                          style={{ backgroundColor: brandTheme.colors.primary }}
+                        />
+                      )}
+                      {isLeftCollapsed ? (
+                        <FontAwesomeIcon 
+                          icon={faAddressCard} 
+                          className="text-gray-600"
+                          style={activeMenuItem === 'resumebuilder' ? { color: brandTheme.colors.primary } : {}}
+                        />
+                      ) : (
+                        <div className="flex items-center space-x-3 flex-1">
+                          <FontAwesomeIcon 
+                            icon={faAddressCard} 
+                            className="text-gray-600"
+                            style={activeMenuItem === 'resumebuilder' ? { color: brandTheme.colors.primary } : {}}
+                          />
+                          <span 
+                            className={`text-sm ${activeMenuItem === 'resumebuilder' ? 'font-medium' : 'text-gray-900'}`}
+                            style={activeMenuItem === 'resumebuilder' ? { color: brandTheme.colors.primary } : {}}
+                          >
+                            Resume Builder
+                          </span>
+                        </div>
+                      )}
+                    </button>
+                    {isLeftCollapsed && hoveredItem === 'tool-resumebuilder' && (
+                      <div 
+                        className="absolute left-full top-0 ml-2 bg-gray-900 text-white px-3 py-2.5 rounded-lg shadow-lg pointer-events-none min-w-[200px]"
+                        style={{ zIndex: 1000 }}
+                      >
+                        <div className="font-semibold text-sm mb-0.5">Resume Builder</div>
+                        <div className="text-xs text-gray-300 opacity-90">Build your professional resume</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Logic Builder */}
+                {collegeFeatures.includes('LogicBuilder') && (
+                  <div className="relative mb-1">
+                    <button
+                      onClick={() => {
+                        setActiveMenuItem('logicbuilder');
+                        setIsLeftCollapsed(true);
+                        if (onActiveMenuChange) onActiveMenuChange('logicbuilder');
+                      }}
+                      onMouseEnter={() => setHoveredItem('tool-logicbuilder')}
+                      onMouseLeave={() => setHoveredItem(null)}
+                      className={`w-full flex items-center ${isLeftCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-3 rounded-lg transition-all relative hover:bg-gray-100`}
+                      style={activeMenuItem === 'logicbuilder' ? { backgroundColor: `${brandTheme.colors.primary}15` } : {}}
+                    >
+                      {activeMenuItem === 'logicbuilder' && (
+                        <div 
+                          className="absolute left-0 top-0 bottom-0 w-1 rounded-r"
+                          style={{ backgroundColor: brandTheme.colors.primary }}
+                        />
+                      )}
+                      {isLeftCollapsed ? (
+                        <FontAwesomeIcon 
+                          icon={faBrain} 
+                          className="text-gray-600"
+                          style={activeMenuItem === 'logicbuilder' ? { color: brandTheme.colors.primary } : {}}
+                        />
+                      ) : (
+                        <div className="flex items-center space-x-3 flex-1">
+                          <FontAwesomeIcon 
+                            icon={faBrain} 
+                            className="text-gray-600"
+                            style={activeMenuItem === 'logicbuilder' ? { color: brandTheme.colors.primary } : {}}
+                          />
+                          <span 
+                            className={`text-sm ${activeMenuItem === 'logicbuilder' ? 'font-medium' : 'text-gray-900'}`}
+                            style={activeMenuItem === 'logicbuilder' ? { color: brandTheme.colors.primary } : {}}
+                          >
+                            Logic Builder
+                          </span>
+                        </div>
+                      )}
+                    </button>
+                    {isLeftCollapsed && hoveredItem === 'tool-logicbuilder' && (
+                      <div 
+                        className="absolute left-full top-0 ml-2 bg-gray-900 text-white px-3 py-2.5 rounded-lg shadow-lg pointer-events-none min-w-[200px]"
+                        style={{ zIndex: 1000 }}
+                      >
+                        <div className="font-semibold text-sm mb-0.5">Logic Builder</div>
+                        <div className="text-xs text-gray-300 opacity-90">Build and test logical flows</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              )}
+            </>
+          )}
+        </nav>
       </aside>
 
       {/* Middle Panel - Courses List (collapsible) */}
@@ -954,17 +1438,33 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
           >
             <Courses
               brandTheme={brandTheme}
-              onCourseSelect={setSelectedCourse}
+              onCourseSelect={(course) => {
+                setSelectedCourse(course);
+                // Only auto-collapse if screen width <= 1400px
+                if (course && !isLeftCollapsed && window.innerWidth <= 1400) {
+                  setIsLeftCollapsed(true);
+                }
+              }}
               selectedCourse={selectedCourse}
               onCollapse={() => setIsCoursesCollapsed(true)}
               currentUser={currentUser}
               selectedCollege={selectedCollege}
+              onOpenCurriculum={(course) => {
+                setSelectedCourse(course);
+                openCurriculumPage();
+              }}
+              onCoursesLoaded={(courses) => {
+                // Auto-select first course if none selected
+                if (!selectedCourse && courses && courses.length > 0) {
+                  setSelectedCourse(courses[0]);
+                }
+              }}
             />
           </div>
         )
       )}
 
-      {/* Right Panel - Course Details or Home */}
+      {/* Right Panel - Course Details (always shown when course is selected) */}
       {activeMenuItem === 'courses' && (
         selectedCourse ? (
           // Course Detail View
@@ -977,25 +1477,32 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 <div className="absolute top-4 right-4 flex items-center gap-2">
                   <button
                     onClick={() => setSelectedCourse(null)}
-                    className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all flex items-center gap-2"
+                    className="h-10 px-3 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all flex items-center justify-center gap-2"
+                    title="Back"
                   >
-                    <span>←</span> Back
+                    <span>←</span>
+                    <span className="hidden 2xl:inline">Back</span>
                   </button>
                   <button
-                    onClick={openCurriculumModal}
-                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2"
+                    onClick={openCurriculumPage}
+                    className="h-10 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2"
                     style={{ backgroundColor: `${brandTheme.colors.primary}15`, color: brandTheme.colors.primary }}
+                    title="Curriculum"
                   >
-                    <FontAwesomeIcon icon={faListCheck} className="text-xs" />
-                    Curriculum
+                    <FontAwesomeIcon icon={faListCheck} className="text-sm" />
+                    <span className="hidden 2xl:inline">Curriculum</span>
                   </button>
+                  {!isStudent && (
                   <button
                     onClick={openEnrollModal}
-                    className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-all flex items-center gap-2"
+                    className="h-10 px-4 rounded-lg text-sm font-medium text-white transition-all flex items-center justify-center gap-2"
                     style={{ background: brandTheme.gradients.primary }}
+                    title="Enroll"
                   >
-                    Enroll Now
+                    <span className="hidden 2xl:inline">Enroll Now</span>
+                    <span className="2xl:hidden">Enroll</span>
                   </button>
+                  )}
                 </div>
                 
                 <div className="flex items-start gap-5">
@@ -1068,201 +1575,401 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 </div>
               </div>
               
-              {/* Tagline - On grey background inside white card */}
-              <div className="px-6 pt-4">
-                {selectedCourse.tagLine && (
-                  <div 
-                    className="p-4 rounded-xl border-l-4 italic"
-                    style={{ 
-                      backgroundColor: `${brandTheme.colors.primary}10`,
-                      borderLeftColor: brandTheme.colors.primary
-                    }}
-                  >
-                    <p className="text-gray-700 text-sm font-medium">
-                      "{selectedCourse.tagLine}"
-                    </p>
+              {/* Course Info Collapsible Section */}
+              <div className="border-t border-gray-100">
+                {/* Collapsible Header */}
+                <button
+                  onClick={() => setIsCourseInfoExpanded(!isCourseInfoExpanded)}
+                  className="w-full px-6 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <FontAwesomeIcon 
+                      icon={faFileLines} 
+                      className="text-sm"
+                      style={{ color: brandTheme.colors.primary }}
+                    />
+                    <span className="font-medium text-gray-700 text-sm">Course Details</span>
+                    {selectedCourse.tagLine && (
+                      <span className="text-xs text-gray-400 italic ml-2 hidden sm:inline">
+                        "{selectedCourse.tagLine.substring(0, 50)}{selectedCourse.tagLine.length > 50 ? '...' : ''}"
+                      </span>
+                    )}
                   </div>
-                )}
-              </div>
-
-              {/* Course Info Cards */}
-              <div className="p-6 space-y-4">
-                {/* Description Card */}
-                <ExpandableCard
-                  title="Course Description"
-                  icon={faFileLines}
-                  iconBgColor={`${brandTheme.colors.primary}15`}
-                  iconColor={brandTheme.colors.primary}
-                  cardBgColor={`${brandTheme.colors.primary}05`}
-                  cardBorderColor={`${brandTheme.colors.primary}20`}
-                  headerBorderColor={`${brandTheme.colors.primary}15`}
-                  isLoading={isLoadingDetails}
-                  content={courseDetails?.courseDescription || 'No description available for this course.'}
-                  brandTheme={brandTheme}
-                />
-
-                {/* What You'll Learn Card */}
-                {courseDetails?.coursePurpose && (
-                  <ExpandableCard
-                    title="What You'll Learn"
-                    icon={faGraduationCap}
-                    iconBgColor="rgb(220 252 231)"
-                    iconColor="rgb(22 163 74)"
-                    cardBgColor="linear-gradient(to bottom right, rgb(240 253 244), rgb(236 253 245))"
-                    cardBorderColor="rgb(209 250 229)"
-                    headerBorderColor="rgb(209 250 229)"
-                    content={courseDetails.coursePurpose}
-                    brandTheme={brandTheme}
-                    markerColor="rgb(34 197 94)"
+                  <FontAwesomeIcon 
+                    icon={faChevronDown} 
+                    className={`text-gray-400 text-xs transition-transform duration-200 ${isCourseInfoExpanded ? 'rotate-180' : ''}`}
                   />
-                )}
+                </button>
+                
+                {/* Collapsible Content */}
+                {isCourseInfoExpanded && (
+                  <>
+                    {/* Tagline - On grey background inside white card */}
+                    <div className="px-6 pt-4">
+                      {selectedCourse.tagLine && (
+                        <div 
+                          className="p-4 rounded-xl border-l-4 italic"
+                          style={{ 
+                            backgroundColor: `${brandTheme.colors.primary}10`,
+                            borderLeftColor: brandTheme.colors.primary
+                          }}
+                        >
+                          <p className="text-gray-700 text-sm font-medium">
+                            "{selectedCourse.tagLine}"
+                          </p>
+                        </div>
+                      )}
+                    </div>
 
-                {/* Prerequisites Card */}
-                {courseDetails?.coursePrerequisite && (
-                  <ExpandableCard
-                    title="Prerequisites"
-                    icon={faListCheck}
-                    iconBgColor="rgb(254 243 199)"
-                    iconColor="rgb(217 119 6)"
-                    cardBgColor="linear-gradient(to bottom right, rgb(255 251 235), rgb(255 247 237))"
-                    cardBorderColor="rgb(253 230 138)"
-                    headerBorderColor="rgb(253 230 138)"
-                    content={courseDetails.coursePrerequisite}
-                    brandTheme={brandTheme}
-                    markerColor="rgb(245 158 11)"
-                  />
+                    {/* Course Info Cards */}
+                    <div className="p-6 space-y-4">
+                      {/* Description Card */}
+                      <ExpandableCard
+                        title="Course Description"
+                        icon={faFileLines}
+                        iconBgColor={`${brandTheme.colors.primary}15`}
+                        iconColor={brandTheme.colors.primary}
+                        cardBgColor={`${brandTheme.colors.primary}05`}
+                        cardBorderColor={`${brandTheme.colors.primary}20`}
+                        headerBorderColor={`${brandTheme.colors.primary}15`}
+                        isLoading={isLoadingDetails}
+                        content={courseDetails?.courseDescription || 'No description available for this course.'}
+                        brandTheme={brandTheme}
+                      />
+
+                      {/* What You'll Learn Card */}
+                      {courseDetails?.coursePurpose && (
+                        <ExpandableCard
+                          title="What You'll Learn"
+                          icon={faGraduationCap}
+                          iconBgColor="rgb(220 252 231)"
+                          iconColor="rgb(22 163 74)"
+                          cardBgColor="linear-gradient(to bottom right, rgb(240 253 244), rgb(236 253 245))"
+                          cardBorderColor="rgb(209 250 229)"
+                          headerBorderColor="rgb(209 250 229)"
+                          content={courseDetails.coursePurpose}
+                          brandTheme={brandTheme}
+                          markerColor="rgb(34 197 94)"
+                        />
+                      )}
+
+                      {/* Prerequisites Card */}
+                      {courseDetails?.coursePrerequisite && (
+                        <ExpandableCard
+                          title="Prerequisites"
+                          icon={faListCheck}
+                          iconBgColor="rgb(254 243 199)"
+                          iconColor="rgb(217 119 6)"
+                          cardBgColor="linear-gradient(to bottom right, rgb(255 251 235), rgb(255 247 237))"
+                          cardBorderColor="rgb(253 230 138)"
+                          headerBorderColor="rgb(253 230 138)"
+                          content={courseDetails.coursePrerequisite}
+                          brandTheme={brandTheme}
+                          markerColor="rgb(245 158 11)"
+                        />
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             </div>
             
-            {/* Enrolled Students Section */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-gray-900 text-lg">Enrolled Students</h3>
-                  <p className="text-sm text-gray-500">{collegeEnrollmentCount} students enrolled in this course</p>
+            {/* For Students: Show Curriculum | For Others: Show Enrolled Students */}
+            {isStudent ? (
+              /* Course Curriculum Section - For Students */
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 text-lg">Course Curriculum</h3>
+                    <p className="text-sm text-gray-500">
+                      {cachedCurriculum ? `${cachedCurriculum.length} units, ${cachedCurriculum.reduce((acc, unit) => acc + (unit.chapters?.length || 0), 0)} chapters` : 'Loading...'}
+                    </p>
+                  </div>
                 </div>
-                <button 
-                  className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                  style={{ backgroundColor: `${brandTheme.colors.primary}10`, color: brandTheme.colors.primary }}
-                >
-                  Export Report
-                </button>
-              </div>
-              
-              {/* Students Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Student</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Enrolled Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Progress</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Marks</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {/* Enrolled students data */}
-                    {enrolledStudentsList.map((student, idx) => (
-                      <tr 
-                        key={idx} 
-                        className="hover:bg-gray-50 transition-colors cursor-pointer"
-                        onClick={() => {
-                          setCurrentStudentIndex(idx);
-                          setSelectedStudentForProgress(student);
-                          setIsStudentProgressModalOpen(true);
-                        }}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div 
-                              className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium"
-                              style={{ background: brandTheme.gradients.primary }}
+                
+                {/* Curriculum Content - Accordion Style */}
+                <div className="max-h-[600px] overflow-y-auto p-4">
+                  {isLoadingCachedCurriculum ? (
+                    <div className="flex items-center justify-center py-12">
+                      <div className="w-10 h-10 border-4 border-gray-200 border-t-purple-600 rounded-full animate-spin"></div>
+                    </div>
+                  ) : cachedCurriculum && cachedCurriculum.length > 0 ? (
+                    <div className="space-y-3">
+                      {cachedCurriculum.map((unit, unitIndex) => {
+                        const isUnitExpanded = expandedCurriculumUnits.includes(unit.id);
+                        return (
+                          <div key={unit.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                            {/* Unit Header */}
+                            <button
+                              onClick={() => {
+                                setExpandedCurriculumUnits(prev => 
+                                  prev.includes(unit.id) 
+                                    ? prev.filter(id => id !== unit.id)
+                                    : [...prev, unit.id]
+                                );
+                              }}
+                              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition-colors"
                             >
-                              {student.avatar}
-                            </div>
-                            <div>
-                              <div className="font-medium text-gray-900">{student.name}</div>
-                              <div className="text-xs font-medium" style={{ color: brandTheme.colors.primary }}>{student.className}</div>
-                              <div className="text-xs text-gray-400">{student.email}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">{student.enrolled}</td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden" style={{ maxWidth: '100px' }}>
-                              <div 
-                                className="h-full rounded-full transition-all"
-                                style={{ 
-                                  width: `${student.progress}%`, 
-                                  background: student.progress === 100 ? '#10B981' : brandTheme.colors.primary 
-                                }}
+                              <span 
+                                className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
+                                style={{ background: brandTheme.gradients.primary }}
+                              >
+                                {unitIndex + 1}
+                              </span>
+                              <div className="flex-1 text-left">
+                                <div className="font-semibold text-gray-900">{unit.title}</div>
+                                <div className="text-xs text-gray-500">{unit.chapters?.length || 0} chapters</div>
+                              </div>
+                              <FontAwesomeIcon 
+                                icon={faChevronDown} 
+                                className={`text-gray-400 transition-transform ${isUnitExpanded ? 'rotate-180' : ''}`}
                               />
-                            </div>
-                            <span className="text-sm font-medium text-gray-700">{student.progress}%</span>
+                            </button>
+                            
+                            {/* Unit Content - Chapters */}
+                            {isUnitExpanded && unit.chapters && (
+                              <div className="border-t border-gray-100 bg-gray-50/50">
+                                {unit.chapters.map((chapter: any, chapterIndex: number) => {
+                                  const chapterKey = `${unit.id}-${chapter.id}`;
+                                  const isChapterExpanded = expandedCurriculumChapters.includes(chapterKey);
+                                  return (
+                                    <div key={chapter.id} className="border-b border-gray-100 last:border-b-0">
+                                      {/* Chapter Header */}
+                                      <button
+                                        onClick={() => {
+                                          setExpandedCurriculumChapters(prev => 
+                                            prev.includes(chapterKey) 
+                                              ? prev.filter(id => id !== chapterKey)
+                                              : [...prev, chapterKey]
+                                          );
+                                        }}
+                                        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-gray-100 transition-colors"
+                                      >
+                                        <span 
+                                          className="w-10 h-10 rounded-lg flex items-center justify-center text-xs font-semibold flex-shrink-0"
+                                          style={{ backgroundColor: `${brandTheme.colors.primary}15`, color: brandTheme.colors.primary }}
+                                        >
+                                          {unitIndex + 1}.{chapterIndex + 1}
+                                        </span>
+                                        <div className="flex-1 text-left">
+                                          <div className="font-medium text-gray-800 text-sm">{chapter.title}</div>
+                                          <div className="text-xs text-gray-500">{chapter.lectures?.length || 0} items</div>
+                                        </div>
+                                        <FontAwesomeIcon 
+                                          icon={faChevronDown} 
+                                          className={`text-gray-400 text-sm transition-transform ${isChapterExpanded ? 'rotate-180' : ''}`}
+                                        />
+                                      </button>
+                                      
+                                      {/* Chapter Content - Lectures */}
+                                      {isChapterExpanded && chapter.lectures && (
+                                        <div className="bg-white">
+                                          {chapter.lectures.map((lecture: any, lectureIndex: number) => {
+                                            const isVideo = lecture.type === 'video';
+                                            const isQuiz = lecture.type === 'quiz' || lecture.type === 'mcq';
+                                            const isExercise = lecture.type === 'exercise';
+                                            
+                                            return (
+                                              <div 
+                                                key={lecture.id}
+                                                className="flex items-center gap-3 px-4 py-3 border-t border-dashed border-gray-200 hover:bg-purple-50 cursor-pointer transition-colors"
+                                                onClick={() => openCurriculumPage()}
+                                              >
+                                                <div 
+                                                  className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                                    isQuiz ? 'bg-amber-100 text-amber-600' :
+                                                    isExercise ? 'bg-emerald-100 text-emerald-600' :
+                                                    ''
+                                                  }`}
+                                                  style={!isQuiz && !isExercise ? { backgroundColor: `${brandTheme.colors.primary}15`, color: brandTheme.colors.primary } : {}}
+                                                >
+                                                  <FontAwesomeIcon 
+                                                    icon={
+                                                      isVideo ? faPlay :
+                                                      isQuiz ? faClipboardList :
+                                                      isExercise ? faDumbbell :
+                                                      faFileAlt
+                                                    } 
+                                                    className="text-xs"
+                                                  />
+                                                </div>
+                                                <span className="flex-1 text-sm text-gray-700">{lecture.title}</span>
+                                                {lecture.duration && (
+                                                  <span 
+                                                    className="px-2 py-1 rounded text-xs font-medium"
+                                                    style={{ backgroundColor: `${brandTheme.colors.primary}15`, color: brandTheme.colors.primary }}
+                                                  >
+                                                    {lecture.duration}
+                                                  </span>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span 
-                            className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              student.status === 'Completed' 
-                                ? 'bg-green-100 text-green-700' 
-                                : 'bg-blue-100 text-blue-700'
-                            }`}
-                          >
-                            {student.status}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          {student.score !== null ? (
-                            <span className="font-semibold text-gray-900">{student.score}%</span>
-                          ) : (
-                            <span className="text-gray-400 text-sm">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Pagination */}
-              <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50">
-                <div className="text-sm text-gray-500">
-                  Showing 1-{Math.min(6, collegeEnrollmentCount)} of {collegeEnrollmentCount} students
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+                      <FontAwesomeIcon icon={faListCheck} className="text-4xl mb-3 text-gray-300" />
+                      <p>No curriculum available</p>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <button className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                    Previous
-                  </button>
+              </div>
+            ) : (
+              /* Enrolled Students Section - For Non-Students */
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 text-lg">Enrolled Students</h3>
+                    <p className="text-sm text-gray-500">{collegeEnrollmentCount} students enrolled in this course</p>
+                  </div>
                   <button 
-                    className="w-8 h-8 rounded-lg text-sm font-medium text-white transition-all"
-                    style={{ background: brandTheme.gradients.primary }}
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    style={{ backgroundColor: `${brandTheme.colors.primary}10`, color: brandTheme.colors.primary }}
                   >
-                    1
-                  </button>
-                  <button className="w-8 h-8 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
-                    2
-                  </button>
-                  <button className="w-8 h-8 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
-                    3
-                  </button>
-                  <span className="text-gray-400">...</span>
-                  <button className="w-8 h-8 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
-                    76
-                  </button>
-                  <button className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
-                    Next
+                    Export Report
                   </button>
                 </div>
+                
+                {/* Students Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Student</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Enrolled Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Progress</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Marks</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {/* Enrolled students data */}
+                      {enrolledStudentsList.map((student, idx) => (
+                        <tr 
+                          key={idx} 
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                          onClick={() => {
+                            setCurrentStudentIndex(idx);
+                            setSelectedStudentForProgress(student);
+                            setIsStudentProgressModalOpen(true);
+                          }}
+                        >
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div 
+                                className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium"
+                                style={{ background: brandTheme.gradients.primary }}
+                              >
+                                {student.avatar}
+                              </div>
+                              <div>
+                                <div className="font-medium text-gray-900">{student.name}</div>
+                                <div className="text-xs font-medium" style={{ color: brandTheme.colors.primary }}>{student.className}</div>
+                                <div className="text-xs text-gray-400">{student.email}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-gray-600">{student.enrolled}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden" style={{ maxWidth: '100px' }}>
+                                <div 
+                                  className="h-full rounded-full transition-all"
+                                  style={{ 
+                                    width: `${student.progress}%`, 
+                                    background: student.progress === 100 ? '#10B981' : brandTheme.colors.primary 
+                                  }}
+                                />
+                              </div>
+                              <span className="text-sm font-medium text-gray-700">{student.progress}%</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span 
+                              className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                student.status === 'Completed' 
+                                  ? 'bg-green-100 text-green-700' 
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}
+                            >
+                              {student.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            {student.score !== null ? (
+                              <span className="font-semibold text-gray-900">{student.score}%</span>
+                            ) : (
+                              <span className="text-gray-400 text-sm">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                
+                {/* Pagination */}
+                <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50">
+                  <div className="text-sm text-gray-500">
+                    Showing 1-{Math.min(6, collegeEnrollmentCount)} of {collegeEnrollmentCount} students
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                      Previous
+                    </button>
+                    <button 
+                      className="w-8 h-8 rounded-lg text-sm font-medium text-white transition-all"
+                      style={{ background: brandTheme.gradients.primary }}
+                    >
+                      1
+                    </button>
+                    <button className="w-8 h-8 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
+                      2
+                    </button>
+                    <button className="w-8 h-8 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
+                      3
+                    </button>
+                    <span className="text-gray-400">...</span>
+                    <button className="w-8 h-8 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
+                      76
+                    </button>
+                    <button className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
+                      Next
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         ) : (
-          <LearningHome brandTheme={brandTheme} currentUser={currentUser} selectedCollege={selectedCollege} />
+          // No Course Selected - Show appropriate message
+          <div className="flex-1 overflow-y-auto bg-gray-50 p-6 flex items-center justify-center">
+            <div className="text-center">
+              <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-pink-100 via-purple-100 to-blue-100 flex items-center justify-center">
+                <FontAwesomeIcon icon={faBooks} className="text-3xl text-purple-500" />
+              </div>
+              <h3 className="text-xl font-semibold text-gray-800 mb-2">No Courses Available</h3>
+              <p className="text-gray-500 max-w-sm">There are no courses assigned yet. Please contact your administrator to get enrolled in courses.</p>
+            </div>
+          </div>
         )
+      )}
+
+      {/* Study Progress Section - LearningHome */}
+      {activeMenuItem === 'progress' && (
+        <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <LearningHome brandTheme={brandTheme} currentUser={currentUser} selectedCollege={selectedCollege} />
+        </div>
       )}
 
       {/* Users Section - Classes in Main, UserList in Aside */}
@@ -1343,7 +2050,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
       </div>
 
       {/* Other menu items - placeholder */}
-      {activeMenuItem !== 'courses' && activeMenuItem !== 'students' && activeMenuItem !== 'codinglab' && activeMenuItem !== 'resumebuilder' && (
+      {activeMenuItem !== 'courses' && activeMenuItem !== 'students' && activeMenuItem !== 'codinglab' && activeMenuItem !== 'resumebuilder' && activeMenuItem !== 'logicbuilder' && activeMenuItem !== 'progress' && (
         <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
             <FontAwesomeIcon 
@@ -1356,6 +2063,13 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
             </h2>
             <p className="text-gray-500">This section is coming soon...</p>
           </div>
+        </div>
+      )}
+
+      {/* Logic Builder */}
+      {activeMenuItem === 'logicbuilder' && (
+        <div className="flex-1 overflow-hidden bg-gray-100">
+          <LogicBuilder />
         </div>
       )}
 
@@ -1412,9 +2126,10 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 <select
                   value={selectedClassFilter}
                   onChange={(e) => { setSelectedClassFilter(e.target.value); setEnrollCurrentPage(1); }}
-                  className="w-32 px-3 py-2 h-10 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-blue-400 transition-all bg-white"
+                  className="w-40 px-3 py-2 h-10 rounded-lg border border-gray-200 text-sm focus:outline-none focus:border-blue-400 transition-all bg-white"
                 >
-                  <option value="all">All Classes</option>
+                  <option value="administrators" className="font-medium">── Administrators ──</option>
+                  <option value="all">All Students</option>
                   {enrollValidClasses.map(cls => (
                     <option key={cls} value={cls}>{cls}</option>
                   ))}
@@ -1587,7 +2302,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 <label className={`flex items-center gap-2 ${selectableUsers.length > 0 ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
                   <input
                     type="checkbox"
-                    checked={selectedUsers.length === selectableUsers.length && selectableUsers.length > 0}
+                    checked={currentSelectionCount === selectableUsers.length && selectableUsers.length > 0}
                     onChange={handleSelectAll}
                     disabled={selectableUsers.length === 0}
                     className="w-4 h-4 rounded border-gray-300"
@@ -1596,10 +2311,10 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                   <span className="text-sm text-gray-600">Select All</span>
                 </label>
                 <span className="text-sm text-gray-500">
-                  {selectedUsers.length} selected
+                  {currentSelectionCount} selected
                   {filteredUsers.length > selectableUsers.length && (
                     <span className="text-green-600 ml-1">
-                      ({filteredUsers.length - selectableUsers.length} already enrolled)
+                      ({filteredUsers.length - selectableUsers.length} already {isAdminMode ? 'assigned' : 'enrolled'})
                     </span>
                   )}
                 </span>
@@ -1614,31 +2329,35 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                     className="w-10 h-10 border-3 border-t-transparent rounded-full animate-spin mb-3"
                     style={{ borderColor: brandTheme.colors.primary, borderTopColor: 'transparent' }}
                   />
-                  <p className="text-sm text-gray-500">Loading students...</p>
+                  <p className="text-sm text-gray-500">Loading {isAdminMode ? 'administrators' : 'students'}...</p>
                 </div>
               ) : (
                 <>
-                  {paginatedUsers.map((user) => (
+                  {paginatedUsers.map((user: any) => {
+                    const isSelected = isAdminMode ? selectedAdmins.includes(user.id) : selectedUsers.includes(user.id);
+                    const isAlreadyDone = isAdminMode ? user.isAssigned : user.isEnrolled;
+                    
+                    return (
                     <Fragment key={user.id}>
                     <div 
-                      className={`${user.isEnrolled ? 'border border-green-200 rounded-lg my-2 overflow-hidden' : ''}`}
+                      className={`${isAlreadyDone ? 'border border-green-200 rounded-lg my-2 overflow-hidden' : ''}`}
                     >
                     <div 
-                      onClick={() => !user.isEnrolled && toggleUserSelection(user.id)}
+                      onClick={() => !isAlreadyDone && toggleUserSelection(user.id)}
                       className={`flex items-center gap-3 p-3 transition-all ${
-                        user.isEnrolled 
+                        isAlreadyDone 
                           ? 'bg-green-50/50 cursor-default' 
-                          : selectedUsers.includes(user.id) 
+                          : isSelected 
                             ? 'bg-blue-50 cursor-pointer' 
                             : 'hover:bg-gray-50 cursor-pointer'
-                      } ${!user.isEnrolled ? 'border-b border-gray-100' : ''}`}
+                      } ${!isAlreadyDone ? 'border-b border-gray-100' : ''}`}
                     >
-                      {user.isEnrolled ? (
+                      {isAlreadyDone ? (
                         <div className="w-4 h-4 flex-shrink-0" />
                       ) : (
                         <input
                           type="checkbox"
-                          checked={selectedUsers.includes(user.id)}
+                          checked={isSelected}
                           onChange={(e) => {
                             e.stopPropagation();
                             toggleUserSelection(user.id);
@@ -1649,24 +2368,28 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                         />
                       )}
                       <div 
-                        className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0 ${user.isEnrolled ? 'opacity-60' : ''}`}
-                        style={{ background: brandTheme.gradients.primary }}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0 ${isAlreadyDone ? 'opacity-60' : ''}`}
+                        style={{ background: isAdminMode ? 'linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)' : brandTheme.gradients.primary }}
                       >
                         {user.avatar}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className={`font-medium ${user.isEnrolled ? 'text-gray-500' : 'text-gray-900'}`}>
+                        <div className={`font-medium ${isAlreadyDone ? 'text-gray-500' : 'text-gray-900'}`}>
                           {user.name}
                         </div>
-                        <div className={`text-xs font-medium ${user.isEnrolled ? 'text-gray-400' : ''}`} style={!user.isEnrolled ? { color: brandTheme.colors.primary } : {}}>
-                          {user.className}{user.section ? ` - Section ${user.section}` : ''}
+                        <div className={`text-xs font-medium ${isAlreadyDone ? 'text-gray-400' : ''}`} style={!isAlreadyDone ? { color: isAdminMode ? '#7C3AED' : brandTheme.colors.primary } : {}}>
+                          {isAdminMode ? (
+                            <span className="capitalize">{user.userType}</span>
+                          ) : (
+                            <>{user.className}{user.section ? ` - Section ${user.section}` : ''}</>
+                          )}
                         </div>
                         <div className="text-xs text-gray-400 truncate">{user.email}</div>
                       </div>
                     </div>
                     
-                    {/* Footer strip for enrolled users */}
-                    {user.isEnrolled && (
+                    {/* Footer strip for enrolled/assigned users */}
+                    {isAlreadyDone && (
                       <div 
                         className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-green-50 to-emerald-50 border-b border-gray-100"
                         onClick={(e) => e.stopPropagation()}
@@ -1676,8 +2399,9 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                             <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="20 6 9 17 4 12"></polyline>
                             </svg>
-                            Enrolled
+                            {isAdminMode ? 'Assigned' : 'Enrolled'}
                           </span>
+                          {!isAdminMode && (
                           <span className={`text-xs flex items-center gap-1 ${user.expiryDate ? 'text-amber-600' : 'text-gray-400'}`}>
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                               <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -1690,8 +2414,11 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                               : 'No expiry (Unlimited)'
                             }
                           </span>
+                          )}
                         </div>
                         
+                        {!isAdminMode && (
+                        <>
                         {editingExpiryUserId === user.id ? (
                           <div className="flex items-center gap-2">
                             <input
@@ -1746,15 +2473,18 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                             Edit
                           </button>
                         )}
+                        </>
+                        )}
                       </div>
                     )}
                     </div>
                   </Fragment>
-                  ))}
+                  );
+                  })}
                   
                   {filteredUsers.length === 0 && (
                     <div className="text-center py-8 text-gray-500">
-                      No students found matching your filters.
+                      No {isAdminMode ? 'administrators' : 'students'} found matching your filters.
                     </div>
                   )}
                 </>
@@ -1850,18 +2580,18 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                   Close
                 </button>
                 <button
-                  onClick={handleEnrollUsers}
-                  disabled={selectedUsers.length === 0 || isEnrolling}
+                  onClick={isAdminMode ? handleAssignToAdmins : handleEnrollUsers}
+                  disabled={(isAdminMode ? selectedAdmins.length === 0 : selectedUsers.length === 0) || isEnrolling || isAssigningToAdmins}
                   className="px-4 py-1.5 rounded-lg text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                  style={{ background: brandTheme.gradients.primary }}
+                  style={{ background: isAdminMode ? 'linear-gradient(135deg, #7C3AED 0%, #A855F7 100%)' : brandTheme.gradients.primary }}
                 >
-                  {isEnrolling ? (
+                  {isEnrolling || isAssigningToAdmins ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Enrolling...
+                      {isAdminMode ? 'Assigning...' : 'Enrolling...'}
                     </>
                   ) : (
-                    <>Enroll {selectedUsers.length > 0 ? `(${selectedUsers.length})` : ''}</>
+                    <>{isAdminMode ? `Assign (${selectedAdmins.length})` : `Enroll ${selectedUsers.length > 0 ? `(${selectedUsers.length})` : ''}`}</>
                   )}
                 </button>
               </div>
@@ -1922,178 +2652,6 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
         document.body
       )}
 
-      {/* Curriculum Modal - Slide from Right */}
-      {isCurriculumModalOpen && createPortal(
-        <>
-          {/* Backdrop */}
-          <div 
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-[9999] transition-opacity"
-            onClick={() => setIsCurriculumModalOpen(false)}
-          />
-          
-          {/* Modal Panel */}
-          <div className="fixed top-4 bottom-4 right-4 w-[600px] bg-white shadow-2xl z-[10000] flex flex-col rounded-2xl animate-slide-in-right overflow-hidden">
-            {/* Modal Header - Gradient */}
-            <div 
-              className="px-5 py-4 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
-              style={{ background: brandTheme.gradients.primary }}
-            >
-              <div>
-                <h3 className="font-bold text-white text-lg">{selectedCourse?.name}</h3>
-                <p className="text-sm text-white/80">Course Curriculum</p>
-              </div>
-              <button 
-                onClick={() => setIsCurriculumModalOpen(false)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 text-white transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-            
-            {/* Curriculum Stats */}
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-6 bg-gray-50 flex-shrink-0">
-              <div className="flex items-center gap-2">
-                <FontAwesomeIcon icon={faLayerGroup} className="text-gray-500" />
-                <span className="text-sm text-gray-600"><strong>{curriculumData.length}</strong> Sections</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <FontAwesomeIcon icon={faBookBookmark} className="text-gray-500" />
-                <span className="text-sm text-gray-600"><strong>{curriculumData.reduce((acc, sec) => acc + sec.chapters.length, 0)}</strong> Chapters</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <FontAwesomeIcon icon={faBullseye} className="text-gray-500" />
-                <span className="text-sm text-gray-600"><strong>{curriculumData.reduce((acc: number, sec: any) => acc + sec.chapters.reduce((a: number, ch: any) => a + ch.items.length, 0), 0)}</strong> Items</span>
-              </div>
-            </div>
-            
-            {/* Curriculum Content */}
-            <div className="flex-1 overflow-y-auto p-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-              {isLoadingCurriculum ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <div 
-                    className="w-10 h-10 border-3 border-t-transparent rounded-full animate-spin mb-3"
-                    style={{ borderColor: brandTheme.colors.primary, borderTopColor: 'transparent' }}
-                  />
-                  <p className="text-sm text-gray-500">Loading curriculum...</p>
-                </div>
-              ) : curriculumData.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12">
-                  <FontAwesomeIcon icon={faListCheck} className="text-4xl text-gray-300 mb-3" />
-                  <p className="text-sm text-gray-500">No curriculum available for this course.</p>
-                </div>
-              ) : (
-                curriculumData.map((section, secIdx) => (
-                  <div key={section.id} className="mb-3 border-b border-gray-100 pb-3 last:border-b-0">
-                    {/* Section Header */}
-                    <button
-                      onClick={() => toggleSection(section.id)}
-                      className="w-full flex items-center gap-3 p-2 rounded-lg transition-all hover:bg-gray-50"
-                      style={{ backgroundColor: expandedSections.includes(section.id) ? `${brandTheme.colors.primary}10` : '' }}
-                    >
-                      <div 
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                        style={{ background: brandTheme.gradients.primary }}
-                      >
-                        {secIdx + 1}
-                      </div>
-                      <div className="flex-1 text-left">
-                        <div className="font-semibold text-gray-900 text-sm">{section.title}</div>
-                        <div className="text-xs text-gray-500">{section.chapters.length} chapters</div>
-                      </div>
-                      <FontAwesomeIcon 
-                        icon={faChevronDown} 
-                        className={`text-gray-400 text-xs transition-transform ${expandedSections.includes(section.id) ? 'rotate-180' : ''}`}
-                      />
-                    </button>
-                    
-                    {/* Chapters */}
-                    {expandedSections.includes(section.id) && (
-                      <div className="mt-1">
-                        {section.chapters.map((chapter: any, chIdx: number) => (
-                          <div key={chapter.id}>
-                            {/* Chapter Header */}
-                            <button
-                              onClick={() => toggleChapter(chapter.id)}
-                              className="w-full flex items-center gap-3 p-2 rounded-lg transition-all hover:bg-gray-50"
-                            >
-                              <div 
-                                className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-semibold flex-shrink-0"
-                                style={{ backgroundColor: `${brandTheme.colors.primary}20`, color: brandTheme.colors.primary }}
-                              >
-                                {secIdx + 1}.{chIdx + 1}
-                              </div>
-                            <div className="flex-1 text-left">
-                              <div className="font-medium text-gray-800 text-sm">{chapter.title}</div>
-                              <div className="text-xs text-gray-400">{chapter.items.length} items</div>
-                            </div>
-                            <FontAwesomeIcon 
-                              icon={faChevronDown} 
-                              className={`text-gray-400 text-xs transition-transform ${expandedChapters.includes(chapter.id) ? 'rotate-180' : ''}`}
-                            />
-                          </button>
-                          
-                          {/* Items */}
-                          {expandedChapters.includes(chapter.id) && (
-                            <div className="mt-1 space-y-0.5">
-                              {chapter.items.map((item: any) => (
-                                <div 
-                                  key={item.id}
-                                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-all cursor-pointer group"
-                                >
-                                  <FontAwesomeIcon 
-                                    icon={getItemIcon(item.type)} 
-                                    className="w-4 flex-shrink-0"
-                                    style={{ color: getItemColor(item.type) }}
-                                  />
-                                  <div className="flex-1 text-left">
-                                    <div className="text-sm text-gray-700 group-hover:text-gray-900">{item.title}</div>
-                                  </div>
-                                  <div 
-                                    className="text-xs px-2 py-0.5 rounded-full flex-shrink-0"
-                                    style={{ backgroundColor: `${getItemColor(item.type)}15`, color: getItemColor(item.type) }}
-                                  >
-                                    {item.duration}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))
-              )}
-            </div>
-            
-            {/* Modal Footer */}
-            <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0 bg-gray-50">
-              <div className="text-sm text-gray-500">
-                Total Duration: <strong>2h 45m</strong>
-              </div>
-              <button
-                onClick={() => setIsCurriculumModalOpen(false)}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-all hover:opacity-90"
-                style={{ background: brandTheme.gradients.primary }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-          
-          <style>{`
-            @keyframes slideInRight {
-              from { transform: translateX(100%); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-            }
-            .animate-slide-in-right {
-              animation: slideInRight 0.5s ease-in-out forwards;
-            }
-          `}</style>
-        </>,
-        document.body
-      )}
 
       {/* Student Progress Modal - Slide from Right */}
       {isStudentProgressModalOpen && selectedStudentForProgress && createPortal(
@@ -2851,8 +3409,8 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                       <div>
-                        <p className="text-xs text-gray-500">Notes</p>
-                        <p className="font-bold text-gray-900">{course.notes}</p>
+                        <p className="text-xs text-gray-500">Chapters</p>
+                        <p className="font-bold text-gray-900">{course.totalChapters || 0}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">

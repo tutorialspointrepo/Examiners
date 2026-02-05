@@ -1,0 +1,55 @@
+{
+    "id": "min_window_substring",
+    "title": "Minimum Window Substring",
+    "description": "Given two strings <code>s</code> and <code>t</code>, return the minimum window in <code>s</code> which will contain all the characters in <code>t</code>. If there is no such window in <code>s</code> that covers all characters in <code>t</code>, return an empty string. Note that if there is such a window, it is guaranteed that there will always be only one unique minimum window.",
+    "difficulty": "Hard",
+    "category": "String, Sliding Window",
+    "examples": [
+        {
+            "input": "s = \"ADOBECODEBANC\", t = \"ABC\"",
+            "output": "\"BANC\"",
+            "explanation": "The substring \"BANC\" contains all the characters of \"ABC\" and is the smallest such substring."
+        },
+        {
+            "input": "s = \"a\", t = \"a\"",
+            "output": "\"a\"",
+            "explanation": "The entire string \"a\" is the minimum window containing the character \"a\"."
+        },
+        {
+            "input": "s = \"a\", t = \"aa\"",
+            "output": "\"\"",
+            "explanation": "There is no window in <code>s</code> that contains all characters of <code>t</code> since <code>t</code> requires two 'a's and <code>s</code> only has one."
+        }
+    ],
+    "constraints": [
+        "1 <= s.length <= 10^5",
+        "0 <= t.length <= 10^5",
+        "All characters in <code>s</code> and <code>t</code> are English letters.",
+        "Characters in <code>t</code> may not be unique."
+    ],
+    "tags": [
+        "String",
+        "Sliding Window",
+        "Hash Table"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "longest_substring_without_repeating_characters",
+        "minimum_size_subarray_sum",
+        "substring_with_concatenation_of_all_words"
+    ],
+    "hints": [
+        "Consider using a sliding window to expand and contract the potential substrings.",
+        "Maintain a count of characters from <code>t</code> that need to be included in the current window.",
+        "Use two pointers to mark the start and end of your window.",
+        "Think about how to efficiently check if the current window contains all characters from <code>t</code>."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

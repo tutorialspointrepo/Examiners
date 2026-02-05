@@ -1,0 +1,53 @@
+{
+    "id": "house_robber",
+    "title": "House Robber",
+    "description": "You are a professional robber planning to rob houses along a street. Each house has a certain amount of money stashed, the only constraint stopping you from robbing each of them is that adjacent houses have security systems connected to them. If two adjacent houses are robbed on the same night, the system will automatically notify the police. Given an integer array <code>nums</code> representing the amount of money of each house, return the maximum amount of money you can rob tonight without alerting the police.",
+    "difficulty": "Medium",
+    "category": "Dynamic Programming, Array",
+    "examples": [
+        {
+            "input": "[2, 7, 9, 3, 1]",
+            "output": "12",
+            "explanation": "Rob house 1 (amount = 2) and house 3 (amount = 9) and house 5 (amount = 1) for a total of 2 + 9 + 1 = 12."
+        },
+        {
+            "input": "[1, 2, 3, 1]",
+            "output": "4",
+            "explanation": "Rob house 2 (amount = 2) and house 4 (amount = 1) for a total of 2 + 1 = 3. Alternatively, rob house 1 (amount = 1) and house 3 (amount = 3) for a total of 1 + 3 = 4, which is the maximum."
+        },
+        {
+            "input": "[5, 3, 4, 11, 2]",
+            "output": "16",
+            "explanation": "Rob house 1 (amount = 5), house 4 (amount = 11). Total = 5 + 11 = 16."
+        }
+    ],
+    "constraints": [
+        "The number of houses <code>n</code> is in the range [1, 100].",
+        "Each value <code>nums[i]</code> is a non-negative integer and is less than 400."
+    ],
+    "tags": [
+        "Dynamic Programming",
+        "Array",
+        "Greedy"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "house_robber_ii",
+        "maximal_square",
+        "coin_change"
+    ],
+    "hints": [
+        "Consider using dynamic programming to store the maximum amount of money that can be robbed up to each house.",
+        "Think about how the decision to rob or skip a house affects the total amount of money.",
+        "Make sure to account for the base cases when determining the maximum robbery amount.",
+        "Explore the possibility of iterating through the array while keeping track of the last two maximum amounts."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

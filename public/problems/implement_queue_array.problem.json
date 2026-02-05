@@ -1,0 +1,53 @@
+{
+    "id": "implement_queue_array",
+    "title": "Implement Queue Using Array",
+    "description": "Design and implement a queue using an array. The queue should support the following operations: <code>enqueue</code>, <code>dequeue</code>, <code>peek</code>, and checking if the queue is <code>empty</code>. Note that the queue should have a fixed size that cannot be exceeded.",
+    "difficulty": "Easy",
+    "category": "Data Structures, Arrays",
+    "examples": [
+        {
+            "input": "Queue q = new Queue(5); q.enqueue(1); q.enqueue(2); q.enqueue(3);",
+            "output": "1",
+            "explanation": "After enqueuing 1, 2, and 3, calling <code>peek</code> returns 1 because it is the first element in the queue."
+        },
+        {
+            "input": "q.dequeue();",
+            "output": "2",
+            "explanation": "After dequeuing, the queue removes the first element (1), so the next element to be returned by <code>peek</code> is now 2."
+        },
+        {
+            "input": "q.enqueue(4); q.enqueue(5); q.enqueue(6); q.enqueue(7);",
+            "output": "Queue is full",
+            "explanation": "The initial size of the queue is 5. After enqueuing four elements (1, 2, 3, 4, and 5), attempting to add 6 or 7 will result in an error as the queue has reached its limit."
+        }
+    ],
+    "constraints": [
+        "The maximum size of the queue will not exceed 1000.",
+        "All enqueue operations will be valid unless the queue is full."
+    ],
+    "tags": [
+        "Queue",
+        "Array",
+        "Data Structures"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "implement_stack_array",
+        "circular_queue",
+        "design_circular_queue"
+    ],
+    "hints": [
+        "Consider using two pointers to track the front and rear of the queue.",
+        "Think about how to handle wrap-around when the queue reaches the end of the array.",
+        "Make sure to handle edge cases like dequeueing from an empty queue.",
+        "You might want to use modulo operation for circular behavior."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

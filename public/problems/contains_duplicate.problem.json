@@ -1,0 +1,53 @@
+{
+    "id": "contains_duplicate",
+    "title": "Contains Duplicate",
+    "description": "Given an integer array `<code>nums</code>`, return `<code>true</code>` if any value appears at least twice in the array, and return `<code>false</code>` if every element is distinct.",
+    "difficulty": "Easy",
+    "category": "Array, Hash Table",
+    "examples": [
+        {
+            "input": "[1, 2, 3, 1]",
+            "output": "true",
+            "explanation": "The number 1 appears twice in the array, hence the function should return `<code>true</code>`."
+        },
+        {
+            "input": "[1, 2, 3, 4]",
+            "output": "false",
+            "explanation": "All elements are distinct in the array, so the function should return `<code>false</code>`."
+        },
+        {
+            "input": "[1, 2, 3, 1, 2, 3]",
+            "output": "true",
+            "explanation": "The numbers 1 and 2 both appear more than once in the array, thus the function returns `<code>true</code>`."
+        }
+    ],
+    "constraints": [
+        "The length of `<code>nums</code>` will be in the range `[0, 10^5]`.",
+        "Each element in `<code>nums</code>` will be an integer in the range `[-10^9, 10^9]`."
+    ],
+    "tags": [
+        "Array",
+        "Hash Table",
+        "Set"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Facebook",
+        "Apple"
+    ],
+    "similar_problems": [
+        "find_duplicate_number",
+        "intersection_of_two_arrays",
+        "single_number"
+    ],
+    "hints": [
+        "Consider using a data structure that allows for fast lookups.",
+        "Think about how you can keep track of the elements you've seen so far.",
+        "What happens when you encounter a duplicate during your iteration?",
+        "Try to come up with a solution that runs in linear time."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

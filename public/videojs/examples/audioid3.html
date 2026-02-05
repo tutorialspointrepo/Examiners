@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs/Nuevo - Basic example</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>Audio ID3 Tags</h1>
+
+	<link href="../skins/treso/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+	<script src="../plugins/videojs.id3.js"></script>
+	<script src="../plugins/visualizer.js"></script>
+	
+	<div class="media-parent">
+		<div class="media-child">
+			<audio id="player_one" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/id3.jpg">
+				<source src="../examples/assets/mp3/molly2.mp3" type="audio/mpeg">
+			</audio>
+		</div>
+	</div>
+
+
+
+	<script>
+	var player = videojs('player_one', {license: licenseKey});
+	player.nuevo();
+	player.id3();
+	player.visualizer({caps:true});
+	</script>
+
+<br />ID3 tags plugin allows to read information about audio from ID3 v1 or ID3 v2 tags included in the audio file. This concerns information like audio title, artist, album, release year, genre, album cover, and even song lyrics.
+
+<h2>Basic Code Setup</h2>
+<pre>
+
+<span class="comment">&lt;!--Load player skin, videojs and nuevo plugin inside &lt;body&gt; tag --&gt;</span>
+&lt;link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" /&gt;
+&lt;script src="../video.min.js"&gt;&lt;/script&gt;
+&lt;script src="../nuevo.min.js"&gt;&lt;/script&gt;
+&lt;script src="../plugins/videojs.id3.js"&gt;&lt;/script&gt;
+
+<span class="comment">&lt;!--Video tag setup--&gt;</span>
+&lt;audio id="<span class="mark">player_one</span>" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/poster.jpg"&gt;
+	&lt;source src="//opencdn.b-cdn.net/mp3/molly/molly3.mp3" type="audio/mpeg"&gt;
+&lt;/audio&gt;
+
+<span class="comment">&lt;!--Initialize the player and the plugin--&gt;</span>
+&lt;script&gt;
+	var player = videojs('<span class="mark">player_one</span>', {license: "key"});
+	player.nuevo({ 
+		//option_name: option_value, option_name: value
+	});
+	player.id3();
+&lt;/script&gt;
+</pre>
+
+You can include a frequency equalizer plugin like in the example above.
+<pre>
+&lt;script&gt;
+	var player = videojs('<span class="mark">player_one</span>', {license: "key"});
+	player.nuevo({ 
+		//option_name: option_value, option_name: value
+	});
+	player.id3();
+	player.visualizer({caps:true});
+&lt;/script&gt;
+</pre>
+
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

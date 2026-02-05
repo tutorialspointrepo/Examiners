@@ -1,0 +1,53 @@
+{
+    "id": "find_minimum_rotated",
+    "title": "Find Minimum in Rotated Sorted Array",
+    "description": "Given an <code>array</code> of <code>n</code> elements that is sorted and then rotated at some unknown pivot, find the minimum element in the <code>array</code>. You may assume no duplicate exists in the <code>array</code>.",
+    "difficulty": "Medium",
+    "category": "Array, Binary Search",
+    "examples": [
+        {
+            "input": "[3, 4, 5, 1, 2]",
+            "output": "1",
+            "explanation": "The array is rotated at index 2. The minimum element is 1."
+        },
+        {
+            "input": "[4, 5, 6, 7, 0, 1, 2]",
+            "output": "0",
+            "explanation": "The array is rotated at index 3. The minimum element is 0."
+        },
+        {
+            "input": "[1, 2, 3, 4, 5]",
+            "output": "1",
+            "explanation": "The array is not rotated; hence the first element is the minimum, which is 1."
+        }
+    ],
+    "constraints": [
+        "The input <code>array</code> must have at least one element.",
+        "The length of <code>array</code> is within the range [1, 5000]."
+    ],
+    "tags": [
+        "Array",
+        "Binary Search",
+        "Searching"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "find_min_in_rotated_sorted_array",
+        "search_in_rotated_sorted_array",
+        "find_max_in_rotated_sorted_array"
+    ],
+    "hints": [
+        "Consider using binary search to reduce the search space.",
+        "Identify the point where the rotation occurs.",
+        "Compare the middle element with the rightmost element to decide which side to search.",
+        "Remember that the minimum element will always be less than its neighbors."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

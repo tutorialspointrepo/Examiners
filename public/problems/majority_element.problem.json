@@ -1,0 +1,54 @@
+{
+    "id": "majority_element",
+    "title": "Majority Element",
+    "description": "Given an array <code>nums</code> of size <code>n</code>, return the majority element. The majority element is the element that appears more than <code>n / 2</code> times. You may assume that the majority element always exists in the array.",
+    "difficulty": "Easy",
+    "category": "Array, Hash Table",
+    "examples": [
+        {
+            "input": "[3, 2, 3]",
+            "output": "3",
+            "explanation": "In this example, the number 3 appears twice while the other number appears only once. Since 3 appears more than <code>3 / 2 = 1.5</code> times, it is the majority element."
+        },
+        {
+            "input": "[2, 2, 1, 1, 1, 2, 2]",
+            "output": "2",
+            "explanation": "Here, the number 2 appears four times and the number 1 appears three times. Since 2 appears more than <code>7 / 2 = 3.5</code> times, it is the majority element."
+        },
+        {
+            "input": "[1]",
+            "output": "1",
+            "explanation": "In a single-element array, that element is by definition the majority element because it appears <code>1 > 1 / 2</code> times."
+        }
+    ],
+    "constraints": [
+        "<code>n</code> == <code>nums.length</code>",
+        "<code>1 <= n <= 5 * 10^4</code>",
+        "<code>-10^9 <= nums[i] <= 10^9</code>"
+    ],
+    "tags": [
+        "Array",
+        "Hash Table",
+        "Sorting"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "find_majority_element",
+        "top_k_frequent_elements",
+        "single_number"
+    ],
+    "hints": [
+        "Consider using a hash map to count occurrences of each element.",
+        "There is an efficient algorithm that runs in linear time and constant space.",
+        "Think about properties of majority elements and how they can be exploited.",
+        "What happens if you use sorting to identify the majority element?"
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

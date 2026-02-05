@@ -1,0 +1,53 @@
+{
+    "id": "container_water",
+    "title": "Container With Most Water",
+    "description": "Given <code>n</code> non-negative integers <code>height</code> representing the elevation map where the width of each bar is <code>1</code>, compute how much water it can trap after raining.",
+    "difficulty": "Medium",
+    "category": "Array, Two Pointers",
+    "examples": [
+        {
+            "input": "[1,8,6,2,5,4,8,3,7]",
+            "output": "49",
+            "explanation": "The maximum amount of water is trapped between the lines at indices <code>1</code> and <code>8</code>. The height of the water is determined by the shorter line (height <code>6</code>), and the width between the two lines is <code>7</code>, resulting in <code>6 * 7 = 42</code>."
+        },
+        {
+            "input": "[1,1]",
+            "output": "0",
+            "explanation": "There is no space to hold water between the two bars as they are of equal height. Thus, the output is <code>0</code>."
+        },
+        {
+            "input": "[4,3,2,1,4]",
+            "output": "16",
+            "explanation": "The maximum water is trapped between the first and last bar (height <code>4</code>) with a width of <code>4</code>, resulting in <code>4 * 4 = 16</code>."
+        }
+    ],
+    "constraints": [
+        "The length of <code>height</code> will be in the range [<code>2</code>, <code>10^5</code>].",
+        "Each element <code>height[i]</code> is a non-negative integer."
+    ],
+    "tags": [
+        "Array",
+        "Two Pointers",
+        "Greedy"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "trapping_rain_water",
+        "largest_rectangle_in_histogram",
+        "max_area_of_island"
+    ],
+    "hints": [
+        "Consider using two pointers to maximize the area calculation.",
+        "Keep track of the maximum height from both sides.",
+        "Ensure that you move the pointer pointing to the shorter line.",
+        "Think about how the width and height contribute to the area."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,53 @@
+{
+    "id": "path_sum",
+    "title": "Path Sum",
+    "description": "Given a binary tree and a <code>targetSum</code>, determine if the tree has a root-to-leaf path such that adding up all the values along the path equals <code>targetSum</code>. A leaf is a node with no children.",
+    "difficulty": "Medium",
+    "category": "Tree, Depth-First Search",
+    "examples": [
+        {
+            "input": "root = [5,4,8,11,null,13,4,7,2,null,null,null,1], targetSum = 22",
+            "output": "true",
+            "explanation": "The path 5 -> 4 -> 11 -> 2 sums up to 22."
+        },
+        {
+            "input": "root = [1,2,3], targetSum = 5",
+            "output": "false",
+            "explanation": "There are no root-to-leaf paths that sum to 5."
+        },
+        {
+            "input": "root = [], targetSum = 0",
+            "output": "false",
+            "explanation": "An empty tree has no paths, hence cannot sum to any value."
+        }
+    ],
+    "constraints": [
+        "The number of nodes in the tree is in the range [0, 5000].",
+        "Each node's value is in the range [-1000, 1000]."
+    ],
+    "tags": [
+        "Tree",
+        "Depth-First Search",
+        "Recursion"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "path_sum_ii",
+        "sum_root_to_leaf_numbers",
+        "binary_tree_paths"
+    ],
+    "hints": [
+        "Consider using recursion to explore each path from the root to the leaves.",
+        "Keep track of the current sum as you traverse the tree.",
+        "Check if a node is a leaf before deciding if the current sum equals <code>targetSum</code>.",
+        "You can also use an iterative approach with a stack for depth-first traversal."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,19 @@
+{
+    "id": "merge_sort",
+    "problem_id": "merge_sort",
+    "title": "Merge Sort - Divide and Conquer",
+    "algorithm": [
+        "Step 1: If the list has one or zero elements, it is already sorted. Return the list.",
+        "Step 2: Divide the list into two halves.",
+        "Step 3: Recursively call merge_sort on both halves to sort them.",
+        "Step 4: Merge the two sorted halves back together into a single sorted list.",
+        "Final step: Return the merged sorted list."
+    ],
+    "pseudocode": "ALGORITHM MergeSort\nBEGIN\n    IF length(array) <= 1 THEN\n        RETURN array\n    ENDIF\n    mid = length(array) / 2\n    left = MergeSort(array[0:mid])\n    right = MergeSort(array[mid:length(array)])\n    RETURN Merge(left, right)\nEND\n\nFUNCTION Merge(left, right)\nBEGIN\n    result = []\n    WHILE left AND right NOT EMPTY DO\n        IF left[0] <= right[0] THEN\n            Append left[0] to result\n            Remove left[0]\n        ELSE\n            Append right[0] to result\n            Remove right[0]\n        ENDIF\n    ENDWHILE\n    RETURN result + left + right\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Check if array has 1 or 0 elements]\n  │\n  ▼\nYES ───► [Return array]\n  │\n  ▼\nNO\n  │\n  ▼\n[Divide array into left and right halves]\n  │\n  ▼\n[Recursively call MergeSort on left]\n  │\n  ▼\n[Recursively call MergeSort on right]\n  │\n  ▼\n[Merge sorted left and right arrays]\n  │\n  ▼\n[Return merged array]\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** Merge sort is effective for large datasets as it consistently divides the workload in half.\n\n**Approach Explanation:**\n1. **Main Strategy**: The algorithm uses a divide-and-conquer strategy that splits the array into smaller sub-arrays, sorts them, and then merges them back together.\n2. **Key Components**: The merging process is crucial; it combines two sorted arrays into a single sorted array while maintaining order.\n3. **Why It Works**: Each level of recursion guarantees that the sub-arrays are sorted, eventually leading to a fully sorted array when all levels complete.\n4. **Edge Cases**: The algorithm handles empty arrays and single-element arrays gracefully by returning them as is.\n\n**Alternative Approaches:** Quick sort, heap sort, and insertion sort can also be used for sorting but may have different performance characteristics based on input data.",
+    "complexity": "Time Complexity: O(n log n)\n- Each split takes O(log n) for the depth of recursion, and merging takes O(n) time at each level.\n- Best, average, and worst case scenarios all share this complexity due to consistent division.\n\nSpace Complexity: O(n)\n- Additional space is required for the temporary arrays used during the merge process.\n- The auxiliary space grows linearly with the input size.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │    O(n log n)    │    O(n)     │\n│ Quick Sort      │    O(n log n) average, O(n^2) worst │    O(log n)     │\n│ Heap Sort       │    O(n log n)    │    O(1)     │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- Merge sort is stable and performs well with large datasets and linked lists.\n- Its predictable O(n log n) performance makes it suitable for various applications.\n- Notable trade-off includes the use of extra memory for merging.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

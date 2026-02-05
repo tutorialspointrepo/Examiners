@@ -1,0 +1,53 @@
+{
+    "id": "single_number",
+    "title": "Single Number",
+    "description": "Given a non-empty array of integers <code>nums</code>, every element appears twice except for one. Find that single one.<br> You must implement a solution with a linear runtime complexity and use only constant extra space.",
+    "difficulty": "Easy",
+    "category": "Array, Bit Manipulation",
+    "examples": [
+        {
+            "input": "[2, 2, 1]",
+            "output": "1",
+            "explanation": "In the array, the number <code>2</code> appears twice, while <code>1</code> appears only once. Hence, the result is <code>1</code>."
+        },
+        {
+            "input": "[4, 1, 2, 1, 2]",
+            "output": "4",
+            "explanation": "Here, <code>1</code> and <code>2</code> appear twice, but <code>4</code> appears only once. Therefore, the output is <code>4</code>."
+        },
+        {
+            "input": "[1]",
+            "output": "1",
+            "explanation": "The array consists of a single element <code>1</code>, which is the only number present in the array. Thus, the output is <code>1</code>."
+        }
+    ],
+    "constraints": [
+        "The input array <code>nums</code> has at least one element.",
+        "All elements in <code>nums</code> are integers within the range of 32-bit signed integers."
+    ],
+    "tags": [
+        "Array",
+        "Bit Manipulation",
+        "Hash Table"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Facebook"
+    ],
+    "similar_problems": [
+        "find_unique_element",
+        "missing_number",
+        "single_number_ii"
+    ],
+    "hints": [
+        "Consider using bit manipulation to solve the problem efficiently.",
+        "Remember that XORing a number with itself results in zero.",
+        "Think about how to utilize properties of XOR for this problem.",
+        "A brute force method would take more time; try to find an optimal approach."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

@@ -1,0 +1,19 @@
+{
+    "id": "middle_linked_list",
+    "problem_id": "middle_linked_list",
+    "title": "Middle of a Linked List - Fast and Slow Pointer Technique",
+    "algorithm": [
+        "Step 1: Initialize two pointers, 'slow' and 'fast', both pointing to the head of the linked list.",
+        "Step 2: Traverse the linked list using a loop where 'fast' moves two steps and 'slow' moves one step at a time.",
+        "Step 3: Continue this process until 'fast' reaches the end of the list or there are no more nodes for 'fast' to jump two steps.",
+        "Step 4: When 'fast' reaches the end, 'slow' will be pointing to the middle node of the linked list.",
+        "Final step: Return the 'slow' pointer which is now at the middle of the linked list."
+    ],
+    "pseudocode": "ALGORITHM MiddleOfLinkedList\nBEGIN\n    SET slow = head\n    SET fast = head\n    WHILE fast ≠ NULL AND fast.next ≠ NULL DO\n        MOVE slow to slow.next\n        MOVE fast to fast.next.next\n    END WHILE\n    RETURN slow\nEND",
+    "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Initialize slow and fast pointers]\n  │\n  ▼\n◊ Is fast NULL or fast.next NULL? ◊ ──YES──► [Return slow]\n  │                        │\n  ▼                        ▼\n[MOVE slow to slow.next]   [MOVE fast to fast.next.next]\n  │\n  ▼\n[Continue Loop]\n  │\n  ▼\nEND\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+    "approach": "Detailed explanation of the algorithm approach:\n\n**Key Insight:** The slow and fast pointer technique allows us to find the middle of the list in a single traversal.\n\n**Approach Explanation:**\n1. **Main Strategy**: By moving one pointer slowly and another quickly, we can determine the midpoint effectively.\n2. **Key Components**: The use of two pointers and the conditions to check for the end of the list.\n3. **Why It Works**: When the fast pointer reaches the end, the slow pointer will be at half the distance, yielding the middle node.\n4. **Edge Cases**: Handles both even and odd lengths of linked lists gracefully; if the length is even, it returns the second middle node.\n\n**Alternative Approaches:** One could count the number of nodes first and then find the middle, but this would require two passes through the list.",
+    "complexity": "Time Complexity: O(n)\n- The algorithm makes a single pass through the linked list, where 'n' is the number of nodes.\n- Each operation inside the loop is O(1).\n\nSpace Complexity: O(1)\n- Only a constant amount of space is used for the pointers, regardless of the input size.\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ This Algorithm  │      O(n)    │      O(1)     │\n│ Counting Nodes  │      O(n)    │      O(1)     │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- Works efficiently for large linked lists due to its linear time complexity.\n- Suitable for real-time applications where finding the middle quickly is necessary.\n- Minimal memory overhead ensures optimal performance on constrained environments.",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

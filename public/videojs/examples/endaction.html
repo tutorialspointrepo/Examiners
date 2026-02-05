@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs End Action</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>End Action</h1>
+
+	<link href="../skins/treso/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+
+
+	<script>
+	var player1 = videojs('player_1', {license:licenseKey});
+	player1.nuevo({ 
+		endAction: "share"
+	});
+	</script>
+<br />
+<div class="info">
+By default when video ends, big replay button is displayed.<br>
+Instead of big Replay icon you can order to display related videos container or sharing container.
+</div>
+
+<h2>Player Nuevo Initialization Code Example</h2>
+<pre>
+<span class="comment">&lt;!--Initialize player and plugin--&gt;</span>
+&lt;script&gt;
+	var player1 = videojs('player_1', {license: "key"});
+	player1.nuevo({ 
+		<span class="mark">endAction: share</span>
+	});
+&lt;/script&gt;
+</pre>
+
+or
+<pre>
+<span class="comment">&lt;!--Initialize player and plugin--&gt;</span>
+&lt;script&gt;
+	var player1 = videojs('player_1', {license: "key"});
+	player1.nuevo({ 
+		<span class="mark">endAction: related</span>
+	});
+&lt;/script&gt;
+</pre>
+<br />
+Another option is to display completely custom HTML container when video ends.
+<pre>
+<span class="comment">&lt;!--Build your end HTML--&gt;</span>
+
+let myHTML = '&lt;style&gt;';
+myHTML+= '.my-end{text-align:center;display:table-cell;vertical-align: middle;color:#fff}';
+myHTML+= '.my-end h1 {color:#fff}';
+myHTML+= '.vjs-end-button {cursor:pointer;margin: 0 4px;display:inline-table;margin:0 auto;background:transparent;border:solid 1px #f0f0f0;padding:6px 10px;margin:0 4px}';
+myHTML+= '.vjs-end-button:hover {background:#fff;color:#222}';
+myHTML+= '&lt/style&gt;';
+myHTML+= '&lt;h1&gt;Thank you for watching&lt;/h1&gt;';
+myHTML+= '&lt;div class="vjs-end-button" onclick="player.dispose()"&gt;Destroy&lt;/div&gt;';
+myHTML+= '&lt;div class="vjs-end-button" onclick="player.play()"&gt;Play again&lt;/div&gt;';
+
+<span class="comment">&lt;!--Initialize player and plugin--&gt;</span>
+&lt;script&gt;
+	var player2 = videojs('player_2', {license: "key"});
+	player1.nuevo({ 
+		<span class="mark">customEnd: myHTML</span>
+	});
+&lt;/script&gt;
+</pre>
+You can look at HTML source code to see what custom myHTML was used in the example.
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_2" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+	<script>
+	
+	let myHTML = '<style>';
+	myHTML+= '.my-end{text-align:center;display:table-cell;vertical-align: middle;color:#fff}.my-end h1 {color:#fff}';
+	myHTML+= '.vjs-end-button {cursor:pointer;margin: 0 4px;display:inline-table;margin:0 auto;background:transparent;border:solid 1px #f0f0f0;padding:6px 10px;margin:0 4px}';
+	myHTML+= '.vjs-end-button:hover {background:#fff;color:#222}';
+	myHTML+= "</style>";
+	myHTML+= '<div class="my-end">';
+	myHTML+= '<h1>Thank you for watching</h1>';
+	myHTML+= '<div class="vjs-end-button" onclick="player2.dispose()">Destroy</div>';
+	myHTML+= '<div class="vjs-end-button" onclick="player2.play()">Play again</div></div>';
+
+	var player2 = videojs('player_2',{license:licenseKey});
+	player2.nuevo({ 
+		customEnd: myHTML
+	});
+	</script>
+	
+
+
+	
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

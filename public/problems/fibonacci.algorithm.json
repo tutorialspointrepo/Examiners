@@ -1,0 +1,20 @@
+{
+  "id": "fibonacci",
+  "problem_id": "fibonacci",
+  "title": "Fibonacci - Iterative Dynamic Programming",
+  "algorithm": [
+    "Handle base cases: F(0) = 0, F(1) = 1",
+    "For n > 1, use iterative approach to avoid recursion overhead",
+    "Initialize first two Fibonacci numbers: a = 0, b = 1",
+    "Iterate from 2 to n",
+    "In each iteration: temp = a + b, a = b, b = temp",
+    "Return the final value of b"
+  ],
+  "pseudocode": "ALGORITHM Fibonacci\nBEGIN\n    IF n = 0 THEN\n        RETURN 0\n    END IF\n    IF n = 1 THEN\n        RETURN 1\n    END IF\n    \n    a = 0\n    b = 1\n    FOR i = 2 TO n DO\n        temp = a + b\n        a = b\n        b = temp\n    END FOR\n    RETURN b\nEND",
+  "flowchart": "Flowchart Description:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nSTART\n  │\n  ▼\n[Input: n]\n  │\n  ▼\n◊ n = 0? ◊ ──YES──► [Return 0] ──► END\n  │ NO\n  ▼\n◊ n = 1? ◊ ──YES──► [Return 1] ──► END\n  │ NO\n  ▼\n[Initialize: a = 0, b = 1, i = 2]\n  │\n  ▼\n◊ i ≤ n? ◊ ──NO──► [Return b] ──► END\n  │ YES\n  ▼\n[temp = a + b]\n  │\n  ▼\n[a = b]\n  │\n  ▼\n[b = temp]\n  │\n  ▼\n[i = i + 1]\n  │\n  ▼\n[Loop back to condition check]\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+  "approach": "The Fibonacci sequence is a classic example of dynamic programming and can be solved using multiple approaches:\n\n**Approach Comparison:**\n\n1. **Recursive Approach (Naive):**\n   - Direct implementation of the mathematical definition\n   - F(n) = F(n-1) + F(n-2)\n   - Simple but extremely inefficient due to overlapping subproblems\n\n2. **Iterative Approach (Optimal):**\n   - Uses bottom-up dynamic programming\n   - Builds solution incrementally from F(0) and F(1)\n   - Maintains only the last two values needed\n\n**Why Iterative is Better:**\n- **Efficiency**: Avoids recalculating the same values multiple times\n- **Space**: Uses constant space instead of O(n) call stack\n- **Time**: Linear time complexity instead of exponential\n\n**Key Insight:**\nTo compute F(n), we only need the previous two Fibonacci numbers. We don't need to store all intermediate values, just the last two.\n\n**Implementation Strategy:**\n1. Handle edge cases (n=0, n=1)\n2. Use two variables to track F(i-2) and F(i-1)\n3. Iterate and update these variables\n4. The \"sliding window\" technique keeps space constant",
+  "complexity": "Time Complexity: O(n)\n- Single loop from 2 to n\n- Each iteration performs constant time operations\n- Linear growth with input size\n\nSpace Complexity: O(1)\n- Only uses a constant amount of extra space\n- Two variables (a, b) plus temporary variable\n- No recursion stack or array storage\n\n**Complexity Comparison:**\n┌─────────────────┬──────────────┬───────────────┐\n│    Approach     │ Time Complexity │ Space Complexity │\n├─────────────────┼──────────────┼───────────────┤\n│ Naive Recursive │   O(2^n)     │     O(n)      │\n│ Memoized Rec.   │     O(n)     │     O(n)      │\n│ Iterative (DP)  │     O(n)     │     O(1)      │\n│ Matrix Exp.     │   O(log n)   │     O(1)      │\n└─────────────────┴──────────────┴───────────────┘\n\n**Performance Analysis:**\n- Naive recursive: Exponential time due to repeated calculations\n- Memoized: Linear time but uses recursion stack\n- Iterative: Linear time with optimal space usage\n- Matrix exponentiation: Fastest for very large n, but complex to implement\n\n**Practical Considerations:**\n- For n ≤ 30 (as per constraints), iterative approach is perfect\n- For very large n, consider matrix exponentiation\n- Iterative approach strikes the best balance of simplicity and efficiency",
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z",
+  "version": "1.0"
+}

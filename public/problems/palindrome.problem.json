@@ -1,0 +1,48 @@
+{
+  "id": "palindrome",
+  "title": "Valid Palindrome",
+  "description": "A phrase is a <strong>palindrome</strong> if, after converting all uppercase letters into lowercase letters and removing all non-alphanumeric characters, it reads the same forward and backward.\n\nGiven a string <code>s</code>, return <code>true</code> if it is a palindrome, or <code>false</code> otherwise.\n\nYou must write an algorithm that uses only O(1) extra space.",
+  "difficulty": "Easy",
+  "category": "String, Two Pointers",
+  "examples": [
+    {
+      "input": "s = \"A man, a plan, a canal: Panama\"",
+      "output": "true",
+      "explanation": "After removing non-alphanumeric characters and converting to lowercase: \"amanaplanacanalpanama\" which is a palindrome"
+    },
+    {
+      "input": "s = \"race a car\"",
+      "output": "false",
+      "explanation": "After processing: \"raceacar\" which is not a palindrome"
+    },
+    {
+      "input": "s = \" \"",
+      "output": "true",
+      "explanation": "After removing non-alphanumeric characters, we get an empty string which is considered a palindrome"
+    },
+    {
+      "input": "s = \"Madam\"",
+      "output": "true",
+      "explanation": "After converting to lowercase: \"madam\" which is a palindrome"
+    }
+  ],
+  "constraints": [
+    "1 ≤ s.length ≤ 2 × 10⁵",
+    "s consists only of printable ASCII characters",
+    "Consider only alphanumeric characters for palindrome checking",
+    "Case should be ignored when checking for palindrome"
+  ],
+  "tags": ["String", "Two Pointers", "Palindrome"],
+  "companies": ["Amazon", "Microsoft", "Google", "Facebook"],
+  "similar_problems": ["longest_palindromic_substring", "palindrome_number", "valid_palindrome_ii", "palindromic_substrings"],
+  "hints": [
+    "Use two pointers approach: one from the beginning and one from the end.",
+    "Skip non-alphanumeric characters and convert to lowercase for comparison.",
+    "Move pointers towards each other, comparing characters along the way.",
+    "If all characters match, it's a palindrome; if any mismatch occurs, it's not.",
+    "Remember to handle edge cases like empty strings and single characters."
+  ],
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T10:30:00Z",
+  "version": "1.0"
+}

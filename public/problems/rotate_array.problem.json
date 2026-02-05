@@ -1,0 +1,54 @@
+{
+    "id": "rotate_array",
+    "title": "Rotate Array",
+    "description": "Given an array of integers <code>nums</code> and an integer <code>k</code>, rotate the array to the right by <code>k</code> steps. For example, if <code>nums = [1, 2, 3, 4, 5, 6, 7]</code> and <code>k = 3</code>, the array should be rotated to <code>[5, 6, 7, 1, 2, 3, 4]</code>.",
+    "difficulty": "Medium",
+    "category": "Array, Two Pointers",
+    "examples": [
+        {
+            "input": "nums = [1, 2, 3, 4, 5], k = 2",
+            "output": "[4, 5, 1, 2, 3]",
+            "explanation": "Rotating the array <code>[1, 2, 3, 4, 5]</code> by <code>2</code> steps results in <code>[4, 5, 1, 2, 3]</code>. The last two elements come to the front."
+        },
+        {
+            "input": "nums = [-1, -100, 3, 99], k = 2",
+            "output": "[3, 99, -1, -100]",
+            "explanation": "For the array <code>[-1, -100, 3, 99]</code> rotated by <code>2</code> steps, we take <code>[3, 99]</code> from the end and place it at the front."
+        },
+        {
+            "input": "nums = [1, 2], k = 3",
+            "output": "[2, 1]",
+            "explanation": "Rotating the array <code>[1, 2]</code> by <code>3</code> steps (which is effectively <code>1</code> step due to the length of the array) gives us <code>[2, 1]</code>."
+        }
+    ],
+    "constraints": [
+        "<code>1 <= nums.length <= 10^5</code>",
+        "<code>-2^31 <= nums[i] <= 2^31 - 1</code>",
+        "<code>0 <= k <= 10^5</code>"
+    ],
+    "tags": [
+        "Array",
+        "Two Pointers",
+        "Rotation"
+    ],
+    "companies": [
+        "Google",
+        "Amazon",
+        "Microsoft",
+        "Apple"
+    ],
+    "similar_problems": [
+        "rotate_string",
+        "shift_2d_grid",
+        "reverse_string"
+    ],
+    "hints": [
+        "Consider how the array elements move when rotated.",
+        "You can use a temporary array to store the result.",
+        "Think about using the modulo operator to simplify <code>k</code>.",
+        "In-place rotation could involve reversing parts of the array."
+    ],
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-15T10:30:00Z",
+    "version": "1.0"
+}

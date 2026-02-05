@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs/Nuevo - Basic example</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+
+
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h1>Basic example setup</h1>
+
+	<link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4">
+				<source src="../examples/assets/video/coffee.webm" type="video/webm">
+			</video>
+		</div>
+	</div>
+
+
+
+	<script>
+		var player = videojs('player_1', {license: licenseKey});
+		player.nuevo({ 
+				title: "Nuevo plugin for VideoJs Player",
+				url: "https://www.nuevodevel.com/nuevo"
+		});
+	</script>
+
+
+<h2>Basic Code Setup</h2>
+<pre>
+
+<span class="comment">&lt;!--Load player skin, videojs and nuevo plugin inside &lt;body&gt; tag --&gt;</span>
+&lt;link href="../skins/nuevo/videojs.min.css" rel="stylesheet" type="text/css" /&gt;
+&lt;script src="../video.min.js"&gt;&lt;/script&gt;
+&lt;script src="../nuevo.min.js"&gt;&lt;/script&gt;
+
+<span class="comment">&lt;!--Video tag setup--&gt;</span>
+&lt;video id="<span class="mark">player_one</span>" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/coffee.jpg"&gt;
+	&lt;source src="../examples/assets/video/coffee.mp4" type="video/mp4"&gt;
+	&lt;source src="../examples/assets/video/coffee.webm" type="video/webm"&gt;
+&lt;/video&gt;
+
+<span class="comment">&lt;!--Initialize the player and the plugin--&gt;</span>
+&lt;script&gt;
+	var player = videojs('<span class="mark">player_1</span>', {license: "key"});
+	player.nuevo({ 
+		//option_name: option_value, option_name: value
+	}); 
+&lt;/script&gt;
+</pre>
+
+<div class="explain" style="font-size:1em">
+<b><u>IMPORTANT:</u></b> It is crucial to load player JS files and initialize it from the <b>&lt;body&gt;</b> section of website, not &lt;head&gt;.
+</div>
+
+<br />
+You can declare the nuevo plugin options in a separate array:
+<pre>
+&lt;script&gt;
+    var nuevo_options = { option1: value1, option2: value2 };
+	var player = videojs('<span class="mark">player_1</span>, {license: "key"})';
+	player.nuevo(nuevo_options);
+&lt;/script&gt;
+</pre>
+
+It is also possible to declare all options as player's options only.
+<pre>
+<span class="comment">&lt;!--Video tag setup--&gt;</span>
+&lt;video id="player_1" class="video-js vjs-fluid" controls preload playsinline&gt;&lt;/video&gt;
+
+<span class="comment">&lt;!--Initialize player--&gt;</span>
+&lt;script&gt;
+	const player = videojs("player_1", {
+		license: "key",
+		poster: "//path-to-poster-image.jpg",
+		sources: {
+			src: "//path-to-m3u8-playlist.m3u8",
+			type: "application/x-mpegURL"
+		},
+		contextMemu: false,
+		pipButton: false,
+		buttonForward: true
+    })
+&lt;/script&gt;
+</pre>
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

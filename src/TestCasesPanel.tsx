@@ -11,6 +11,7 @@ import {
   faListCheck,
 } from '@fortawesome/sharp-light-svg-icons';
 import { judge0Service } from './services/judge0_service';
+import { firebaseService } from './services/firebase_service';
 import { useBrand } from './BrandContext';
 
 interface TestCase {
@@ -27,7 +28,10 @@ interface TestCasesPanelProps {
   code: string;
   language: string;
   darkMode: boolean;
-  editorRef?: React.RefObject<any>;  // ✅ Add editor ref
+  editorRef?: React.RefObject<any>;
+  userId?: string;        // User ID for tracking attempts
+  problemSlug?: string;   // Problem slug for tracking attempts
+  onAttemptRecorded?: (status: 'attempted' | 'completed') => void; // Callback when attempt is recorded
 }
 
 interface TestResult {
@@ -49,7 +53,10 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
   code,
   language,
   darkMode,
-  editorRef,  // ✅ Accept editor ref
+  editorRef,
+  userId,
+  problemSlug,
+  onAttemptRecorded,
 }) => {
   const brand = useBrand(); // Get brand theme
   
@@ -67,6 +74,37 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
     }))
   );
   const [isRunningAll, setIsRunningAll] = useState(false);
+  const [attemptRecorded, setAttemptRecorded] = useState(false);
+
+  // Helper: Record attempt to database
+  const recordAttempt = async (results: TestResult[]) => {
+    if (!userId || !problemSlug) {
+      console.log('⚠️ Cannot record attempt: missing userId or problemSlug');
+      return;
+    }
+
+    const passedCount = results.filter(r => r.passed === true).length;
+    const totalCount = results.length;
+    const allPassed = passedCount === totalCount && totalCount > 0;
+    const status: 'attempted' | 'completed' = allPassed ? 'completed' : 'attempted';
+
+    try {
+      await firebaseService.recordProblemAttempt(userId, problemSlug, status, {
+        language,
+        passedTests: passedCount,
+        totalTests: totalCount,
+      });
+      
+      setAttemptRecorded(true);
+      if (onAttemptRecorded) {
+        onAttemptRecorded(status);
+      }
+      
+      console.log(`✅ Recorded ${status} for problem ${problemSlug}`);
+    } catch (error) {
+      console.error('Error recording attempt:', error);
+    }
+  };
 
   // ✅ Helper: Get fresh code from editor or fallback to prop
   const getFreshCode = (): string => {
@@ -90,7 +128,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
 
     try {
       const testCase = testCases[index];
-      const freshCode = getFreshCode();  // ✅ Get fresh code
+      const freshCode = getFreshCode();
       
       console.log(`🧪 Running Test Case ${index + 1} with fresh code`);
       
@@ -114,39 +152,44 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
         'actualOutput === expectedOutput': actualOutput === expectedOutput
       });
 
-      setTestResults(prev =>
-        prev.map((r, i) =>
-          i === index
-            ? {
-                passed,
-                input: testCase.input || '',
-                expected: expectedOutput,
-                actual: actualOutput,
-                error: result.error,
-                time: result.time,
-                memory: result.memory,
-                status: passed ? 'Accepted' : result.error ? 'Runtime Error' : 'Wrong Answer',
-                running: false,
-              }
-            : r
-        )
+      const newResults = testResults.map((r, i) =>
+        i === index
+          ? {
+              passed,
+              input: testCase.input || '',
+              expected: expectedOutput,
+              actual: actualOutput,
+              error: result.error,
+              time: result.time,
+              memory: result.memory,
+              status: passed ? 'Accepted' : result.error ? 'Runtime Error' : 'Wrong Answer',
+              running: false,
+            }
+          : r
       );
+
+      setTestResults(newResults);
+      
+      // Record attempt after test runs
+      await recordAttempt(newResults);
       
       console.log('✅ State updated for test', index + 1, 'passed:', passed);
     } catch (error: any) {
-      setTestResults(prev =>
-        prev.map((r, i) =>
-          i === index
-            ? {
-                ...r,
-                passed: false,
-                error: error.message,
-                status: 'Error',
-                running: false,
-              }
-            : r
-        )
+      const newResults = testResults.map((r, i) =>
+        i === index
+          ? {
+              ...r,
+              passed: false,
+              error: error.message,
+              status: 'Error',
+              running: false,
+            }
+          : r
       );
+      setTestResults(newResults);
+      
+      // Record attempt even on error
+      await recordAttempt(newResults);
     }
   };
 
@@ -160,7 +203,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
     );
 
     try {
-      const freshCode = getFreshCode();  // ✅ Get fresh code
+      const freshCode = getFreshCode();
       
       console.log(`🧪 Running ALL Test Cases with fresh code (${testCases.length} tests)`);
       
@@ -168,47 +211,52 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
       
       console.log('🔍 Raw results from judge0:', result.results);
       
-      setTestResults(
-        result.results.map((r, idx) => {
-          // Force calculate passed status by comparing outputs
-          const actualTrimmed = String(r.actual || '').trim();
-          const expectedTrimmed = String(r.expected || '').trim();
-          const hasError = Boolean(r.error);
-          const isPassed = !hasError && actualTrimmed === expectedTrimmed;
-          
-          console.log(`Test ${idx + 1}:`, {
-            actual: actualTrimmed,
-            expected: expectedTrimmed,
-            hasError,
-            isPassed,
-            rawPassed: r.passed
-          });
-          
-          return {
-            passed: isPassed,
-            input: r.input,
-            expected: expectedTrimmed,
-            actual: actualTrimmed,
-            error: r.error,
-            time: r.time,
-            memory: r.memory,
-            status: isPassed ? 'Accepted' : hasError ? 'Runtime Error' : 'Wrong Answer',
-            running: false,
-          };
-        })
-      );
+      const newResults = result.results.map((r, idx) => {
+        // Force calculate passed status by comparing outputs
+        const actualTrimmed = String(r.actual || '').trim();
+        const expectedTrimmed = String(r.expected || '').trim();
+        const hasError = Boolean(r.error);
+        const isPassed = !hasError && actualTrimmed === expectedTrimmed;
+        
+        console.log(`Test ${idx + 1}:`, {
+          actual: actualTrimmed,
+          expected: expectedTrimmed,
+          hasError,
+          isPassed,
+          rawPassed: r.passed
+        });
+        
+        return {
+          passed: isPassed,
+          input: r.input,
+          expected: expectedTrimmed,
+          actual: actualTrimmed,
+          error: r.error,
+          time: r.time,
+          memory: r.memory,
+          status: isPassed ? 'Accepted' : hasError ? 'Runtime Error' : 'Wrong Answer',
+          running: false,
+        };
+      });
+
+      setTestResults(newResults);
+      
+      // Record attempt after all tests complete
+      await recordAttempt(newResults);
       
       console.log('✅ Test results set');
     } catch (error: any) {
-      setTestResults(prev =>
-        prev.map(r => ({
-          ...r,
-          passed: false,
-          error: error.message,
-          status: 'Error',
-          running: false,
-        }))
-      );
+      const newResults = testResults.map(r => ({
+        ...r,
+        passed: false,
+        error: error.message,
+        status: 'Error',
+        running: false,
+      }));
+      setTestResults(newResults);
+      
+      // Record attempt even on error
+      await recordAttempt(newResults);
     } finally {
       setIsRunningAll(false);
     }
@@ -233,7 +281,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
 
       {/* Overlay */}
       <div
-        className={`fixed inset-0 bg-black transition-opacity duration-300 z-[9998] ${
+        className={`fixed inset-0 bg-black transition-opacity duration-300 z-[10000] ${
           isOpen ? 'opacity-50' : 'opacity-0 pointer-events-none'
         }`}
         onClick={onClose}
@@ -241,7 +289,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
 
       {/* Sliding Panel */}
       <div
-        className={`fixed top-0 right-0 h-full w-full max-w-2xl transform transition-transform duration-300 ease-in-out z-[9999] ${
+        className={`fixed top-0 right-0 h-full w-full max-w-2xl transform transition-transform duration-300 ease-in-out z-[10001] ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         } ${darkMode ? 'bg-gray-900' : 'bg-white'} shadow-2xl flex flex-col`}
       >

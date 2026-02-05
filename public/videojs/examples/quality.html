@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1, maximum-scale=1" name="viewport">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Videojs/Nuevo - Resolution switcher</title>
+<link href="../examples/assets/css/style.css" rel="stylesheet" type="text/css">
+<script src="../license.js"></script>
+</head>
+
+<body>
+<div class="header">
+	<div class="menu">
+		<a href="https://www.nuevodevel.com/nuevo/"><img src="../examples/assets/images/nuevodevel.png"></a>
+		<div class="browse">&larr; <a href="index.html">Back to examples</a></div>
+	</div>
+</div>
+
+<div class="container">
+	<h2>HLS or MPEG/DASH resolutions</h2>
+	<link href="../skins/treso/videojs.css" rel="stylesheet" type="text/css" />
+	<script src="../video.min.js"></script>
+	<script src="../nuevo.min.js?rt=8"></script>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_1" class="video-js vjs-fluid" controls preload playsinline webkit-playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="//opencdn.b-cdn.net/video/hls/coffee/playlist.m3u8" type="application/x-mpegURL">
+			</video>
+		</div>
+	</div>	
+
+	<script>
+	var player1 = videojs('player_1', {license:licenseKey});
+	player1.nuevo();
+	</script>	
+		
+	
+	<br>Resolution qualities are detected automatically for HLS or MPEG/DASH video streams if only HLS or DASH protocol includes links to multiple separate resolution playlists.
+	
+<pre>
+
+<span class="comment">&lt;!--HLS video on page setup--&gt;</span>
+&lt;video id="player_1" class="video-js vjs-fluid" controls playsinline poster="../examples/assets/images/coffee.jpg"&gt;
+	&lt;source src="//opencdn.b-cdn.net/video/hls/people/playlist.m3u8" type="application/x-mpegURL"&gt;
+&lt;/video&gt;
+
+<span class="comment">&lt;!--Initialize player and plugin--&gt;</span>
+&lt;script&gt;
+	var player1 = videojs('player1', {license: "key"});
+	player1.nuevo();
+&lt;/script&gt;
+</pre>	
+
+Qualities menu resolution and bitrate values. You can limit it to show only resolution using appropriate option. The option will not affect if there are more than one bitrate playlist for the same resolution.
+
+<pre>
+&lt;script&gt;
+	player1.nuevo({ singlePlay:true, resOnly: true });
+&lt;/script&gt;
+</pre>
+
+<h2>Multiple quality MP4 or Webm video</h2>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_2" class="video-js vjs-fluid" controls preload playsinline webkit-playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee_240.mp4" res="240" label="240p" type="video/mp4">
+				<source src="../examples/assets/video/coffee_360.mp4" res="360" label="360p" type="video/mp4">
+				<source src="../examples/assets/video/coffee.mp4" type="video/mp4" res="480" label="480p" default type="video/mp4">
+				<source src="../examples/assets/video/coffee_720.mp4" res="720" label="720p" type="video/mp4">
+			</video>
+		</div>
+	</div>
+
+
+
+	<script>
+	var player2 = videojs('player_2', {license:licenseKey});
+	player2.nuevo();
+	</script>
+
+
+<pre>
+
+<span class="comment">&lt;!--Multiple reslolution video on page setup--&gt;</span>
+&lt;video id="player_2" class="video-js vjs-fluid" controls playsinline poster="../examples/assets/images/coffee.jpg"&gt;
+	&lt;source src="../examples/assets/video/coffee_240.mp4" res="240" label="240p" type="video/mp4"&gt;
+	&lt;source src="../examples/assets/video/coffee_360.mp4" res="360" default label="360p" type="video/mp4"&gt;
+	&lt;source src="../examples/assets/video/coffee.mp4" res="480" label="480p" type="video/mp4"&gt;
+	&lt;source src="../examples/assets/video/cofee_720.mp4" res="1080" label="720p" type="video/mp4"&gt;
+&lt;/video&gt;
+
+<span class="comment">&lt;!--Initialize player and plugin--&gt;</span>
+&lt;script&gt;
+	var player2 = videojs('player_2',{license: "key"});
+	player2.nuevo();
+&lt;/script&gt;
+</pre>
+
+<h2>SD/HD Quality Switcher</h2>
+
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_3" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="../examples/assets/video/coffee_360.mp4" res="SD" label="SD" default type="video/mp4">
+				<source src="../examples/assets/video/coffee_720.mp4" res="HD" label="HD" type="video/mp4">
+			</video>
+		</div>
+	</div>
+
+	<script>
+	var player3 = videojs('player_3',{license: licenseKey});
+	player3.nuevo();
+	</script>
+
+<br />
+<pre>
+<span class="comment">&lt;!--HD/SD quality video on page setup--&gt;</span>
+&lt;video id="player_3" class="video-js vjs-fluid" controls playsinline poster="..../examples/assets/images/coffee.jpg"&gt;
+	&lt;source src="../examples/assets/video/coffee_360.mp4" res="SD" label="SD" default type="video/mp4"&gt;
+	&lt;source src="../examples/assets/video/coffee_720.mp4" res="HD" label="HD" type="video/mp4"&gt;
+&lt;/video&gt;
+</pre>
+
+<h2>Showing Qualities menu as Settings submenu</h2>
+	<div class="media-parent">
+		<div class="media-child">
+			<video id="player_4" class="video-js vjs-fluid" controls preload playsinline poster="../examples/assets/images/coffee.jpg">
+				<source src="//opencdn.b-cdn.net/video/hls/coffee/playlist.m3u8" type="application/x-mpegURL">
+			</video>
+		</div>
+	</div>
+
+	<script>
+	var player4 = videojs('player_4', {license:licenseKey});
+	player4.nuevo({ qualityMenu:true });
+	</script>
+
+<br />
+By default qualities menu is displayed as separate menu in control bar. You can also order to display it as setting submenu by setting nuevo plugin option <span class="mark">qualityMenu: true</span>.
+<br />
+<pre>
+&lt;script&gt;
+	var player4 = videojs('player_4', {license: "key"});
+	player4.nuevo({qualityMenu:true});
+&lt;/script&gt;
+</pre>
+<br />
+The HD or 4K icon appears for videos of minimum 1080p resolution. This is what Youtube apply as well.<br />
+HD icon for resolution > 720 hase been depreciated, however the user may still decide about the minimum resolution to show HD icon for.
+<pre>
+&lt;script&gt;
+	var player = videojs('player_4', {license: "key"});
+	player.nuevo({  minhd: 720 });
+&lt;/script&gt;
+</pre>
+
+
+	
+	</div>
+
+</div>
+<div class="footer">
+&copy; 2008 - 2025, <a href="https://www.nuevodevel.com">Nuevo Development</a>. All rights reserved.
+</div>
+
+</body>
+</html>

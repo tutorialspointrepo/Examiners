@@ -37,6 +37,8 @@ interface CoursesProps {
   onCollapse?: () => void;
   currentUser?: any;
   selectedCollege?: { id: string; name: string } | null;
+  onOpenCurriculum?: (course: Course) => void;
+  onCoursesLoaded?: (courses: Course[]) => void;
 }
 
 const Courses: React.FC<CoursesProps> = ({
@@ -46,6 +48,8 @@ const Courses: React.FC<CoursesProps> = ({
   onCollapse,
   currentUser,
   selectedCollege,
+  onOpenCurriculum,
+  onCoursesLoaded,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
@@ -100,27 +104,14 @@ const Courses: React.FC<CoursesProps> = ({
     setFilterVersion(v => v + 1); // Force fresh fetch
   }, [selectedCategory, selectedFilter, debouncedSearchQuery]);
 
-  // Fetch courses from Firebase with pagination
+  // Fetch courses from Firebase - for colleges, only show assigned courses; for system admin, show all
   useEffect(() => {
     const fetchCourses = async () => {
       setIsLoading(true);
       setError(null);
       
       try {
-        // Get the lastDoc from previous page for cursor-based pagination
-        const previousPageCache = currentPage > 1 ? pageCache.get(currentPage - 1) : null;
-        const startAfterDoc = previousPageCache?.lastDoc || null;
-
-        const result = await firebaseService.getCoursesPaginated({
-          category: selectedCategory || undefined,
-          limit: coursesPerPage,
-          orderBy: selectedFilter === 'recentlyAdded' ? 'dateOfPublishing' : 'courseName',
-          orderDirection: selectedFilter === 'recentlyAdded' ? 'desc' : 'asc',
-          startAfterDoc: startAfterDoc,
-          searchQuery: debouncedSearchQuery.length > 0 ? debouncedSearchQuery : undefined,
-        });
-        
-        // Determine college ID for enrollment counts
+        // Determine college ID
         let collegeIdForCounts: string | null = null;
         if (currentUser?.userType === 'system_admin') {
           collegeIdForCounts = selectedCollege?.id || null;
@@ -129,59 +120,267 @@ const Courses: React.FC<CoursesProps> = ({
         }
         
         console.log('🎓 collegeIdForCounts:', collegeIdForCounts);
+        console.log('👤 userType:', currentUser?.userType);
         
-        // Transform to Course type expected by UI
-        const transformedCourses: Course[] = result.courses.map(course => {
-          const courseData = course as any;
+        let transformedCourses: Course[] = [];
+        let totalCount = 0;
+        
+        // System Admin: Show ALL courses, with college-specific counts if college selected
+        if (currentUser?.userType === 'system_admin') {
+          // Get the lastDoc from previous page for cursor-based pagination
+          const previousPageCache = currentPage > 1 ? pageCache.get(currentPage - 1) : null;
+          const startAfterDoc = previousPageCache?.lastDoc || null;
+
+          const result = await firebaseService.getCoursesPaginated({
+            category: selectedCategory || undefined,
+            limit: coursesPerPage,
+            orderBy: selectedFilter === 'recentlyAdded' ? 'dateOfPublishing' : 'courseName',
+            orderDirection: selectedFilter === 'recentlyAdded' ? 'desc' : 'asc',
+            startAfterDoc: startAfterDoc,
+            searchQuery: debouncedSearchQuery.length > 0 ? debouncedSearchQuery : undefined,
+          });
           
-          console.log('📚 Course:', course.courseName);
-          console.log('📊 collegeEnrollmentCounts:', courseData.collegeEnrollmentCounts);
-          console.log('🔢 Count for college:', courseData.collegeEnrollmentCounts?.[collegeIdForCounts || '']);
+          // Get college-specific enrollment counts if a college is selected
+          let collegeCourseMap = new Map<number, number>();
+          if (collegeIdForCounts) {
+            const collegeCourses = await firebaseService.getCoursesForCollege(collegeIdForCounts);
+            console.log('📚 College courses from getCoursesForCollege:', collegeCourses);
+            collegeCourses.forEach(cc => {
+              console.log(`  📊 Adding to map: courseId ${cc.courseId} = ${cc.enrollmentCount}`);
+              collegeCourseMap.set(cc.courseId, cc.enrollmentCount);
+            });
+            console.log('📊 collegeCourseMap size:', collegeCourseMap.size);
+          }
           
-          // Use college-specific count from the map if available
-          const collegeEnrollmentCount = collegeIdForCounts && courseData.collegeEnrollmentCounts
-            ? (courseData.collegeEnrollmentCounts[collegeIdForCounts] || 0)
-            : (course.enrollmentCount || 0);
-          
-          console.log('✅ Final count:', collegeEnrollmentCount);
+          // Transform to Course type
+          transformedCourses = result.courses.map(course => {
+            const courseData = course as any;
+            // Use college-specific count if available, otherwise 0 (not enrolled for this college)
+            const numericCourseId = typeof course.courseId === 'number' ? course.courseId : parseInt(course.courseId, 10);
+            const enrollmentCount = collegeIdForCounts 
+              ? (collegeCourseMap.get(numericCourseId) || 0)
+              : (course.enrollmentCount || 0); // Global count if no college selected
             
-          return {
-            id: course.slug,
-            courseId: course.courseId,
-            name: course.courseName,
-            thumbnail: course.thumbnailUrl,
-            category: course.courseCategories?.[0] || 'General',
-            lectures: course.totalLectures || 0,
-            duration: formatDuration(course.totalDuration || 0),
-            quizzes: courseData.totalQuizzes || 0,
-            exercises: courseData.totalExercises || 0,
-            progress: 0,
-            isEnrolled: false,
-            notes: courseData.totalNotes || 0,
-            assessments: course.totalUnits || 0,
-            completedCount: course.completedCount || 0,
-            tags: course.courseCategories,
-            rating: course.rating?.average || 0,
-            totalRatings: course.rating?.totalRatings || 0,
-            createdAt: course.dateOfPublishing || '',
-            instructor: courseData.courseAuthor || '',
-            level: courseData.complexityLevel === 1 ? 'Beginner' : courseData.complexityLevel === 2 ? 'Intermediate' : courseData.complexityLevel === 3 ? 'Advanced' : 'All Levels',
-            tagLine: courseData.tagLine || '',
-            language: courseData.language || 'English',
-            collegeEnrollmentCounts: courseData.collegeEnrollmentCounts || {},
-            enrollmentCount: course.enrollmentCount || 0,
-          };
-        });
+            return {
+              id: course.slug,
+              courseId: course.courseId,
+              name: course.courseName,
+              thumbnail: course.thumbnailUrl,
+              category: course.courseCategories?.[0] || 'General',
+              lectures: course.totalLectures || 0,
+              duration: formatDuration(course.totalDuration || 0),
+              quizzes: courseData.totalQuizzes || 0,
+              exercises: courseData.totalExercises || 0,
+              progress: 0,
+              isEnrolled: false,
+              totalChapters: course.totalChapters || 0,
+              assessments: course.totalUnits || 0,
+              completedCount: course.completedCount || 0,
+              tags: course.courseCategories,
+              rating: course.rating?.average || 0,
+              totalRatings: course.rating?.totalRatings || 0,
+              createdAt: course.dateOfPublishing || '',
+              instructor: courseData.courseAuthor || '',
+              level: courseData.complexityLevel === 1 ? 'Beginner' : courseData.complexityLevel === 2 ? 'Intermediate' : courseData.complexityLevel === 3 ? 'Advanced' : 'All Levels',
+              tagLine: courseData.tagLine || '',
+              language: courseData.language || 'English',
+              enrollmentCount: enrollmentCount,
+            };
+          });
+          
+          totalCount = result.totalCount;
+          setLastDoc(result.lastDoc);
+          
+          // Cache this page
+          setPageCache(prev => new Map(prev).set(currentPage, {
+            courses: transformedCourses,
+            lastDoc: result.lastDoc
+          }));
+          
+        } else if (collegeIdForCounts) {
+          // College users: fetch only courses assigned to their college
+          const collegeCourses = await firebaseService.getCoursesForCollege(collegeIdForCounts);
+          console.log('📚 College courses:', collegeCourses.length);
+          
+          if (collegeCourses.length > 0) {
+            // Get the numeric courseIds
+            const courseIds = collegeCourses.map(cc => cc.courseId);
+            
+            // Fetch full course details by courseId
+            const courseDetails = await firebaseService.getCoursesByCourseId(courseIds);
+            
+            // Create a map for quick lookup of enrollment counts (by courseId)
+            const enrollmentCountMap = new Map<number, number>();
+            collegeCourses.forEach(cc => {
+              enrollmentCountMap.set(cc.courseId, cc.enrollmentCount);
+            });
+            
+            // Transform to Course type
+            transformedCourses = courseDetails.map(course => {
+              const courseData = course as any;
+              const enrollmentCount = enrollmentCountMap.get(course.courseId) || 0;
+              
+              return {
+                id: course.slug,
+                courseId: course.courseId,
+                name: course.courseName,
+                thumbnail: course.thumbnailUrl,
+                category: course.courseCategories?.[0] || 'General',
+                lectures: course.totalLectures || 0,
+                duration: formatDuration(course.totalDuration || 0),
+                quizzes: courseData.totalQuizzes || 0,
+                exercises: courseData.totalExercises || 0,
+                progress: 0,
+                isEnrolled: false,
+                totalChapters: course.totalChapters || 0,
+                assessments: course.totalUnits || 0,
+                completedCount: course.completedCount || 0,
+                tags: course.courseCategories,
+                rating: course.rating?.average || 0,
+                totalRatings: course.rating?.totalRatings || 0,
+                createdAt: course.dateOfPublishing || '',
+                instructor: courseData.courseAuthor || '',
+                level: courseData.complexityLevel === 1 ? 'Beginner' : courseData.complexityLevel === 2 ? 'Intermediate' : courseData.complexityLevel === 3 ? 'Advanced' : 'All Levels',
+                tagLine: courseData.tagLine || '',
+                language: courseData.language || 'English',
+                enrollmentCount: enrollmentCount,
+              };
+            });
+            
+            // Apply filters
+            if (selectedCategory) {
+              transformedCourses = transformedCourses.filter(c => c.tags?.includes(selectedCategory));
+            }
+            
+            if (debouncedSearchQuery) {
+              const searchLower = debouncedSearchQuery.toLowerCase();
+              transformedCourses = transformedCourses.filter(c => 
+                c.name.toLowerCase().includes(searchLower) ||
+                c.instructor?.toLowerCase().includes(searchLower) ||
+                c.category.toLowerCase().includes(searchLower)
+              );
+            }
+            
+            // Sort
+            if (selectedFilter === 'recentlyAdded') {
+              transformedCourses.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+            } else if (selectedFilter === 'topRated') {
+              transformedCourses.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+            } else {
+              transformedCourses.sort((a, b) => a.name.localeCompare(b.name));
+            }
+            
+            totalCount = transformedCourses.length;
+            
+            // Paginate in memory
+            const startIndex = (currentPage - 1) * coursesPerPage;
+            transformedCourses = transformedCourses.slice(startIndex, startIndex + coursesPerPage);
+          }
+          
+          setLastDoc(null); // Not using cursor-based pagination for college courses
+        } else if (currentUser?.userType === 'student') {
+          // Students: fetch only their enrolled courses with pagination
+          console.log('👨‍🎓 Fetching enrolled courses for student:', currentUser.userId || currentUser.uid);
+          
+          // Get the lastDoc from previous page for cursor-based pagination
+          const previousPageCache = currentPage > 1 ? pageCache.get(currentPage - 1) : null;
+          const startAfterDoc = previousPageCache?.lastDoc || null;
+
+          const result = await firebaseService.getStudentCourseEnrollmentsPaginated({
+            userId: currentUser.userId || currentUser.uid,
+            limit: coursesPerPage,
+            orderBy: selectedFilter === 'recentlyAdded' ? 'enrolledAt' : 'enrolledAt',
+            orderDirection: 'desc',
+            startAfterDoc: startAfterDoc,
+            searchQuery: debouncedSearchQuery.length > 0 ? debouncedSearchQuery : undefined,
+          });
+          
+          console.log('📚 Student enrollments:', result.enrollments.length, 'total:', result.totalCount);
+          
+          if (result.enrollments.length > 0) {
+            // Get the numeric course IDs
+            const courseIds = result.enrollments.map(e => {
+              const id = typeof e.courseId === 'number' ? e.courseId : parseInt(e.courseId, 10);
+              return isNaN(id) ? null : id;
+            }).filter((id): id is number => id !== null);
+            console.log('📋 Course IDs to fetch:', courseIds);
+            
+            // Fetch full course details by numeric courseId
+            const courseDetails = await firebaseService.getCoursesByCourseId(courseIds);
+            
+            // Create a map for quick lookup of enrollment data (key by courseId as number)
+            const enrollmentMap = new Map<number, any>();
+            result.enrollments.forEach(e => {
+              const id = typeof e.courseId === 'number' ? e.courseId : parseInt(e.courseId, 10);
+              if (!isNaN(id)) enrollmentMap.set(id, e);
+            });
+            
+            // Transform to Course type
+            transformedCourses = courseDetails.map(course => {
+              const courseData = course as any;
+              const enrollment = enrollmentMap.get(course.courseId);
+              const progress = enrollment?.progress || {};
+              
+              return {
+                id: course.slug,
+                courseId: course.courseId,
+                name: course.courseName,
+                thumbnail: course.thumbnailUrl,
+                category: course.courseCategories?.[0] || 'General',
+                lectures: course.totalLectures || 0,
+                duration: formatDuration(course.totalDuration || 0),
+                quizzes: courseData.totalQuizzes || 0,
+                exercises: courseData.totalExercises || 0,
+                progress: progress.percentage || 0,
+                isEnrolled: true,
+                totalChapters: course.totalChapters || 0,
+                assessments: course.totalUnits || 0,
+                completedCount: course.completedCount || 0,
+                tags: course.courseCategories,
+                rating: course.rating?.average || 0,
+                totalRatings: course.rating?.totalRatings || 0,
+                createdAt: course.dateOfPublishing || '',
+                instructor: courseData.courseAuthor || '',
+                level: courseData.complexityLevel === 1 ? 'Beginner' : courseData.complexityLevel === 2 ? 'Intermediate' : courseData.complexityLevel === 3 ? 'Advanced' : 'All Levels',
+                tagLine: courseData.tagLine || '',
+                language: courseData.language || 'English',
+                enrollmentCount: 0,
+                enrollmentId: enrollment?.enrollmentId,
+              };
+            });
+            
+            // Apply category filter (client-side since enrollments don't have category)
+            if (selectedCategory) {
+              transformedCourses = transformedCourses.filter(c => c.tags?.includes(selectedCategory));
+            }
+            
+            // Apply sorting for topRated (client-side)
+            if (selectedFilter === 'topRated') {
+              transformedCourses.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+            }
+          }
+          
+          totalCount = result.totalCount;
+          setLastDoc(result.lastDoc);
+          
+          // Cache this page
+          setPageCache(prev => new Map(prev).set(currentPage, {
+            courses: transformedCourses,
+            lastDoc: result.lastDoc
+          }));
+        } else {
+          // No college selected (shouldn't happen normally)
+          console.log('⚠️ No college selected');
+          setLastDoc(null);
+        }
         
         setCourses(transformedCourses);
-        setTotalCourses(result.totalCount);
-        setLastDoc(result.lastDoc);
-
-        // Cache this page
-        setPageCache(prev => new Map(prev).set(currentPage, {
-          courses: transformedCourses,
-          lastDoc: result.lastDoc
-        }));
+        setTotalCourses(totalCount);
+        
+        // Notify parent component about loaded courses
+        if (onCoursesLoaded) {
+          onCoursesLoaded(transformedCourses);
+        }
 
       } catch (err) {
         console.error('Error fetching courses:', err);
@@ -509,8 +708,8 @@ const Courses: React.FC<CoursesProps> = ({
                   <div className="flex items-center space-x-2">
                     <FontAwesomeIcon icon={faFileAlt} style={{ fontSize: '16px' }} className="text-gray-500" />
                     <div>
-                      <p className="text-xs text-gray-500">Notes</p>
-                      <p className="text-sm font-medium text-gray-900">{course.notes}</p>
+                      <p className="text-xs text-gray-500">Chapters</p>
+                      <p className="text-sm font-medium text-gray-900">{course.totalChapters || 0}</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -535,19 +734,7 @@ const Courses: React.FC<CoursesProps> = ({
                     {/* Enrolments Count */}
                     <div className="flex items-center text-xs">
                       <span className="text-gray-500">Enrolments:</span>
-                      <span className="font-semibold text-gray-700 ml-1">
-                        {(() => {
-                          let collegeId: string | null = null;
-                          if (currentUser?.userType === 'system_admin') {
-                            collegeId = selectedCollege?.id || null;
-                          } else if (currentUser?.userType !== 'student') {
-                            collegeId = currentUser?.collegeId || null;
-                          }
-                          return collegeId && course.collegeEnrollmentCounts
-                            ? (course.collegeEnrollmentCounts[collegeId] || 0)
-                            : (course.enrollmentCount || 0);
-                        })()}
-                      </span>
+                      <span className="font-semibold text-gray-700 ml-1">{course.enrollmentCount || 0}</span>
                     </div>
                     {/* Completed Count */}
                     <div className="flex items-center text-xs">
@@ -584,7 +771,9 @@ const Courses: React.FC<CoursesProps> = ({
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          // Handle start learning action
+                          if (onOpenCurriculum) {
+                            onOpenCurriculum(course);
+                          }
                         }}
                         className="inline-flex items-center text-xs font-semibold px-4 py-2 rounded-full transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5 text-white"
                         style={{ 
