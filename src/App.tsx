@@ -37,7 +37,7 @@ import {
   SEARCH_RESULT_TYPES,
   
 } from './constants';
-import { firebaseConfig } from './config/firebase_config';
+import { firebaseConfig, firestoreDbName } from './config/firebase_config';
 import CreateHallTicketModal from './CreateHallTicketModal';
 import QuestionList from './QuestionList';
 import CreateQuestionModal from './CreateQuestionModal';
@@ -1412,17 +1412,6 @@ function LiveExamInterface({
       <div className="px-8 py-8 max-w-6xl mx-auto">
         {/* Exam Details Grid */}
         <div className="flex gap-2 mb-8 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          {/* Class */}
-          {selectedExam.class && (
-            <div className="bg-white rounded-xl p-3 border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow flex-shrink-0 min-w-[140px] mx-auto first:ml-auto last:mr-auto">
-              <div className="flex items-center space-x-1.5 mb-1.5">
-                <FontAwesomeIcon icon={faGraduationCap} className="w-4 h-4 text-purple-600" />
-                <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">Class</span>
-              </div>
-              <div className="text-xl font-bold text-gray-900">{selectedExam.class}</div>
-            </div>
-          )}
-
           {/* Total Questions */}
           <div className="bg-white rounded-xl p-3 border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow flex-shrink-0 min-w-[140px] mx-auto first:ml-auto last:mr-auto">
             <div className="flex items-center space-x-1.5 mb-1.5">
@@ -1580,7 +1569,7 @@ function LiveExamInterface({
 }
 
 // Initialize Firebase at module level (runs once when module loads)
-firebaseService.initialize(firebaseConfig);
+firebaseService.initialize(firebaseConfig, firestoreDbName);
 
 // Logo Component - EXAMINERS AI Evaluation Theme
 function Logo({ size = 'medium', showText = true, brand, collegeName }: { size?: 'small' | 'medium' | 'large', showText?: boolean, brand: any, collegeName?: string }) {
@@ -1981,8 +1970,8 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
     }
 }, [isAuthenticated, currentUser]);
 
-  // Check if user is using EXAMINERS Secure Browser
-  const isUsingSecureBrowser = (): boolean => {
+  // Check if user is using EXAMINERS Secure Browser (memoized to avoid re-running on every render)
+  const isSecureBrowser = useMemo(() => {
     const userAgent = navigator.userAgent;
     console.log('🔍 User Agent:', userAgent);
     
@@ -1991,7 +1980,11 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
     console.log('🔒 Is Secure Browser:', isSecure);
     
     return isSecure;
-  };
+  }, []);
+  
+  const isUsingSecureBrowser = useCallback((): boolean => {
+    return isSecureBrowser;
+  }, [isSecureBrowser]);
 
   const handleDownload = async (platform: 'windows' | 'mac' | 'linux') => {
     try {
@@ -2842,17 +2835,40 @@ const fetchCounts = async () => {
   };
   
   // Helper function to format date as "31-Oct-2025"
-  const formatDate = (dateString: string): string => {
+  const formatDate = (dateString: any): string => {
 
-   if (typeof dateString !== 'string') {
-      return ''; // Safe return
-   }
     if (!dateString) {
       return '';
     }
-    const date = new Date(dateString);    
-    if (isNaN(date.getTime())) {
-      return ''; // Return empty instead of original value
+    let date: Date;
+    try {
+      // Handle Firestore Timestamp objects (has toDate() method)
+      if (typeof dateString === 'object' && typeof dateString.toDate === 'function') {
+        date = dateString.toDate();
+      }
+      // Handle serialized Firestore Timestamp ({ seconds, nanoseconds } or { _seconds, _nanoseconds })
+      else if (typeof dateString === 'object' && (dateString.seconds != null || dateString._seconds != null)) {
+        const secs = dateString.seconds ?? dateString._seconds;
+        date = new Date(secs * 1000);
+      }
+      // Handle Date objects
+      else if (dateString instanceof Date) {
+        date = dateString;
+      }
+      // Handle Firestore console-style strings like "February 4, 2026 at 7:26:52 PM UTC+5:30"
+      else if (typeof dateString === 'string' && dateString.includes(' at ')) {
+        date = new Date(dateString.replace(' at ', ' '));
+      }
+      // Handle any other string/number
+      else {
+        date = new Date(dateString);
+      }
+      
+      if (!date || isNaN(date.getTime())) {
+        return '';
+      }
+    } catch {
+      return '';
     }
 
     const day = date.getDate();
@@ -3190,6 +3206,60 @@ const fetchCounts = async () => {
       setIsSubmittingNotice(false);
     }
   };
+
+  // Memoized exam select handler to prevent re-render loops from inline async callbacks
+  const lastFetchedExamIdRef = useRef<string | null>(null);
+  
+  const handleExamsOnExamSelect = useCallback(async (exam: any) => {
+    // First set the lightweight exam for immediate UI feedback
+    setSelectedExam(exam);
+    setIsViewingLiveStats(false);
+    setIsViewingAttendance(false);
+    setShowStudentPreview(false);
+    
+    // Then fetch full exam data with questionsList and questionPool
+    // Skip if we already fetched this exact exam
+    if (exam && exam.id && lastFetchedExamIdRef.current !== exam.id) {
+      lastFetchedExamIdRef.current = exam.id;
+      const fullExam = await firebaseService.getExamById(exam.id);
+      if (fullExam) {
+        setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
+      }
+    }
+  }, []);
+
+  const handleResultsOnExamSelect = useCallback(async (exam: any) => {
+    setSelectedExam(exam);
+    setIsViewingLiveStats(false);
+    setIsViewingAttendance(false);
+    setSelectedStudentForDetail(null);
+    
+    if (exam && exam.id && lastFetchedExamIdRef.current !== exam.id) {
+      lastFetchedExamIdRef.current = exam.id;
+      const fullExam = await firebaseService.getExamById(exam.id);
+      if (fullExam) {
+        setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
+      }
+    }
+  }, []);
+
+  const handleCalendarOnExamSelect = useCallback(async (exam: any) => {
+    console.log('🎯 [CALENDAR] Exam clicked:', exam.title, exam.id);
+    setActiveItem('exams');
+    setIsViewingLiveStats(false);
+    setIsViewingAttendance(false);
+    setShowStudentPreview(false);
+    
+    if (exam && exam.id) {
+      lastFetchedExamIdRef.current = exam.id;
+      const fullExam = await firebaseService.getExamById(exam.id);
+      if (fullExam) {
+        setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
+      } else {
+        setNewlyCreatedExamId(exam.id);
+      }
+    }
+  }, []);
 
   return (
     <BrandProvider theme={brandTheme}>
@@ -4380,21 +4450,7 @@ const fetchCounts = async () => {
                   activeCollegeId={getActiveCollegeId() ?? null}
                   selectedYear={selectedYear}
                   brandTheme={brandTheme}
-                  onExamSelect={async (exam) => {
-                    // First set the lightweight exam for immediate UI feedback
-                    setSelectedExam(exam);
-                    setIsViewingLiveStats(false);
-                    setIsViewingAttendance(false);
-                    setShowStudentPreview(false);
-                    
-                    // Then fetch full exam data with questionsList and questionPool
-                    if (exam && exam.id) {
-                      const fullExam = await firebaseService.getExamById(exam.id);
-                      if (fullExam) {
-                        setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
-                      }
-                    }
-                  }}
+                  onExamSelect={handleExamsOnExamSelect}
                   selectedExam={selectedExam}
                   onCreateExam={() => setIsCreateModalOpen(true)}
                   isMainCollapsed={isMainCollapsed}
@@ -4414,21 +4470,7 @@ const fetchCounts = async () => {
                   activeCollegeId={getActiveCollegeId() || ''}
                   selectedYear={selectedYear}
                   brandTheme={brandTheme}
-                  onExamSelect={async (exam) => {
-                    // First set the lightweight exam for immediate UI feedback
-                    setSelectedExam(exam);
-                    setIsViewingLiveStats(false);
-                    setIsViewingAttendance(false);
-                    setSelectedStudentForDetail(null);
-                    
-                    // Then fetch full exam data with questionsList and questionPool
-                    if (exam && exam.id) {
-                      const fullExam = await firebaseService.getExamById(exam.id);
-                      if (fullExam) {
-                        setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
-                      }
-                    }
-                  }}
+                  onExamSelect={handleResultsOnExamSelect}
                   selectedExam={selectedExam}
                   isMainCollapsed={isMainCollapsed}
                   onCollapse={() => { userInteractedMain.current = true; setIsMainCollapsed(true); }}
@@ -4502,24 +4544,7 @@ const fetchCounts = async () => {
                   brandTheme={brandTheme}
                   currentUser={currentUser}
                   onEventsCountChange={(count) => setCalendarEventsCount(count)}
-                  onExamSelect={async (exam) => {
-                    console.log('🎯 [CALENDAR] Exam clicked:', exam.title, exam.id);
-                    // Switch to exams section
-                    setActiveItem('exams');
-                    
-                    // Reset viewing states
-                    setIsViewingLiveStats(false);
-                    setIsViewingAttendance(false);
-                    setShowStudentPreview(false);
-                    
-                    // Fetch full exam data with questionsList and questionPool
-                    const fullExam = await firebaseService.getExamById(exam.id);
-                    if (fullExam) {
-                      setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
-                    } else {
-                      setNewlyCreatedExamId(exam.id);
-                    }
-                  }}
+                  onExamSelect={handleCalendarOnExamSelect}
                 />
               )}
               {/* Leader Board Component */}
@@ -5177,25 +5202,6 @@ const fetchCounts = async () => {
 
                 // Force student preview mode when showStudentPreview is true
                 const canAccessDetails = showStudentPreview ? false : ((hasExamDateArrived || isCreator) && !isSecureExamBlocked);
-
-                // DEBUG: Log access check details
-                console.log('🔐 [EXAM ACCESS CHECK - TEACHER VIEW]', {
-                  examId: selectedExam.id,
-                  examTitle: selectedExam.title,
-                  examDate: selectedExam.examDate,
-                  examDateObj: examDate.toISOString(),
-                  today: today.toISOString(),
-                  hasExamDateArrived: hasExamDateArrived,
-                  createdById: selectedExam.createdById,
-                  currentUserId: currentUser?.userId,
-                  isCreator: isCreator,
-                  isTeacherOrAdmin: true,
-                  showStudentPreview: showStudentPreview,
-                  isSecureOnlineExam: isSecureOnlineExam,
-                  isSecureExamBlocked: isSecureExamBlocked,
-                  canAccessDetails: canAccessDetails,
-                  comparisonResult: `"${selectedExam.createdById}" === "${currentUser?.userId}" = ${isCreator}`
-                });
 
                 // Show secure browser required message for students trying to access secure exams
                 if (isSecureExamBlocked) {
@@ -5988,12 +5994,6 @@ const fetchCounts = async () => {
                     {safeRender(selectedExam.totalStudents || 0)} Students
                   </span>
                   
-                  {/* Class */}
-                  <span className="flex items-center">
-                    <FontAwesomeIcon icon={faGraduationCap} className="mr-1.5" />
-                    Class {safeRender(selectedExam.class)}
-                  </span>
-                  
                   {/* Exam Type */}
                   <span className="flex items-center">
                     <FontAwesomeIcon icon={faClipboardList} className="mr-1.5" />
@@ -6100,24 +6100,6 @@ const fetchCounts = async () => {
               
 
               {/* Question Paper / Questions List Section */}
-              {(() => {
-                // Debug: Log entire exam structure
-                console.log('🔍 DEBUGGING EXAM DATA:', {
-                  examId: selectedExam.id,
-                  examTitle: selectedExam.title,
-                  hasQuestionsList: !!selectedExam.questionsList,
-                  questionsCount: selectedExam.questionsList?.length || 0,
-                  firstQuestion: selectedExam.questionsList?.[0],
-                  firstQuestionImageUrls: selectedExam.questionsList?.[0]?.imageUrls,
-                  allQuestionsImageUrls: selectedExam.questionsList?.map(q => ({
-                    id: q.id,
-                    title: q.title || q.questionText,
-                    imageUrls: q.imageUrls,
-                    hasImages: !!q.imageUrls && q.imageUrls.length > 0
-                  }))
-                });
-                return null;
-              })()}
               {selectedExam.mode === EXAM_MODES.OFFLINE ? (
                 // Offline Exam - Show Scanned Images
                 <div className="bg-white p-5 mb-6 mx-6 border border-gray-200 rounded-lg">
@@ -6297,11 +6279,6 @@ const fetchCounts = async () => {
                                     return QUESTION_TYPE_LABELS[QUESTION_TYPES.DESCRIPTIVE];
                                   })()}
                                 </span>
-                                {question.type === QUESTION_TYPES.CODE && ((question as any).programmingLanguage || (question as any).programming_language) && (
-                                  <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-orange-100 text-orange-700 mr-2">
-                                    {(((question as any).programmingLanguage || (question as any).programming_language).charAt(0).toUpperCase() + ((question as any).programmingLanguage || (question as any).programming_language).slice(1).toLowerCase())}
-                                  </span>
-                                )}
                                 {question.board && (
                                   <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-purple-100 text-purple-700 mr-2">
                                     {safeRender(question.board).toUpperCase()}
@@ -7043,57 +7020,6 @@ const fetchCounts = async () => {
                             </div>
                           )}
 
-                          {/* ===== CODE QUESTIONS - Solution ===== */}
-                          {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && question.solution && (
-                            <div className="mt-3">
-                              <h2 className="text-lg font-bold text-gray-900 mb-2">Solution</h2>
-                              <div className="relative rounded-lg overflow-hidden isolate">
-                                {/* Terminal-style header with dots and copy button */}
-                                <div className="absolute top-0 left-0 right-0 h-10 bg-gray-800/95 backdrop-blur-sm z-10 flex items-center justify-between px-3 rounded-t-lg">
-                                  {/* macOS-style dots */}
-                                  <div className="flex items-center space-x-2">
-                                    <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                                    <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                                    <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                                  </div>
-                                  
-                                  {/* Copy button */}
-                                  <button
-                                    onClick={() => copyToClipboard(String(question.solution), `solution-${question.id}`)}
-                                    className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-all"
-                                    title="Copy to clipboard"
-                                  >
-                                    {copiedCode === `solution-${question.id}` ? (
-                                      <FontAwesomeIcon icon={faCheck} className="text-sm" />
-                                    ) : (
-                                      <FontAwesomeIcon icon={faCopy} className="text-sm" />
-                                    )}
-                                  </button>
-                                </div>
-                                
-                                {/* Code content with top padding for header */}
-                                <div className="pt-10">
-                                  <SyntaxHighlighter
-                                    language={(question as any).programmingLanguage?.toLowerCase() || 'python'}
-                                    style={vscDarkPlus}
-                                    customStyle={{
-                                      margin: 0,
-                                      borderRadius: 0,
-                                      borderBottomLeftRadius: '0.5rem',
-                                      borderBottomRightRadius: '0.5rem',
-                                      fontSize: '0.875rem',
-                                      padding: '1rem',
-                                      paddingTop: '0.5rem'
-                                    }}
-                                    showLineNumbers={true}
-                                  >
-                                    {String(question.solution)}
-                                  </SyntaxHighlighter>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
                           {/* ===== CODE QUESTIONS - Test Cases ===== */}
                           {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && 
                            (question as any).testCases && Array.isArray((question as any).testCases) && (question as any).testCases.length > 0 && (
@@ -7105,7 +7031,7 @@ const fetchCounts = async () => {
                                     {(question as any).testCases.length} test cases
                                   </span>
                                   <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-blue-100 text-blue-700">
-                                    Total: {(question as any).testCases.reduce((sum: number, tc: any) => sum + (tc.marks || 0), 0).toFixed(1)} marks
+                                    Total: {(question as any).testCases.reduce((sum: number, tc: any) => sum + (Number(tc.marks) || 0), 0).toFixed(1)} marks
                                   </span>
                                 </div>
                               </div>
@@ -7121,7 +7047,16 @@ const fetchCounts = async () => {
                                     </tr>
                                   </thead>
                                   <tbody className="bg-white divide-y divide-gray-200">
-                                    {(question as any).testCases.map((testCase: any, tcIndex: number) => (
+                                    {(question as any).testCases.map((testCase: any, tcIndex: number) => {
+                                      const formatTcValue = (val: any): string => {
+                                        if (val == null) return 'N/A';
+                                        if (typeof val === 'string') return val.replace(/\\n/g, '\n');
+                                        if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+                                        if (Array.isArray(val)) return val.join('\n');
+                                        if (typeof val === 'object') return JSON.stringify(val, null, 2);
+                                        return String(val);
+                                      };
+                                      return (
                                       <tr key={tcIndex} className="hover:bg-gray-50">
                                         <td className="px-3 py-2 text-center">
                                           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold text-white bg-blue-500">
@@ -7130,21 +7065,22 @@ const fetchCounts = async () => {
                                         </td>
                                         <td className="px-3 py-2">
                                           <div className="font-mono text-xs bg-gray-50 px-2 py-1 rounded border border-gray-200 whitespace-pre-wrap">
-                                            {testCase.input ? testCase.input.replace(/\\n/g, '\n') : 'N/A'}
+                                            {formatTcValue(testCase.input)}
                                           </div>
                                         </td>
                                         <td className="px-3 py-2">
                                           <div className="font-mono text-xs bg-green-50 px-2 py-1 rounded border border-green-200 text-green-700 whitespace-pre-wrap">
-                                            {testCase.expected_output ? testCase.expected_output.replace(/\\n/g, '\n') : 'N/A'}
+                                            {formatTcValue(testCase.expected_output)}
                                           </div>
                                         </td>
                                         <td className="px-3 py-2 text-center">
                                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-orange-500 text-white">
-                                            {testCase.marks !== undefined ? testCase.marks.toFixed(1) : '0.0'}
+                                            {testCase.marks != null && !isNaN(Number(testCase.marks)) ? Number(testCase.marks).toFixed(1) : '0.0'}
                                           </span>
                                         </td>
                                       </tr>
-                                    ))}
+                                      );
+                                    })}
                                   </tbody>
                                 </table>
                               </div>
@@ -7152,7 +7088,7 @@ const fetchCounts = async () => {
                           )}
 
                           {/* ===== CODE QUESTIONS - Starter Code Template ===== */}
-                          {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && (question as any).testStub && (
+                          {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && ((question as any).testStub || (question as any).test_stub) && (
                             <div className="mt-3">
                               <h2 className="text-lg font-bold text-gray-900 mb-2">Starter Code Template</h2>
                               <div className="relative rounded-lg overflow-hidden isolate">
@@ -7167,7 +7103,7 @@ const fetchCounts = async () => {
                                   
                                   {/* Copy button */}
                                   <button
-                                    onClick={() => copyToClipboard((question as any).testStub, `stub-${question.id}`)}
+                                    onClick={() => copyToClipboard((question as any).testStub || (question as any).test_stub, `stub-${question.id}`)}
                                     className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-all"
                                     title="Copy to clipboard"
                                   >
@@ -7195,7 +7131,7 @@ const fetchCounts = async () => {
                                     }}
                                     showLineNumbers={false}
                                   >
-                                    {(question as any).testStub}
+                                    {(question as any).testStub || (question as any).test_stub}
                                   </SyntaxHighlighter>
                                 </div>
                               </div>
@@ -7222,14 +7158,16 @@ const fetchCounts = async () => {
                                   </div>
                                 )}
                               </div>
-                              {question.createdAt && (
+                              {(() => {
+                                const qCreatedAt = question.createdAt || (question as any).createdAt || selectedExam.createdAt;
+                                const formatted = qCreatedAt ? formatDate(qCreatedAt) : '';
+                                return formatted ? (
                                 <div className="flex items-center space-x-1">
                                   <FontAwesomeIcon icon={faCalendar} />
-                                  <span>
-                                    {formatDate(question.createdAt)}
-                                  </span>
+                                  <span>{formatted}</span>
                                 </div>
-                              )}
+                                ) : null;
+                              })()}
                             </div>
 
                             <div className="flex items-center space-x-3">
@@ -7291,17 +7229,6 @@ const fetchCounts = async () => {
                 </div>
 
                 {/* Question Pool Section */}
-                {(() => {
-                  console.log('🔍 CHECKING QUESTION POOL:', {
-                    examId: selectedExam.id,
-                    hasQuestionPool: !!selectedExam.questionPool,
-                    questionPool: selectedExam.questionPool,
-                    pickRandomCount: selectedExam.pickRandomCount,
-                    poolQuestionMarks: selectedExam.poolQuestionMarks,
-                    allExamKeys: Object.keys(selectedExam)
-                  });
-                  return null;
-                })()}
                 {selectedExam.questionPool && Array.isArray(selectedExam.questionPool) && selectedExam.questionPool.length > 0 && selectedExam.pickRandomCount && selectedExam.pickRandomCount > 0 ? (
                   <div className="bg-white p-5 mb-6 mx-6 rounded-xl border-2 border-purple-200 shadow-md">
                     <div className="flex items-center justify-between mb-4">
@@ -7581,6 +7508,8 @@ const fetchCounts = async () => {
                   onCreateQuestion={() => setIsCreateQuestionModalOpen(true)}
                   scrollToQuestionId={selectedQuestionId}
                   onQuestionScrolled={() => setSelectedQuestionId(null)}
+                  currentUser={currentUser || undefined}
+                  onQuestionDeleted={() => { setQuestionsRefreshKey(prev => prev + 1); refreshCounts(); }}
                 />
                </>
             ) : activeItem === ACTIVE_ITEMS.ROOMS ? (
@@ -7696,24 +7625,7 @@ const fetchCounts = async () => {
                 brandTheme={brandTheme}
                 currentUser={currentUser}
                 onEventsCountChange={(count) => setCalendarEventsCount(count)}
-                onExamSelect={async (exam) => {
-                  console.log('🎯 [CALENDAR] Exam clicked:', exam.title, exam.id);
-                  // Switch to exams section
-                  setActiveItem('exams');
-                  
-                  // Reset viewing states
-                  setIsViewingLiveStats(false);
-                  setIsViewingAttendance(false);
-                  setShowStudentPreview(false);
-                  
-                  // Fetch full exam data with questionsList and questionPool
-                  const fullExam = await firebaseService.getExamById(exam.id);
-                  if (fullExam) {
-                    setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
-                  } else {
-                    setNewlyCreatedExamId(exam.id);
-                  }
-                }}
+                onExamSelect={handleCalendarOnExamSelect}
               />
             ) : activeItem === ACTIVE_ITEMS.LEADERBOARD ? (
               <LeaderBoard

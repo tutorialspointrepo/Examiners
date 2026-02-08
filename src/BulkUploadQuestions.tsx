@@ -6,7 +6,7 @@ import { firebaseService } from './services/firebase_service';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCopy, faCheck } from '@fortawesome/sharp-light-svg-icons';
+import { faCopy, faCheck, faChevronDown, faChevronUp, faGripVertical } from '@fortawesome/sharp-light-svg-icons';
 import {
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
@@ -59,7 +59,6 @@ interface QuestionRow {
   subject: string;
   chapter?: string;
   type: QuestionType | string;
-  programming_language?: string;
   question_text: string;
   question_image_urls?: string;
   options?: string;
@@ -67,10 +66,12 @@ interface QuestionRow {
   maximum_marks: number;
   difficulty_level: ComplexityLevel | string;
   hint?: string;
-  solution?: string;
   test_cases?: string;
   test_stub?: string;
-  marks_per_test_case?: string;
+  programming_language?: string;
+  starter_codes?: string; // JSON array: [{"language":"python","code":"def solve():..."}]
+  sql_schema?: string; // JSON array of table schemas
+  sql_test_cases?: string; // JSON array of SQL test cases
   tags?: string; // Comma-separated tags
 }
 
@@ -97,6 +98,7 @@ export default function BulkUploadQuestions({
       [QUESTION_TYPES.JUMBLED]: QUESTION_TYPES.JUMBLED,
       [QUESTION_TYPES.DESCRIPTIVE]: QUESTION_TYPES.DESCRIPTIVE,
       [QUESTION_TYPES.CODE]: QUESTION_TYPES.CODE,
+      [QUESTION_TYPES.SQL]: QUESTION_TYPES.SQL,
     };
     
     const standardType = typeMap[normalizedType];
@@ -116,6 +118,7 @@ export default function BulkUploadQuestions({
   
   // Pagination state for preview
   const [previewPage, setPreviewPage] = useState(1);
+  const [expandedPreviewId, setExpandedPreviewId] = useState<number | null>(null);
   const PREVIEW_ITEMS_PER_PAGE = 10;
   
   const [notification, setNotification] = useState<{
@@ -157,13 +160,12 @@ export default function BulkUploadQuestions({
     const template = [
       // MCQ Questions
       {
-        board: '',
+        board: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
         chapter: 'Java Loops',
         type: QUESTION_TYPES.MCQ,
-        programming_language: 'Java',
         question_text: '<h2>Basic For Loop Execution</h2><p>What will be the output of the following code?</p><code>for (int i = 0; i < 5; i++) {\n    System.out.print(i + " ");\n}</code>',
         question_image_urls: '',
         options: '0 1 2 3 4|0 1 2 3 4 5|1 2 3 4 5|0 1 2 3',
@@ -171,20 +173,21 @@ export default function BulkUploadQuestions({
         maximum_marks: 1,
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'The loop starts at i=0 and continues while i<5',
-        solution: '<p>Loop execution trace: Iteration 1: i=0, condition (0<5) is true → Print "0 ", i becomes 1. Iteration 2: i=1, condition (1<5) is true → Print "1 ", i becomes 2. And so on until i=5.</p>',
         test_cases: '',
         test_stub: '',
-        marks_per_test_case: '',
+        programming_language: '',
+        starter_codes: '',
+        sql_schema: '',
+        sql_test_cases: '',
         tags: 'loops,for-loop,java-basics,control-flow'
       },
       {
-        board: '',
+        board: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
         chapter: 'Java Loops',
         type: QUESTION_TYPES.MCQ,
-        programming_language: 'Java',
         question_text: '<h2>MCQ with Multiple Correct Answers</h2><p>Which of the following are valid loop types in Java? (Multiple answers)</p>',
         question_image_urls: '',
         options: 'for loop|while loop|repeat-until loop|do-while loop',
@@ -192,21 +195,22 @@ export default function BulkUploadQuestions({
         maximum_marks: 3,
         difficulty_level: COMPLEXITY_LEVELS.MEDIUM,
         hint: 'Java has three main loop constructs',
-        solution: '<p>Java supports for, while, and do-while loops. repeat-until is not a valid Java loop construct.</p>',
         test_cases: '',
         test_stub: '',
-        marks_per_test_case: '',
+        programming_language: '',
+        starter_codes: '',
+        sql_schema: '',
+        sql_test_cases: '',
         tags: 'loops,java-syntax,control-structures'
       },
       // Fill in the Blank Questions
       {
-        board: '',
+        board: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
         chapter: 'Java OOPs Concepts',
         type: QUESTION_TYPES.FITB,
-        programming_language: 'java',
         question_text: '<h2>Static Members</h2><p>Fill in the blanks about static keyword.</p><p>The _____ keyword is used to create class-level members. Static variables are shared among _____ instances of the class.</p>',
         question_image_urls: '',
         options: '',
@@ -214,20 +218,21 @@ export default function BulkUploadQuestions({
         maximum_marks: 2,
         difficulty_level: COMPLEXITY_LEVELS.MEDIUM,
         hint: 'Static members belong to class, not individual objects',
-        solution: '<p>The <strong>static</strong> keyword is used to create class-level members. Static variables are shared among <strong>all</strong> instances of the class.</p>',
         test_cases: '',
         test_stub: '',
-        marks_per_test_case: '',
+        programming_language: '',
+        starter_codes: '',
+        sql_schema: '',
+        sql_test_cases: '',
         tags: 'oop,static,java-keywords,class-members'
       },
       {
-        board: '',
+        board: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
         chapter: 'Java Enumerations',
         type: QUESTION_TYPES.FITB,
-        programming_language: 'java',
         question_text: '<h2>Define and Use Enum</h2><p>Fill in the blanks to create and use an enum.</p><code>\n_____ Day {\n    MONDAY, TUESDAY, WEDNESDAY\n}\n_____ today = Day.MONDAY;\nSystem.out.println(today);\n</code>',
         question_image_urls: '',
         options: '',
@@ -235,21 +240,22 @@ export default function BulkUploadQuestions({
         maximum_marks: 2,
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'Use enum keyword to define, enum name for variable type',
-        solution: '<code>\n<strong>enum</strong> Day {\n    MONDAY, TUESDAY, WEDNESDAY\n}\n<strong>Day</strong> today = Day.MONDAY;\nSystem.out.println(today);\n</code>',
         test_cases: '',
         test_stub: '',
-        marks_per_test_case: '',
+        programming_language: '',
+        starter_codes: '',
+        sql_schema: '',
+        sql_test_cases: '',
         tags: 'enumerations,java-syntax,data-types'
       },
       // Jumbled Quiz Questions
       {
-        board: '',
+        board: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
         chapter: 'Java Loops',
         type: QUESTION_TYPES.JUMBLED,
-        programming_language: 'java',
         question_text: '<h2>Print Numbers 1 to 5</h2><p>Arrange the code to print numbers from 1 to 5 using a for loop.</p>',
         question_image_urls: '',
         options: 'System.out.println(i);|}|for (int i = 1; i <= 5; i++) {',
@@ -257,20 +263,21 @@ export default function BulkUploadQuestions({
         maximum_marks: 3,
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'Loop declaration first, then print statement, then closing brace',
-        solution: '<h3>Correct Sequence:</h3><code>\nfor (int i = 1; i <= 5; i++) {\n    System.out.println(i);\n}\n</code><p><strong>Output:</strong> 1 2 3 4 5</p>',
         test_cases: '',
         test_stub: '',
-        marks_per_test_case: '',
+        programming_language: '',
+        starter_codes: '',
+        sql_schema: '',
+        sql_test_cases: '',
         tags: 'loops,code-arrangement,java-basics'
       },
       {
-        board: '',
+        board: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
         chapter: 'Java OOPs Concepts',
         type: QUESTION_TYPES.JUMBLED,
-        programming_language: 'java',
         question_text: '<h2>Method Overloading - Add Numbers</h2><p>Arrange the code to demonstrate method overloading with two add methods.</p>',
         question_image_urls: '',
         options: 'System.out.println(add(5, 10));|static int add(int a, int b, int c) { return a + b + c; }|System.out.println(add(5, 10, 15));|static int add(int a, int b) { return a + b; }',
@@ -278,21 +285,22 @@ export default function BulkUploadQuestions({
         maximum_marks: 4,
         difficulty_level: COMPLEXITY_LEVELS.MEDIUM,
         hint: 'Define first add method with 2 params, second add with 3 params, call both',
-        solution: '<h3>Correct Sequence:</h3><code>\nstatic int add(int a, int b) { return a + b; }\nstatic int add(int a, int b, int c) { return a + b + c; }\nSystem.out.println(add(5, 10));\nSystem.out.println(add(5, 10, 15));\n</code>',
         test_cases: '',
         test_stub: '',
-        marks_per_test_case: '',
+        programming_language: '',
+        starter_codes: '',
+        sql_schema: '',
+        sql_test_cases: '',
         tags: 'oop,method-overloading,polymorphism'
       },
       // Descriptive Questions
       {
-        board: '',
+        board: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
         chapter: 'Java Loops',
         type: QUESTION_TYPES.DESCRIPTIVE,
-        programming_language: 'java',
         question_text: '<h2>Print Your Name 5 Times</h2><p>Write a Java program using a for loop to print your name 5 times.</p><h3>Examples</h3><p><strong>Output:</strong><br><code>Mohammad\nMohammad\nMohammad\nMohammad\nMohammad</code></p>',
         question_image_urls: '',
         options: '',
@@ -300,20 +308,21 @@ export default function BulkUploadQuestions({
         maximum_marks: 5,
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'Use for loop from 1 to 5',
-        solution: '<code>\nfor (int i = 1; i <= 5; i++) {\n    System.out.println("Mohammad");\n}\n</code><p><strong>Output:</strong> Name printed 5 times.</p>',
         test_cases: '',
         test_stub: '',
-        marks_per_test_case: '',
+        programming_language: '',
+        starter_codes: '',
+        sql_schema: '',
+        sql_test_cases: '',
         tags: 'loops,for-loop,java-basics,programming'
       },
       {
-        board: '',
+        board: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
         chapter: 'Java Loops',
         type: QUESTION_TYPES.DESCRIPTIVE,
-        programming_language: 'java',
         question_text: '<h2>Print Even Numbers from 2 to 10</h2><p>Write a program using while loop to print even numbers from 2 to 10.</p><h3>Examples</h3><p><strong>Output:</strong><br><code>2 4 6 8 10</code></p>',
         question_image_urls: '',
         options: '',
@@ -321,76 +330,127 @@ export default function BulkUploadQuestions({
         maximum_marks: 5,
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'Start from 2, increment by 2',
-        solution: '<code>\nint i = 2;\nwhile (i <= 10) {\n    System.out.print(i + " ");\n    i += 2;\n}\n</code><p><strong>Output:</strong> 2 4 6 8 10</p>',
         test_cases: '',
         test_stub: '',
-        marks_per_test_case: '',
+        programming_language: '',
+        starter_codes: '',
+        sql_schema: '',
+        sql_test_cases: '',
         tags: 'loops,while-loop,even-numbers,programming'
       },
       // Code Questions
       {
-        board: '',
+        board: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
-        chapter: 'Java OOPs Concepts',
+        chapter: 'Java Strings',
         type: QUESTION_TYPES.CODE,
-        programming_language: 'Java',
-        question_text: '<h2>Create Student Class with Basic Operations</h2><p>Write a program to create a <strong>Student</strong> class with instance variables <strong>name</strong> (String), <strong>rollNumber</strong> (int), and <strong>marks</strong> (double). Create a method <strong>displayInfo()</strong> that prints the details in the format: "Name: [name], Roll: [rollNumber], Marks: [marks]".</p>',
+        question_text: '<h2>Partition String into Minimum Substrings</h2><p>Given a string <strong>s</strong>, partition the string into one or more substrings such that the characters in each substring are <strong>unique</strong>. Return the <strong>minimum</strong> number of substrings in such a partition.</p><h3>Examples</h3><p><strong>Input:</strong> abacaba<br><strong>Output:</strong> 4</p>',
         question_image_urls: '',
         options: '',
         correct_answers: '',
         maximum_marks: 4,
-        difficulty_level: COMPLEXITY_LEVELS.EASY,
-        hint: 'Define Student class with three instance variables. Create method displayInfo() that uses System.out.println() with the required format',
-        solution: 'import java.util.Scanner;\n\nclass Student {\n    String name;\n    int rollNumber;\n    double marks;\n    \n    void displayInfo() {\n        System.out.println("Name: " + name + ", Roll: " + rollNumber + ", Marks: " + marks);\n    }\n}\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        Student s = new Student();\n        s.name = sc.nextLine();\n        s.rollNumber = sc.nextInt();\n        s.marks = sc.nextDouble();\n        s.displayInfo();\n    }\n}',
+        difficulty_level: COMPLEXITY_LEVELS.MEDIUM,
+        hint: 'Use a set to track characters in the current substring. When a duplicate is found, start a new partition.',
         test_cases: JSON.stringify([
-          { input: 'John\n101\n85.5', expected_output: 'Name: John, Roll: 101, Marks: 85.5\n', marks: 0.4 },
-          { input: 'Alice\n201\n92.0', expected_output: 'Name: Alice, Roll: 201, Marks: 92.0\n', marks: 0.4 },
-          { input: 'Bob\n102\n78.5', expected_output: 'Name: Bob, Roll: 102, Marks: 78.5\n', marks: 0.4 },
-          { input: 'Charlie\n303\n88.0', expected_output: 'Name: Charlie, Roll: 303, Marks: 88.0\n', marks: 0.4 },
-          { input: 'David\n104\n95.5', expected_output: 'Name: David, Roll: 104, Marks: 95.5\n', marks: 0.4 },
-          { input: 'Eve\n205\n82.0', expected_output: 'Name: Eve, Roll: 205, Marks: 82.0\n', marks: 0.4 },
-          { input: 'Frank\n106\n91.5', expected_output: 'Name: Frank, Roll: 106, Marks: 91.5\n', marks: 0.4 },
-          { input: 'Grace\n307\n87.0', expected_output: 'Name: Grace, Roll: 307, Marks: 87.0\n', marks: 0.4 },
-          { input: 'Henry\n108\n93.5', expected_output: 'Name: Henry, Roll: 108, Marks: 93.5\n', marks: 0.4 },
-          { input: 'Ivy\n209\n89.0', expected_output: 'Name: Ivy, Roll: 209, Marks: 89.0\n', marks: 0.4 }
+          { input: 'abacaba', expected_output: '4\n', marks: 0.5 },
+          { input: 'ssssss', expected_output: '6\n', marks: 0.5 },
+          { input: 'abcdef', expected_output: '1\n', marks: 0.5 },
+          { input: 'aab', expected_output: '2\n', marks: 0.5 },
+          { input: 'abcabc', expected_output: '2\n', marks: 0.5 },
+          { input: 'a', expected_output: '1\n', marks: 0.5 },
+          { input: 'abcdefghijklmnopqrstuvwxyz', expected_output: '1\n', marks: 0.5 },
+          { input: 'aabbcc', expected_output: '3\n', marks: 0.5 }
         ]),
-        test_stub: 'import java.util.Scanner;\n\nclass Student {\n    String name;\n    int rollNumber;\n    double marks;\n    \n    void displayInfo() {\n        // Your Code Starts Here\n        \n        // Your Code Ends Here\n    }\n}\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        Student s = new Student();\n        s.name = sc.nextLine();\n        s.rollNumber = sc.nextInt();\n        s.marks = sc.nextDouble();\n        s.displayInfo();\n    }\n}',
-        marks_per_test_case: '0.4',
-        tags: 'oop,classes,methods,java-programming'
+        test_stub: '',
+        programming_language: 'java',
+        starter_codes: JSON.stringify([
+          { language: 'java', code: 'import java.util.Scanner;\nimport java.util.HashSet;\n\npublic class Main {\n    public static int partitionString(String s) {\n        // Your Code Starts Here\n\n        // Your Code Ends Here\n    }\n\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        String s = sc.next();\n        System.out.println(partitionString(s));\n    }\n}' },
+          { language: 'python', code: 'def partition_string(s: str) -> int:\n    # Your Code Starts Here\n\n    # Your Code Ends Here\n    pass\n\nif __name__ == "__main__":\n    s = input()\n    print(partition_string(s))' },
+          { language: 'cpp', code: '#include <iostream>\n#include <string>\n#include <unordered_set>\n\nusing namespace std;\n\nint partitionString(string s) {\n    // Your Code Starts Here\n\n    // Your Code Ends Here\n}\n\nint main() {\n    string s;\n    cin >> s;\n    cout << partitionString(s) << endl;\n    return 0;\n}' },
+          { language: 'c', code: '#include <stdio.h>\n#include <string.h>\n\nint partitionString(char s[]) {\n    // Your Code Starts Here\n\n    // Your Code Ends Here\n}\n\nint main() {\n    char s[1001];\n    scanf("%s", s);\n    printf("%d\\n", partitionString(s));\n    return 0;\n}' },
+          { language: 'javascript', code: 'function partitionString(s) {\n    // Your Code Starts Here\n\n    // Your Code Ends Here\n}\n\nconst readline = require("readline");\nconst rl = readline.createInterface({ input: process.stdin });\nrl.on("line", (line) => {\n    console.log(partitionString(line.trim()));\n    rl.close();\n});' }
+        ]),
+        sql_schema: '',
+        sql_test_cases: '',
+        tags: 'strings,partitioning,greedy,sets'
       },
       {
-        board: '',
+        board: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
-        chapter: 'Java OOPs Concepts',
+        chapter: 'Java Arrays',
         type: QUESTION_TYPES.CODE,
-        programming_language: 'Java',
-        question_text: '<h2>Rectangle Class with Area and Perimeter</h2><p>Write a program to create a <strong>Rectangle</strong> class with instance variables <strong>length</strong> and <strong>width</strong>. Implement methods <strong>calculateArea()</strong> and <strong>calculatePerimeter()</strong>.</p>',
+        question_text: '<h2>Find Maximum Element in Array</h2><p>Write a function that takes an integer <strong>n</strong> (size of array) followed by <strong>n</strong> integers, and returns the <strong>maximum</strong> element.</p><h3>Examples</h3><p><strong>Input:</strong> 5<br>3 1 4 1 5<br><strong>Output:</strong> 5</p>',
         question_image_urls: '',
         options: '',
         correct_answers: '',
-        maximum_marks: 4,
+        maximum_marks: 2,
         difficulty_level: COMPLEXITY_LEVELS.EASY,
-        hint: 'Create Rectangle class with length and width as instance variables. Implement two methods that return calculated values',
-        solution: 'import java.util.Scanner;\n\nclass Rectangle {\n    double length;\n    double width;\n    \n    double calculateArea() {\n        return length * width;\n    }\n    \n    double calculatePerimeter() {\n        return 2 * (length + width);\n    }\n}\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        Rectangle r = new Rectangle();\n        r.length = sc.nextDouble();\n        r.width = sc.nextDouble();\n        System.out.println("Area: " + r.calculateArea());\n        System.out.println("Perimeter: " + r.calculatePerimeter());\n    }\n}',
+        hint: 'Iterate through the array and keep track of the maximum value seen so far.',
         test_cases: JSON.stringify([
-          { input: '5.0 3.0', expected_output: 'Area: 15.0\nPerimeter: 16.0\n', marks: 0.4 },
-          { input: '10.0 5.0', expected_output: 'Area: 50.0\nPerimeter: 30.0\n', marks: 0.4 },
-          { input: '7.5 2.5', expected_output: 'Area: 18.75\nPerimeter: 20.0\n', marks: 0.4 },
-          { input: '4.0 4.0', expected_output: 'Area: 16.0\nPerimeter: 16.0\n', marks: 0.4 },
-          { input: '12.0 8.0', expected_output: 'Area: 96.0\nPerimeter: 40.0\n', marks: 0.4 },
-          { input: '6.0 3.0', expected_output: 'Area: 18.0\nPerimeter: 18.0\n', marks: 0.4 },
-          { input: '9.0 4.0', expected_output: 'Area: 36.0\nPerimeter: 26.0\n', marks: 0.4 },
-          { input: '15.0 10.0', expected_output: 'Area: 150.0\nPerimeter: 50.0\n', marks: 0.4 },
-          { input: '8.5 6.5', expected_output: 'Area: 55.25\nPerimeter: 30.0\n', marks: 0.4 },
-          { input: '11.0 7.0', expected_output: 'Area: 77.0\nPerimeter: 36.0\n', marks: 0.4 }
+          { input: '5\n3 1 4 1 5', expected_output: '5\n', marks: 0.25 },
+          { input: '3\n10 20 30', expected_output: '30\n', marks: 0.25 },
+          { input: '1\n42', expected_output: '42\n', marks: 0.25 },
+          { input: '4\n-1 -5 -3 -2', expected_output: '-1\n', marks: 0.25 },
+          { input: '6\n7 7 7 7 7 7', expected_output: '7\n', marks: 0.25 },
+          { input: '3\n100 1 50', expected_output: '100\n', marks: 0.25 },
+          { input: '5\n0 0 0 0 1', expected_output: '1\n', marks: 0.25 },
+          { input: '2\n999 1000', expected_output: '1000\n', marks: 0.25 }
         ]),
-        test_stub: 'import java.util.Scanner;\n\nclass Rectangle {\n    double length;\n    double width;\n    \n    double calculateArea() {\n        // Your Code Starts Here\n        \n        // Your Code Ends Here\n        return 0;\n    }\n    \n    double calculatePerimeter() {\n        // Your Code Starts Here\n        \n        // Your Code Ends Here\n        return 0;\n    }\n}\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        Rectangle r = new Rectangle();\n        r.length = sc.nextDouble();\n        r.width = sc.nextDouble();\n        System.out.println("Area: " + r.calculateArea());\n        System.out.println("Perimeter: " + r.calculatePerimeter());\n    }\n}',
-        marks_per_test_case: '0.4',
-        tags: 'oop,classes,methods,calculations,geometry'
+        test_stub: '',
+        programming_language: 'java',
+        starter_codes: JSON.stringify([
+          { language: 'java', code: 'import java.util.Scanner;\n\npublic class Main {\n    public static int findMax(int[] arr) {\n        // Your Code Starts Here\n\n        // Your Code Ends Here\n    }\n\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int n = sc.nextInt();\n        int[] arr = new int[n];\n        for (int i = 0; i < n; i++) arr[i] = sc.nextInt();\n        System.out.println(findMax(arr));\n    }\n}' },
+          { language: 'python', code: 'def find_max(arr: list) -> int:\n    # Your Code Starts Here\n\n    # Your Code Ends Here\n    pass\n\nif __name__ == "__main__":\n    n = int(input())\n    arr = list(map(int, input().split()))\n    print(find_max(arr))' },
+          { language: 'cpp', code: '#include <iostream>\n#include <vector>\n\nusing namespace std;\n\nint findMax(vector<int>& arr) {\n    // Your Code Starts Here\n\n    // Your Code Ends Here\n}\n\nint main() {\n    int n;\n    cin >> n;\n    vector<int> arr(n);\n    for (int i = 0; i < n; i++) cin >> arr[i];\n    cout << findMax(arr) << endl;\n    return 0;\n}' },
+          { language: 'c', code: '#include <stdio.h>\n\nint findMax(int arr[], int n) {\n    // Your Code Starts Here\n\n    // Your Code Ends Here\n}\n\nint main() {\n    int n;\n    scanf("%d", &n);\n    int arr[n];\n    for (int i = 0; i < n; i++) scanf("%d", &arr[i]);\n    printf("%d\\n", findMax(arr, n));\n    return 0;\n}' },
+          { language: 'javascript', code: 'function findMax(arr) {\n    // Your Code Starts Here\n\n    // Your Code Ends Here\n}\n\nconst readline = require("readline");\nconst rl = readline.createInterface({ input: process.stdin });\nconst lines = [];\nrl.on("line", (line) => lines.push(line.trim()));\nrl.on("close", () => {\n    const n = parseInt(lines[0]);\n    const arr = lines[1].split(" ").map(Number);\n    console.log(findMax(arr));\n});' }
+        ]),
+        sql_schema: '',
+        sql_test_cases: '',
+        tags: 'arrays,maximum,iteration,basics'
+      },
+      // SQL Questions
+      {
+        board: 'LPU',
+        is_public: false,
+        class: 'MCA-1',
+        subject: 'Database',
+        chapter: 'SQL Query',
+        type: QUESTION_TYPES.SQL,
+        question_text: '<h2>Select All Records</h2><p>Write a SQL query to select all records from the <strong>Employee</strong> table.</p>',
+        question_image_urls: '',
+        options: '',
+        correct_answers: '',
+        maximum_marks: 1,
+        difficulty_level: COMPLEXITY_LEVELS.EASY,
+        hint: 'Use SELECT * FROM table_name',
+        test_cases: '',
+        test_stub: '',
+        programming_language: '',
+        starter_codes: '',
+        sql_schema: JSON.stringify([{
+          table_name: 'Employee',
+          columns: [
+            { name: 'id', type: 'INT', description: '', constraints: 'PK, NOT NULL' },
+            { name: 'Name', type: 'VARCHAR', description: '', constraints: '' },
+            { name: 'Salary', type: 'DECIMAL', description: '', constraints: '' }
+          ],
+          primary_key: 'id',
+          note: ''
+        }]),
+        sql_test_cases: JSON.stringify([{
+          title: 'Test Case 1',
+          table_data: { Employee: [['id', 'Name', 'Salary'], ['1', 'Mohtashim', '50000'], ['2', 'Mahnaz', '60000']] },
+          expected_output: { columns: ['id', 'Name', 'Salary'], rows: [['1', 'Mohtashim', '50000'], ['2', 'Mahnaz', '60000']] },
+          marks: 1.0
+        }]),
+        programming_language: '',
+        starter_codes: '',
+        tags: 'sql,select,basic-query'
       }
     ];
 
@@ -402,19 +462,20 @@ export default function BulkUploadQuestions({
       { wch: EXCEL_COLUMN_WIDTHS.LARGE },        // 4. subject
       { wch: EXCEL_COLUMN_WIDTHS.WIDER },        // 5. chapter
       { wch: EXCEL_COLUMN_WIDTHS.STANDARD },     // 6. type
-      { wch: EXCEL_COLUMN_WIDTHS.MEDIUM },       // 7. programming_language
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XLARGE }, // 8. question_text
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_MEDIUM }, // 9. question_image_urls
-      { wch: EXCEL_COLUMN_WIDTHS.EXTRA_WIDE },   // 10. options
-      { wch: EXCEL_COLUMN_WIDTHS.MEDIUM },       // 11. correct_answers
-      { wch: EXCEL_COLUMN_WIDTHS.STANDARD },     // 12. maximum_marks
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_MEDIUM }, // 13. difficulty_level
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_MEDIUM }, // 14. hint
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XLARGE }, // 15. solution
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 16. test_cases
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_LARGE }, // 17. test_stub
-      { wch: EXCEL_COLUMN_WIDTHS.STANDARD },     // 18. marks_per_test_case
-      { wch: EXCEL_COLUMN_WIDTHS.LARGE }         // 19. tags ✅
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XLARGE }, // 7. question_text
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_MEDIUM }, // 8. question_image_urls
+      { wch: EXCEL_COLUMN_WIDTHS.EXTRA_WIDE },   // 9. options
+      { wch: EXCEL_COLUMN_WIDTHS.MEDIUM },       // 10. correct_answers
+      { wch: EXCEL_COLUMN_WIDTHS.STANDARD },     // 11. maximum_marks
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_MEDIUM }, // 12. difficulty_level
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_MEDIUM }, // 13. hint
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 14. test_cases
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_LARGE }, // 15. test_stub
+      { wch: EXCEL_COLUMN_WIDTHS.STANDARD },      // 16. programming_language
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 17. starter_codes
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 18. sql_schema
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 19. sql_test_cases
+      { wch: EXCEL_COLUMN_WIDTHS.LARGE }           // 20. tags
     ];
 
     const wb = XLSX.utils.book_new();
@@ -444,18 +505,12 @@ export default function BulkUploadQuestions({
       [QUESTION_TYPES.DESCRIPTIVE],
       [QUESTION_TYPES.JUMBLED],
       [QUESTION_TYPES.CODE],
+      [QUESTION_TYPES.SQL],
       [''],
       ['Difficulty Levels (Select from these):'],
       [COMPLEXITY_LEVELS.EASY],
       [COMPLEXITY_LEVELS.MEDIUM],
       [COMPLEXITY_LEVELS.HARD],
-      [''],
-      ['Programming Languages (commonly used):'],
-      ['Java'],
-      ['Python'],
-      ['C'],
-      ['C++'],
-      ['JavaScript'],
       [''],
       ['Question Visibility (Select from these):'],
       ['true (Public - shared with all colleges)'],
@@ -475,21 +530,22 @@ export default function BulkUploadQuestions({
       ['class', 'Class level (e.g., MCA-1, 10th, 11th, 12th)'],
       ['subject', 'Subject name (e.g., Java, Mathematics, Computer Science)'],
       ['chapter', 'Chapter or topic name (e.g., Java Loops, Quadratic Equations)'],
-      ['type', `Question type: ${QUESTION_TYPES.MCQ}, ${QUESTION_TYPES.FITB}, ${QUESTION_TYPES.DESCRIPTIVE}, ${QUESTION_TYPES.JUMBLED}, ${QUESTION_TYPES.CODE}`],
-      ['programming_language', 'Programming language for the question (e.g., Java, Python, C++). Recommended for all questions.'],
+      ['type', `Question type: ${QUESTION_TYPES.MCQ}, ${QUESTION_TYPES.FITB}, ${QUESTION_TYPES.DESCRIPTIVE}, ${QUESTION_TYPES.JUMBLED}, ${QUESTION_TYPES.CODE}, ${QUESTION_TYPES.SQL}`],
       ['question_text', 'The actual question text. Supports HTML tags like <h2>, <p>, <code>, <strong> for rich formatting'],
       ['options', 'For MCQ & JUMBLED: separate options/items with | (e.g., "Option 1|Option 2|Option 3|Option 4")'],
       ['correct_answers', 'For MCQ: Single OR multiple correct answers separated by | | For FITB: answers for each blank separated by | | For JUMBLED: correct sequence separated by |'],
       ['maximum_marks', 'Numeric value for marks (e.g., 1, 2, 5)'],
       ['difficulty_level', `${COMPLEXITY_LEVELS.EASY}, ${COMPLEXITY_LEVELS.MEDIUM}, or ${COMPLEXITY_LEVELS.HARD}`],
       ['hint', 'Hint for solving (optional). Supports HTML formatting.'],
-      ['solution', 'Detailed solution (optional). Supports HTML formatting.'],
       ['test_cases', 'For CODE questions: JSON array of test cases with input, expected_output, and marks'],
-      ['test_stub', 'For CODE questions: Starter code template that students will complete'],
-      ['marks_per_test_case', 'Optional: Marks for each test case. Use single value (e.g., "0.4") or comma-separated (e.g., "0.4,0.4,0.3")'],
-      ['tags', 'Optional: Comma-separated tags for categorization (e.g., "loops,for-loop,java-basics"). Automatically lowercased.'],
+      ['test_stub', 'For CODE questions: Starter code template (backward compatible, use starter_codes for multi-language)'],
+      ['programming_language', 'For CODE questions: Primary programming language (e.g., java, python, cpp)'],
+      ['starter_codes', 'For CODE questions: JSON array of multi-language starter codes: [{"language":"java","code":"..."}]'],
+      ['sql_schema', 'For SQL questions: JSON array of table schemas with columns, types, and constraints'],
+      ['sql_test_cases', 'For SQL questions: JSON array of test cases with table_data and expected_output'],
+      ['tags', 'Optional: Comma-separated tags for categorization, max 4 (e.g., "loops,for-loop,java-basics"). Automatically lowercased.'],
       [''],
-      ['HTML Formatting in question_text, hint, solution:'],
+      ['HTML Formatting in question_text, hint:'],
       ['You can use these HTML tags for rich formatting:'],
       ['<h2>Title</h2>', 'For main headings'],
       ['<h3>Subtitle</h3>', 'For subheadings'],
@@ -503,18 +559,26 @@ export default function BulkUploadQuestions({
       [QUESTION_TYPES.FITB, 'Requires: correct_answers. Use | to separate answers for multiple blanks (e.g., "static|all" for 2 blanks)'],
       [QUESTION_TYPES.DESCRIPTIVE, 'No required additional fields. Students write free-form answers.'],
       [QUESTION_TYPES.JUMBLED, 'Requires: options (items to arrange) and correct_answers (correct sequence). Both separated by |'],
-      [QUESTION_TYPES.CODE, 'Requires: programming_language, test_cases (JSON), and test_stub'],
+      [QUESTION_TYPES.CODE, 'Requires: test_cases (JSON), test_stub or starter_codes. programming_language recommended.'],
+      [QUESTION_TYPES.SQL, 'Requires: sql_schema (JSON) and sql_test_cases (JSON). Subject must be "Database".'],
       [''],
       ['Code Question Format:'],
       ['test_cases', 'JSON array format: [{"input":"John\\n101\\n85.5","expected_output":"Name: John, Roll: 101, Marks: 85.5\\n","marks":0.4}]'],
-      ['test_stub', 'Starter code with function/class structure. Use comments like "// Your Code Starts Here" to indicate where students write code'],
+      ['test_stub', 'Single-language starter code (backward compatible). Use starter_codes for multi-language support.'],
+      ['programming_language', 'Primary language: java, python, cpp, c, javascript, etc.'],
+      ['starter_codes', 'JSON array: [{"language":"java","code":"..."},{"language":"python","code":"..."}]'],
+      [''],
+      ['SQL Question Format:'],
+      ['sql_schema', 'JSON array: [{"table_name":"Employee","columns":[{"name":"id","type":"INT","description":"","constraints":"PK, NOT NULL"}],"primary_key":"id","note":""}]'],
+      ['sql_test_cases', 'JSON array: [{"title":"Test 1","table_data":{"Employee":[["id","Name"],["1","John"]]},"expected_output":{"columns":["id","Name"],"rows":[["1","John"]]},"marks":1.0}]'],
       [''],
       ['Examples (See Questions sheet for complete examples):'],
       ['MCQ', 'Single answer: correct_answers = "0 1 2 3 4"  |  Multiple answers: correct_answers = "for loop|while loop|do-while loop"'],
       ['FITB', 'Two blanks: question has "The _____ keyword... among _____ instances"  |  correct_answers = "static|all"'],
       ['Jumbled', 'Code arrangement: options = "System.out.println(i);|}|for (int i = 1; i <= 5; i++) {"  |  correct_answers = "for (int i = 1; i <= 5; i++) {|System.out.println(i);|}"'],
       ['Descriptive', 'Open-ended questions where students write full answers. No options or correct_answers needed.'],
-      ['Code', 'Complete programming problems with automated testing. Requires test_cases JSON and test_stub template.']
+      ['Code', 'Complete programming problems with automated testing. Requires test_cases JSON and test_stub/starter_codes.'],
+      ['SQL', 'Database query problems. Requires sql_schema JSON (table definitions) and sql_test_cases JSON (input data + expected output).']
     ];
 
     const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
@@ -609,11 +673,105 @@ export default function BulkUploadQuestions({
     for (let i = 0; i < parsedQuestions.length; i++) {
       try {
         const question: QuestionRow = parsedQuestions[i];
+        const rowLabel = `Row ${i + EXCEL_ROW_OFFSET}`;
+        const qType = mapQuestionType(question.type);
         
-        // Validate chapter is provided
+        // ─── Base Field Validation ───
+        if (!question.question_text || !question.question_text.toString().trim()) {
+          results.failed++;
+          results.errors.push(`${rowLabel}: question_text is required`);
+          setUploadProgress(((i + 1) / parsedQuestions.length) * 100);
+          continue;
+        }
+        if (!question.subject || !question.subject.toString().trim()) {
+          results.failed++;
+          results.errors.push(`${rowLabel}: subject is required`);
+          setUploadProgress(((i + 1) / parsedQuestions.length) * 100);
+          continue;
+        }
+        if (!question.class || !question.class.toString().trim()) {
+          results.failed++;
+          results.errors.push(`${rowLabel}: class is required`);
+          setUploadProgress(((i + 1) / parsedQuestions.length) * 100);
+          continue;
+        }
         if (!question.chapter || !question.chapter.toString().trim()) {
           results.failed++;
-          results.errors.push(`Row ${i + EXCEL_ROW_OFFSET}: ${NOTIFICATION_MESSAGES.CHAPTER_REQUIRED}`);
+          results.errors.push(`${rowLabel}: ${NOTIFICATION_MESSAGES.CHAPTER_REQUIRED}`);
+          setUploadProgress(((i + 1) / parsedQuestions.length) * 100);
+          continue;
+        }
+        
+        // ─── Type-Specific Validation ───
+        const validationErrors: string[] = [];
+        
+        if (qType === QUESTION_TYPES.MCQ) {
+          if (!question.options || !question.options.toString().trim()) {
+            validationErrors.push('options are required for MCQ');
+          } else {
+            const opts = question.options.split(DELIMITERS.PIPE).filter(o => o.trim());
+            if (opts.length < 2) validationErrors.push('MCQ must have at least 2 options');
+          }
+          if (!question.correct_answers || !question.correct_answers.toString().trim()) {
+            validationErrors.push('correct_answers is required for MCQ');
+          }
+        }
+        
+        if (qType === QUESTION_TYPES.FITB) {
+          if (!question.correct_answers || !question.correct_answers.toString().trim()) {
+            validationErrors.push('correct_answers is required for FITB (pipe-separated blanks)');
+          }
+        }
+        
+        if (qType === QUESTION_TYPES.JUMBLED) {
+          if (!question.correct_answers || !question.correct_answers.toString().trim()) {
+            validationErrors.push('correct_answers is required for Jumbled (pipe-separated correct sequence)');
+          }
+        }
+        
+        if (qType === QUESTION_TYPES.CODE) {
+          if (!question.test_cases || !question.test_cases.toString().trim()) {
+            validationErrors.push('test_cases JSON is required for Code questions');
+          } else {
+            try {
+              const tc = JSON.parse(question.test_cases.toString().trim());
+              if (!Array.isArray(tc) || tc.length === 0) validationErrors.push('test_cases must be a non-empty JSON array');
+            } catch { validationErrors.push('test_cases has invalid JSON format'); }
+          }
+          if (!question.starter_codes || !question.starter_codes.toString().trim()) {
+            if (!question.test_stub || !question.test_stub.toString().trim()) {
+              validationErrors.push('starter_codes or test_stub is required for Code questions');
+            }
+          } else {
+            try {
+              const sc = JSON.parse(question.starter_codes.toString().trim());
+              if (!Array.isArray(sc) || sc.length === 0) validationErrors.push('starter_codes must be a non-empty JSON array');
+            } catch { validationErrors.push('starter_codes has invalid JSON format'); }
+          }
+        }
+        
+        if (qType === QUESTION_TYPES.SQL) {
+          if (!question.sql_schema || !question.sql_schema.toString().trim()) {
+            validationErrors.push('sql_schema JSON is required for SQL questions');
+          } else {
+            try {
+              const schema = JSON.parse(question.sql_schema.toString().trim());
+              if (!Array.isArray(schema) || schema.length === 0) validationErrors.push('sql_schema must be a non-empty JSON array with table definitions');
+            } catch { validationErrors.push('sql_schema has invalid JSON format'); }
+          }
+          if (!question.sql_test_cases || !question.sql_test_cases.toString().trim()) {
+            validationErrors.push('sql_test_cases JSON is required for SQL questions');
+          } else {
+            try {
+              const tc = JSON.parse(question.sql_test_cases.toString().trim());
+              if (!Array.isArray(tc) || tc.length === 0) validationErrors.push('sql_test_cases must be a non-empty JSON array');
+            } catch { validationErrors.push('sql_test_cases has invalid JSON format'); }
+          }
+        }
+        
+        if (validationErrors.length > 0) {
+          results.failed++;
+          results.errors.push(`${rowLabel}: ${validationErrors.join('; ')}`);
           setUploadProgress(((i + 1) / parsedQuestions.length) * 100);
           continue;
         }
@@ -643,7 +801,6 @@ export default function BulkUploadQuestions({
           maximum_marks: parseFloat(question.maximum_marks.toString()) || QUESTION_DEFAULTS.MARKS,
           difficulty_level: normalizeComplexity(question.difficulty_level),
           hint: question.hint || QUESTION_DEFAULTS.EMPTY_STRING,
-          solution: question.solution || QUESTION_DEFAULTS.EMPTY_STRING,
           
           // Image URLs (NEW FEATURE!)
           question_image_urls: question.question_image_urls 
@@ -677,13 +834,57 @@ export default function BulkUploadQuestions({
             // jumbledItems will be auto-generated in transformation
           }),
           
-          ...(mapQuestionType(question.type) === QUESTION_TYPES.CODE && {
-            programming_language: question.programming_language?.toString().trim(),
-            test_cases: question.test_cases 
+          ...(mapQuestionType(question.type) === QUESTION_TYPES.CODE && (() => {
+            const parsedTestCases = question.test_cases 
               ? JSON.parse(question.test_cases.toString().trim()) 
-              : [],
-            test_stub: question.test_stub?.toString().trim()
-          })
+              : [];
+            // Auto-distribute marks evenly if test case marks don't sum to maximum_marks
+            const maxMarks = parseFloat(question.maximum_marks.toString()) || QUESTION_DEFAULTS.MARKS;
+            if (parsedTestCases.length > 0) {
+              const totalTcMarks = parsedTestCases.reduce((sum: number, tc: any) => sum + (tc.marks || 0), 0);
+              if (Math.abs(totalTcMarks - maxMarks) > 0.01) {
+                const perCase = Math.round((maxMarks / parsedTestCases.length) * 100) / 100;
+                parsedTestCases.forEach((tc: any) => { tc.marks = perCase; });
+                // Adjust last case to fix rounding
+                const diff = Math.round((maxMarks - perCase * parsedTestCases.length) * 100) / 100;
+                if (diff !== 0) parsedTestCases[parsedTestCases.length - 1].marks = Math.round((perCase + diff) * 100) / 100;
+              }
+            }
+            return {
+              test_cases: parsedTestCases,
+              test_stub: question.test_stub?.toString().trim() || '',
+              programming_language: question.programming_language?.toString().trim() || 'java',
+              starter_codes: question.starter_codes
+                ? JSON.parse(question.starter_codes.toString().trim())
+                : question.test_stub 
+                  ? [{ language: question.programming_language?.toString().trim() || 'java', code: question.test_stub.toString().trim() }]
+                  : []
+            };
+          })()),
+          
+          ...(mapQuestionType(question.type) === QUESTION_TYPES.SQL && (() => {
+            const parsedSchema = question.sql_schema
+              ? JSON.parse(question.sql_schema.toString().trim())
+              : [];
+            const parsedSqlTestCases = question.sql_test_cases
+              ? JSON.parse(question.sql_test_cases.toString().trim())
+              : [];
+            // Auto-distribute SQL test case marks
+            const maxMarks = parseFloat(question.maximum_marks.toString()) || QUESTION_DEFAULTS.MARKS;
+            if (parsedSqlTestCases.length > 0) {
+              const totalTcMarks = parsedSqlTestCases.reduce((sum: number, tc: any) => sum + (tc.marks || 0), 0);
+              if (Math.abs(totalTcMarks - maxMarks) > 0.01) {
+                const perCase = Math.round((maxMarks / parsedSqlTestCases.length) * 100) / 100;
+                parsedSqlTestCases.forEach((tc: any) => { tc.marks = perCase; });
+                const diff = Math.round((maxMarks - perCase * parsedSqlTestCases.length) * 100) / 100;
+                if (diff !== 0) parsedSqlTestCases[parsedSqlTestCases.length - 1].marks = Math.round((perCase + diff) * 100) / 100;
+              }
+            }
+            return {
+              sql_schema: parsedSchema,
+              sql_test_cases: parsedSqlTestCases
+            };
+          })())
         };
         
         // Create question using unified service
@@ -747,12 +948,12 @@ export default function BulkUploadQuestions({
       tags = tagsValue;
     }
     
-    // Process: trim, lowercase, remove empty, deduplicate
+    // Process: trim, lowercase, remove empty, deduplicate, limit to 4
     const processed = tags
       .map(tag => String(tag).trim().toLowerCase())
       .filter(tag => tag.length > 0);
     
-    return [...new Set(processed)];
+    return [...new Set(processed)].slice(0, 4);
   };
 
   const mapQuestionType = (type: string): QuestionType => {
@@ -765,6 +966,7 @@ export default function BulkUploadQuestions({
       [QUESTION_TYPES.DESCRIPTIVE]: QUESTION_TYPES.DESCRIPTIVE,
       [QUESTION_TYPES.JUMBLED]: QUESTION_TYPES.JUMBLED,
       [QUESTION_TYPES.CODE]: QUESTION_TYPES.CODE,
+      [QUESTION_TYPES.SQL]: QUESTION_TYPES.SQL,
     };
     
     return typeMap[normalizedType] || QUESTION_TYPES.DESCRIPTIVE;
@@ -916,9 +1118,9 @@ export default function BulkUploadQuestions({
                     <ul className="space-y-2 text-xs text-gray-700">
                       <li className="flex items-start"><span className="mr-2">•</span><span>Check the <strong>"Reference"</strong> sheet for all allowed values</span></li>
                       <li className="flex items-start"><span className="mr-2">•</span><span><strong>Required columns:</strong> class, subject, chapter, question_text, type, maximum_marks, difficulty_level</span></li>
-                      <li className="flex items-start"><span className="mr-2">•</span><span><strong>Optional:</strong> board (empty if not provided), hint, solution</span></li>
+                      <li className="flex items-start"><span className="mr-2">•</span><span><strong>Optional:</strong> board (empty if not provided), hint</span></li>
                       <li className="flex items-start"><span className="mr-2">•</span><span><strong>MCQ with multiple correct answers:</strong> Separate correct answers with | (e.g., "Answer1|Answer2")</span></li>
-                      <li className="flex items-start"><span className="mr-2">•</span><span><strong>CODE questions:</strong> Must include programming_language, test_cases (JSON), and test_stub</span></li>
+                      <li className="flex items-start"><span className="mr-2">•</span><span><strong>CODE questions:</strong> Must include test_cases (JSON) and test_stub</span></li>
                     </ul>
                   </div>
                 </div>
@@ -939,184 +1141,415 @@ export default function BulkUploadQuestions({
                 <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
                   <h3 className="font-semibold text-gray-900">Questions Preview</h3>
                 </div>
-                <div className="max-h-96 overflow-y-auto">
+                <div className="max-h-[500px] overflow-y-auto space-y-3 p-3">
                   {parsedQuestions
                     .slice((previewPage - 1) * PREVIEW_ITEMS_PER_PAGE, previewPage * PREVIEW_ITEMS_PER_PAGE)
                     .map((q, idx) => {
                       const actualIndex = (previewPage - 1) * PREVIEW_ITEMS_PER_PAGE + idx;
+                      const isExpanded = expandedPreviewId === actualIndex;
+                      const qType = mapQuestionType(q.type);
                       return (
-                    <div key={actualIndex} className="p-4 border-b border-gray-100 hover:bg-gray-50">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex items-center space-x-2">
-                          <span className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold">{actualIndex + 1}</span>
-                          {q.board && (
-                            <span className="text-xs font-semibold px-2 py-1 rounded"
-                              style={{ 
-                                backgroundColor: brandTheme.colors.secondary + '20',
-                                color: brandTheme.colors.secondary
-                              }}>{q.board}</span>
-                          )}
-                          <span className="text-xs font-semibold px-2 py-1 rounded"
-                            style={{ 
-                              backgroundColor: brandTheme.colors.primary + '20',
-                              color: brandTheme.colors.primary
-                            }}>{getTypeDisplayName(q.type)}</span>
-                          {q.type === 'code' && q.programming_language && (
-                            <span className="text-xs font-semibold px-2 py-1 rounded"
-                              style={{ 
-                                backgroundColor: brandTheme.colors.accent + '20',
-                                color: brandTheme.colors.accent
-                              }}>💻 {q.programming_language}</span>
-                          )}
-                          <span className="text-xs font-semibold px-2 py-1 rounded"
-                            style={{ 
-                              backgroundColor: brandTheme.colors.primary + '30',
-                              color: brandTheme.colors.primary
-                            }}>{q.subject}</span>
-                          <span className="text-xs font-semibold px-2 py-1 rounded"
-                            style={{ 
-                              backgroundColor: brandTheme.colors.accent + '30',
-                              color: brandTheme.colors.accent
-                            }}>Class {q.class}</span>
-                          {q.tags && processQuestionTags(q.tags).length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {processQuestionTags(q.tags).slice(0, 3).map((tag: string, tagIdx: number) => (
-                                <span
-                                  key={tagIdx}
-                                  className="text-xs font-semibold px-2 py-1 rounded"
-                                  style={{ 
-                                    backgroundColor: '#3B82F620',
-                                    color: '#3B82F6'
-                                  }}
-                                >
-                                  🏷️ {tag}
-                                </span>
-                              ))}
-                              {processQuestionTags(q.tags).length > 3 && (
-                                <span className="text-xs text-gray-500">
-                                  +{processQuestionTags(q.tags).length - 3}
+                    <div
+                      key={actualIndex}
+                      className="bg-white rounded-xl border border-gray-200 p-5 hover:shadow-lg transition-all duration-200"
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = brandTheme.colors.primary; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e5e7eb'; }}
+                    >
+                      {/* Question Header - matches QuestionList */}
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center space-x-3 flex-1 min-w-0">
+                          <div
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-sm flex-shrink-0"
+                            style={{ background: brandTheme.gradients.primary }}
+                          >
+                            {actualIndex + 1}
+                          </div>
+                          <div className="overflow-x-auto scrollbar-hide flex-1 min-w-0">
+                            <div className="flex items-center space-x-2 whitespace-nowrap">
+                              <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-blue-100 text-blue-700">
+                                {getTypeDisplayName(q.type)}
+                              </span>
+                              {q.board && q.board.trim() !== '' && (
+                                <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-purple-100 text-purple-700">
+                                  {q.board.toUpperCase()}
                                 </span>
                               )}
+                              <span className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
+                                q.difficulty_level?.toLowerCase() === 'easy' ? 'bg-pink-100 text-pink-700' :
+                                q.difficulty_level?.toLowerCase() === 'medium' ? 'bg-green-100 text-green-700' :
+                                'bg-cyan-100 text-cyan-700'
+                              }`}>
+                                {q.difficulty_level ? q.difficulty_level.charAt(0).toUpperCase() + q.difficulty_level.slice(1).toLowerCase() : ''}
+                              </span>
+                              {q.chapter && (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-green-50 text-green-700">
+                                  <svg className="w-2.5 h-2.5 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
+                                  </svg>
+                                  {q.chapter}
+                                </span>
+                              )}
+                              {q.tags && processQuestionTags(q.tags).length > 0 && (
+                                <>
+                                  {processQuestionTags(q.tags).map((tag: string, tagIdx: number) => (
+                                    <span
+                                      key={tagIdx}
+                                      className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 text-blue-700"
+                                    >
+                                      <svg className="w-2.5 h-2.5 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                                      </svg>
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <div className="h-8 bg-gray-100 px-3 rounded-lg flex items-center">
+                            <span className="text-sm font-bold text-gray-900">{q.maximum_marks}</span>
+                            <span className="text-xs text-gray-600 ml-1">marks</span>
+                          </div>
+                          {isExpanded && (
+                            <button
+                              onClick={() => setExpandedPreviewId(null)}
+                              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                            >
+                              <X size={16} className="text-gray-600" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Question Text */}
+                      <div className="mb-3">
+                        <div className="space-y-3">
+                          {(() => {
+                            const processHTML = (html: string) => {
+                              const parts = html.split(/(<code>.*?<\/code>)/gs);
+                              return parts.map((part, index) => {
+                                const codeMatch = part.match(/<code>(.*?)<\/code>/s);
+                                if (codeMatch) {
+                                  const codeContent = codeMatch[1];
+                                  const codeId = `preview-code-${actualIndex}-${index}`;
+                                  const detectLanguage = (code: string): string => {
+                                    if (code.includes('def ') || code.includes('print(')) return 'python';
+                                    if (code.includes('function ') || code.includes('=>')) return 'javascript';
+                                    if (code.includes('public class') || code.includes('System.out')) return 'java';
+                                    if (code.includes('#include') || code.includes('int main()')) return 'cpp';
+                                    if (code.includes('SELECT') || code.includes('FROM')) return 'sql';
+                                    return 'java';
+                                  };
+                                  const language = detectLanguage(codeContent);
+                                  return (
+                                    <div key={index} className="relative rounded-lg overflow-hidden">
+                                      <div className="absolute top-0 left-0 right-0 h-10 bg-gray-800/95 backdrop-blur-sm z-10 flex items-center justify-between px-3 rounded-t-lg">
+                                        <div className="flex items-center space-x-2">
+                                          <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                                          <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                                          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                                        </div>
+                                        <button onClick={() => copyToClipboard(codeContent, codeId)} className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-all" title="Copy">
+                                          {copiedCode === codeId ? <FontAwesomeIcon icon={faCheck} className="text-sm" /> : <FontAwesomeIcon icon={faCopy} className="text-sm" />}
+                                        </button>
+                                      </div>
+                                      <div className="pt-10">
+                                        <SyntaxHighlighter language={language} style={vscDarkPlus} customStyle={{ margin: 0, borderRadius: 0, borderBottomLeftRadius: '0.5rem', borderBottomRightRadius: '0.5rem', fontSize: '0.875rem', padding: '1rem', paddingTop: '0.5rem' }} showLineNumbers={false}>
+                                          {codeContent}
+                                        </SyntaxHighlighter>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <div key={index} className="prose prose-sm max-w-none [&>h1]:text-2xl [&>h1]:font-bold [&>h1]:text-gray-900 [&>h1]:mb-3 [&>h1]:mt-2 [&>h2]:text-xl [&>h2]:font-bold [&>h2]:text-gray-900 [&>h2]:mb-2 [&>h2]:mt-2 [&>h3]:text-lg [&>h3]:font-semibold [&>h3]:text-gray-800 [&>h3]:mb-2 [&>h3]:mt-2 [&>p]:text-base [&>p]:text-gray-800 [&>p]:mb-2 [&>p]:leading-relaxed [&_strong]:font-bold [&_strong]:text-gray-900 [&_br]:block [&_br]:mb-2 [&>ul]:list-disc [&>ul]:ml-6 [&>ul]:mb-2 [&>ol]:list-decimal [&>ol]:ml-6 [&>ol]:mb-2 [&_li]:mb-1" dangerouslySetInnerHTML={{ __html: part }} />
+                                );
+                              });
+                            };
+                            return processHTML(q.question_text);
+                          })()}
+                        </div>
+                      </div>
+
+                      {/* MCQ Options - collapsed view (no correct answer shown) */}
+                      {qType === QUESTION_TYPES.MCQ && q.options && !isExpanded && (
+                        <div className="mt-3">
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Options</h4>
+                          <div className="space-y-2">
+                            {q.options.split(DELIMITERS.PIPE).map((option: string, optIndex: number) => (
+                              <div key={optIndex} className="flex items-center space-x-2 p-2.5 rounded-lg border bg-gray-50 border-gray-200">
+                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold bg-gray-300 text-gray-700">
+                                  {String.fromCharCode(65 + optIndex)}
+                                </div>
+                                <span className="text-sm text-gray-700">{option.trim()}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Jumbled Items - collapsed view */}
+                      {qType === QUESTION_TYPES.JUMBLED && q.correct_answers && !isExpanded && (
+                        <div className="mt-3 space-y-2">
+                          {q.correct_answers.split(DELIMITERS.PIPE).sort(() => Math.random() - 0.5).map((item: string, itemIndex: number) => (
+                            <div key={itemIndex} className="flex items-center space-x-2 p-2.5 rounded-lg border bg-purple-50 border-purple-200">
+                              <div className="w-6 h-6 flex items-center justify-center text-purple-500">
+                                <FontAwesomeIcon icon={faGripVertical} className="text-sm" />
+                              </div>
+                              <span className="text-sm text-gray-700">{item.trim()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* ─── Expanded Details ─── */}
+                      {isExpanded && (
+                        <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-4">
+                          <h3 className="text-base font-bold text-gray-900">Question Details</h3>
+
+                          {/* MCQ Options with correct answers */}
+                          {qType === QUESTION_TYPES.MCQ && q.options && (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-700 mb-2">Options</h4>
+                              <div className="space-y-2">
+                                {q.options.split(DELIMITERS.PIPE).map((option: string, optIndex: number) => {
+                                  const isCorrect = q.correct_answers?.split(DELIMITERS.PIPE).map(a => a.trim()).includes(option.trim());
+                                  return (
+                                    <div key={optIndex} className={`flex items-center space-x-2 p-2.5 rounded-lg border ${isCorrect ? 'bg-green-50 border-green-300' : 'bg-white border-gray-200'}`}>
+                                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${isCorrect ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-700'}`}>
+                                        {isCorrect ? '✓' : String.fromCharCode(65 + optIndex)}
+                                      </div>
+                                      <span className={`text-sm ${isCorrect ? 'text-green-800 font-semibold' : 'text-gray-700'}`}>{option.trim()}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* FITB Answers */}
+                          {qType === QUESTION_TYPES.FITB && q.correct_answers && (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-700 mb-2">Correct Answers</h4>
+                              <div className="space-y-1">
+                                {q.correct_answers.split(DELIMITERS.PIPE).map((ans, ai) => (
+                                  <div key={ai} className="flex items-center space-x-2 p-2 rounded-lg bg-green-50 border border-green-200">
+                                    <span className="text-xs font-bold text-green-600">Blank {ai + 1}:</span>
+                                    <span className="text-sm text-green-800 font-semibold">{ans.trim()}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Jumbled Correct Sequence */}
+                          {qType === QUESTION_TYPES.JUMBLED && q.correct_answers && (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-700 mb-2">Correct Sequence</h4>
+                              <div className="space-y-1">
+                                {q.correct_answers.split(DELIMITERS.PIPE).map((item, ji) => (
+                                  <div key={ji} className="flex items-center space-x-2 p-2 rounded-lg bg-green-50 border border-green-200">
+                                    <div className="w-6 h-6 rounded-full bg-green-500 text-white flex items-center justify-center text-xs font-bold">{ji + 1}</div>
+                                    <span className="text-sm text-gray-700">{item.trim()}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Code: Test Cases */}
+                          {qType === QUESTION_TYPES.CODE && q.test_cases && (() => {
+                            try {
+                              const testCases = JSON.parse(q.test_cases.toString());
+                              return testCases.length > 0 ? (
+                                <div>
+                                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Test Cases ({testCases.length})</h4>
+                                  <div className="space-y-2">
+                                    {testCases.slice(0, 5).map((tc: any, tci: number) => (
+                                      <div key={tci} className="p-2.5 rounded-lg bg-white border border-gray-200 text-xs">
+                                        <div className="flex items-center justify-between mb-1">
+                                          <span className="font-semibold text-gray-600">Test {tci + 1}</span>
+                                          {tc.marks && <span className="text-gray-500">{tc.marks} marks</span>}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div><span className="font-semibold text-gray-500">Input:</span> <code className="text-xs bg-gray-100 px-1 rounded">{tc.input}</code></div>
+                                          <div><span className="font-semibold text-gray-500">Expected:</span> <code className="text-xs bg-green-100 px-1 rounded">{tc.expected_output}</code></div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {testCases.length > 5 && <p className="text-xs text-gray-500 italic">...and {testCases.length - 5} more test cases</p>}
+                                  </div>
+                                </div>
+                              ) : null;
+                            } catch { return null; }
+                          })()}
+
+                          {/* Code: Starter Codes */}
+                          {qType === QUESTION_TYPES.CODE && q.starter_codes && (() => {
+                            try {
+                              const starterCodes = JSON.parse(q.starter_codes.toString());
+                              return starterCodes.length > 0 ? (
+                                <div>
+                                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Starter Codes ({starterCodes.length} languages)</h4>
+                                  <div className="space-y-2">
+                                    {starterCodes.map((sc: any, sci: number) => (
+                                      <div key={sci}>
+                                        <span className="text-xs font-semibold text-violet-700 uppercase mb-1 block">{sc.language}</span>
+                                        <SyntaxHighlighter language={sc.language === 'cpp' ? 'cpp' : sc.language} style={vscDarkPlus} customStyle={{ fontSize: '0.75rem', padding: '0.75rem', borderRadius: '0.5rem', maxHeight: '200px' }} showLineNumbers={false}>
+                                          {sc.code}
+                                        </SyntaxHighlighter>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null;
+                            } catch { return null; }
+                          })()}
+
+                          {/* Code: test_stub fallback */}
+                          {qType === QUESTION_TYPES.CODE && !q.starter_codes && q.test_stub && (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-700 mb-2">Starter Code</h4>
+                              <SyntaxHighlighter language={q.programming_language || 'java'} style={vscDarkPlus} customStyle={{ fontSize: '0.75rem', padding: '0.75rem', borderRadius: '0.5rem', maxHeight: '200px' }} showLineNumbers={false}>
+                                {q.test_stub}
+                              </SyntaxHighlighter>
+                            </div>
+                          )}
+
+                          {/* SQL Schema */}
+                          {qType === QUESTION_TYPES.SQL && q.sql_schema && (() => {
+                            try {
+                              const schema = JSON.parse(q.sql_schema.toString());
+                              return schema.length > 0 ? (
+                                <div>
+                                  <h4 className="text-sm font-semibold text-gray-700 mb-2">Table Schema</h4>
+                                  {schema.map((table: any, ti: number) => (
+                                    <div key={ti} className="mb-3 rounded-lg border border-green-200 overflow-hidden">
+                                      <div className="bg-green-50 px-3 py-1.5 text-sm font-bold text-green-700">{table.table_name}</div>
+                                      <table className="w-full text-xs">
+                                        <thead><tr className="bg-gray-50"><th className="px-3 py-1.5 text-left font-semibold">Column</th><th className="px-3 py-1.5 text-left font-semibold">Type</th><th className="px-3 py-1.5 text-left font-semibold">Constraints</th></tr></thead>
+                                        <tbody>
+                                          {(table.columns || []).map((col: any, ci: number) => (
+                                            <tr key={ci} className={ci % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                              <td className="px-3 py-1.5 font-medium">{col.name}</td>
+                                              <td className="px-3 py-1.5 text-gray-600">{col.type}</td>
+                                              <td className="px-3 py-1.5 text-gray-500">{col.constraints}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null;
+                            } catch { return null; }
+                          })()}
+
+                          {/* SQL Test Cases */}
+                          {qType === QUESTION_TYPES.SQL && q.sql_test_cases && (() => {
+                            try {
+                              const testCases = JSON.parse(q.sql_test_cases.toString());
+                              const schema = q.sql_schema ? JSON.parse(q.sql_schema.toString()) : [];
+                              return testCases.length > 0 ? (
+                                <div>
+                                  <h4 className="text-sm font-semibold text-gray-700 mb-2">SQL Test Cases ({testCases.length})</h4>
+                                  {testCases.map((tc: any, tci: number) => (
+                                    <div key={tci} className="mb-3 p-3 bg-white rounded-lg border border-gray-200">
+                                      <p className="text-xs font-semibold text-gray-600 mb-2">{tc.title || `Test ${tci + 1}`} {tc.marks ? `(${tc.marks} marks)` : ''}</p>
+                                      {/* Input Tables */}
+                                      {tc.table_data && Object.keys(tc.table_data).length > 0 && (
+                                        <div className="mb-2">
+                                          <p className="text-xs font-semibold text-blue-600 mb-1">→ Input Tables</p>
+                                          {Object.entries(tc.table_data).map(([tableName, rows]: [string, any]) => {
+                                            const schemaTable = schema.find((t: any) => t.table_name === tableName);
+                                            const allRows = rows || [];
+                                            let colNames: string[];
+                                            let dataRows: any[][];
+                                            if (schemaTable && schemaTable.columns.length > 0) {
+                                              colNames = schemaTable.columns.map((c: any) => c.name);
+                                              if (allRows.length > 0 && Array.isArray(allRows[0]) && allRows[0].length === colNames.length && allRows[0].every((cell: string, i: number) => cell === colNames[i])) {
+                                                dataRows = allRows.slice(1);
+                                              } else {
+                                                dataRows = allRows;
+                                              }
+                                            } else if (allRows.length > 0 && Array.isArray(allRows[0])) {
+                                              colNames = allRows[0];
+                                              dataRows = allRows.slice(1);
+                                            } else {
+                                              colNames = [];
+                                              dataRows = allRows;
+                                            }
+                                            return (
+                                              <div key={tableName} className="mb-1.5">
+                                                <p className="text-xs font-semibold text-gray-700 mb-0.5">{tableName}</p>
+                                                <div className="overflow-x-auto border border-gray-200 rounded">
+                                                  <table className="w-full text-xs">
+                                                    <thead><tr className="bg-gray-100">{colNames.map((cn: string, ci: number) => (<th key={ci} className="px-2 py-1 text-left font-semibold text-gray-600 border-b">{cn}</th>))}</tr></thead>
+                                                    <tbody>{dataRows.map((row: any[], rIdx: number) => (<tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>{row.map((cell: string, ci: number) => (<td key={ci} className="px-2 py-1 font-mono border-b border-gray-100">{cell || '—'}</td>))}</tr>))}</tbody>
+                                                  </table>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                      {/* Expected Output */}
+                                      {tc.expected_output && (
+                                        <div>
+                                          <p className="text-xs font-semibold text-green-600 mb-1">◎ Expected Output</p>
+                                          <div className="overflow-x-auto border border-green-200 rounded bg-green-50/30">
+                                            <table className="w-full text-xs">
+                                              <thead><tr className="bg-green-50">{(tc.expected_output.columns || []).map((cn: string, ci: number) => (<th key={ci} className="px-2 py-1.5 text-left font-semibold text-green-700 border-b border-green-200">{cn}</th>))}</tr></thead>
+                                              <tbody>{(tc.expected_output.rows || []).map((row: string[], rIdx: number) => (<tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-green-50/30'}>{row.map((cell: string, ci: number) => (<td key={ci} className="px-2 py-1 font-mono border-b border-green-100">{cell}</td>))}</tr>))}</tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : null;
+                            } catch { return null; }
+                          })()}
+
+                          {/* Hint */}
+                          {q.hint && (
+                            <div>
+                              <h4 className="text-sm font-semibold text-gray-700 mb-1">Hint</h4>
+                              <p className="text-sm text-gray-700 italic">{q.hint}</p>
                             </div>
                           )}
                         </div>
-                        <span className="text-xs text-gray-500">{q.maximum_marks} marks</span>
-                      </div>
-                      <div className="space-y-3">
-                        {(() => {
-                          // Process the HTML to wrap code blocks with copy buttons and syntax highlighting
-                          const processHTML = (html: string) => {
-                            // Split by code tags
-                            const parts = html.split(/(<code>.*?<\/code>)/gs);
-                            
-                            return parts.map((part, index) => {
-                              // Check if this is a code block
-                              const codeMatch = part.match(/<code>(.*?)<\/code>/s);
-                              
-                              if (codeMatch) {
-                                const codeContent = codeMatch[1];
-                                const codeId = `preview-code-${idx}-${index}`;
-                                
-                                // Determine programming language
-                                const detectLanguage = (code: string): string => {
-                                  // If it's a code question, use its language
-                                  if (q.programming_language) {
-                                    return q.programming_language.toLowerCase();
-                                  }
-                                  
-                                  // Simple auto-detection based on code patterns
-                                  if (code.includes('def ') || code.includes('import numpy') || code.includes('print(')) {
-                                    return 'python';
-                                  }
-                                  if (code.includes('function ') || code.includes('const ') || code.includes('let ') || code.includes('=>')) {
-                                    return 'javascript';
-                                  }
-                                  if (code.includes('public class') || code.includes('public static void') || code.includes('System.out')) {
-                                    return 'java';
-                                  }
-                                  if (code.includes('#include') || code.includes('int main()')) {
-                                    return 'cpp';
-                                  }
-                                  if (code.includes('SELECT') || code.includes('FROM') || code.includes('WHERE')) {
-                                    return 'sql';
-                                  }
-                                  
-                                  // Default to java for educational content
-                                  return 'java';
-                                };
-                                
-                                const language = detectLanguage(codeContent);
-                                
-                                return (
-                                  <div key={index} className="relative rounded-lg overflow-hidden">
-                                    {/* Terminal-style header with dots and copy button */}
-                                    <div className="absolute top-0 left-0 right-0 h-10 bg-gray-800/95 backdrop-blur-sm z-10 flex items-center justify-between px-3 rounded-t-lg">
-                                      {/* macOS-style dots */}
-                                      <div className="flex items-center space-x-2">
-                                        <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                                        <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                                        <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                                      </div>
-                                      
-                                      {/* Copy button */}
-                                      <button
-                                        onClick={() => copyToClipboard(codeContent, codeId)}
-                                        className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-all"
-                                        title="Copy to clipboard"
-                                      >
-                                        {copiedCode === codeId ? (
-                                          <FontAwesomeIcon icon={faCheck} className="text-sm" />
-                                        ) : (
-                                          <FontAwesomeIcon icon={faCopy} className="text-sm" />
-                                        )}
-                                      </button>
-                                    </div>
-                                    
-                                    {/* Code content with top padding for header */}
-                                    <div className="pt-10">
-                                      <SyntaxHighlighter
-                                        language={language}
-                                        style={vscDarkPlus}
-                                        customStyle={{
-                                          margin: 0,
-                                          borderRadius: 0,
-                                          borderBottomLeftRadius: '0.5rem',
-                                          borderBottomRightRadius: '0.5rem',
-                                          fontSize: '0.875rem',
-                                          padding: '1rem',
-                                          paddingTop: '0.5rem'
-                                        }}
-                                        showLineNumbers={false}
-                                      >
-                                        {codeContent}
-                                      </SyntaxHighlighter>
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              
-                              // Regular HTML content
-                              return (
-                                <div
-                                  key={index}
-                                  className="prose prose-sm max-w-none
-                                    [&>h1]:text-2xl [&>h1]:font-bold [&>h1]:text-gray-900 [&>h1]:mb-3 [&>h1]:mt-2
-                                    [&>h2]:text-xl [&>h2]:font-bold [&>h2]:text-gray-900 [&>h2]:mb-2 [&>h2]:mt-2
-                                    [&>h3]:text-lg [&>h3]:font-semibold [&>h3]:text-gray-800 [&>h3]:mb-2 [&>h3]:mt-2
-                                    [&>p]:text-base [&>p]:text-gray-800 [&>p]:mb-2 [&>p]:leading-relaxed
-                                    [&_strong]:font-bold [&_strong]:text-gray-900
-                                    [&_br]:block [&_br]:mb-2
-                                    [&>ul]:list-disc [&>ul]:ml-6 [&>ul]:mb-2
-                                    [&>ol]:list-decimal [&>ol]:ml-6 [&>ol]:mb-2
-                                    [&_li]:mb-1"
-                                  dangerouslySetInnerHTML={{ __html: part }}
-                                />
-                              );
-                            });
-                          };
-                          
-                          return processHTML(q.question_text);
-                        })()}
+                      )}
+
+                      {/* Footer */}
+                      <div className="flex items-center justify-between pt-3 border-t border-gray-100 mt-3">
+                        <div className="flex items-center space-x-4 text-xs text-gray-500">
+                          <span>{q.subject}</span>
+                          <span>Class {q.class}</span>
+                        </div>
+                        <div className="flex items-center space-x-3">
+                          {q.is_public === true || q.is_public === 'true' || q.is_public === undefined ? (
+                            <div className="flex items-center space-x-1 px-2 py-1 rounded-md bg-green-100 text-green-700">
+                              <span className="text-xs font-semibold">Public</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center space-x-1 px-2 py-1 rounded-md bg-amber-100 text-amber-700">
+                              <span className="text-xs font-semibold">Private</span>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => setExpandedPreviewId(isExpanded ? null : actualIndex)}
+                            className="text-xs font-medium px-3 py-1.5 rounded-md transition-colors"
+                            style={{ color: brandTheme.colors.primary }}
+                            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${brandTheme.colors.primary}10`; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                          >
+                            {isExpanded ? 'Hide Details' : 'View Details'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                       );

@@ -34,7 +34,9 @@ import {
   faMemory,
   faHourglass,
   faXmark,
-  faImage
+  faImage,
+  faKeyboard,
+  faTerminal
 } from '@fortawesome/sharp-light-svg-icons';
 import { firebaseService } from './services/firebase_service'; // Added Firebase import
 import { useExamAttempt } from './useExamAttempt';
@@ -1840,7 +1842,18 @@ useEffect(() => {
   // Code execution states
   const [codeOutput, setCodeOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState('cpp'); // Default to C++
+  const [activeCodeTab, setActiveCodeTab] = useState<'output' | 'stdin'>('output'); // Tabbed panel
+  
+  // Resizer states
+  const [leftPanelWidth, setLeftPanelWidth] = useState(50); // percentage
+  const [editorHeight, setEditorHeight] = useState(65); // percentage
+  const isResizingHorizontal = useRef(false);
+  const isResizingVertical = useRef(false);
+  const resizeContainerRef = useRef<HTMLDivElement>(null);
   const [executionTime, setExecutionTime] = useState('0ms');
+  const [cursorLine, setCursorLine] = useState(1);
+  const [cursorColumn, setCursorColumn] = useState(1);
   const [executionMemory, setExecutionMemory] = useState('0KB');
 
   const currentQuestion = questions[currentQuestionIndex];
@@ -3534,6 +3547,29 @@ useEffect(() => {
         .animate-pulse-green {
           animation: pulse-green 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
+        /* Remove ALL Monaco editor shadows */
+        .monaco-editor .scroll-decoration,
+        .monaco-editor .minimap-shadow-visible,
+        .monaco-editor .shadow,
+        .monaco-editor .decorationsOverviewRuler,
+        .monaco-scrollable-element > .shadow,
+        .monaco-scrollable-element > .shadow.top-left-corner,
+        .monaco-scrollable-element > .shadow.left,
+        .monaco-scrollable-element > .shadow.right,
+        .monaco-scrollable-element > .shadow.top,
+        .monaco-editor .visible.scrollbar,
+        .monaco-editor .scrollbar.vertical,
+        .monaco-editor .minimap-shadow-hidden {
+          display: none !important;
+          box-shadow: none !important;
+          width: 0 !important;
+          opacity: 0 !important;
+        }
+        .monaco-editor,
+        .monaco-editor .overflow-guard,
+        .monaco-editor .monaco-scrollable-element {
+          box-shadow: none !important;
+        }
       `;
       document.head.appendChild(style);
     }
@@ -4563,6 +4599,7 @@ const calculateStudentEndTime = (
 
     setIsRunning(true);
     setCodeOutput('⏳ Compiling and running code...\n⏳ Please wait...');
+    setActiveCodeTab('output'); // Auto-switch to output tab
 
     try {
       // ✅ Get fresh code from editor
@@ -4572,7 +4609,7 @@ const calculateStudentEndTime = (
       
       const result = await judge0Service.executeCode(
         freshCode,  // ✅ FRESH FROM EDITOR
-        currentQuestion.language || 'javascript',
+        selectedLanguage,
         customInput
       );
 
@@ -4627,6 +4664,34 @@ const calculateStudentEndTime = (
   const handleEditorMount = useCallback((editor: any, monaco: any) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    
+    // Customize line highlight to use subtle grey background instead of border
+    monaco.editor.defineTheme('custom-light', {
+      base: 'vs',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.lineHighlightBackground': '#f0f0f0',
+        'editor.lineHighlightBorder': '#00000000',
+      }
+    });
+    monaco.editor.defineTheme('custom-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [],
+      guides: { indentation: false, bracketPairs: false, highlightActiveIndentation: false },
+      colors: {
+        'editor.lineHighlightBackground': '#2a2d35',
+        'editor.lineHighlightBorder': '#00000000',
+      }
+    });
+    monaco.editor.setTheme(darkMode ? 'custom-dark' : 'custom-light');
+    
+    // Track cursor position for Ln/Col display
+    editor.onDidChangeCursorPosition((e: any) => {
+      setCursorLine(e.position.lineNumber);
+      setCursorColumn(e.position.column);
+    });
     
     const code = editor.getValue();
     const lines = code.split('\n');
@@ -4691,6 +4756,65 @@ const calculateStudentEndTime = (
   }, [darkMode]); // Only recreate if darkMode changes
 
 
+  // ========== Resizer Handlers ==========
+  const handleHorizontalResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingHorizontal.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingHorizontal.current || !resizeContainerRef.current) return;
+      const rect = resizeContainerRef.current.getBoundingClientRect();
+      const percentage = ((e.clientX - rect.left) / rect.width) * 100;
+      // Ensure left panel min 300px and right panel min 400px
+      const minLeftPercent = (400 / rect.width) * 100;
+      const maxLeftPercent = 100 - (400 / rect.width) * 100;
+      setLeftPanelWidth(Math.min(Math.max(percentage, minLeftPercent), maxLeftPercent));
+    };
+
+    const handleMouseUp = () => {
+      isResizingHorizontal.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, []);
+
+  const handleVerticalResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingVertical.current = true;
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    const startY = e.clientY;
+    const startHeight = editorHeight;
+    const parentEl = (e.target as HTMLElement).parentElement;
+    const parentHeight = parentEl?.clientHeight || 600;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingVertical.current) return;
+      const deltaY = e.clientY - startY;
+      const deltaPercent = (deltaY / parentHeight) * 100;
+      setEditorHeight(Math.min(Math.max(startHeight + deltaPercent, 20), 85));
+    };
+
+    const handleMouseUp = () => {
+      isResizingVertical.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [editorHeight]);
+
   // Render answer input based on question type
   const renderAnswerSection = () => {
     const normalizedType = normalizeQuestionType(currentQuestion.type);
@@ -4699,48 +4823,40 @@ const calculateStudentEndTime = (
         return (
           <div className="flex flex-col h-full">
             {/* Header with Buttons in Same Row */}
-            <div className={`px-6 py-3 border-b ${darkMode ? 'border-gray-700 bg-gray-750' : 'border-gray-200 bg-gray-50'} flex items-center justify-between`}>
-              <h4 className={`text-sm font-bold flex items-center space-x-2 ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>
+            <div className={`px-4 py-1.5 border-b ${darkMode ? 'border-gray-700 bg-gray-750' : 'border-gray-200 bg-gray-50'} flex items-center justify-between gap-2 overflow-hidden`}>
+              <h4 className={`text-xs font-bold flex items-center space-x-2 flex-shrink-0 ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>
                 <FontAwesomeIcon icon={faCode} />
                 <span>Code Editor</span>
               </h4>
-              <div className="flex items-center space-x-2">
-                <button 
-                  onClick={() => {
-                    console.log('🔍 Test Cases button clicked!');
-                    
-                    // ✅ Get latest code from Monaco editor
-                    if (editorRef.current) {
-                      const latestCode = editorRef.current.getValue();
-                      setCodeInput(latestCode);
-                      console.log('📝 Updated code before running tests');
-                    }
-                    
-                    // Small delay to ensure state updates
-                    setTimeout(() => {
-                      setShowTestCasesPanel(true);
-                    }, 100);
-                  }}
-                  disabled={!currentQuestion.testCases || currentQuestion.testCases.length === 0}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center space-x-2 ${
-                    !currentQuestion.testCases || currentQuestion.testCases.length === 0
-                      ? 'bg-gray-400 cursor-not-allowed'
-                      : 'bg-purple-600 hover:bg-purple-700'
-                  } text-white`}
-                  title={currentQuestion.testCases ? `${visibleTestCasesCount}/${totalTestCases} test cases shown` : 'No test cases'}
+              <div className="flex items-center space-x-2 overflow-x-auto flex-shrink-0">
+                {/* Language Selector Dropdown */}
+                <select
+                  value={selectedLanguage}
+                  onChange={(e) => setSelectedLanguage(e.target.value)}
+                  className={`px-2 py-1 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
+                    darkMode 
+                      ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' 
+                      : 'bg-white border-gray-300 text-gray-800 hover:bg-gray-50'
+                  }`}
+                  title="Select programming language"
                 >
-                  <FontAwesomeIcon icon={faListCheck} />
-                  <span>
-                    Test Cases
-                    {currentQuestion.testCases && currentQuestion.testCases.length > 0 && 
-                      ` (${visibleTestCasesCount})`
-                    }
-                  </span>
-                </button>
+                  <option value="cpp">C++</option>
+                  <option value="c">C</option>
+                  <option value="java">Java</option>
+                  <option value="python">Python</option>
+                  <option value="javascript">JavaScript</option>
+                  <option value="typescript">TypeScript</option>
+                  <option value="csharp">C#</option>
+                  <option value="go">Go</option>
+                  <option value="rust">Rust</option>
+                  <option value="ruby">Ruby</option>
+                  <option value="kotlin">Kotlin</option>
+                  <option value="swift">Swift</option>
+                </select>
                 <button 
                   onClick={() => saveCurrentAnswer(true)}
                   disabled={isSavingAnswer}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center space-x-2 ${
+                  className={`px-2 py-1 rounded-lg text-xs font-medium transition-all flex items-center space-x-1 ${
                     isSavingAnswer 
                       ? 'bg-gray-400 cursor-not-allowed' 
                       : lastSavedQuestion === currentQuestion.id
@@ -4761,14 +4877,14 @@ const calculateStudentEndTime = (
                   ) : (
                     <>
                       <FontAwesomeIcon icon={faPaperPlane} />
-                      <span>Submit Answer</span>
+                      <span>Submit</span>
                     </>
                   )}
                 </button>
                 <button 
                   onClick={handleRunCode}
                   disabled={isRunning}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50 flex items-center space-x-2"
+                  className="px-2 py-1 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex items-center space-x-1"
                 >
                   <FontAwesomeIcon icon={faPlay} />
                   <span>Run</span>
@@ -4778,7 +4894,8 @@ const calculateStudentEndTime = (
 
             {/* Monaco Editor */}
             <div 
-              className="flex-1 border border-gray-300 mx-6 mt-4 rounded-lg overflow-hidden"
+              className="border border-gray-300 mx-1.5 mt-1.5 rounded-lg overflow-hidden relative"
+              style={{ height: `${editorHeight}%`, flexShrink: 0 }}
               onClick={() => {
                 if (editorRef.current) {
                   editorRef.current.focus();
@@ -4789,17 +4906,17 @@ const calculateStudentEndTime = (
                 const initialLength = initialCodeLengthRef.current[currentQuestion.id] || 0;
                 const editorKey = `${currentQuestion.id}-${initialLength}`;
                 if (!window.__lastMonacoKey || window.__lastMonacoKey !== editorKey) {
-                  console.log(`🎨 Monaco Editor mounted with stable key: ${editorKey}, language: ${currentQuestion.language || 'javascript'}`);
+                  console.log(`🎨 Monaco Editor mounted with stable key: ${editorKey}, language: ${selectedLanguage}`);
                   window.__lastMonacoKey = editorKey;
                 }
                 return (
                   <Editor
                     key={editorKey}
                     height="100%"
-                    language={currentQuestion.language || 'javascript'}
+                    language={selectedLanguage}
                     defaultValue={codeInput}
                     onMount={handleEditorMount}
-                    theme={darkMode ? 'vs-dark' : 'light'}
+                    theme={darkMode ? 'custom-dark' : 'custom-light'}
                     options={{
                       minimap: { enabled: false },
                       fontSize: 14,
@@ -4813,6 +4930,8 @@ const calculateStudentEndTime = (
                       cursorStyle: 'line',
                       wordWrap: 'on',
                       glyphMargin: false,
+                      renderLineHighlight: 'all',
+                      renderLineHighlightOnlyWhenFocus: false,
                       scrollbar: {
                         vertical: 'hidden',
                         horizontal: 'hidden',
@@ -4823,63 +4942,127 @@ const calculateStudentEndTime = (
                   />
                 );
               })()}
-            </div>
-
-            {/* Custom Input Section */}
-            <div className="px-6 py-4">
-              <label className={`block text-sm font-semibold mb-2 flex items-center space-x-2 ${
-                darkMode ? 'text-gray-300' : 'text-gray-700'
+              {/* Ln/Col Indicator */}
+              <div className={`absolute bottom-1 right-3 text-xs px-2 py-0.5 rounded ${
+                darkMode ? 'text-gray-400 bg-gray-800/80' : 'text-gray-500 bg-white/80'
               }`}>
-                <span>📥</span>
-                <span>Custom Input (optional):</span>
-              </label>
-              <textarea
-                value={customInput}
-                onChange={(e) => setCustomInput(e.target.value)}
-                className={`w-full h-20 p-3 rounded-lg border resize-none font-mono text-sm transition-colors ${
-                  darkMode
-                    ? 'bg-gray-900 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-blue-500'
-                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
-                } focus:outline-none focus:ring-2 focus:ring-blue-500/20`}
-                placeholder="Enter input for your program (e.g., test data, numbers)..."
-              />
-            </div>
-
-            {/* Terminal/Output Section - Shows at bottom of right panel when there's output */}
-            {codeOutput && (
-              <div className={`mx-6 mb-4 border rounded-lg overflow-hidden ${
-                darkMode ? 'border-gray-700' : 'border-gray-300'
-              }`}>
-                <div className={`px-4 py-2 flex items-center justify-between ${
-                  darkMode ? 'bg-gray-750 border-b border-gray-700' : 'bg-gray-100 border-b border-gray-200'
-                }`}>
-                  <h5 className={`text-xs font-semibold flex items-center space-x-2 ${
-                    darkMode ? 'text-gray-300' : 'text-gray-700'
-                  }`}>
-                    <span>📟</span>
-                    <span>Output</span>
-                  </h5>
-                  <button
-                    onClick={() => setCodeOutput('')}
-                    className={`text-xs px-2 py-1 rounded transition-colors ${
-                      darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-200 text-gray-600'
-                    }`}
-                  >
-                    <FontAwesomeIcon icon={faXmark} />
-                  </button>
-                </div>
-                <div className={`px-4 py-3 max-h-40 overflow-y-auto font-mono text-xs ${
-                  darkMode ? 'bg-gray-900 text-gray-300' : 'bg-gray-50 text-gray-800'
-                }`}>
-                  <pre className="whitespace-pre-wrap">{codeOutput}</pre>
-                </div>
+                Ln {cursorLine}, Col {cursorColumn}
               </div>
-            )}
+            </div>
+
+            {/* Tabbed Panel: Output | Stdin | Test Cases */}
+            {/* Vertical Resizer */}
+            <div
+              onMouseDown={handleVerticalResizeStart}
+              className="h-1 mx-1.5 cursor-row-resize flex-shrink-0"
+              title="Drag to resize editor and output"
+            />
+
+            <div className={`mx-1.5 mb-1.5 border rounded-lg overflow-hidden flex flex-col flex-1 ${
+              darkMode ? 'border-gray-700' : 'border-gray-300'
+            }`}>
+              {/* Tab Headers */}
+              <div className={`flex items-center border-b ${
+                darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50'
+              }`}>
+                <button
+                  onClick={() => setActiveCodeTab('output')}
+                  className={`px-4 py-2 text-sm font-medium flex items-center space-x-2 border-b-2 transition-colors ${
+                    activeCodeTab === 'output'
+                      ? darkMode 
+                        ? 'border-blue-400 text-blue-400 bg-gray-750' 
+                        : 'border-blue-600 text-blue-600 bg-white'
+                      : darkMode
+                        ? 'border-transparent text-gray-400 hover:text-gray-200'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <FontAwesomeIcon icon={faTerminal} className="text-sm" />
+                  <span>Output</span>
+                </button>
+                <button
+                  onClick={() => setActiveCodeTab('stdin')}
+                  className={`px-4 py-2 text-sm font-medium flex items-center space-x-2 border-b-2 transition-colors ${
+                    activeCodeTab === 'stdin'
+                      ? darkMode 
+                        ? 'border-blue-400 text-blue-400 bg-gray-750' 
+                        : 'border-blue-600 text-blue-600 bg-white'
+                      : darkMode
+                        ? 'border-transparent text-gray-400 hover:text-gray-200'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <FontAwesomeIcon icon={faKeyboard} className="text-sm" />
+                  <span>Stdin</span>
+                </button>
+                <button
+                  onClick={() => {
+                    // Get latest code from Monaco editor
+                    if (editorRef.current) {
+                      const latestCode = editorRef.current.getValue();
+                      setCodeInput(latestCode);
+                    }
+                    // Open the TestCasesPanel overlay
+                    setTimeout(() => {
+                      setShowTestCasesPanel(true);
+                    }, 100);
+                  }}
+                  disabled={!currentQuestion.testCases || currentQuestion.testCases.length === 0}
+                  className={`px-4 py-2 text-sm font-medium flex items-center space-x-2 transition-colors ${
+                    !currentQuestion.testCases || currentQuestion.testCases.length === 0
+                      ? 'text-gray-400 opacity-50 cursor-not-allowed'
+                      : darkMode
+                        ? 'text-gray-400 hover:text-gray-200'
+                        : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <FontAwesomeIcon icon={faListCheck} className="text-sm" />
+                  <span>Test Cases{currentQuestion.testCases && currentQuestion.testCases.length > 0 ? ` (${visibleTestCasesCount})` : ''}</span>
+                </button>
+
+              </div>
+
+              {/* Tab Content */}
+              <div className="flex-1 overflow-y-auto">
+                {/* Output Tab */}
+                {activeCodeTab === 'output' && (
+                  <div className={`px-4 py-3 h-full font-mono text-xs ${
+                    darkMode ? 'bg-gray-900 text-gray-300' : 'bg-gray-50 text-gray-800'
+                  }`}>
+                    {codeOutput ? (
+                      <pre className="whitespace-pre-wrap">{codeOutput}</pre>
+                    ) : (
+                      <span className={`italic ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        // Output will appear here after running code
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Stdin Tab */}
+                {activeCodeTab === 'stdin' && (
+                  <div className="px-4 py-3 h-full">
+                    <textarea
+                      value={customInput}
+                      onChange={(e) => setCustomInput(e.target.value)}
+                      className={`w-full h-full p-2 rounded border resize-none font-mono text-sm transition-colors ${
+                        darkMode
+                          ? 'bg-gray-900 border-gray-600 text-gray-100 placeholder-gray-500 focus:border-blue-500'
+                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500'
+                      } focus:outline-none focus:ring-2 focus:ring-blue-500/20`}
+                      placeholder="Enter input for your program (e.g., test data, numbers)..."
+                      style={{ minHeight: '120px' }}
+                    />
+                  </div>
+                )}
+
+              </div>
+            </div>
 
             {/* Stats Footer Strip */}
-            <div className={`w-full flex items-center justify-between px-6 py-3 border-t text-xs ${
+            <div className={`w-full flex items-center justify-between px-6 py-2 border-t ${
               darkMode ? 'border-gray-700 bg-gray-800 text-gray-400' : 'border-gray-200 bg-gray-50 text-gray-600'
-            }`}>
+            }`} style={{ fontSize: '10px' }}>
               <div className="flex items-center space-x-4">
                 <span className="flex items-center space-x-1">
                   <FontAwesomeIcon icon={faClock} />
@@ -5485,15 +5668,15 @@ const calculateStudentEndTime = (
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col">
         {/* Content with Question and Answer panels */}
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex overflow-hidden" ref={resizeContainerRef}>
           {/* Question Panel */}
-          <div className={`w-1/2 flex flex-col relative ${darkMode ? 'bg-gray-900' : 'bg-white'}`}>
+          <div className={`flex flex-col relative ${darkMode ? 'bg-gray-900' : 'bg-white'}`} style={{ width: `${leftPanelWidth}%`, minWidth: '400px' }}>
             {/* Question Header */}
-            <div className={`px-6 py-3 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'} border-b`}>
+            <div className={`px-4 py-1.5 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-100 border-gray-200'} border-b`}>
               <div className="flex items-center justify-between gap-4">
                 {/* Question Info */}
                 <div className="flex-shrink-0">
-                  <h2 className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  <h2 className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     Question No {currentQuestion.questionNo}/{questions.length}
                   </h2>
                   <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
@@ -5527,7 +5710,7 @@ const calculateStudentEndTime = (
                         setSubmitStatus(SUBMIT_STATUS.IDLE);
                         setSubmitMessage('');
                       }}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center space-x-2"
+                      className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors flex items-center space-x-1.5"
                     >
                       <FontAwesomeIcon icon={faCircleCheck} />
                       <span>Submit Exam</span>
@@ -5536,7 +5719,7 @@ const calculateStudentEndTime = (
                     <button
                       onClick={handlePrevious}
                       disabled={currentQuestionIndex === 0}
-                      className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors flex items-center space-x-2 ${
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors flex items-center space-x-1.5 ${
                         currentQuestionIndex === 0
                           ? darkMode
                             ? 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed'
@@ -5553,7 +5736,7 @@ const calculateStudentEndTime = (
                     <button
                       onClick={handleNext}
                       disabled={currentQuestionIndex === questions.length - 1}
-                      className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors flex items-center space-x-2 ${
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors flex items-center space-x-1.5 ${
                         currentQuestionIndex === questions.length - 1
                           ? darkMode
                             ? 'bg-gray-800 text-gray-600 border-gray-700 cursor-not-allowed'
@@ -5604,8 +5787,8 @@ const calculateStudentEndTime = (
                         // Determine programming language
                         const detectLanguage = (code: string): string => {
                           // If it's a code question, use its language
-                          if (currentQuestion.language) {
-                            return currentQuestion.language.toLowerCase();
+                          if (selectedLanguage) {
+                            return selectedLanguage.toLowerCase();
                           }
                           
                           // Simple auto-detection based on code patterns
@@ -5745,7 +5928,20 @@ const calculateStudentEndTime = (
           </div>
 
           {/* Right Panel - Answer Section */}
-          <div className={`w-1/2 border-l ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} flex flex-col relative`}>
+          <div className={`border-l ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} flex flex-col relative overflow-hidden`} style={{ width: `${100 - leftPanelWidth}%`, minWidth: '400px' }}>
+            {/* Resize handle on the left border */}
+            <div
+              onMouseDown={handleHorizontalResizeStart}
+              className="absolute left-0 top-0 bottom-0 w-2 cursor-col-resize z-10 group flex items-center justify-center"
+              style={{ marginLeft: '-4px' }}
+              title="Drag to resize panels"
+            >
+              <div className="flex flex-col gap-[4px]">
+                <div className={`w-[4px] h-[4px] rounded-full transition-colors group-hover:bg-blue-500 ${darkMode ? 'bg-gray-500' : 'bg-gray-400'}`} />
+                <div className={`w-[4px] h-[4px] rounded-full transition-colors group-hover:bg-blue-500 ${darkMode ? 'bg-gray-500' : 'bg-gray-400'}`} />
+                <div className={`w-[4px] h-[4px] rounded-full transition-colors group-hover:bg-blue-500 ${darkMode ? 'bg-gray-500' : 'bg-gray-400'}`} />
+              </div>
+            </div>
             {renderAnswerSection()}
           </div>
         </div>
@@ -6780,7 +6976,7 @@ const calculateStudentEndTime = (
           onClose={() => setShowTestCasesPanel(false)}
           testCases={visibleTestCases}
           code={codeInput}
-          language={currentQuestion.language || 'javascript'}
+          language={selectedLanguage}
           darkMode={darkMode}
           editorRef={editorRef}  // ✅ Pass editor ref
         />

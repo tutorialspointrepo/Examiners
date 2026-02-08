@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useBrand } from './BrandContext';
-import { firebaseService, type UserModel, type ExamModel, type QuestionBankItem } from './services/firebase_service';
+import { firebaseService, type UserModel, type ExamModel, type ExamEnrollmentModel, type QuestionBankItem } from './services/firebase_service';
 import { 
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
@@ -115,7 +115,10 @@ interface Question {
     programming_language?: string;
     testCases?: Array<{ input: string; expected_output?: string; marks?: number }>;
     testStub?: string;
+    starter_codes?: Array<{ language: string; code: string }>;
     // Additional fields
+    subject?: string;
+    class?: string;
     createdByName?: string;
     createdAt?: string;
     isProprietaryQuestion?: boolean;
@@ -133,6 +136,7 @@ interface Exam {
   typeColor: string;
   year: string;
   class: string;
+  classes?: string[];
   subject?: string;
   title: string;
   board: string;
@@ -147,6 +151,7 @@ interface Exam {
   totalQuestions: number;
   maxMarks: string;
   totalStudents?: number;
+  enrolledClasses?: string[];
   questionPaperImages?: string[];
   questionsList?: Question[];
   createdAt: string;
@@ -335,6 +340,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [completionPolicy, setCompletionPolicy] = useState<'strict' | 'flexible'>('strict');
   const [academicYear, setAcademicYear] = useState('');
   const [examType, setExamType] = useState('');
+  const [examLabel, setExamLabel] = useState('');
   const [className, setClassName] = useState('');
   const [subject, setSubject] = useState('');
   const [board, setBoard] = useState('');
@@ -385,6 +391,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [totalQuestionBankItems, setTotalQuestionBankItems] = useState(0);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const questionsPerPage = 10;
+  const [qbPageDocs, setQbPageDocs] = useState<Map<number, any>>(new Map());
   
   // Pagination for Questions and Question Pool lists
   const [questionsListPage, setQuestionsListPage] = useState(1);
@@ -396,10 +403,13 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [complexityFilter, setComplexityFilter] = useState<string>(FILTER_VALUES.ALL);
   const [chapterFilter, setChapterFilter] = useState<string>(FILTER_VALUES.ALL);
   const [tagFilter, setTagFilter] = useState<string>(FILTER_VALUES.ALL);
+  const [proprietaryFilter, setProprietaryFilter] = useState<string>('all');
   const [showQuestionTypeDropdown, setShowQuestionTypeDropdown] = useState(false);
   const [showComplexityDropdown, setShowComplexityDropdown] = useState(false);
   const [showChapterDropdown, setShowChapterDropdown] = useState(false);
   const [showTagDropdown, setShowTagDropdown] = useState(false);
+  const [showQBClassDropdown, setShowQBClassDropdown] = useState(false);
+  const [showQBSubjectDropdown, setShowQBSubjectDropdown] = useState(false);
   const [availableChapters, setAvailableChapters] = useState<string[]>([]);
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   
@@ -421,6 +431,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [customQuestionMarks, setCustomQuestionMarks] = useState(1);
   const [customQuestionComplexity, setCustomQuestionComplexity] = useState<ComplexityLevel>(COMPLEXITY_LEVELS.MEDIUM);
   const [customQuestionChapter, setCustomQuestionChapter] = useState<string>('');
+  const [customQuestionSubject, setCustomQuestionSubject] = useState<string>('');
   const [customQuestionOptions, setCustomQuestionOptions] = useState<string[]>(['', '', '', '']);
   const [customQuestionCorrectAnswers, setCustomQuestionCorrectAnswers] = useState<string[]>([]);
   const [customQuestionBlanks, setCustomQuestionBlanks] = useState<string[]>(['']);
@@ -430,9 +441,24 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [customQuestionProgrammingLanguage, setCustomQuestionProgrammingLanguage] = useState('Python');
   const [customQuestionTestCases, setCustomQuestionTestCases] = useState<Array<{ input: string; expected_output?: string; marks?: number }>>([{ input: '', expected_output: '', marks: 0 }]);
  const [customQuestionTestStub, setCustomQuestionTestStub] = useState('');
+  const [customStarterCodes, setCustomStarterCodes] = useState<Array<{ language: string; code: string }>>([{ language: 'python', code: '' }]);
   const [customQuestionImageUrls, setCustomQuestionImageUrls] = useState<string[]>([]);
   const [isUploadingCustomQuestionImage, setIsUploadingCustomQuestionImage] = useState(false);
   const customQuestionImageInputRef = useRef<HTMLInputElement>(null);
+  
+  // SQL Question States
+  const [customSqlSchema, setCustomSqlSchema] = useState<Array<{
+    table_name: string;
+    columns: Array<{ name: string; type: string; description: string; constraints: string }>;
+    primary_key: string;
+    note: string;
+  }>>([{ table_name: '', columns: [{ name: '', type: 'int', description: '', constraints: '' }], primary_key: '', note: '' }]);
+  const [customSqlTestCases, setCustomSqlTestCases] = useState<Array<{
+    title: string;
+    table_data: Record<string, string[][]>;
+    expected_output: { columns: string[]; rows: string[][] };
+    marks: number;
+  }>>([{ title: 'Test Case 1', table_data: {}, expected_output: { columns: [''], rows: [['']] }, marks: 0 }]);
   const [showStarterCodeHelp, setShowStarterCodeHelp] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [codingLanguages, setCodingLanguages] = useState<string[]>(['Python', 'Java', 'C++', 'C', 'JavaScript', 'Go', 'Ruby']);
@@ -455,6 +481,19 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
   // Editing state - added at the end to preserve hooks order
   const [editingQuestionIndex, setEditingQuestionIndex] = useState<number | null>(null);
+
+  // Student Enrollment Modal States
+  const [showStudentModal, setShowStudentModal] = useState(false);
+  const [enrolledStudents, setEnrolledStudents] = useState<UserModel[]>([]);
+  const [availableStudents, setAvailableStudents] = useState<UserModel[]>([]);
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const [studentClassFilter, setStudentClassFilter] = useState<string>('all');
+  const [studentSearchQuery, setStudentSearchQuery] = useState('');
+  const [debouncedStudentSearch, setDebouncedStudentSearch] = useState('');
+  const [isLoadingStudents, setIsLoadingStudents] = useState(false);
+  const [studentModalPage, setStudentModalPage] = useState(1);
+  const studentsPerPage = 25;
+  const [showStudentClassDropdown, setShowStudentClassDropdown] = useState(false);
 
   const showAlert = (type: 'error' | 'success' | 'info', title: string, message: string, shouldCloseModal: boolean = false) => {
     setAlertConfig({
@@ -609,15 +648,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         hasChanges = true;
       }
 
-      // Clear error if class is filled
-      if (className && errors.className) {
-        delete newErrors.className;
-        hasChanges = true;
-      }
-
-      // Clear error if subject is filled
-      if (subject && errors.subject) {
-        delete newErrors.subject;
+      // Clear error if students are enrolled
+      if (enrolledStudents.length > 0 && errors.enrolledStudents) {
+        delete newErrors.enrolledStudents;
         hasChanges = true;
       }
 
@@ -649,7 +682,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         }
       }
     }
-  }, [examDate, examTime, maximumMarks, duration, academicYear, examType, className, subject, board, questionPaperImages, questions, examMode, showErrors, errors]);
+  }, [examDate, examTime, maximumMarks, duration, academicYear, examType, enrolledStudents, board, questionPaperImages, questions, examMode, showErrors, errors]);
 
   const fetchStudentCount = async (collegeId: string, selectedClass: string) => {
     if (!collegeId || !selectedClass) {
@@ -703,6 +736,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
             ? college.subjects
             : ['Mathematics', 'Science', 'English', 'Hindi', 'Social Science'];
           
+          // Ensure 'Database' is always available as a subject
+          if (!loadedSubjects.includes('Database')) {
+            loadedSubjects.push('Database');
+          }
+          
           const loadedBoards = college.supportedBoards && college.supportedBoards.length > 0
             ? college.supportedBoards
             : ['CBSE', 'ICSE', 'State Board'];
@@ -714,12 +752,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
           if (!examType && loadedExamTypes.length > 0) {
             setExamType(loadedExamTypes[0]);
-          }
-          if (!className && loadedClasses.length > 0) {
-            setClassName(loadedClasses[0]);
-          }
-          if (!subject && loadedSubjects.length > 0) {
-            setSubject(loadedSubjects[0]);
           }
           // Set board and academicYear from college data by default
           if (loadedBoards.length > 0) {
@@ -769,11 +801,25 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         setAcademicYear(existingExam.year);
         setExamType(existingExam.type);
         setClassName(existingExam.class);
-        setSubject(existingExam.subject || existingExam.title.split(' - ')[0]);
+        setSubject(existingExam.subject || '');
         setBoard(existingExam.board);
         setMaximumMarks(parseInt(existingExam.maxMarks));
         setExamDate(existingExam.examDate);
         setExamTime(existingExam.examTime || '');
+        setTotalStudents(existingExam.totalStudents || 0);
+        
+        // Load enrolled students for existing exam
+        if (existingExam.id && activeCollegeId) {
+          firebaseService.getExamEnrolledStudentIds(existingExam.id).then(async (enrolledIds) => {
+            if (enrolledIds.size > 0) {
+              // Fetch full student objects for enrolled IDs
+              const allStudents = await firebaseService.getUsersByType('student', activeCollegeId!);
+              const enrolled = allStudents.filter(s => enrolledIds.has(s.userId));
+              setEnrolledStudents(enrolled);
+              setTotalStudents(enrolled.length);
+            }
+          }).catch(err => console.error('Error loading enrolled students:', err));
+        }
         
         // ✅ FIXED: Proper duration handling with unit conversion
         const durationInMinutes = parseInt(existingExam.duration);
@@ -824,6 +870,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         setQuestionPool([]);
         setPickRandomCount(0);
         setPoolQuestionMarks(0);
+        setEnrolledStudents([]);
+        setSelectedStudentIds(new Set());
       }
     }
   }, [isOpen, existingExam]);
@@ -839,17 +887,19 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         setShowComplexityDropdown(false);
         setShowChapterDropdown(false);
         setShowTagDropdown(false);
+        setShowQBClassDropdown(false);
+        setShowQBSubjectDropdown(false);
       }
     };
 
-    if (openDropdown || showQuestionTypeDropdown || showComplexityDropdown || showChapterDropdown || showTagDropdown) {
+    if (openDropdown || showQuestionTypeDropdown || showComplexityDropdown || showChapterDropdown || showTagDropdown || showQBClassDropdown || showQBSubjectDropdown) {
       document.addEventListener('mousedown', handleClickOutside);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [openDropdown, showQuestionTypeDropdown, showComplexityDropdown, showChapterDropdown, showTagDropdown]);
+  }, [openDropdown, showQuestionTypeDropdown, showComplexityDropdown, showChapterDropdown, showTagDropdown, showQBClassDropdown, showQBSubjectDropdown]);
 
   // Fetch coding languages from Firebase
   useEffect(() => {
@@ -900,11 +950,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     if (!examType) {
       newErrors.examType = 'Exam type is required';
     }
-    if (!className) {
-      newErrors.className = 'Class is required';
-    }
-    if (!subject) {
-      newErrors.subject = 'Subject is required';
+    if (enrolledStudents.length === 0) {
+      newErrors.enrolledStudents = 'Please add at least one student to the exam';
     }
   
     if (examMode === EXAM_MODES.OFFLINE) {
@@ -1090,14 +1137,22 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     try {
       setIsSaving(true);
 
+      // Generate title: "Exam Type, Mon-YYYY (Label)" 
+      const monthYear = examDate 
+        ? new Date(examDate).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }).replace(' ', '-')
+        : '';
+      const labelPart = examLabel && examLabel.length >= 6 ? ` (${examLabel})` : '';
+      const generatedTitle = `${examType}${monthYear ? `, ${monthYear}` : ''}${labelPart}`;
+
+      console.log('📋 Exam save debug:', { board, activeCollegeId, examType, academicYear });
+
       const examData: Partial<ExamModel> = {
         type: examType,
         typeColor: getExamTypeColor(examType),
         year: academicYear,
-        class: className,
-        subject: subject,
-        title: `${subject} - ${examType}, ${className}`,
-        board: board,
+        subject: subject || '',  // Optional now
+        title: generatedTitle,
+        board: board || activeCollegeId || '',
         status: 'upcoming',
         mode: examMode,
         examDate: examDate,
@@ -1105,7 +1160,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         duration: duration.toString(),
         totalQuestions: examMode === EXAM_MODES.OFFLINE ? 0 : questions.length + pickRandomCount,
         maxMarks: maximumMarks.toString(),
-        totalStudents: totalStudents,
+        totalStudents: enrolledStudents.length,
+        enrolledClasses: enrolledClassesList,
         collegeId: activeCollegeId,
         collegeName: activeCollegeName
       };
@@ -1128,6 +1184,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
             complexity: q.complexity || COMPLEXITY_LEVELS.MEDIUM,
             board: q.board,
             chapter: q.chapter,
+            subject: q.subject,
+            class: q.class || 'Generic',
             source: q.source || 'custom',
             hint: cleanEmptyTags(q.hint),        // Clean empty tags before saving
             solution: cleanEmptyTags(q.solution)  // Clean empty tags before saving
@@ -1166,7 +1224,16 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           } else if (q.type === QUESTION_TYPES.CODE) {
             questionData.programmingLanguage = q.programmingLanguage || q.programming_language;
             questionData.testStub = q.testStub;
+            if ((q as any).starter_codes) questionData.starter_codes = (q as any).starter_codes;
             questionData.testCases = q.testCases;
+          } else if (q.type === QUESTION_TYPES.SQL) {
+            questionData.sqlSchema = (q as any).sqlSchema;
+            questionData.sqlTestCases = ((q as any).sqlTestCases || []).map((tc: any) => ({
+              title: tc.title || '',
+              marks: tc.marks || 0,
+              table_data: JSON.stringify(tc.table_data || {}),
+              expected_output: JSON.stringify(tc.expected_output || { columns: [], rows: [] })
+            }));
           }
 
           return questionData;
@@ -1185,6 +1252,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
               complexity: q.complexity || COMPLEXITY_LEVELS.MEDIUM,
               board: q.board,
               chapter: q.chapter,
+              subject: q.subject,
+              class: q.class || 'Generic',
               source: q.source || 'custom',
               hint: cleanEmptyTags(q.hint),
               solution: cleanEmptyTags(q.solution)
@@ -1221,6 +1290,15 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
               questionData.programmingLanguage = q.programmingLanguage || q.programming_language;
               questionData.testCases = q.testCases;
               questionData.testStub = q.testStub;
+              if ((q as any).starter_codes) questionData.starter_codes = (q as any).starter_codes;
+            } else if (q.type === QUESTION_TYPES.SQL) {
+              questionData.sqlSchema = (q as any).sqlSchema;
+              questionData.sqlTestCases = ((q as any).sqlTestCases || []).map((tc: any) => ({
+                title: tc.title || '',
+                marks: tc.marks || 0,
+                table_data: JSON.stringify(tc.table_data || {}),
+                expected_output: JSON.stringify(tc.expected_output || { columns: [], rows: [] })
+              }));
             }
 
             return questionData;
@@ -1248,6 +1326,25 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       }
 
       if (savedExamId) {
+        // Enroll students in exam_enrollments collection
+        if (enrolledStudents.length > 0) {
+          // For edit: remove all existing enrollments first, then re-enroll
+          if (existingExam?.id) {
+            const existingEnrolledIds = await firebaseService.getExamEnrolledStudentIds(existingExam.id);
+            if (existingEnrolledIds.size > 0) {
+              await firebaseService.removeStudentsFromExam(existingExam.id, Array.from(existingEnrolledIds));
+            }
+          }
+          
+          const enrollResult = await firebaseService.enrollStudentsInExam(
+            savedExamId,
+            enrolledStudents,
+            activeCollegeId!,
+            currentUser.userId
+          );
+          console.log(`✅ Enrolled ${enrollResult.enrolledCount} students`);
+        }
+        
         const savedExam = await firebaseService.getExamById(savedExamId);
         if (savedExam) {
           onSave(savedExam);
@@ -1292,6 +1389,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     setSearchQuery('');
     setDebouncedSearchQuery('');
     setCurrentPage(1);
+    setQbPageDocs(new Map());
     setSelectedQuestionIds(new Set());
     setSelectedQuestionsMap(new Map());
     setExpandedQuestionId(null);
@@ -1383,6 +1481,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     setCustomQuestionMarks(1);
     setCustomQuestionComplexity(COMPLEXITY_LEVELS.MEDIUM);
     setCustomQuestionChapter('');
+    setCustomQuestionSubject('');
     setCustomQuestionOptions(['', '', '', '']);
     setCustomQuestionCorrectAnswers([]);
     setCustomQuestionBlanks(['']);
@@ -1392,7 +1491,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     setCustomQuestionProgrammingLanguage('Python');
     setCustomQuestionTestCases([{ input: '', expected_output: '', marks: 0 }]);
     setCustomQuestionTestStub('');
+    setCustomStarterCodes([{ language: 'python', code: '' }]);
     setCustomQuestionImageUrls([]);
+    setCustomSqlSchema([{ table_name: '', columns: [{ name: '', type: 'int', description: '', constraints: '' }], primary_key: '', note: '' }]);
+    setCustomSqlTestCases([{ title: 'Test Case 1', table_data: {}, expected_output: { columns: [''], rows: [['']] }, marks: 0 }]);
     setEditingQuestionIndex(null);
   };
 
@@ -1498,7 +1600,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     setCustomQuestionText(convertedQuestionText);
     setCustomQuestionMarks(question.maximumMarks);
     setCustomQuestionComplexity((question.complexity || COMPLEXITY_LEVELS.MEDIUM) as ComplexityLevel);
-    setCustomQuestionChapter(question.chapter || '');
+    setCustomQuestionChapter(question.chapter || '')
+    setCustomQuestionSubject(question.subject || '');
     
     if (question.type === QUESTION_TYPES.MCQ) {
       setCustomQuestionOptions(question.options || ['', '', '', '']);
@@ -1511,6 +1614,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       setCustomQuestionProgrammingLanguage(question.programmingLanguage || question.programming_language || 'Python');
       setCustomQuestionTestCases(question.testCases || [{ input: '', expected_output: '', marks: 0 }]);
       setCustomQuestionTestStub(question.testStub || '');
+      setCustomStarterCodes((question as any).starter_codes || [{ language: question.programmingLanguage?.toLowerCase() || 'python', code: question.testStub || '' }]);
+      setCustomStarterCodes((question as any).starter_codes || [{ language: question.programmingLanguage?.toLowerCase() || 'python', code: question.testStub || '' }]);
+    } else if (question.type === QUESTION_TYPES.SQL) {
+      setCustomSqlSchema((question as any).sqlSchema || [{ table_name: '', columns: [{ name: '', type: 'int', description: '', constraints: '' }], primary_key: '', note: '' }]);
+      setCustomSqlTestCases((question as any).sqlTestCases || [{ title: 'Test Case 1', table_data: {}, expected_output: { columns: [''], rows: [['']] }, marks: 0 }]);
     }
     
     setCustomQuestionHint(convertToProperCodeFormat(question.hint));
@@ -1569,7 +1677,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     setCustomQuestionText(convertedQuestionText);
     setCustomQuestionMarks(question.maximumMarks);
     setCustomQuestionComplexity((question.complexity || COMPLEXITY_LEVELS.MEDIUM) as ComplexityLevel);
-    setCustomQuestionChapter(question.chapter || '');
+    setCustomQuestionChapter(question.chapter || '')
+    setCustomQuestionSubject(question.subject || '');
     
     if (question.type === QUESTION_TYPES.MCQ) {
       setCustomQuestionOptions(question.options || ['', '', '', '']);
@@ -1582,6 +1691,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       setCustomQuestionProgrammingLanguage(question.programmingLanguage || question.programming_language || '');
       setCustomQuestionTestCases(question.testCases || []);
       setCustomQuestionTestStub(question.testStub || '');
+    } else if (question.type === QUESTION_TYPES.SQL) {
+      setCustomSqlSchema((question as any).sqlSchema || [{ table_name: '', columns: [{ name: '', type: 'int', description: '', constraints: '' }], primary_key: '', note: '' }]);
+      setCustomSqlTestCases((question as any).sqlTestCases || [{ title: 'Test Case 1', table_data: {}, expected_output: { columns: [''], rows: [['']] }, marks: 0 }]);
     }
     
     const convertedHint = convertToProperCodeFormat(question.hint);
@@ -1600,6 +1712,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     const cleanedQuestionText = cleanEmptyTags(customQuestionText);
     if (!cleanedQuestionText.trim()) {
       showAlert('error', 'Validation Error', 'Please enter question text');
+      return;
+    }
+
+    if (!customQuestionSubject.trim()) {
+      showAlert('error', 'Validation Error', 'Please select a subject');
       return;
     }
 
@@ -1647,8 +1764,12 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         return;
       }
       if (!customQuestionTestStub || !customQuestionTestStub.trim()) {
-        showAlert('error', 'Validation Error', 'Please provide starter code');
-        return;
+        // Check if any starter code has content
+        const hasCode = customStarterCodes.some(sc => sc.code.trim());
+        if (!hasCode) {
+          showAlert('error', 'Validation Error', 'Please provide starter code');
+          return;
+        }
       }
       if (!customQuestionTestCases || customQuestionTestCases.length === 0) {
         showAlert('error', 'Validation Error', 'Please add at least one test case');
@@ -1656,6 +1777,25 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       }
       if (customQuestionTestCases.some(tc => !tc.input.trim() || !tc.expected_output?.trim())) {
         showAlert('error', 'Validation Error', 'All test cases must have both input and expected output');
+        return;
+      }
+    }
+
+    if (customQuestionType === QUESTION_TYPES.SQL) {
+      if (!customSqlSchema || customSqlSchema.length === 0 || !customSqlSchema.some(t => t.table_name.trim())) {
+        showAlert('error', 'Validation Error', 'Please define at least one table with a name in the schema');
+        return;
+      }
+      if (customSqlSchema.some(t => t.table_name.trim() && !t.columns.some(c => c.name.trim()))) {
+        showAlert('error', 'Validation Error', 'Each table must have at least one named column');
+        return;
+      }
+      if (!customSqlTestCases || customSqlTestCases.length === 0) {
+        showAlert('error', 'Validation Error', 'Please add at least one test case');
+        return;
+      }
+      if (customSqlTestCases.some(tc => tc.expected_output.columns.length === 0 || tc.expected_output.columns.some(c => !c.trim()))) {
+        showAlert('error', 'Validation Error', 'All test cases must have named expected output columns');
         return;
       }
     }
@@ -1677,6 +1817,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       marks: customQuestionMarks,
       complexity: customQuestionComplexity,
       chapter: customQuestionChapter || undefined,
+      subject: customQuestionSubject || undefined,
+      class: 'Generic',
       board: board,
       createdByName: currentUser.fullName,
       createdAt: new Date().toISOString(),
@@ -1693,9 +1835,13 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     } else if (customQuestionType === QUESTION_TYPES.JUMBLED) {
       newQuestion.correctAnswers = customQuestionSequence.filter(item => item.trim() !== '');
     } else if (customQuestionType === QUESTION_TYPES.CODE) {
-      newQuestion.programmingLanguage = customQuestionProgrammingLanguage;
+      newQuestion.programmingLanguage = customStarterCodes[0]?.language || 'python';
       newQuestion.testCases = customQuestionTestCases;
-      newQuestion.testStub = customQuestionTestStub;
+      newQuestion.testStub = customStarterCodes[0]?.code || customQuestionTestStub;
+      (newQuestion as any).starter_codes = customStarterCodes;
+    } else if (customQuestionType === QUESTION_TYPES.SQL) {
+      (newQuestion as any).sqlSchema = customSqlSchema;
+      (newQuestion as any).sqlTestCases = customSqlTestCases;
     }
 
     // Add hint and solution if provided (clean empty tags before saving)
@@ -1772,6 +1918,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   // Fetch available chapters for the selected class and subject
   const fetchAvailableChapters = async () => {
     if (!activeCollegeId || !className || !subject) {
+      setAvailableChapters([]);
       return;
     }
 
@@ -1790,17 +1937,18 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   };
 
   const fetchAvailableTags = async () => {
-    if (!activeCollegeId || !className || !subject) {
+    if (!activeCollegeId) {
+      setAvailableTags([]);
       return;
     }
 
     try {
-      // Fetch all questions for this subject to extract tags
+      // Fetch all questions to extract tags (pass className/subject if set, undefined if not)
       const result = await firebaseService.getQuestionsPaginated(
         activeCollegeId,
-        className,
+        className || undefined,
         undefined, // board
-        subject,
+        subject || undefined,
         undefined, // question type
         'all', // proprietary
         1000, // Get many questions to collect all tags
@@ -1832,11 +1980,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   };
 
   const fetchQuestionBankItems = async () => {
-    if (!activeCollegeId || !className || !subject) {
+    if (!activeCollegeId) {
       console.log('❌ Missing required data for question bank fetch:', {
-        collegeId: activeCollegeId,
-        class: className,
-        subject: subject
+        collegeId: activeCollegeId
       });
       return;
     }
@@ -1846,81 +1992,42 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       
       const trimmedSearch = debouncedSearchQuery?.trim() || '';
       const searchQueryToSend = trimmedSearch.length >= 2 ? trimmedSearch : undefined;
-      
-      // Get the actual question type for Firebase query
       const actualQuestionType = getActualQuestionType(questionTypeFilter);
       
-      // DON'T filter by board automatically - show ALL questions regardless of board
-      // Board filter will be added later as an optional filter dropdown
-      const boardFilter = undefined;
-      
-      console.log('🔍 Fetching question bank with filters:', { 
-        collegeId: activeCollegeId, 
-        class: className, 
-        subject: subject,
-        chapter: chapterFilter !== 'all' ? chapterFilter : 'All Chapters',
-        tag: tagFilter !== 'all' ? tagFilter : 'All Tags',
-        boardFilter: 'No filter (showing all boards)',
-        questionTypeFilter: questionTypeFilter,
-        actualQuestionType: actualQuestionType,
-        complexity: complexityFilter,
-        page: currentPage,
-        perPage: questionsPerPage,
-        searchQuery: searchQueryToSend || 'None',
-        searchLength: searchQueryToSend?.length || 0
-      });
+      // Get lastDoc for cursor-based pagination (page 1 = null)
+      const lastDocForPage = currentPage > 1 ? qbPageDocs.get(currentPage - 1) : null;
 
       const result = await firebaseService.getQuestionsPaginated(
         activeCollegeId,
-        className,
-        boardFilter, // undefined - show all boards
-        subject,
-        actualQuestionType, // Pass mapped question type filter to Firebase
-        'all', // proprietary filter - show both public and proprietary
+        className || undefined,
+        undefined, // board - show all
+        subject || undefined,
+        actualQuestionType,
+        proprietaryFilter, // Public/Private filter
         questionsPerPage,
         currentPage,
         searchQueryToSend,
         complexityFilter !== 'all' ? complexityFilter : undefined,
-        chapterFilter !== 'all' ? chapterFilter : undefined // Add chapter filter
+        chapterFilter !== 'all' ? chapterFilter : undefined,
+        tagFilter !== 'all' ? tagFilter : undefined,
+        lastDocForPage
       );
 
       console.log(`✅ Fetched ${result.questions.length} of ${result.total} questions from Question Bank`);
-      console.log(`🔎 Search term used: "${searchQueryToSend || 'NONE'}"`);
       
-      // Filter by tag if tag filter is active
-      let filteredQuestions = result.questions;
-      if (tagFilter && tagFilter !== FILTER_VALUES.ALL) {
-        filteredQuestions = result.questions.filter((q: any) => {
-          return q.tags && Array.isArray(q.tags) && q.tags.includes(tagFilter);
-        });
-        console.log(`🏷️ Filtered by tag "${tagFilter}": ${filteredQuestions.length} of ${result.questions.length} questions`);
-      }
-      
-      if (filteredQuestions.length > 0) {
-        console.log('📋 First 3 questions:');
-        filteredQuestions.slice(0, 3).forEach((q: any, idx: number) => {
-          console.log(`  ${idx + 1}. "${q.questionText?.substring(0, 50)}..." (Type: ${q.type})`);
+      // Store lastDoc for this page (for next page navigation)
+      if (result.lastDoc) {
+        setQbPageDocs(prev => {
+          const newMap = new Map(prev);
+          newMap.set(currentPage, result.lastDoc);
+          return newMap;
         });
       }
       
-      // Debug: Log code questions to check programming language field
-      filteredQuestions.forEach((q: any) => {
-        if (q.type === QUESTION_TYPES.CODE) {
-          console.log('🔍 Code Question:', {
-            id: q.id,
-            type: q.type,
-            programmingLanguage: q.programmingLanguage,
-            programming_language: q.programming_language,
-            allFields: Object.keys(q)
-          });
-        }
-      });
-      
-      setQuestionBankItems(filteredQuestions);
-      setTotalQuestionBankItems(tagFilter && tagFilter !== FILTER_VALUES.ALL ? filteredQuestions.length : result.total);
+      setQuestionBankItems(result.questions);
+      setTotalQuestionBankItems(result.total);
     } catch (error) {
       console.error('❌ Error fetching question bank:', error);
-      console.error('Error details:', error);
       setQuestionBankItems([]);
       setTotalQuestionBankItems(0);
     } finally {
@@ -1929,19 +2036,26 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   };
 
   useEffect(() => {
-    if (showQuestionBankModal && activeCollegeId && className && subject) {
+    if (showQuestionBankModal && activeCollegeId) {
       fetchQuestionBankItems();
     }
-  }, [showQuestionBankModal, currentPage, debouncedSearchQuery, className, subject, activeCollegeId, questionTypeFilter, complexityFilter, chapterFilter, tagFilter]);
+  }, [showQuestionBankModal, currentPage, debouncedSearchQuery, className, subject, activeCollegeId, questionTypeFilter, complexityFilter, chapterFilter, tagFilter, proprietaryFilter]);
 
   // Fetch available chapters when modal opens or class/subject changes
   useEffect(() => {
-    if (showQuestionBankModal && activeCollegeId && className && subject) {
-      fetchAvailableChapters();
+    if (showQuestionBankModal && activeCollegeId) {
       fetchAvailableTags();
-      // Reset chapter and tag filters when class or subject changes
-      setChapterFilter(FILTER_VALUES.ALL);
+      // Reset tag filter when class or subject changes
       setTagFilter(FILTER_VALUES.ALL);
+      
+      // Chapters need class + subject
+      if (className && subject) {
+        fetchAvailableChapters();
+        setChapterFilter(FILTER_VALUES.ALL);
+      } else {
+        setAvailableChapters([]);
+        setChapterFilter(FILTER_VALUES.ALL);
+      }
     }
   }, [showQuestionBankModal, activeCollegeId, className, subject]);
 
@@ -1955,8 +2069,123 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   useEffect(() => {
     if (showQuestionBankModal && currentPage !== 1) {
       setCurrentPage(1);
+      setQbPageDocs(new Map());
     }
   }, [className, subject, questionTypeFilter, complexityFilter, chapterFilter, tagFilter, debouncedSearchQuery]);
+
+  // Student search debounce
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedStudentSearch(studentSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [studentSearchQuery]);
+
+  // Fetch available students when student modal opens or filters change
+  useEffect(() => {
+    const fetchStudents = async () => {
+      if (!showStudentModal || !activeCollegeId) return;
+      
+      setIsLoadingStudents(true);
+      try {
+        let students: UserModel[];
+        if (studentClassFilter && studentClassFilter !== 'all') {
+          students = await firebaseService.getStudentsByClass(studentClassFilter, activeCollegeId);
+        } else {
+          students = await firebaseService.getUsersByType('student', activeCollegeId);
+        }
+        
+        // Filter by search query
+        if (debouncedStudentSearch.trim()) {
+          const searchLower = debouncedStudentSearch.toLowerCase();
+          students = students.filter(s => 
+            s.fullName?.toLowerCase().includes(searchLower) ||
+            s.email?.toLowerCase().includes(searchLower) ||
+            s.studentRoll?.toLowerCase().includes(searchLower)
+          );
+        }
+        
+        setAvailableStudents(students);
+        setStudentModalPage(1);
+        console.log(`✅ Loaded ${students.length} students`);
+      } catch (error) {
+        console.error('❌ Error fetching students:', error);
+        setAvailableStudents([]);
+      } finally {
+        setIsLoadingStudents(false);
+      }
+    };
+
+    fetchStudents();
+  }, [showStudentModal, activeCollegeId, studentClassFilter, debouncedStudentSearch]);
+
+  // Toggle student selection
+  const toggleStudentSelection = (studentId: string) => {
+    const newSelection = new Set(selectedStudentIds);
+    if (newSelection.has(studentId)) {
+      newSelection.delete(studentId);
+    } else {
+      newSelection.add(studentId);
+    }
+    setSelectedStudentIds(newSelection);
+  };
+
+  // Select all visible students
+  const toggleSelectAllStudents = () => {
+    const pageStudents = paginatedStudents;
+    const allSelected = pageStudents.every(s => selectedStudentIds.has(s.userId));
+    
+    const newSelection = new Set(selectedStudentIds);
+    if (allSelected) {
+      pageStudents.forEach(s => newSelection.delete(s.userId));
+    } else {
+      pageStudents.forEach(s => newSelection.add(s.userId));
+    }
+    setSelectedStudentIds(newSelection);
+  };
+
+  // Confirm student enrollment
+  const confirmStudentEnrollment = () => {
+    // Get full student objects for selected IDs
+    const allStudents = [...enrolledStudents];
+    const existingIds = new Set(allStudents.map(s => s.userId));
+    
+    // Add newly selected students
+    availableStudents.forEach(s => {
+      if (selectedStudentIds.has(s.userId) && !existingIds.has(s.userId)) {
+        allStudents.push(s);
+      }
+    });
+    
+    // Remove deselected students
+    const finalStudents = allStudents.filter(s => selectedStudentIds.has(s.userId));
+    
+    setEnrolledStudents(finalStudents);
+    setTotalStudents(finalStudents.length);
+    setShowStudentModal(false);
+    
+    console.log(`✅ ${finalStudents.length} students enrolled`);
+  };
+
+  // Open student modal and pre-select already enrolled
+  const openStudentModal = () => {
+    const preSelected = new Set(enrolledStudents.map(s => s.userId));
+    setSelectedStudentIds(preSelected);
+    setStudentClassFilter('all');
+    setStudentSearchQuery('');
+    setStudentModalPage(1);
+    setShowStudentModal(true);
+  };
+
+  // Computed: paginated students for current page
+  const paginatedStudents = availableStudents.slice(
+    (studentModalPage - 1) * studentsPerPage,
+    studentModalPage * studentsPerPage
+  );
+  const totalStudentPages = Math.ceil(availableStudents.length / studentsPerPage);
+
+  // Computed: get unique classes from enrolled students for display
+  const enrolledClassesList = [...new Set(enrolledStudents.map(s => s.studentClass).filter(Boolean))] as string[];
 
   // Keyboard navigation for image carousel
   useEffect(() => {
@@ -2013,25 +2242,21 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       // Fetch with a very large limit to get all questions
       const result = await firebaseService.getQuestionsPaginated(
         activeCollegeId,
-        className,
+        className || undefined,
         boardFilter,
-        subject,
+        subject || undefined,
         actualQuestionType,
         'all',
         10000, // Large limit to get all questions
         1,
         searchQueryToSend,
         complexityFilter !== 'all' ? complexityFilter : undefined,
-        chapterFilter !== 'all' ? chapterFilter : undefined
+        chapterFilter !== 'all' ? chapterFilter : undefined,
+        tagFilter !== 'all' ? tagFilter : undefined,
+        null // no lastDoc — fetch from start
       );
       
-      // Filter by tag if tag filter is active
-      let allQuestions = result.questions;
-      if (tagFilter && tagFilter !== FILTER_VALUES.ALL) {
-        allQuestions = result.questions.filter((q: any) => {
-          return q.tags && Array.isArray(q.tags) && q.tags.includes(tagFilter);
-        });
-      }
+      const allQuestions = result.questions;
       
       console.log(`✅ Fetched ${allQuestions.length} total questions matching filters`);
       
@@ -2751,7 +2976,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   {/* Exam Type */}
                   <div className="dropdown-container">
                     <label className="block text-xs font-semibold text-gray-900 mb-1.5">
@@ -2795,98 +3020,22 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     )}
                   </div>
 
-                  {/* Class */}
-                  <div className="dropdown-container">
+                  {/* Exam Label */}
+                  <div>
                     <label className="block text-xs font-semibold text-gray-900 mb-1.5">
-                      Class <span className="text-red-500">*</span>
+                      Exam Label <span className="text-gray-400 font-normal">(optional, 6-15 chars)</span>
                     </label>
-                    <div className="relative">
-                      <button
-                        onClick={() => setOpenDropdown(openDropdown === 'class' ? null : 'class')}
-                        className={`w-full px-3 py-3 border rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm focus:ring-2 focus:border-transparent ${
-                          errors.className && showErrors 
-                            ? 'border-red-300 bg-red-50' 
-                            : 'border-gray-300 hover:border-gray-400 bg-white'
-                        }`}
-                      >
-                        <span className="text-gray-900">{className || 'Select Class'}</span>
-                        <FontAwesomeIcon icon={faChevronDown} className="text-gray-500" />
-                      </button>
-                      {openDropdown === 'class' && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto custom-scrollbar">
-                          {classes.map((cls) => (
-                            <button
-                              key={cls}
-                              onClick={() => {
-                                setClassName(cls);
-                                setOpenDropdown(null);
-                              }}
-                              className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors font-medium text-gray-900 text-sm"
-                            >
-                              {cls}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {errors.className && showErrors && (
-                      <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.className}</p>
-                    )}
-                    {className && (
-                      <div className="mt-1.5 flex items-center space-x-2">
-                        {isLoadingStudentCount ? (
-                          <div className="flex items-center space-x-1.5 text-xs text-gray-500">
-                            <div className="w-2.5 h-2.5 border border-gray-400 border-t-transparent rounded-full animate-spin" />
-                            <span>Loading...</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center space-x-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded-lg">
-                            <FontAwesomeIcon icon={faUsers} className="text-blue-600" />
-                            <span className="text-xs font-semibold text-blue-900">
-                              {totalStudents} {totalStudents === 1 ? 'Student' : 'Students'}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Subject */}
-                  <div className="dropdown-container">
-                    <label className="block text-xs font-semibold text-gray-900 mb-1.5">
-                      Subject <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <button
-                        onClick={() => setOpenDropdown(openDropdown === 'subject' ? null : 'subject')}
-                        className={`w-full px-3 py-3 border rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm focus:ring-2 focus:border-transparent ${
-                          errors.subject && showErrors 
-                            ? 'border-red-300 bg-red-50' 
-                            : 'border-gray-300 hover:border-gray-400 bg-white'
-                        }`}
-                      >
-                        <span className="text-gray-900">{subject || 'Select Subject'}</span>
-                        <FontAwesomeIcon icon={faChevronDown} className="text-gray-500" />
-                      </button>
-                      {openDropdown === 'subject' && (
-                        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-xl z-20 max-h-48 overflow-y-auto custom-scrollbar">
-                          {subjects.map((subj) => (
-                            <button
-                              key={subj}
-                              onClick={() => {
-                                setSubject(subj);
-                                setOpenDropdown(null);
-                              }}
-                              className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors font-medium text-gray-900 text-sm"
-                            >
-                              {subj}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {errors.subject && showErrors && (
-                      <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.subject}</p>
+                    <input
+                      type="text"
+                      value={examLabel}
+                      onChange={(e) => {
+                        if (e.target.value.length <= 15) setExamLabel(e.target.value);
+                      }}
+                      placeholder="e.g. Infosys Test"
+                      className="w-full px-3 py-3 border border-gray-300 rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent hover:border-gray-400 bg-white"
+                    />
+                    {examLabel && examLabel.length < 6 && (
+                      <p className="text-xs text-amber-600 mt-1 ml-1">Minimum 6 characters ({6 - examLabel.length} more)</p>
                     )}
                   </div>
 
@@ -2911,26 +3060,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     )}
                   </div>
                 </div>
-              </div>
 
-              {/* Schedule */}
-              <div className="border rounded-xl p-4"
-                style={{ 
-                  background: brand.gradients.card,
-                  borderColor: brand.colors.secondary + '33'
-                }}>
-                <div className="flex items-center space-x-2.5 mb-3">
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center"
-                    style={{ backgroundColor: brand.colors.secondary + '20' }}>
-                    <FontAwesomeIcon icon={faCalendar} style={{ color: brand.colors.secondary }} />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-semibold text-gray-900">Schedule</h3>
-                    <p className="text-xs" style={{ color: brand.colors.secondary, opacity: 0.9 }}>Set the exam date and time</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-4 gap-2.5">
+                <div className="grid grid-cols-4 gap-2.5 mt-5">
                   {/* Exam Date */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-900 mb-1.5">
@@ -3137,10 +3268,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           setIsAddingToPool(false);
                           addQuestion();
                         }}
-                        disabled={!className || !subject || !board}
+                        disabled={false}
                         className="px-4 py-2 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                         style={{ background: brand.gradients.header }}
-                        title={!className || !subject || !board ? 'Please select class, subject, and board first' : ''}
+                        title=""
                       >
                         <FontAwesomeIcon icon={faBookAtlas} />
                         <span>Question Bank</span>
@@ -3402,10 +3533,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             setIsAddingToPool(true);
                             addQuestion();
                           }}
-                          disabled={!className || !subject || !board}
+                          disabled={false}
                           className="px-4 py-2 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                           style={{ background: brand.gradients.header }}
-                          title={!className || !subject || !board ? 'Please select class, subject, and board first' : ''}
+                          title=""
                         >
                           <FontAwesomeIcon icon={faBookAtlas} />
                           <span>Question Bank</span>
@@ -3677,31 +3808,57 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           )}
         </div>
 
-        <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-5 py-3 flex items-center justify-end space-x-3 border-t border-gray-200 flex-shrink-0">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold text-sm rounded-lg transition-all"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving || isLoadingData}
-            className="px-5 py-2 text-white font-semibold text-sm rounded-lg transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ background: brand.gradients.primary }}
-          >
-            {isSaving ? (
-              <>
-                <div className="w-3.5 h-3.5 border border-white border-t-transparent rounded-full animate-spin" />
-                <span>Saving...</span>
-              </>
-            ) : (
-              <>
-                <FontAwesomeIcon icon={faCheck} className="text-xs" />
-                <span>{existingExam ? 'Update Exam' : 'Create Exam'}</span>
-              </>
+        <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-5 py-3 flex items-center justify-between border-t border-gray-200 flex-shrink-0">
+          {/* Left side - Enroll Students button */}
+          <div className="flex flex-col">
+            <button
+              onClick={openStudentModal}
+              className={`px-4 py-2 border font-semibold text-sm rounded-lg transition-all flex items-center space-x-2 ${
+                errors.enrolledStudents && showErrors
+                  ? 'border-red-400 bg-red-50 hover:bg-red-100 text-red-700'
+                  : 'border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700'
+              }`}
+            >
+              <FontAwesomeIcon icon={faUsers} className="text-xs" />
+              <span>Enroll Students</span>
+              {enrolledStudents.length > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 text-xs font-bold rounded-full text-white" style={{ background: brand.gradients.primary }}>
+                  {enrolledStudents.length}
+                </span>
+              )}
+            </button>
+            {errors.enrolledStudents && showErrors && (
+              <p className="text-xs text-red-600 mt-1 ml-1 font-semibold">⚠️ {errors.enrolledStudents}</p>
             )}
-          </button>
+          </div>
+          
+          {/* Right side - Cancel and Save */}
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-white border border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-700 font-semibold text-sm rounded-lg transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving || isLoadingData}
+              className="px-5 py-2 text-white font-semibold text-sm rounded-lg transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ background: brand.gradients.primary }}
+            >
+              {isSaving ? (
+                <>
+                  <div className="w-3.5 h-3.5 border border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <FontAwesomeIcon icon={faCheck} className="text-xs" />
+                  <span>{existingExam ? 'Update Exam' : 'Create Exam'}</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -3836,6 +3993,74 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
               <div className="space-y-5">
+                {/* Subject & Chapter Selection - Side by Side */}
+                <div className="border rounded-xl p-4"
+                  style={{ 
+                    background: brand.gradients.card,
+                    borderColor: brand.colors.accent + '33'
+                  }}>
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Subject */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-900 mb-2">
+                        Subject <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={customQuestionSubject}
+                        onChange={(e) => {
+                          setCustomQuestionSubject(e.target.value);
+                          if (e.target.value.toLowerCase() !== 'database' && customQuestionType === QUESTION_TYPES.SQL) {
+                            setCustomQuestionType(QUESTION_TYPES.DESCRIPTIVE);
+                          }
+                        }}
+                        className="w-full h-[44px] px-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900 hover:border-gray-300 bg-white transition-all"
+                      >
+                        <option value="">Select a subject</option>
+                        {subjects.map((sub, index) => (
+                          <option key={index} value={sub}>{sub}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* Chapter */}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-900 mb-2">
+                        Chapter <span className="text-red-500">*</span>
+                      </label>
+                      {availableChapters.length > 0 && customQuestionChapter !== '__new__' ? (
+                        <select
+                          value={customQuestionChapter}
+                          onChange={(e) => setCustomQuestionChapter(e.target.value)}
+                          className="w-full h-[44px] px-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900 hover:border-gray-300 bg-white transition-all"
+                        >
+                          <option value="">Select a chapter</option>
+                          {availableChapters.map((chapter, index) => (
+                            <option key={index} value={chapter}>{chapter}</option>
+                          ))}
+                          <option value="__new__">+ Add New Chapter</option>
+                        </select>
+                      ) : (
+                        <div>
+                          <input
+                            type="text"
+                            value={customQuestionChapter === '__new__' ? '' : customQuestionChapter}
+                            onChange={(e) => setCustomQuestionChapter(e.target.value)}
+                            className="w-full h-[44px] px-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900 hover:border-gray-300 bg-white transition-all"
+                            placeholder="Enter new chapter name"
+                          />
+                          {availableChapters.length > 0 && (
+                            <button
+                              onClick={() => setCustomQuestionChapter('')}
+                              className="mt-1 text-xs text-blue-600 hover:text-blue-700 font-medium"
+                            >
+                              ← Back to chapter list
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Question Type Selection */}
                 <div className="border rounded-xl p-4"
                   style={{ 
@@ -3852,7 +4077,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <p className="text-xs" style={{ color: brand.colors.accent, opacity: 0.9 }}>Select the type of question</p>
                     </div>
                   </div>
-                  <div className="grid grid-cols-5 gap-3">
+                  <div className="grid grid-cols-6 gap-3">
                     {[
                       { 
                         value: QUESTION_TYPES.DESCRIPTIVE, 
@@ -3867,6 +4092,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         icon: faCode, 
                         gradient: 'from-indigo-500 to-violet-500',
                         description: 'Programming questions'
+                      },
+                      { 
+                        value: QUESTION_TYPES.SQL, 
+                        label: 'SQL', 
+                        icon: faDatabase, 
+                        gradient: 'from-emerald-500 to-cyan-500',
+                        description: 'Database queries',
+                        requiresSubject: 'Database'
                       },
                       { 
                         value: QUESTION_TYPES.MCQ, 
@@ -3891,19 +4124,25 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       }
                     ].map((type) => {
                       const isSelected = customQuestionType === type.value;
+                      const isSqlDisabled = (type as any).requiresSubject === 'Database' && customQuestionSubject?.toLowerCase() !== 'database';
                       return (
                         <button
                           key={type.value}
-                          onClick={() => setCustomQuestionType(type.value as any)}
+                          onClick={() => !isSqlDisabled && setCustomQuestionType(type.value as any)}
+                          disabled={isSqlDisabled}
+                          title={isSqlDisabled ? 'Select "Database" as subject to enable SQL' : ''}
                           className={`relative p-4 rounded-xl border transition-all text-center overflow-hidden ${
-                            isSelected
+                            isSqlDisabled 
+                              ? 'border-gray-200 opacity-40 cursor-not-allowed'
+                              : isSelected
                               ? 'border-transparent shadow-lg scale-105'
                               : 'border-gray-300 hover:border-gray-400 hover:shadow-md'
                           }`}
-                          style={isSelected ? {
+                          style={isSelected && !isSqlDisabled ? {
                             background: `linear-gradient(135deg, var(--tw-gradient-stops))`,
                             backgroundImage: `linear-gradient(135deg, ${
                               type.gradient.includes('green') ? '#10b981, #14b8a6' : 
+                              type.gradient.includes('emerald') ? '#10b981, #06b6d4' :
                               type.gradient.includes('indigo') ? '#6366f1, #8b5cf6' :
                               type.gradient.includes('blue') ? '#3b82f6, #06b6d4' : 
                               type.gradient.includes('orange') ? '#f97316, #ef4444' :
@@ -3932,64 +4171,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   </div>
                 </div>
 
-                {/* Chapter Selection */}
-                <div className="border rounded-xl p-4"
-                  style={{ 
-                    background: brand.gradients.card,
-                    borderColor: brand.colors.accent + '33'
-                  }}>
-                  <div className="flex items-center space-x-2.5 mb-3">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center"
-                      style={{ backgroundColor: brand.colors.accent + '20' }}>
-                      <FontAwesomeIcon icon={faBookOpen} style={{ color: brand.colors.accent }} />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-gray-900">Chapter</h3>
-                      <p className="text-xs text-blue-600">Select or enter chapter name</p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-900 mb-2">
-                      Chapter Name <span className="text-red-500">*</span>
-                    </label>
-                    {availableChapters.length > 0 && customQuestionChapter !== '__new__' ? (
-                      <select
-                        value={customQuestionChapter}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setCustomQuestionChapter(value);
-                        }}
-                        className="w-full h-[52px] px-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base text-gray-900 hover:border-gray-300 bg-white transition-all"
-                      >
-                        <option value="">Select a chapter</option>
-                        {availableChapters.map((chapter, index) => (
-                          <option key={index} value={chapter}>{chapter}</option>
-                        ))}
-                        <option value="__new__">+ Add New Chapter</option>
-                      </select>
-                    ) : (
-                      <div>
-                        <input
-                          type="text"
-                          value={customQuestionChapter === '__new__' ? '' : customQuestionChapter}
-                          onChange={(e) => setCustomQuestionChapter(e.target.value)}
-                          className="w-full h-[52px] px-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base text-gray-900 hover:border-gray-300 bg-white transition-all"
-                          placeholder="Enter new chapter name"
-                        />
-                        {availableChapters.length > 0 && (
-                          <button
-                            onClick={() => setCustomQuestionChapter('')}
-                            className="mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
-                          >
-                            ← Back to chapter list
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
                 {/* Question Text / Problem Statement */}
                 <div className="border rounded-xl p-4"
                   style={{ 
@@ -4003,10 +4184,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     </div>
                     <div>
                       <h3 className="text-base font-semibold text-gray-900">
-                        {customQuestionType === QUESTION_TYPES.CODE ? 'Problem Statement' : 'Question Text'} <span className="text-red-500">*</span>
+                        {(customQuestionType === QUESTION_TYPES.CODE || customQuestionType === QUESTION_TYPES.SQL) ? 'Problem Statement' : 'Question Text'} <span className="text-red-500">*</span>
                       </h3>
                       <p className="text-xs text-blue-600">
-                        {customQuestionType === QUESTION_TYPES.CODE ? 'Describe the programming problem' : 'Write your question'}
+                        {(customQuestionType === QUESTION_TYPES.CODE || customQuestionType === QUESTION_TYPES.SQL) ? 'Describe the SQL problem' : 'Write your question'}
                       </p>
                     </div>
                   </div>
@@ -4015,7 +4196,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       value={customQuestionText}
                       onChange={(value) => setCustomQuestionText(value)}
                       darkMode={false}
-                      placeholder={customQuestionType === QUESTION_TYPES.CODE ? 'Describe the programming problem...' : 'Enter your question here...'}
+                      placeholder={(customQuestionType === QUESTION_TYPES.CODE || customQuestionType === QUESTION_TYPES.SQL) ? 'Describe the problem...' : 'Enter your question here...'}
                       minHeight="350px"
                     />
                   </div>
@@ -4329,65 +4510,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 )}
                 {customQuestionType === QUESTION_TYPES.CODE && (
                   <div className="space-y-4">
-                    {/* Programming Language */}
-                    <div className="border rounded-xl p-4"
-                      style={{ 
-                        background: brand.gradients.card,
-                        borderColor: brand.colors.accent + '33'
-                      }}>
-                      <div className="flex items-center space-x-2.5 mb-3">
-                        <div className="w-10 h-10 rounded-lg flex items-center justify-center"
-                          style={{ backgroundColor: brand.colors.accent + '20' }}>
-                          <span className="text-xl">💻</span>
-                        </div>
-                        <div>
-                          <h3 className="text-base font-semibold text-gray-900">Programming Language <span className="text-red-500">*</span></h3>
-                          <p className="text-xs text-blue-600">Select the programming language</p>
-                        </div>
-                      </div>
-                      <div className="dropdown-container relative">
-                        <button
-                          type="button"
-                          onClick={() => setOpenDropdown(openDropdown === 'programmingLanguage' ? null : 'programmingLanguage')}
-                          disabled={isLoadingLanguages}
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl text-left font-semibold transition-all flex items-center justify-between text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-300 bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <span className="flex items-center space-x-2.5">
-                            <FontAwesomeIcon icon={getProgrammingLanguageIcon(customQuestionProgrammingLanguage)} className="text-base" />
-                            <span className="text-gray-900">
-                              {isLoadingLanguages ? 'Loading...' : customQuestionProgrammingLanguage}
-                            </span>
-                          </span>
-                          <FontAwesomeIcon icon={faChevronDown} className="text-gray-500" />
-                        </button>
-                        {openDropdown === 'programmingLanguage' && !isLoadingLanguages && (
-                          <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl z-30 overflow-hidden max-h-64 overflow-y-auto custom-scrollbar">
-                            {codingLanguages.map((lang) => (
-                              <button
-                                key={lang}
-                                type="button"
-                                onClick={() => {
-                                  setCustomQuestionProgrammingLanguage(lang);
-                                  setOpenDropdown(null);
-                                }}
-                                className={`w-full px-4 py-3 text-left transition-all flex items-center space-x-2.5 font-medium text-sm group ${
-                                  customQuestionProgrammingLanguage === lang 
-                                    ? 'bg-blue-50 text-blue-700' 
-                                    : 'text-gray-900 hover:bg-gray-50'
-                                }`}
-                              >
-                                <FontAwesomeIcon icon={getProgrammingLanguageIcon(lang)} className="text-base" />
-                                <span className="flex-1">{lang}</span>
-                                {customQuestionProgrammingLanguage === lang && (
-                                  <FontAwesomeIcon icon={faCircleCheck} className="text-blue-600" />
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
                     {/* Test Stub / Starter Code */}
                     <div className="border rounded-xl p-4"
                       style={{ 
@@ -4456,15 +4578,28 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         </div>
                       )}
 
-                      <textarea
-                        value={customQuestionTestStub}
-                        onChange={(e) => setCustomQuestionTestStub(e.target.value)}
-                        placeholder={`def solution():
-    # Your code here
-    pass`}
-                        rows={6}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none font-mono text-sm hover:border-gray-300 bg-white transition-all custom-scrollbar"
-                      />
+                      <div className="space-y-4">
+                        {customStarterCodes.map((sc, scIndex) => {
+                          const allLanguages = [{ value: 'c', label: 'C' },{ value: 'cpp', label: 'C++' },{ value: 'python', label: 'Python' },{ value: 'java', label: 'Java' },{ value: 'javascript', label: 'JavaScript' },{ value: 'csharp', label: 'C#' },{ value: 'go', label: 'Go' },{ value: 'scala', label: 'Scala' },{ value: 'typescript', label: 'TypeScript' },{ value: 'bash', label: 'Bash/Shell' },{ value: 'kotlin', label: 'Kotlin' },{ value: 'lua', label: 'Lua' },{ value: 'assembly', label: 'Assembly' },{ value: 'dart', label: 'Dart' },{ value: 'swift', label: 'Swift' },{ value: 'r', label: 'R' },{ value: 'groovy', label: 'Groovy' },{ value: 'perl', label: 'Perl' },{ value: 'php', label: 'PHP' },{ value: 'rust', label: 'Rust' }];
+                          const usedLanguages = customStarterCodes.filter((_, i) => i !== scIndex).map(s => s.language);
+                          const availableLanguages = allLanguages.filter(l => !usedLanguages.includes(l.value));
+                          return (
+                            <div key={scIndex} className="border border-gray-200 rounded-lg p-3 bg-white">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center space-x-2 flex-1">
+                                  <span className="text-xs font-semibold text-gray-500">#{scIndex + 1}</span>
+                                  <select value={sc.language} onChange={(e) => { const updated = [...customStarterCodes]; updated[scIndex] = { ...updated[scIndex], language: e.target.value }; setCustomStarterCodes(updated); }} className="px-2 py-1.5 border border-gray-300 rounded-lg text-xs font-semibold focus:ring-2 focus:border-transparent hover:border-gray-400 bg-white" style={{ minWidth: '130px' }}>
+                                    {availableLanguages.map(lang => (<option key={lang.value} value={lang.value}>{lang.label}</option>))}
+                                  </select>
+                                </div>
+                                {customStarterCodes.length > 1 && (<button type="button" onClick={() => { const updated = customStarterCodes.filter((_, i) => i !== scIndex); setCustomStarterCodes(updated); if (scIndex === 0 && updated.length > 0) { setCustomQuestionTestStub(updated[0].code); } }} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Remove this starter code"><FontAwesomeIcon icon={faTrash} className="text-xs" /></button>)}
+                              </div>
+                              <textarea value={sc.code} onChange={(e) => { const updated = [...customStarterCodes]; updated[scIndex] = { ...updated[scIndex], code: e.target.value }; setCustomStarterCodes(updated); if (scIndex === 0) { setCustomQuestionTestStub(e.target.value); } }} placeholder={`// Write starter code for ${sc.language === 'python' ? 'Python' : sc.language === 'cpp' ? 'C++' : sc.language === 'csharp' ? 'C#' : sc.language === 'javascript' ? 'JavaScript' : sc.language === 'typescript' ? 'TypeScript' : sc.language === 'bash' ? 'Bash/Shell' : sc.language.charAt(0).toUpperCase() + sc.language.slice(1)}...`} rows={5} className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:border-transparent resize-y text-sm font-mono" style={{ minHeight: '48px', maxHeight: '300px' }} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {(() => { const allLangCount = 20; const currentCount = customStarterCodes.length; if (currentCount >= allLangCount) return null; return (<button type="button" onClick={() => { const allLangs = ['c','cpp','python','java','javascript','csharp','go','scala','typescript','bash','kotlin','lua','assembly','dart','swift','r','groovy','perl','php','rust']; const usedLangs = customStarterCodes.map(s => s.language); const nextLang = allLangs.find(l => !usedLangs.includes(l)) || 'c'; setCustomStarterCodes([...customStarterCodes, { language: nextLang, code: '' }]); }} className="mt-3 flex items-center space-x-1.5 px-3 py-2 rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 text-gray-500 hover:text-gray-700 text-xs font-semibold transition-colors w-full justify-center"><FontAwesomeIcon icon={faPlus} className="text-xs" /><span>Add Another Language</span></button>); })()}
                     </div>
 
                     {/* Test Cases */}
@@ -4555,6 +4690,159 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   </div>
                 )}
 
+                {/* SQL Question Section */}
+                {customQuestionType === QUESTION_TYPES.SQL && (
+                  <div className="space-y-4">
+                    {/* Step 1: Table Schema */}
+                    <div className="border rounded-xl p-4" style={{ background: 'linear-gradient(135deg, #f0fdf4, #ecfdf5)', borderColor: '#86efac' }}>
+                      <div className="flex items-center space-x-2.5 mb-3">
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-green-100">
+                          <span className="text-xl">🗄️</span>
+                        </div>
+                        <div>
+                          <h3 className="text-base font-semibold text-gray-900">① Table Schema <span className="text-red-500">*</span></h3>
+                          <p className="text-xs text-green-600">Define your database tables — columns, types, and constraints</p>
+                        </div>
+                      </div>
+                      
+                      {customSqlSchema.map((table, tIdx) => (
+                        <div key={tIdx} className="mb-3 border border-green-200 rounded-lg overflow-hidden bg-white">
+                          <div className="flex items-center justify-between px-3 py-2 bg-green-50 border-b border-green-100">
+                            <div className="flex items-center space-x-2 flex-1">
+                              <span className="text-xs font-bold text-green-700">TABLE {tIdx + 1}</span>
+                              <input type="text" value={table.table_name} onChange={(e) => { const u = [...customSqlSchema]; u[tIdx] = { ...u[tIdx], table_name: e.target.value }; setCustomSqlSchema(u); }} placeholder="Table name (e.g., Employee)" className="flex-1 px-2 py-1 border border-green-200 rounded text-sm font-semibold focus:ring-1 focus:ring-green-400" />
+                            </div>
+                            {customSqlSchema.length > 1 && (
+                              <button type="button" onClick={() => setCustomSqlSchema(customSqlSchema.filter((_, i) => i !== tIdx))} className="ml-2 text-red-400 hover:text-red-600"><FontAwesomeIcon icon={faTrash} className="text-xs" /></button>
+                            )}
+                          </div>
+                          <div className="p-3 space-y-2">
+                            {/* Column headers */}
+                            <div className="grid grid-cols-[1fr_0.7fr_1fr_0.8fr_auto] gap-1.5 text-[10px] font-semibold text-gray-500 uppercase px-1">
+                              <span>Column Name</span><span>Type</span><span>Description</span><span>Constraints</span><span className="w-5"></span>
+                            </div>
+                            {table.columns.map((col, cIdx) => (
+                              <div key={cIdx} className="grid grid-cols-[1fr_0.7fr_1fr_0.8fr_auto] gap-1.5">
+                                <input type="text" value={col.name} onChange={(e) => { const u = [...customSqlSchema]; u[tIdx].columns[cIdx] = { ...col, name: e.target.value }; setCustomSqlSchema(u); }} placeholder="e.g., id" className="px-2 py-1.5 border border-gray-200 rounded text-xs font-mono focus:ring-1" />
+                                <select value={col.type} onChange={(e) => { const u = [...customSqlSchema]; u[tIdx].columns[cIdx] = { ...col, type: e.target.value }; setCustomSqlSchema(u); }} className="px-1 py-1.5 border border-gray-200 rounded text-xs focus:ring-1 bg-white">
+                                  {['int','bigint','float','double','decimal','varchar','char','text','date','datetime','timestamp','boolean','blob'].map(t => (<option key={t} value={t}>{t}</option>))}
+                                </select>
+                                <input type="text" value={col.description} onChange={(e) => { const u = [...customSqlSchema]; u[tIdx].columns[cIdx] = { ...col, description: e.target.value }; setCustomSqlSchema(u); }} placeholder="Description" className="px-2 py-1.5 border border-gray-200 rounded text-xs focus:ring-1" />
+                                <input type="text" value={col.constraints} onChange={(e) => { const u = [...customSqlSchema]; u[tIdx].columns[cIdx] = { ...col, constraints: e.target.value }; setCustomSqlSchema(u); }} placeholder="PK, NOT NULL..." className="px-2 py-1.5 border border-gray-200 rounded text-xs focus:ring-1" />
+                                {table.columns.length > 1 && (<button type="button" onClick={() => { const u = [...customSqlSchema]; u[tIdx] = { ...u[tIdx], columns: u[tIdx].columns.filter((_, i) => i !== cIdx) }; setCustomSqlSchema(u); }} className="text-red-400 hover:text-red-600 w-5 flex items-center justify-center"><FontAwesomeIcon icon={faTrash} className="text-[10px]" /></button>)}
+                              </div>
+                            ))}
+                            <button type="button" onClick={() => { const u = [...customSqlSchema]; u[tIdx] = { ...u[tIdx], columns: [...u[tIdx].columns, { name: '', type: 'int', description: '', constraints: '' }] }; setCustomSqlSchema(u); }} className="text-xs text-green-600 hover:text-green-800 font-medium mt-1">+ Add Column</button>
+                            <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t">
+                              <input type="text" value={table.primary_key} onChange={(e) => { const u = [...customSqlSchema]; u[tIdx] = { ...u[tIdx], primary_key: e.target.value }; setCustomSqlSchema(u); }} placeholder="e.g., id" className="px-2 py-1.5 border border-gray-200 rounded text-xs" />
+                              <input type="text" value={table.note} onChange={(e) => { const u = [...customSqlSchema]; u[tIdx] = { ...u[tIdx], note: e.target.value }; setCustomSqlSchema(u); }} placeholder="e.g., Each row = one employee" className="px-2 py-1.5 border border-gray-200 rounded text-xs" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <button type="button" onClick={() => setCustomSqlSchema([...customSqlSchema, { table_name: '', columns: [{ name: '', type: 'int', description: '', constraints: '' }], primary_key: '', note: '' }])} className="text-xs text-green-600 hover:text-green-800 font-semibold">+ Add Another Table</button>
+                    </div>
+
+                    {/* Step 2: SQL Test Cases */}
+                    {(() => {
+                      const hasValidSchema = customSqlSchema.some(t => t.table_name.trim() && t.columns.some(c => c.name.trim()));
+                      if (!hasValidSchema) {
+                        return (
+                          <div className="border rounded-xl p-4 bg-amber-50 border-amber-200">
+                            <div className="flex items-center space-x-2 text-amber-700">
+                              <span>🔒</span>
+                              <span className="text-sm font-semibold">Schema Required</span>
+                            </div>
+                            <p className="text-xs text-amber-600 mt-1">Define at least one table with a name and column in the schema above to unlock test cases.</p>
+                          </div>
+                        );
+                      }
+                      const allSchemaCols = customSqlSchema.flatMap(t => t.columns.map(c => c.name).filter(n => n.trim()));
+                      const maxOutputCols = allSchemaCols.length;
+                      return (
+                        <div className="border rounded-xl p-4" style={{ background: 'linear-gradient(135deg, #fffbeb, #fef3c7)', borderColor: '#fbbf24' }}>
+                          <div className="flex items-center space-x-2.5 mb-3">
+                            <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-amber-100">
+                              <span className="text-xl">📝</span>
+                            </div>
+                            <div>
+                              <h3 className="text-base font-semibold text-gray-900">② Test Cases <span className="text-red-500">*</span></h3>
+                              <p className="text-xs text-amber-600">Input data auto-populates from your schema — just fill in values</p>
+                            </div>
+                          </div>
+                          
+                          {customSqlTestCases.map((tc, tcIdx) => (
+                            <div key={tcIdx} className="mb-3 border border-amber-200 rounded-lg overflow-hidden bg-white">
+                              <div className="flex items-center justify-between px-3 py-2 bg-amber-50 border-b border-amber-100">
+                                <div className="flex items-center space-x-2 flex-1">
+                                  <span className="text-xs font-bold text-amber-700">TEST {tcIdx + 1}</span>
+                                  <input type="text" value={tc.title} onChange={(e) => { const u = [...customSqlTestCases]; u[tcIdx] = { ...u[tcIdx], title: e.target.value }; setCustomSqlTestCases(u); }} className="flex-1 px-2 py-1 border border-amber-200 rounded text-sm focus:ring-1" />
+                                </div>
+                                <div className="flex items-center space-x-2 ml-2">
+                                  <span className="text-[10px] font-bold text-gray-500">MARKS:</span>
+                                  <input type="number" value={tc.marks} onChange={(e) => { const u = [...customSqlTestCases]; u[tcIdx] = { ...u[tcIdx], marks: parseFloat(e.target.value) || 0 }; setCustomSqlTestCases(u); }} className="w-16 px-2 py-1 border border-amber-200 rounded text-sm text-center font-bold" step="0.5" min="0" />
+                                  {customSqlTestCases.length > 1 && (<button type="button" onClick={() => setCustomSqlTestCases(customSqlTestCases.filter((_, i) => i !== tcIdx))} className="text-red-400 hover:text-red-600"><FontAwesomeIcon icon={faTrash} className="text-xs" /></button>)}
+                                </div>
+                              </div>
+                              <div className="p-3 space-y-3">
+                                {/* Input Tables */}
+                                {customSqlSchema.filter(t => t.table_name.trim()).map((schemaTable) => {
+                                  const tableName = schemaTable.table_name;
+                                  const colNames = schemaTable.columns.map(c => c.name).filter(n => n.trim());
+                                  const rows = tc.table_data[tableName] || [];
+                                  if (colNames.length === 0) return null;
+                                  return (
+                                    <div key={tableName} className="border border-blue-100 rounded-lg overflow-hidden">
+                                      <div className="flex items-center justify-between px-2 py-1.5 bg-blue-50 border-b border-blue-100">
+                                        <span className="text-xs font-bold text-blue-600">📥 Input: {tableName}</span>
+                                        <button type="button" onClick={() => { const u = [...customSqlTestCases]; const td = { ...u[tcIdx].table_data }; td[tableName] = [...(td[tableName] || []), colNames.map(() => '')]; u[tcIdx] = { ...u[tcIdx], table_data: td }; setCustomSqlTestCases(u); }} className="text-[10px] font-medium text-blue-600 hover:text-blue-800">+ Add Row</button>
+                                      </div>
+                                      <div className="overflow-x-auto">
+                                        <table className="w-full text-xs">
+                                          <thead><tr className="bg-gray-50">{colNames.map((cn, ci) => (<th key={ci} className="px-2 py-1.5 text-left font-semibold text-gray-600 border-b">{cn}</th>))}<th className="w-7 border-b"></th></tr></thead>
+                                          <tbody>{rows.map((row, rIdx) => (<tr key={rIdx}>{colNames.map((_, ci) => (<td key={ci} className="px-1 py-1 border-b border-gray-100"><input type="text" value={row[ci] || ''} onChange={(e) => { const u = [...customSqlTestCases]; const td = { ...u[tcIdx].table_data }; const tRows = [...(td[tableName] || [])]; const nr = [...tRows[rIdx]]; nr[ci] = e.target.value; tRows[rIdx] = nr; td[tableName] = tRows; u[tcIdx] = { ...u[tcIdx], table_data: td }; setCustomSqlTestCases(u); }} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs font-mono focus:ring-1" /></td>))}<td className="px-1 py-1 border-b"><button type="button" onClick={() => { const u = [...customSqlTestCases]; const td = { ...u[tcIdx].table_data }; td[tableName] = (td[tableName] || []).filter((_, i) => i !== rIdx); u[tcIdx] = { ...u[tcIdx], table_data: td }; setCustomSqlTestCases(u); }} className="text-red-400 hover:text-red-600"><FontAwesomeIcon icon={faTrash} className="text-[10px]" /></button></td></tr>))}</tbody>
+                                        </table>
+                                        {rows.length === 0 && <p className="text-xs text-gray-400 italic p-2">No rows yet — click + Add Row above</p>}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+
+                                {/* Expected Output */}
+                                <div className="border border-green-200 rounded-lg overflow-hidden">
+                                  <div className="flex items-center justify-between px-2 py-1.5 bg-green-50 border-b border-green-100">
+                                    <span className="text-xs font-semibold text-green-700">📤 Expected Output <span className="text-[9px] font-normal text-green-500">({tc.expected_output.columns.length}/{maxOutputCols} cols)</span></span>
+                                    <div className="flex items-center space-x-2">
+                                      <button type="button" disabled={tc.expected_output.columns.length >= maxOutputCols} onClick={() => { const u = [...customSqlTestCases]; const eo = u[tcIdx].expected_output; u[tcIdx] = { ...u[tcIdx], expected_output: { columns: [...eo.columns, ''], rows: eo.rows.map(r => [...r, '']) } }; setCustomSqlTestCases(u); }} className={`text-[10px] font-medium ${tc.expected_output.columns.length >= maxOutputCols ? 'text-gray-300 cursor-not-allowed' : 'text-green-600 hover:text-green-800'}`}>+ Column</button>
+                                      <button type="button" onClick={() => { const u = [...customSqlTestCases]; const eo = u[tcIdx].expected_output; u[tcIdx] = { ...u[tcIdx], expected_output: { ...eo, rows: [...eo.rows, eo.columns.map(() => '')] } }; setCustomSqlTestCases(u); }} className="text-[10px] font-medium text-green-600 hover:text-green-800">+ Row</button>
+                                    </div>
+                                  </div>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                      <thead><tr className="bg-green-50/50">{tc.expected_output.columns.map((col, ci) => { const usedCols = tc.expected_output.columns.filter((_, i) => i !== ci); const availableCols = allSchemaCols.filter(c => !usedCols.includes(c)); return (<th key={ci} className="px-1 py-1.5 border-b"><div className="flex items-center space-x-1"><select value={col} onChange={(e) => { const u = [...customSqlTestCases]; const cols = [...u[tcIdx].expected_output.columns]; cols[ci] = e.target.value; u[tcIdx] = { ...u[tcIdx], expected_output: { ...u[tcIdx].expected_output, columns: cols } }; setCustomSqlTestCases(u); }} className="w-full px-1.5 py-1 border border-green-200 rounded text-xs font-semibold focus:ring-1 bg-white">{!col && <option value="">Select column</option>}{availableCols.map(c => (<option key={c} value={c}>{c}</option>))}{col && !availableCols.includes(col) && <option value={col}>{col}</option>}</select>{tc.expected_output.columns.length > 1 && (<button type="button" onClick={() => { const u = [...customSqlTestCases]; const eo = u[tcIdx].expected_output; u[tcIdx] = { ...u[tcIdx], expected_output: { columns: eo.columns.filter((_, i) => i !== ci), rows: eo.rows.map(r => r.filter((_, i) => i !== ci)) } }; setCustomSqlTestCases(u); }} className="text-red-400 hover:text-red-600 flex-shrink-0"><FontAwesomeIcon icon={faTrash} className="text-[10px]" /></button>)}</div></th>); })}<th className="w-7 border-b"></th></tr></thead>
+                                      <tbody>{tc.expected_output.rows.map((row, rIdx) => (<tr key={rIdx}>{tc.expected_output.columns.map((_, ci) => (<td key={ci} className="px-1 py-1 border-b border-gray-100"><input type="text" value={row[ci] || ''} onChange={(e) => { const u = [...customSqlTestCases]; const rows = [...u[tcIdx].expected_output.rows]; const nr = [...rows[rIdx]]; nr[ci] = e.target.value; rows[rIdx] = nr; u[tcIdx] = { ...u[tcIdx], expected_output: { ...u[tcIdx].expected_output, rows } }; setCustomSqlTestCases(u); }} className="w-full px-1.5 py-1 border border-gray-200 rounded text-xs font-mono focus:ring-1" /></td>))}<td className="px-1 py-1 border-b border-gray-100">{tc.expected_output.rows.length > 1 && (<button type="button" onClick={() => { const u = [...customSqlTestCases]; u[tcIdx] = { ...u[tcIdx], expected_output: { ...u[tcIdx].expected_output, rows: u[tcIdx].expected_output.rows.filter((_, i) => i !== rIdx) } }; setCustomSqlTestCases(u); }} className="text-red-400 hover:text-red-600"><FontAwesomeIcon icon={faTrash} className="text-[10px]" /></button>)}</td></tr>))}</tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          
+                          <button type="button" onClick={() => setCustomSqlTestCases([...customSqlTestCases, { title: `Test Case ${customSqlTestCases.length + 1}`, table_data: {}, expected_output: { columns: [''], rows: [['']] }, marks: 0 }])} className="text-xs text-amber-600 hover:text-amber-800 font-semibold mt-1">+ Add Test Case</button>
+                          
+                          {/* Marks tracker */}
+                          <div className="mt-3 px-3 py-2 rounded-lg bg-yellow-50 border border-yellow-200 flex items-center justify-between">
+                            <span className="text-xs text-yellow-700">💡 Test case marks total: <b>{customSqlTestCases.reduce((s, tc) => s + (tc.marks || 0), 0)}</b> / <b>{customQuestionMarks}</b> (max marks)</span>
+                            {customSqlTestCases.reduce((s, tc) => s + (tc.marks || 0), 0) !== customQuestionMarks && (
+                              <span className="text-xs text-amber-600 font-medium">Remaining: {customQuestionMarks - customSqlTestCases.reduce((s, tc) => s + (tc.marks || 0), 0)}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
                 {/* Marks and Difficulty Level */}
                 <div className="border rounded-xl p-4"
                   style={{ 
@@ -4571,7 +4859,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-6">
+                  <div className="flex items-end gap-6">
                     {/* Maximum Marks */}
                     <div className="flex-1">
                       <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -4598,7 +4886,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         }}
                         min="0.5"
                         step="0.5"
-                        className="w-full h-[52px] px-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-base text-gray-900 hover:border-gray-300 bg-white transition-all"
+                        className="w-full h-10 px-4 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900 hover:border-gray-300 bg-white transition-all"
                         placeholder="Enter marks (min 0.5)"
                       />
                     </div>
@@ -4678,48 +4966,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       />
                     </div>
 
+                    {customQuestionType !== QUESTION_TYPES.CODE && customQuestionType !== QUESTION_TYPES.SQL && (
                     <div>
                       <label className="block text-xs font-semibold text-gray-900 mb-1.5">Solution</label>
-                      {customQuestionType === QUESTION_TYPES.CODE ? (
-                        <div className="relative">
-                          <textarea
-                            value={customQuestionSolution}
-                            onChange={(e) => setCustomQuestionSolution(e.target.value)}
-                            placeholder={`def solution(n):
-    # Write the complete solution here
-    result = n * (n - 1)
-    return result`}
-                            rows={12}
-                            className="w-full px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:border-transparent resize-none text-sm font-mono hover:border-gray-400 bg-gray-900 text-gray-100 custom-scrollbar"
-                            style={{ tabSize: 4 }}
-                          />
-                          <div className="mt-2 border border-gray-300 rounded-lg overflow-hidden">
-                            <div className="bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 border-b border-gray-300 flex items-center justify-between">
-                              <span>Preview</span>
-                              <span className="text-[10px] text-gray-500">Live syntax highlighting</span>
-                            </div>
-                            {customQuestionSolution ? (
-                              <SyntaxHighlighter
-                                language={customQuestionProgrammingLanguage?.toLowerCase() || 'python'}
-                                style={vscDarkPlus}
-                                customStyle={{
-                                  margin: 0,
-                                  borderRadius: 0,
-                                  fontSize: '0.875rem',
-                                  padding: '1rem'
-                                }}
-                                showLineNumbers={true}
-                              >
-                                {customQuestionSolution}
-                              </SyntaxHighlighter>
-                            ) : (
-                              <div className="bg-gray-900 p-8 text-center">
-                                <p className="text-gray-400 text-sm">Start typing to see live preview...</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
                         <div className="border border-gray-300 rounded-lg overflow-hidden">
                           <RichTextEditor
                             value={customQuestionSolution}
@@ -4729,8 +4978,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             minHeight="250px"
                           />
                         </div>
-                      )}
                     </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -4790,7 +5039,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-white">
-                      Question Bank <span className="text-white/90 text-sm">• {className}, {subject}</span>
+                      Question Bank
                     </h2>
                     <p className="text-xs text-white/80">Select questions to add to your exam</p>
                   </div>
@@ -4814,6 +5063,110 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <span className="text-xs font-bold text-gray-700">{board}</span>
                     </div>
                   )}
+
+                  {/* Class Filter Dropdown */}
+                  <div className="relative filter-dropdown">
+                    <button
+                      onClick={() => {
+                        setShowQBClassDropdown(!showQBClassDropdown);
+                        setShowQBSubjectDropdown(false);
+                        setShowQuestionTypeDropdown(false);
+                        setShowComplexityDropdown(false);
+                        setShowChapterDropdown(false);
+                        setShowTagDropdown(false);
+                      }}
+                      className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg flex items-center space-x-1.5 hover:bg-gray-100 transition-colors"
+                    >
+                      <FontAwesomeIcon icon={faGraduationCap} className="text-gray-500 text-xs" />
+                      <span className="text-xs font-semibold text-gray-700">
+                        {className || 'All Classes'}
+                      </span>
+                      <FontAwesomeIcon icon={faChevronDown} className="text-gray-400 text-xs" />
+                    </button>
+                    
+                    {showQBClassDropdown && (
+                      <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl z-30 min-w-[160px] max-h-[250px] overflow-y-auto custom-scrollbar py-1 border">
+                        <button
+                          onClick={() => {
+                            setClassName('');
+                            setSubject('');
+                            setShowQBClassDropdown(false);
+                          }}
+                          className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 transition-colors ${
+                            !className ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
+                          }`}
+                        >
+                          All Classes
+                        </button>
+                        {classes.map((cls) => (
+                          <button
+                            key={cls}
+                            onClick={() => {
+                              setClassName(cls);
+                              setSubject('');
+                              setShowQBClassDropdown(false);
+                            }}
+                            className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 transition-colors ${
+                              className === cls ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
+                            }`}
+                          >
+                            {cls}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Subject Filter Dropdown */}
+                  <div className="relative filter-dropdown">
+                    <button
+                      onClick={() => {
+                        setShowQBSubjectDropdown(!showQBSubjectDropdown);
+                        setShowQBClassDropdown(false);
+                        setShowQuestionTypeDropdown(false);
+                        setShowComplexityDropdown(false);
+                        setShowChapterDropdown(false);
+                        setShowTagDropdown(false);
+                      }}
+                      className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg flex items-center space-x-1.5 hover:bg-gray-100 transition-colors"
+                    >
+                      <FontAwesomeIcon icon={faBook} className="text-gray-500 text-xs" />
+                      <span className="text-xs font-semibold text-gray-700">
+                        {subject || 'All Subjects'}
+                      </span>
+                      <FontAwesomeIcon icon={faChevronDown} className="text-gray-400 text-xs" />
+                    </button>
+                    
+                    {showQBSubjectDropdown && (
+                      <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl z-30 min-w-[160px] max-h-[250px] overflow-y-auto custom-scrollbar py-1 border">
+                        <button
+                          onClick={() => {
+                            setSubject('');
+                            setShowQBSubjectDropdown(false);
+                          }}
+                          className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 transition-colors ${
+                            !subject ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
+                          }`}
+                        >
+                          All Subjects
+                        </button>
+                        {subjects.map((subj) => (
+                          <button
+                            key={subj}
+                            onClick={() => {
+                              setSubject(subj);
+                              setShowQBSubjectDropdown(false);
+                            }}
+                            className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 transition-colors ${
+                              subject === subj ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
+                            }`}
+                          >
+                            {subj}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   
                   {/* Question Type Filter Dropdown */}
                   <div className="relative filter-dropdown">
@@ -4823,6 +5176,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         setShowComplexityDropdown(false);
                         setShowChapterDropdown(false);
                         setShowTagDropdown(false);
+                        setShowQBClassDropdown(false);
+                        setShowQBSubjectDropdown(false);
                       }}
                       className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg flex items-center space-x-1.5 hover:bg-gray-100 transition-colors"
                     >
@@ -4833,6 +5188,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                          questionTypeFilter === QUESTION_TYPES.FITB ? 'Fill Blank' :
                          questionTypeFilter === QUESTION_TYPES.JUMBLED ? 'Jumbled' :
                          questionTypeFilter === QUESTION_TYPES.CODE ? 'Code' :
+                         questionTypeFilter === QUESTION_TYPES.SQL ? 'SQL' :
                          'Descriptive'}
                       </span>
                       <FontAwesomeIcon icon={faChevronDown} className="text-gray-400 text-xs" />
@@ -4846,7 +5202,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           { value: 'fitb', label: 'Fill in the Blank' },
                           { value: 'jumbled', label: 'Jumbled' },
                           { value: QUESTION_TYPES.DESCRIPTIVE, label: 'Descriptive' },
-                          { value: QUESTION_TYPES.CODE, label: 'Code' }
+                          { value: QUESTION_TYPES.CODE, label: 'Code' },
+                          { value: QUESTION_TYPES.SQL, label: 'SQL' }
                         ].map((option) => (
                           <button
                             key={option.value}
@@ -4873,6 +5230,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         setShowQuestionTypeDropdown(false);
                         setShowChapterDropdown(false);
                         setShowTagDropdown(false);
+                        setShowQBClassDropdown(false);
+                        setShowQBSubjectDropdown(false);
                       }}
                       className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg flex items-center space-x-1.5 hover:bg-gray-100 transition-colors"
                     >
@@ -4918,6 +5277,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           setShowQuestionTypeDropdown(false);
                           setShowComplexityDropdown(false);
                           setShowTagDropdown(false);
+                          setShowQBClassDropdown(false);
+                          setShowQBSubjectDropdown(false);
                         }}
                         className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg flex items-center space-x-1.5 hover:bg-gray-100 transition-colors"
                       >
@@ -4971,6 +5332,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           setShowQuestionTypeDropdown(false);
                           setShowComplexityDropdown(false);
                           setShowChapterDropdown(false);
+                          setShowQBClassDropdown(false);
+                          setShowQBSubjectDropdown(false);
                         }}
                         className="px-3 py-1.5 bg-white border border-gray-300 rounded-lg flex items-center space-x-1.5 hover:bg-gray-100 transition-colors"
                       >
@@ -5081,6 +5444,37 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   )}
                 </div>
                 
+                {/* Public/Private Filter */}
+                <div className="flex items-center bg-gray-100 rounded-xl p-0.5">
+                  {[
+                    { value: 'all', label: 'All', icon: null, activeColor: 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200' },
+                    { value: 'common', label: 'Public', icon: faGlobe, activeColor: 'bg-green-50 text-green-700 shadow-sm ring-1 ring-green-200' },
+                    { value: 'proprietary', label: 'Private', icon: faLock, activeColor: 'bg-amber-50 text-amber-700 shadow-sm ring-1 ring-amber-200' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => {
+                        setProprietaryFilter(opt.value);
+                        setCurrentPage(1);
+                        setQbPageDocs(new Map());
+                      }}
+                      className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
+                        proprietaryFilter === opt.value
+                          ? opt.activeColor
+                          : 'text-gray-400 hover:text-gray-600'
+                      }`}
+                    >
+                      {opt.icon && (
+                        <FontAwesomeIcon 
+                          icon={opt.icon} 
+                          className={`text-[10px] transition-transform duration-200 ${proprietaryFilter === opt.value ? 'scale-110' : ''}`} 
+                        />
+                      )}
+                      <span>{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+
                 {/* Select All checkbox */}
                 {questionBankItems.length > 0 && !isLoadingQuestionBank && (
                   <button
@@ -5153,8 +5547,15 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   </p>
                   <div className="flex items-center justify-center space-x-2 text-sm text-gray-500 flex-wrap">
                     <span>Current filters:</span>
-                    <span className="px-2 py-1 bg-gray-100 rounded-md font-semibold">Class {className}</span>
-                    <span className="px-2 py-1 bg-gray-100 rounded-md font-semibold">{subject}</span>
+                    {className && (
+                      <span className="px-2 py-1 bg-gray-100 rounded-md font-semibold">Class {className}</span>
+                    )}
+                    {subject && (
+                      <span className="px-2 py-1 bg-gray-100 rounded-md font-semibold">{subject}</span>
+                    )}
+                    {!className && !subject && (
+                      <span className="px-2 py-1 bg-gray-100 rounded-md font-semibold">All Classes & Subjects</span>
+                    )}
                     {boards.length > 1 && (
                       <span className="px-2 py-1 bg-gray-100 rounded-md font-semibold">{board}</span>
                     )}
@@ -5163,7 +5564,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         {questionTypeFilter === QUESTION_TYPES.MCQ ? 'MCQ' :
                          questionTypeFilter === QUESTION_TYPES.FITB ? 'Fill Blank' :
                          questionTypeFilter === QUESTION_TYPES.JUMBLED ? 'Jumbled' :
-                         questionTypeFilter === QUESTION_TYPES.CODE ? 'Code' : 'Descriptive'}
+                         questionTypeFilter === QUESTION_TYPES.CODE ? 'Code' : 
+                         questionTypeFilter === QUESTION_TYPES.SQL ? 'SQL' : 'Descriptive'}
                       </span>
                     )}
                     {complexityFilter !== 'all' && (
@@ -5668,7 +6070,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           })()}
 
                           {/* Chapter Section - Outside Question Details (NON-CODE QUESTIONS) */}
-                          {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && (question as any).chapter && (
+                          {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.type !== QUESTION_TYPES.SQL && (question as any).chapter && (
                             <div className="mt-3">
                               <h2 className="text-base font-semibold text-gray-900 mb-2">Chapter</h2>
                               <p className="text-sm text-gray-900">{(question as any).chapter}</p>
@@ -5676,7 +6078,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           )}
 
                           {/* Hint Section - Outside Question Details (NON-CODE QUESTIONS) */}
-                          {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.hint && (
+                          {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.type !== QUESTION_TYPES.SQL && question.hint && (
                             <div className="mt-3">
                               <h2 className="text-base font-semibold text-gray-900 mb-2">Hint</h2>
                               {containsHTML(question.hint) ? (
@@ -5691,7 +6093,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           )}
 
                           {/* Solution Section - Outside Question Details (NON-CODE QUESTIONS) */}
-                          {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.solution && (
+                          {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.type !== QUESTION_TYPES.SQL && question.solution && (
                             <div className="mt-3">
                               <h2 className="text-base font-semibold text-gray-900 mb-2">Solution</h2>
                               {(question.type === QUESTION_TYPES.MCQ || question.type === QUESTION_TYPES.JUMBLED || question.type === QUESTION_TYPES.FITB || question.type === QUESTION_TYPES.DESCRIPTIVE) ? (
@@ -6030,7 +6432,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                   
                                   {/* Copy button */}
                                   <button
-                                    onClick={() => copyToClipboard(question.solution || '', `solution-${question.id}`)}
+                                    onClick={() => {
+                                      const tmp = document.createElement('div');
+                                      tmp.innerHTML = (question.solution || '').replace(/<br\s*\/?>/gi, '\n');
+                                      copyToClipboard(tmp.textContent || tmp.innerText || '', `solution-${question.id}`);
+                                    }}
                                     className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-all"
                                     title="Copy to clipboard"
                                   >
@@ -6058,7 +6464,12 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                     }}
                                     showLineNumbers={false}
                                   >
-                                    {question.solution}
+                                    {(() => {
+                                      // Strip HTML tags and decode HTML entities for clean code display
+                                      const tmp = document.createElement('div');
+                                      tmp.innerHTML = (question.solution || '').replace(/<br\s*\/?>/gi, '\n');
+                                      return tmp.textContent || tmp.innerText || '';
+                                    })()}
                                   </SyntaxHighlighter>
                                 </div>
                               </div>
@@ -6090,17 +6501,27 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                         </td>
                                         <td className="px-3 py-2">
                                           <div className="font-mono text-xs bg-gray-100 px-2 py-1 rounded border border-gray-300 whitespace-pre-wrap">
-                                            {testCase.input ? testCase.input.replace(/\\n/g, '\n') : 'N/A'}
+                                            {testCase.input != null
+                                              ? (typeof testCase.input === 'object'
+                                                  ? JSON.stringify(testCase.input, null, 2)
+                                                  : String(testCase.input)
+                                                ).replace(/\\n/g, '\n')
+                                              : 'N/A'}
                                           </div>
                                         </td>
                                         <td className="px-3 py-2">
                                           <div className="font-mono text-xs bg-green-50 px-2 py-1 rounded border border-green-200 text-green-700 whitespace-pre-wrap">
-                                            {testCase.expected_output ? testCase.expected_output.replace(/\\n/g, '\n') : 'N/A'}
+                                            {testCase.expected_output != null
+                                              ? (typeof testCase.expected_output === 'object'
+                                                  ? JSON.stringify(testCase.expected_output, null, 2)
+                                                  : String(testCase.expected_output)
+                                                ).replace(/\\n/g, '\n')
+                                              : 'N/A'}
                                           </div>
                                         </td>
                                         <td className="px-3 py-2 text-center">
                                           <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-orange-500 text-white">
-                                            {testCase.marks !== undefined ? testCase.marks.toFixed(1) : '0.0'}
+                                            {testCase.marks !== undefined && testCase.marks !== null ? Number(testCase.marks).toFixed(1) : '0.0'}
                                           </span>
                                         </td>
                                       </tr>
@@ -6161,6 +6582,110 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                               </div>
                             </div>
                           )}
+
+                          {/* SQL Schema & Test Cases - Expanded View */}
+                          {expandedQuestionId === question.id && question.type === QUESTION_TYPES.SQL && (() => {
+                            const sqlSchema = (question as any).sqlSchema || [];
+                            const sqlTestCases = ((question as any).sqlTestCases || []).map((tc: any) => ({
+                              ...tc,
+                              table_data: typeof tc.table_data === 'string' ? JSON.parse(tc.table_data || '{}') : (tc.table_data || {}),
+                              expected_output: typeof tc.expected_output === 'string' ? JSON.parse(tc.expected_output || '{"columns":[],"rows":[]}') : (tc.expected_output || { columns: [], rows: [] })
+                            }));
+                            return (
+                              <div className="space-y-3 mt-3">
+                                {/* Schema Tables */}
+                                {sqlSchema.length > 0 && (
+                                  <div>
+                                    <h2 className="text-sm font-bold text-green-700 mb-2 flex items-center space-x-1.5">
+                                      <span>🗄️</span><span>Table Schema</span>
+                                    </h2>
+                                    {sqlSchema.map((table: any, tIdx: number) => (
+                                      <div key={tIdx} className="mb-2 border border-green-200 rounded-lg overflow-hidden bg-green-50/30">
+                                        <div className="px-3 py-1.5 bg-green-100 border-b border-green-200 flex items-center justify-between">
+                                          <span className="font-bold text-green-800 text-sm">{table.table_name}</span>
+                                          {table.primary_key && <span className="text-[10px] text-green-600 bg-green-50 px-2 py-0.5 rounded-full">PK: {table.primary_key}</span>}
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                          <table className="w-full text-xs">
+                                            <thead><tr className="bg-green-50"><th className="px-2 py-1.5 text-left font-semibold text-green-700 border-b">Column</th><th className="px-2 py-1.5 text-left font-semibold text-green-700 border-b">Type</th><th className="px-2 py-1.5 text-left font-semibold text-green-700 border-b">Description</th><th className="px-2 py-1.5 text-left font-semibold text-green-700 border-b">Constraints</th></tr></thead>
+                                            <tbody>{(table.columns || []).filter((c: any) => c.name).map((col: any, cIdx: number) => (<tr key={cIdx} className={cIdx % 2 === 0 ? 'bg-white' : 'bg-green-50/50'}><td className="px-2 py-1.5 font-mono font-semibold border-b border-green-100">{col.name}</td><td className="px-2 py-1.5 text-gray-600 border-b border-green-100">{col.type}</td><td className="px-2 py-1.5 text-gray-600 border-b border-green-100">{col.description || '-'}</td><td className="px-2 py-1.5 text-gray-500 border-b border-green-100">{col.constraints || '-'}</td></tr>))}</tbody>
+                                          </table>
+                                        </div>
+                                        {table.note && <p className="px-3 py-1.5 text-[10px] text-green-600 italic bg-green-50/50 border-t border-green-100">📝 {table.note}</p>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Test Cases */}
+                                {sqlTestCases.length > 0 && (
+                                  <div>
+                                    <h2 className="text-sm font-bold text-amber-700 mb-2 flex items-center space-x-1.5">
+                                      <span>📝</span><span>Test Cases</span>
+                                    </h2>
+                                    {sqlTestCases.map((tc: any, tcIdx: number) => (
+                                      <div key={tcIdx} className="mb-2 border border-amber-200 rounded-lg overflow-hidden">
+                                        <div className="px-3 py-1.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+                                          <span className="font-bold text-amber-800 text-xs">{tc.title || `Test ${tcIdx + 1}`}</span>
+                                          <span className="text-[10px] font-semibold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">{tc.marks || 0} marks</span>
+                                        </div>
+                                        <div className="p-2 space-y-2">
+                                          {/* Input tables */}
+                                          {Object.entries(tc.table_data || {}).map(([tableName, rows]: [string, any]) => (
+                                            <div key={tableName} className="border border-blue-100 rounded overflow-hidden">
+                                              <div className="px-2 py-1 bg-blue-50 border-b border-blue-100">
+                                                <span className="text-[10px] font-bold text-blue-600">📥 Input: {tableName}</span>
+                                              </div>
+                                              <div className="overflow-x-auto">
+                                                <table className="w-full text-xs">
+                                                  <thead><tr className="bg-gray-50">{(sqlSchema.find((t: any) => t.table_name === tableName)?.columns || []).filter((c: any) => c.name).map((col: any, ci: number) => (<th key={ci} className="px-2 py-1 text-left font-semibold text-gray-600 border-b">{col.name}</th>))}</tr></thead>
+                                                  <tbody>{(rows as string[][]).map((row: string[], rIdx: number) => (<tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>{row.map((cell: string, ci: number) => (<td key={ci} className="px-2 py-1 font-mono border-b border-gray-100">{cell}</td>))}</tr>))}</tbody>
+                                                </table>
+                                              </div>
+                                            </div>
+                                          ))}
+                                          {/* Expected output */}
+                                          {tc.expected_output && tc.expected_output.columns?.length > 0 && (
+                                            <div className="border border-green-200 rounded overflow-hidden">
+                                              <div className="px-2 py-1 bg-green-50 border-b border-green-100">
+                                                <span className="text-[10px] font-bold text-green-600">📤 Expected Output</span>
+                                              </div>
+                                              <div className="overflow-x-auto">
+                                                <table className="w-full text-xs">
+                                                  <thead><tr className="bg-green-50/50">{tc.expected_output.columns.map((col: string, ci: number) => (<th key={ci} className="px-2 py-1 text-left font-semibold text-green-700 border-b">{col}</th>))}</tr></thead>
+                                                  <tbody>{(tc.expected_output.rows || []).map((row: string[], rIdx: number) => (<tr key={rIdx}>{row.map((cell: string, ci: number) => (<td key={ci} className="px-2 py-1 font-mono border-b border-gray-100">{cell}</td>))}</tr>))}</tbody>
+                                                </table>
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                {/* Chapter */}
+                                {(question as any).chapter && (
+                                  <div>
+                                    <h2 className="text-sm font-semibold text-gray-900 mb-1">Chapter</h2>
+                                    <p className="text-sm text-gray-700">{(question as any).chapter}</p>
+                                  </div>
+                                )}
+
+                                {/* Hint */}
+                                {question.hint && (
+                                  <div>
+                                    <h2 className="text-sm font-semibold text-gray-900 mb-1">Hint</h2>
+                                    {containsHTML(question.hint) ? (
+                                      <div className="text-sm text-gray-700 italic prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: question.hint }} />
+                                    ) : (
+                                      <p className="text-sm text-gray-700 italic">{question.hint}</p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                           </div>
 
                         {/* Footer */}
@@ -6322,6 +6847,226 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 >
                   <FontAwesomeIcon icon={faCheck} className="text-xs" />
                   <span>Add {selectedQuestionIds.size > 0 ? `${selectedQuestionIds.size} ` : ''}Question{selectedQuestionIds.size !== 1 ? 's' : ''}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Student Selection Modal */}
+      {showStudentModal && (
+        <div 
+          className="fixed inset-0 z-[10002] flex items-start justify-start p-2"
+          onClick={() => setShowStudentModal(false)}
+        >
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0" />
+          
+          <div 
+            className="relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[50rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+            style={{ animation: 'slideIn 0.3s ease-out' }}
+          >
+            {/* Header - matches parent modal */}
+            <div 
+              className="px-5 py-3 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+              style={{ 
+                background: brand.gradients.primary,
+                borderColor: brand.colors.secondary
+              }}
+            >
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.2)' }}>
+                  <FontAwesomeIcon icon={faUsers} className="text-white text-sm" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white">Enroll Students</h2>
+                  <p className="text-white/80 text-xs">{selectedStudentIds.size} selected</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowStudentModal(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 transition-all"
+              >
+                <FontAwesomeIcon icon={faXmark} className="text-white text-sm" />
+              </button>
+            </div>
+
+            {/* Filters Bar */}
+            <div className="px-5 py-3 border-b border-gray-200 flex items-center space-x-3 flex-shrink-0 bg-gray-50">
+              {/* Search */}
+              <div className="flex-1 relative">
+                <FontAwesomeIcon icon={faMagnifyingGlass} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs" />
+                <input
+                  type="text"
+                  placeholder="Search by name, email, roll..."
+                  value={studentSearchQuery}
+                  onChange={(e) => setStudentSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:border-transparent bg-white"
+                />
+              </div>
+              
+              {/* Class Filter */}
+              <div className="relative filter-dropdown">
+                <button
+                  onClick={() => setShowStudentClassDropdown(!showStudentClassDropdown)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium bg-white hover:border-gray-400 flex items-center space-x-2 transition-all"
+                >
+                  <FontAwesomeIcon icon={faFilter} className="text-xs text-gray-500" />
+                  <span>{studentClassFilter === 'all' ? 'All Classes (Batches)' : studentClassFilter}</span>
+                  <FontAwesomeIcon icon={faChevronDown} className="text-xs text-gray-400" />
+                </button>
+                {showStudentClassDropdown && (
+                  <div className="absolute top-full right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-xl z-30 min-w-[160px] max-h-48 overflow-y-auto custom-scrollbar">
+                    <button
+                      onClick={() => { setStudentClassFilter('all'); setShowStudentClassDropdown(false); }}
+                      className={`w-full px-3 py-2 text-left text-sm font-medium transition-colors ${
+                        studentClassFilter === 'all' ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      All Classes (Batches)
+                    </button>
+                    {classes.map(cls => (
+                      <button
+                        key={cls}
+                        onClick={() => { setStudentClassFilter(cls); setShowStudentClassDropdown(false); }}
+                        className={`w-full px-3 py-2 text-left text-sm font-medium transition-colors ${
+                          studentClassFilter === cls ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700'
+                        }`}
+                      >
+                        {cls}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Select All Header */}
+            <div className="px-5 py-2 border-b border-gray-100 flex items-center justify-between bg-white flex-shrink-0">
+              <label className="flex items-center space-x-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={paginatedStudents.length > 0 && paginatedStudents.every(s => selectedStudentIds.has(s.userId))}
+                  onChange={toggleSelectAllStudents}
+                  className="w-4 h-4 rounded border-gray-300"
+                />
+                <span className="text-sm font-semibold text-gray-700">Select All</span>
+              </label>
+              {selectedStudentIds.size > 0 && (
+                <span className="text-xs font-semibold px-2 py-1 rounded-full text-white" style={{ background: brand.gradients.primary }}>
+                  {selectedStudentIds.size} selected
+                </span>
+              )}
+            </div>
+
+            {/* Student List */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+              {isLoadingStudents ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="w-8 h-8 border-3 border-t-transparent rounded-full animate-spin" style={{ borderColor: brand.colors.primary, borderTopColor: 'transparent' }} />
+                </div>
+              ) : paginatedStudents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-400">
+                  <FontAwesomeIcon icon={faUsers} className="text-3xl mb-3" />
+                  <p className="font-semibold text-gray-600">No students found</p>
+                  <p className="text-sm mt-1">Try changing the class filter or search</p>
+                </div>
+              ) : (
+                paginatedStudents.map((student) => {
+                  const isSelected = selectedStudentIds.has(student.userId);
+                  const initials = student.fullName?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?';
+                  
+                  return (
+                    <div
+                      key={student.userId}
+                      onClick={() => toggleStudentSelection(student.userId)}
+                      className={`px-5 py-3 flex items-center space-x-3 cursor-pointer border-b border-gray-50 transition-all ${
+                        isSelected ? 'bg-blue-50/50' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => { e.stopPropagation(); toggleStudentSelection(student.userId); }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-4 h-4 rounded border-gray-300 flex-shrink-0"
+                      />
+                      
+                      {/* Avatar */}
+                      <div 
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                        style={{ background: brand.gradients.primary }}
+                      >
+                        {initials}
+                      </div>
+                      
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{student.fullName}</p>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-medium" style={{ color: brand.colors.primary }}>
+                            {student.studentClass || 'No Class'}
+                            {student.studentRoll ? ` • Roll: ${student.studentRoll}` : ''}
+                          </span>
+                        </div>
+                        {student.email && (
+                          <p className="text-xs text-gray-400 truncate">{student.email}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer with Pagination and Actions */}
+            <div className="bg-gradient-to-r from-gray-50 to-slate-50 px-5 py-3 flex items-center justify-between border-t border-gray-200 flex-shrink-0">
+              {/* Pagination */}
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-gray-500">
+                  <span className="font-semibold text-gray-700">
+                    {Math.min((studentModalPage - 1) * studentsPerPage + 1, availableStudents.length)}-{Math.min(studentModalPage * studentsPerPage, availableStudents.length)}
+                  </span>
+                  {' '}of{' '}
+                  <span className="font-semibold text-gray-700">{availableStudents.length}</span>
+                </span>
+                {totalStudentPages > 1 && (
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => setStudentModalPage(Math.max(1, studentModalPage - 1))}
+                      disabled={studentModalPage === 1}
+                      className="w-7 h-7 rounded-lg border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
+                    >
+                      <FontAwesomeIcon icon={faChevronLeft} />
+                    </button>
+                    <span className="text-xs font-semibold text-gray-600 px-1">{studentModalPage}/{totalStudentPages}</span>
+                    <button
+                      onClick={() => setStudentModalPage(Math.min(totalStudentPages, studentModalPage + 1))}
+                      disabled={studentModalPage === totalStudentPages}
+                      className="w-7 h-7 rounded-lg border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
+                    >
+                      <FontAwesomeIcon icon={faChevronRight} />
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              {/* Actions */}
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => setShowStudentModal(false)}
+                  className="px-4 py-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-semibold text-sm rounded-xl transition-all"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={confirmStudentEnrollment}
+                  className="px-5 py-2 text-white font-bold text-sm rounded-xl transition-all shadow-lg hover:shadow-xl flex items-center space-x-2"
+                  style={{ background: brand.gradients.primary }}
+                >
+                  <FontAwesomeIcon icon={faCheck} className="text-xs" />
+                  <span>Enroll{selectedStudentIds.size > 0 ? ` (${selectedStudentIds.size})` : ''}</span>
                 </button>
               </div>
             </div>

@@ -1,5 +1,8 @@
 {
   "projects": {
-    "default": "examiners-app"
-  }
+    "default": "examiners-app",
+    "dev": "examiners-app"
+  },
+  "targets": {},
+  "etags": {}
 }

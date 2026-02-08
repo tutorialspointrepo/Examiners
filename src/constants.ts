@@ -36,6 +36,7 @@ export const QUESTION_TYPES = {
   JUMBLED: 'jumbled',
   DESCRIPTIVE: 'descriptive',
   CODE: 'code',
+  SQL: 'sql',
 } as const;
 
 export type QuestionType = typeof QUESTION_TYPES[keyof typeof QUESTION_TYPES];
@@ -49,6 +50,7 @@ export const QUESTION_TYPE_LABELS = {
   [QUESTION_TYPES.JUMBLED]: 'Jumbled',
   [QUESTION_TYPES.DESCRIPTIVE]: 'Descriptive',
   [QUESTION_TYPES.CODE]: 'Code',
+  [QUESTION_TYPES.SQL]: 'SQL',
 } as const;
 
 // ==================== USER TYPES ====================

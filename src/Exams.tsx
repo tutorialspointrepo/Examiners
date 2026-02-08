@@ -433,6 +433,9 @@ function Exams({
   }, [activeCollegeId, selectedYear, loadInitialExams]);
 
   // Auto-select and scroll to newly created exam
+  const onExamAutoSelectedRef = useRef(onExamAutoSelected);
+  onExamAutoSelectedRef.current = onExamAutoSelected;
+  
   useEffect(() => {
     let highlightTimer: ReturnType<typeof setTimeout>;
     
@@ -440,7 +443,7 @@ function Exams({
       const newExam = exams.find(exam => exam.id === newlyCreatedExamId);
       if (newExam) {
         // Select the newly created exam
-        onExamSelect(newExam);
+        onExamSelectRef.current(newExam);
         
         // Highlight the newly created exam with red
         setHighlightedExamId(newlyCreatedExamId);
@@ -460,8 +463,8 @@ function Exams({
         // Remove red highlight after 10 seconds and clear the newly created exam ID
         highlightTimer = setTimeout(() => {
           setHighlightedExamId(null);
-          if (onExamAutoSelected) {
-            onExamAutoSelected();
+          if (onExamAutoSelectedRef.current) {
+            onExamAutoSelectedRef.current();
           }
         }, 10000);
       } else {
@@ -479,7 +482,7 @@ function Exams({
         clearTimeout(highlightTimer);
       }
     };
-  }, [newlyCreatedExamId, exams, onExamSelect, onExamAutoSelected, loadInitialExams]);
+  }, [newlyCreatedExamId, exams, loadInitialExams]);
 
   // Load college data (classes, boards, exam types)
   useEffect(() => {
@@ -637,12 +640,15 @@ function Exams({
   }, [filteredExams, onExamsListChange]);
 
   // Auto-select first exam when filtered exams change (only if no exam selected)
+  const onExamSelectRef = useRef(onExamSelect);
+  onExamSelectRef.current = onExamSelect;
+  
   useEffect(() => {
     if (filteredExams.length > 0 && !selectedExam) {
       // Only auto-select if NO exam is currently selected
-      onExamSelect(filteredExams[0]);
+      onExamSelectRef.current(filteredExams[0]);
     }
-  }, [filteredExams, selectedExam, onExamSelect]);
+  }, [filteredExams, selectedExam]);
 
   return (
     <>
@@ -961,26 +967,15 @@ function Exams({
                               <FontAwesomeIcon icon={faUsers} style={{ fontSize: '12px' }} className="mr-1" />
                               <span className="font-medium">{exam.totalStudents || 0} Student{exam.totalStudents !== 1 ? 's' : ''}</span>
                             </span>
-                            <span className="flex items-center">
-                              <FontAwesomeIcon icon={faGraduationCap} style={{ fontSize: '12px' }} className="mr-1" />
-                              <span>Class {exam.class}</span>
-                            </span>
-                            <span className="flex items-center">
-                              <FontAwesomeIcon icon={faClipboardList} style={{ fontSize: '12px' }} className="mr-1" />
-                              <span>{exam.type}</span>
+                            <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md flex items-center gap-1.5">
+                              {exam.status === EXAM_STATUS.COMPLETED ? (
+                                <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                              ) : (
+                                <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                              )}
+                              ID: {exam.id}
                             </span>
                           </p>
-                        </div>
-                        <div className="flex items-center">
-                          <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md flex items-center gap-1.5">
-                            {/* Status Icon */}
-                            {exam.status === EXAM_STATUS.COMPLETED ? (
-                              <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                            ) : (
-                              <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                            )}
-                            ID: {exam.id}
-                          </span>
                         </div>
                       </div>
                       

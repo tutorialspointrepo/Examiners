@@ -262,6 +262,21 @@ export interface CreateQuestionInput {
   programming_language?: string;
   test_cases?: TestCase[];
   test_stub?: string;
+  starter_codes?: Array<{ language: string; code: string }>;
+  
+  // SQL-specific (required if type is SQL)
+  sql_schema?: Array<{
+    table_name: string;
+    columns: Array<{ name: string; type: string; description: string; constraints: string }>;
+    primary_key: string;
+    note: string;
+  }>;
+  sql_test_cases?: Array<{
+    title: string;
+    table_data: Record<string, string[][]>;
+    expected_output: { columns: string[]; rows: string[][] };
+    marks: number;
+  }>;
 }
 
 /**

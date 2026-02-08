@@ -1,3 +1,4 @@
+
 /**
  * Coding Problems Uploader - BATCH VERSION
  * Reads problems from Excel, generates rich content via Claude AI Batch API (50% cheaper), uploads to Firebase
@@ -40,6 +41,7 @@ function initFirebase() {
 
 const anthropic = new Anthropic({
   apiKey: ANTHROPIC_API_KEY,
+  timeout: 10 * 60 * 1000, // 10 minutes
 });
 
 // ==================== HELPER FUNCTIONS ====================
@@ -583,14 +585,14 @@ YOU MUST REPLACE these with actual parameter names from paramOrder and correct t
   "solutionSummary": "Brief HTML summary: The <strong>key insight</strong> is... Best approach is... Time: O(?), Space: O(?)",
   "visualize": {
     "title": "Problem Overview: [Problem Name]",
-    "description": "Shows the input→output transformation",
+    "description": "3-panel infographic: Input --> Algorithm --> Result",
     "steps": [
       {"stepNumber": 1, "title": "Input", "description": "Input data with actual values"},
-      {"stepNumber": 2, "title": "Process", "description": "Key operation"},
-      {"stepNumber": 3, "title": "Output", "description": "Expected result"}
+      {"stepNumber": 2, "title": "Algorithm", "description": "Key steps of optimal approach"},
+      {"stepNumber": 3, "title": "Result", "description": "Final output"}
     ],
-    "svg": "GENERATE ACTUAL SVG CODE HERE following the example SVG format shown above. Must start with <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 400'> and show the problem input, transformation, and output.",
-    "conclusion": "🎯 **Key Insight:** One sentence about the main trick"
+    "svg": "GENERATE A HIGH-QUALITY 3-PANEL INFOGRAPHIC SVG following the PROBLEM VISUAL INFOGRAPHIC rules described below.",
+    "conclusion": "Key Insight: One sentence about the main trick"
   },
   "companies": [
     {"name": "Google", "logo": "G", "class": "google", "count": 50},
@@ -611,6 +613,58 @@ YOU MUST REPLACE these with actual parameter names from paramOrder and correct t
     "canonical": "https://www.tutorialspoint.com/practice/${problemId}.htm"
   }
 }
+
+6. PROBLEM VISUAL INFOGRAPHIC (for visualize.svg field):
+   
+   Generate a high-quality 3-panel SVG infographic. Return raw SVG code only.
+   
+   DIMENSIONS: viewBox="0 0 900 680", width="900", height="680"
+   
+   THREE EQUAL PANELS (270px width each, 400px height):
+   - Panel 1 (Blue #EBF4FF, border #BEE3F8): INPUT
+     * Show data structure visually (array boxes, graph nodes, tree, etc.)
+     * Display actual input values from Example 1
+   
+   - Panel 2 (Green #F0FFF4, border #9AE6B4): ALGORITHM STEPS
+     * Numbered steps (1, 2, 3, 4) with green circles
+     * Each step: title + brief explanation
+     * Visual aids if needed (heap, table, etc.)
+   
+   - Panel 3 (Orange #FFFAF0, border #FEEBC8): FINAL RESULT
+     * Show the solution visually
+     * Display output array/value in a box
+     * Brief confirmation text
+   
+   KEY INSIGHT BOX (bottom, full width):
+   - Background: Gray #EDF2F7, border #CBD5E0
+   - LEFT SIDE: SVG lightbulb icon (yellow circles + rectangle base)
+   - RIGHT SIDE: "Key Insight:" title + explanation text
+   
+   CONNECTING ARROWS BETWEEN PANELS:
+   - Bold arrows LEFT-TO-RIGHT: Input --> Algorithm --> Result
+   - Arrow shaft: stroke-width="3", color="#4A5568"
+   - Arrowhead: solid filled polygon triangle, fill="#4A5568", size 12-14px
+   - Positioned in the gap between panels, vertically at mid-height
+   
+   FOOTER:
+   - Line at y=620
+   - Text: "TutorialsPoint - [Problem Name] | [Approach]" at y=650
+   
+   STYLE RULES:
+   - Background: White #FFFFFF
+   - Panel corners: 16px radius
+   - Font: Arial, system fonts
+   - Title: 28px bold, Headers: 16px bold, Body: 12-14px
+   - Code: monospace
+   
+   CRITICAL SVG RULES:
+   - NO unicode arrows - use "-->" text or SVG polygon arrowheads
+   - NO emoji - use SVG shapes instead
+   - NO checkmarks - use "OK" text
+   - Keep text SHORT to avoid overflow
+   - Minimum 15px gap between text and shapes
+   - Labels must not overlap
+   - Use actual problem data from Example 1, not abstract shapes
 
 CHECKLIST - VERIFY EACH ITEM BEFORE SUBMITTING:
 1. ✅ paramOrder is array of strings matching function parameters exactly
@@ -951,14 +1005,14 @@ CRITICAL INSTRUCTIONS:
   "solutionSummary": "Brief HTML summary: Use <strong>window function</strong> with <code>SUM() OVER()</code> to calculate running totals efficiently.",
   "visualize": {
     "title": "SQL Problem Overview: [Problem Name]",
-    "description": "Shows input table → SQL operation → output table",
+    "description": "3-panel infographic: Input Tables --> SQL Operation --> Result",
     "steps": [
       {"stepNumber": 1, "title": "Input", "description": "Original table data"},
       {"stepNumber": 2, "title": "Operation", "description": "SQL operation"},
       {"stepNumber": 3, "title": "Output", "description": "Result table"}
     ],
-    "svg": "GENERATE ACTUAL SVG CODE HERE following the example SVG format shown above. Must start with <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 400'> and show input table, SQL operation, and output table.",
-    "conclusion": "🎯 **Key Insight:** When to use this SQL pattern"
+    "svg": "GENERATE A HIGH-QUALITY 3-PANEL INFOGRAPHIC SVG following the PROBLEM VISUAL INFOGRAPHIC rules described below.",
+    "conclusion": "Key Insight: When to use this SQL pattern"
   },
   "companies": [
     {"name": "Amazon", "logo": "a", "class": "amazon", "count": 45},
@@ -979,6 +1033,58 @@ CRITICAL INSTRUCTIONS:
     "canonical": "https://www.tutorialspoint.com/practice/${problemId}.htm"
   }
 }
+
+6. PROBLEM VISUAL INFOGRAPHIC (for visualize.svg field):
+   
+   Generate a high-quality 3-panel SVG infographic. Return raw SVG code only.
+   
+   DIMENSIONS: viewBox="0 0 900 680", width="900", height="680"
+   
+   THREE EQUAL PANELS (270px width each, 400px height):
+   - Panel 1 (Blue #EBF4FF, border #BEE3F8): INPUT TABLES
+     * Draw tables as grids with headers and data rows
+     * Display actual data from Example 1
+   
+   - Panel 2 (Green #F0FFF4, border #9AE6B4): SQL OPERATION
+     * Numbered steps (1, 2, 3) with green circles
+     * Each step: SQL keyword + brief explanation (e.g., "JOIN", "GROUP BY", "FILTER")
+     * Show key SQL logic visually
+   
+   - Panel 3 (Orange #FFFAF0, border #FEEBC8): RESULT TABLE
+     * Show output table with headers and result rows
+     * Highlight computed/derived values
+     * Brief confirmation text
+   
+   KEY INSIGHT BOX (bottom, full width):
+   - Background: Gray #EDF2F7, border #CBD5E0
+   - LEFT SIDE: SVG lightbulb icon (yellow circles + rectangle base)
+   - RIGHT SIDE: "Key Insight:" title + explanation text
+   
+   CONNECTING ARROWS BETWEEN PANELS:
+   - Bold arrows LEFT-TO-RIGHT: Input --> SQL --> Result
+   - Arrow shaft: stroke-width="3", color="#4A5568"
+   - Arrowhead: solid filled polygon triangle, fill="#4A5568", size 12-14px
+   - Positioned in the gap between panels, vertically at mid-height
+   
+   FOOTER:
+   - Line at y=620
+   - Text: "TutorialsPoint - [Problem Name] | [Approach]" at y=650
+   
+   STYLE RULES:
+   - Background: White #FFFFFF
+   - Panel corners: 16px radius
+   - Font: Arial, system fonts
+   - Title: 28px bold, Headers: 16px bold, Body: 12-14px
+   - Code: monospace
+   
+   CRITICAL SVG RULES:
+   - NO unicode arrows - use "-->" text or SVG polygon arrowheads
+   - NO emoji - use SVG shapes instead
+   - NO checkmarks - use "OK" text
+   - Keep text SHORT to avoid overflow
+   - Minimum 15px gap between text and shapes
+   - Labels must not overlap
+   - Use actual table data from Example 1, not abstract shapes
 
 CHECKLIST - VERIFY EACH ITEM BEFORE SUBMITTING:
 1. ✅ tableSchema: For single-table use object, for multi-table (JOINs) use array of objects
@@ -1010,11 +1116,13 @@ async function generateProblemContent(problemName, description, topics, difficul
     console.log(`    🤖 Calling Claude API for: ${problemName}`);
     console.log(`    📋 Problem Type: ${isSQL ? 'SQL/Database' : 'Coding'}`);
     
-    const message = await anthropic.messages.create({
+    const stream = await anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 20000,
+      max_tokens: 32000,
       messages: [{ role: 'user', content: prompt }]
     });
+
+    const message = await stream.finalMessage();
 
     const responseText = message.content[0].text;
     
@@ -1356,7 +1464,7 @@ async function createBatch(excelPath) {
       custom_id: problem.customId,
       params: {
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 20000,
+        max_tokens: 32000,
         messages: [{ role: 'user', content: prompt }]
       }
     };

@@ -15,9 +15,12 @@ import {
   faCheck,
   faGlobe,
   faGripVertical,
-  faImage
+  faImage,
+  faTrash,
+  faSpinner,
+  faTriangleExclamation
 } from '@fortawesome/sharp-light-svg-icons';
-import { firebaseService } from './services/firebase_service';
+import { firebaseService, type UserModel } from './services/firebase_service';
 import { 
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
@@ -40,6 +43,8 @@ interface QuestionListProps {
   onCreateQuestion?: () => void;
   scrollToQuestionId?: string | null;
   onQuestionScrolled?: () => void;
+  currentUser?: UserModel;
+  onQuestionDeleted?: () => void;
 }
 
 export default function QuestionList({
@@ -48,7 +53,9 @@ export default function QuestionList({
   brandTheme,
   questionType,
   scrollToQuestionId,
-  onQuestionScrolled
+  onQuestionScrolled,
+  currentUser,
+  onQuestionDeleted
 }: QuestionListProps) {
   // No conversion needed - database has modern types after migration
   // Just pass questionType directly (undefined for 'all')
@@ -71,6 +78,12 @@ export default function QuestionList({
   const [imageCarouselOpen, setImageCarouselOpen] = useState(false);
   const [carouselImages, setCarouselImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  // Delete question state
+  const [deleteConfirmQuestion, setDeleteConfirmQuestion] = useState<any | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const isSystemAdmin = currentUser ? (firebaseService.isSystemAdmin(currentUser) || currentUser.userType === 'super_admin' || currentUser.userType === 'admin') : false;
 
   // Debug: Log state changes
   useEffect(() => {
@@ -230,13 +243,25 @@ export default function QuestionList({
       });
 
       try {
-        const chapters = await firebaseService.getChaptersForSubject(
-          activeCollegeId,
-          selectedSubject.class,
-          selectedSubject.subject
-        );
-        setAvailableChapters(chapters);
-        console.log(`✅ Loaded ${chapters.length} unique chapters for ${selectedSubject.subject}:`, chapters);
+        // Handle comma-separated classes by fetching chapters for each class and merging
+        const classValues = selectedSubject.class.split(',').map(c => c.trim()).filter(c => c);
+        const allChapters: string[] = [];
+        
+        for (const cls of classValues) {
+          const chapters = await firebaseService.getChaptersForSubject(
+            activeCollegeId,
+            cls,
+            selectedSubject.subject
+          );
+          chapters.forEach(ch => {
+            if (!allChapters.some(existing => existing.toLowerCase() === ch.toLowerCase())) {
+              allChapters.push(ch);
+            }
+          });
+        }
+        
+        setAvailableChapters(allChapters);
+        console.log(`✅ Loaded ${allChapters.length} unique chapters for ${selectedSubject.subject}:`, allChapters);
       } catch (error) {
         console.error('❌ Error fetching chapters:', error);
         setAvailableChapters([]);
@@ -297,9 +322,11 @@ export default function QuestionList({
         });
 
         // Fetch questions with all filters applied at Firebase level
+        // When class contains multiple comma-separated values, pass undefined to avoid mismatch
+        const classForQuery = selectedSubject.class.includes(',') ? undefined : selectedSubject.class;
         const result = await firebaseService.getQuestionsPaginated(
           activeCollegeId,
-          selectedSubject.class,
+          classForQuery,
           selectedBoard !== FILTER_VALUES.ALL ? selectedBoard : undefined,
           selectedSubject.subject,
           actualQuestionType, // Pass modern question type directly to Firebase
@@ -386,6 +413,29 @@ export default function QuestionList({
     }
   };
 
+  // Delete question handler (System Admin only)
+  const handleDeleteQuestion = async () => {
+    if (!deleteConfirmQuestion || !isSystemAdmin) return;
+    
+    setIsDeleting(true);
+    try {
+      const success = await firebaseService.deleteQuestionFromBank(deleteConfirmQuestion.id);
+      if (success) {
+        setQuestions(prev => prev.filter(q => q.id !== deleteConfirmQuestion.id));
+        setTotalQuestions(prev => prev - 1);
+        setDeleteConfirmQuestion(null);
+        // Small delay to ensure Firestore delete is committed before stats re-fetch
+        setTimeout(() => {
+          onQuestionDeleted?.();
+        }, 500);
+      }
+    } catch (error) {
+      console.error('❌ Error deleting question:', error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Safe render function to handle special characters
   const safeRender = (text: any): string => {
     if (text === null || text === undefined) return '';
@@ -425,9 +475,29 @@ export default function QuestionList({
             >
               {selectedSubject.subject}
             </span>
-            <span className="px-3 py-1.5 rounded-xl  text-xs font-semibold bg-gray-100 text-gray-700">
-              Class {selectedSubject.class}
-            </span>
+            {(() => {
+              const classList = selectedSubject.class.split(',').map(c => c.trim()).filter(c => c);
+              const uniqueClasses = [...new Set(classList)];
+              if (uniqueClasses.length <= 1) {
+                return (
+                  <span className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-700">
+                    Class {uniqueClasses[0] || selectedSubject.class}
+                  </span>
+                );
+              }
+              return (
+                <select
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-700 border-none focus:ring-1 focus:outline-none cursor-pointer appearance-none"
+                  defaultValue=""
+                  style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23374151' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', paddingRight: '24px' }}
+                >
+                  <option value="" disabled>{uniqueClasses.length} Classes</option>
+                  {uniqueClasses.map(cls => (
+                    <option key={cls} value={cls}>{cls}</option>
+                  ))}
+                </select>
+              );
+            })()}
             <span className="px-3 py-1.5 rounded-xl  text-xs font-semibold bg-purple-100 text-purple-700">
               {getTypeDisplayName(questionType)}
             </span>
@@ -744,17 +814,6 @@ export default function QuestionList({
                 console.log('═══════════════════════════════════════════════');
               }
               
-              // Debug: Check for images in question
-              if (question.imageUrls || question.imageUrl) {
-                console.log('📸 Question has images:', {
-                  id: question.id,
-                  imageUrls: question.imageUrls,
-                  imageUrl: question.imageUrl,
-                  hasImageUrls: !!question.imageUrls,
-                  imageUrlsLength: question.imageUrls?.length || 0
-                });
-              }
-              
               return (
               <div
                 key={question.id}
@@ -781,11 +840,6 @@ export default function QuestionList({
                         <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-blue-100 text-blue-700">
                           {getTypeDisplayName(question.type)}
                         </span>
-                        {question.type === QUESTION_TYPES.CODE && (question.programmingLanguage || question.programming_language) && (
-                          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-orange-100 text-orange-700">
-                            {(question.programmingLanguage || question.programming_language).charAt(0).toUpperCase() + (question.programmingLanguage || question.programming_language).slice(1).toLowerCase()}
-                          </span>
-                        )}
                         {question.board && question.board.trim() !== '' && (
                           <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-purple-100 text-purple-700">
                             {question.board.toUpperCase()}
@@ -1334,7 +1388,7 @@ export default function QuestionList({
                 )}
 
                 {/* Chapter Section - Outside Question Details (NON-CODE QUESTIONS) */}
-                {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.chapter && (
+                {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.type !== QUESTION_TYPES.SQL && question.chapter && (
                   <div className="mt-3">
                     <h2 className="text-lg font-bold text-gray-900 mb-2">Chapter</h2>
                     <p className="text-sm text-gray-900">{question.chapter}</p>
@@ -1342,7 +1396,7 @@ export default function QuestionList({
                 )}
 
                 {/* Hint Section - Outside Question Details (NON-CODE QUESTIONS) */}
-                {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.hint && (
+                {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.type !== QUESTION_TYPES.SQL && question.hint && (
                   <div className="mt-3">
                     <h2 className="text-lg font-bold text-gray-900 mb-2">Hint</h2>
                     {containsHTML(question.hint) ? (
@@ -1367,7 +1421,7 @@ export default function QuestionList({
                 )}
 
                 {/* Solution Section - Outside Question Details (NON-CODE QUESTIONS) */}
-                {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.solution && (
+                {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.type !== QUESTION_TYPES.SQL && question.solution && (
                   <div className="mt-3">
                     <h2 className="text-lg font-bold text-gray-900 mb-2">Solution</h2>
                     {(question.type === QUESTION_TYPES.MCQ || question.type === QUESTION_TYPES.JUMBLED || question.type === QUESTION_TYPES.FITB || question.type === QUESTION_TYPES.DESCRIPTIVE) ? (
@@ -1687,76 +1741,6 @@ export default function QuestionList({
                   </div>
                 )}
 
-                {/* Solution Section - Outside Question Details (CODE ONLY) */}
-                {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && question.solution && (
-                  <div className="mt-3">
-                    <h2 className="text-lg font-bold text-gray-900 mb-2">Solution</h2>
-                    {containsHTML(question.solution) ? (
-                      // If solution contains HTML (with possible math formulas), render as HTML
-                      <div 
-                        className="text-sm text-gray-900 prose prose-sm max-w-none [&_.katex]:text-sm [&_.katex]:inline-block p-4 bg-gray-50 rounded-lg"
-                        dangerouslySetInnerHTML={{ 
-                          __html: question.solution.replace(
-                            /<span[^>]*data-latex=["']([^"']*)["'][^>]*>.*?<\/span>/g,
-                            (match: string, latex: string) => {
-                              try {
-                                const decodedLatex = latex.replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-                                return katex.renderToString(decodedLatex, { throwOnError: false, displayMode: false });
-                              } catch (e) { return match; }
-                            }
-                          )
-                        }}
-                      />
-                    ) : (
-                      // If solution is plain code, render with syntax highlighting
-                      <div className="relative rounded-lg overflow-hidden">
-                        {/* Terminal-style header with dots and copy button */}
-                        <div className="absolute top-0 left-0 right-0 h-10 bg-gray-800/95 backdrop-blur-sm z-10 flex items-center justify-between px-3 rounded-t-lg">
-                          {/* macOS-style dots */}
-                          <div className="flex items-center space-x-2">
-                            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                            <div className="w-3 h-3 rounded-full bg-green-500"></div>
-                          </div>
-                          
-                          {/* Copy button */}
-                          <button
-                            onClick={() => copyToClipboard(question.solution, `solution-${question.id}`)}
-                            className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-all"
-                            title="Copy to clipboard"
-                          >
-                            {copiedCode === `solution-${question.id}` ? (
-                              <FontAwesomeIcon icon={faCheck} className="text-sm" />
-                            ) : (
-                              <FontAwesomeIcon icon={faCopy} className="text-sm" />
-                            )}
-                          </button>
-                        </div>
-                        
-                        {/* Code content with top padding for header */}
-                        <div className="pt-10">
-                          <SyntaxHighlighter
-                            language={question.programmingLanguage?.toLowerCase() || 'python'}
-                            style={vscDarkPlus}
-                            customStyle={{
-                              margin: 0,
-                              borderRadius: 0,
-                              borderBottomLeftRadius: '0.5rem',
-                              borderBottomRightRadius: '0.5rem',
-                              fontSize: '0.875rem',
-                              padding: '1rem',
-                              paddingTop: '0.5rem'
-                            }}
-                            showLineNumbers={false}
-                          >
-                            {question.solution}
-                          </SyntaxHighlighter>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Test Cases Section - Outside, Only for Code Questions */}
                 {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && question.testCases && Array.isArray(question.testCases) && question.testCases.length > 0 && (
                   <div className="mt-3">
@@ -1792,17 +1776,27 @@ export default function QuestionList({
                               </td>
                                 <td className="px-3 py-2">
                                 <div className="font-mono text-xs bg-gray-50 px-2 py-1 rounded border border-gray-200 whitespace-pre-wrap">
-                                  {testCase.input ? testCase.input.replace(/\\n/g, '\n') : 'N/A'}
+                                  {testCase.input != null
+                                    ? (typeof testCase.input === 'object'
+                                        ? JSON.stringify(testCase.input, null, 2)
+                                        : String(testCase.input)
+                                      ).replace(/\\n/g, '\n')
+                                    : 'N/A'}
                                 </div>
                               </td>
                               <td className="px-3 py-2">
                                 <div className="font-mono text-xs bg-green-50 px-2 py-1 rounded border border-green-200 text-green-700 whitespace-pre-wrap">
-                                  {testCase.expected_output ? testCase.expected_output.replace(/\\n/g, '\n') : 'N/A'}
+                                  {testCase.expected_output != null
+                                    ? (typeof testCase.expected_output === 'object'
+                                        ? JSON.stringify(testCase.expected_output, null, 2)
+                                        : String(testCase.expected_output)
+                                      ).replace(/\\n/g, '\n')
+                                    : 'N/A'}
                                 </div>
                               </td>
                               <td className="px-3 py-2 text-center">
                                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-bold bg-orange-500 text-white">
-                                  {testCase.marks !== undefined ? testCase.marks.toFixed(1) : '0.0'}
+                                  {testCase.marks !== undefined && testCase.marks !== null ? Number(testCase.marks).toFixed(1) : '0.0'}
                                 </span>
                               </td>
                             </tr>
@@ -1871,12 +1865,153 @@ export default function QuestionList({
                   </div>
                 )}
 
+
+                {/* SQL Schema & Test Cases - Only for SQL Questions */}
+                {expandedQuestionId === question.id && question.type === QUESTION_TYPES.SQL && (
+                  <div className="mt-3 space-y-4">
+                    {/* Schema Tables */}
+                    {question.sqlSchema && Array.isArray(question.sqlSchema) && question.sqlSchema.length > 0 && (
+                      <div>
+                        <h2 className="text-lg font-bold text-gray-900 mb-2">Table Schema</h2>
+                        <div className="space-y-3">
+                          {question.sqlSchema.map((table: any, tIdx: number) => (
+                            <div key={tIdx} className="border border-green-200 rounded-lg overflow-hidden">
+                              <div className="px-3 py-2 bg-green-50 border-b border-green-100 flex items-center justify-between">
+                                <span className="text-sm font-bold text-green-700">{table.table_name || `Table ${tIdx + 1}`}</span>
+                                {table.primary_key && <span className="text-xs text-gray-500">PK: <span className="font-mono font-semibold">{table.primary_key}</span></span>}
+                              </div>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="bg-gray-50 border-b">
+                                      <th className="px-3 py-1.5 text-left font-semibold text-gray-600">Column</th>
+                                      <th className="px-3 py-1.5 text-left font-semibold text-gray-600">Type</th>
+                                      <th className="px-3 py-1.5 text-left font-semibold text-gray-600">Description</th>
+                                      <th className="px-3 py-1.5 text-left font-semibold text-gray-600">Constraints</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(table.columns || []).map((col: any, cIdx: number) => (
+                                      <tr key={cIdx} className={cIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                                        <td className="px-3 py-1.5 font-mono font-semibold text-gray-900">{col.name}</td>
+                                        <td className="px-3 py-1.5 font-mono text-blue-600 uppercase">{col.type}</td>
+                                        <td className="px-3 py-1.5 text-gray-600">{col.description || '—'}</td>
+                                        <td className="px-3 py-1.5 text-gray-600">{col.constraints || '—'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                              {table.note && <div className="px-3 py-1.5 bg-gray-50 border-t text-xs text-gray-500 italic">{table.note}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SQL Test Cases */}
+                    {question.sqlTestCases && Array.isArray(question.sqlTestCases) && question.sqlTestCases.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h2 className="text-lg font-bold text-gray-900">Test Cases</h2>
+                          <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-blue-100 text-blue-700">
+                            Total: {question.sqlTestCases.reduce((sum: number, tc: any) => sum + (tc.marks || 0), 0).toFixed(1)} marks
+                          </span>
+                        </div>
+                        <div className="space-y-3">
+                          {question.sqlTestCases.map((tc: any, tcIdx: number) => (
+                            <div key={tcIdx} className="border border-amber-200 rounded-lg overflow-hidden">
+                              <div className="px-3 py-2 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
+                                <span className="text-sm font-bold text-amber-700">{tc.title || `Test Case ${tcIdx + 1}`}</span>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-orange-500 text-white">{(tc.marks || 0).toFixed(1)} marks</span>
+                              </div>
+                              <div className="p-3 space-y-3">
+                                {/* Input Tables */}
+                                {tc.table_data && Object.keys(tc.table_data).length > 0 && (
+                                  <div>
+                                    <p className="text-xs font-semibold text-blue-600 mb-1.5">→ Input Tables</p>
+                                    {Object.entries(tc.table_data).map(([tableName, rows]: [string, any]) => {
+                                      const schemaTable = (question.sqlSchema || []).find((t: any) => t.table_name === tableName);
+                                      const allRows = rows || [];
+                                      // Determine column headers and data rows
+                                      // table_data may have headers as first row - detect and skip
+                                      let colNames: string[];
+                                      let dataRows: any[][];
+                                      if (schemaTable && schemaTable.columns.length > 0) {
+                                        colNames = schemaTable.columns.map((c: any) => c.name);
+                                        // Skip first row if it matches column names
+                                        if (allRows.length > 0 && Array.isArray(allRows[0]) && 
+                                            allRows[0].length === colNames.length && 
+                                            allRows[0].every((cell: string, i: number) => cell === colNames[i])) {
+                                          dataRows = allRows.slice(1);
+                                        } else {
+                                          dataRows = allRows;
+                                        }
+                                      } else if (allRows.length > 0 && Array.isArray(allRows[0])) {
+                                        // No schema found - use first row as headers
+                                        colNames = allRows[0];
+                                        dataRows = allRows.slice(1);
+                                      } else {
+                                        colNames = [];
+                                        dataRows = allRows;
+                                      }
+                                      return (
+                                        <div key={tableName} className="mb-2">
+                                          <p className="text-xs font-semibold text-gray-700 mb-1">{tableName}</p>
+                                          <div className="overflow-x-auto border border-gray-200 rounded">
+                                            <table className="w-full text-xs">
+                                              <thead><tr className="bg-gray-100">{colNames.map((cn: string, ci: number) => (<th key={ci} className="px-2 py-1 text-left font-semibold text-gray-600 border-b">{cn}</th>))}</tr></thead>
+                                              <tbody>{dataRows.map((row: any[], rIdx: number) => (<tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>{row.map((cell: string, ci: number) => (<td key={ci} className="px-2 py-1 font-mono border-b border-gray-100">{cell || '—'}</td>))}</tr>))}</tbody>
+                                            </table>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {/* Expected Output */}
+                                {tc.expected_output && (
+                                  <div>
+                                    <p className="text-xs font-semibold text-green-600 mb-1.5">◎ Expected Output</p>
+                                    <div className="overflow-x-auto border border-green-200 rounded bg-green-50/30">
+                                      <table className="w-full text-xs">
+                                        <thead><tr className="bg-green-50">{(tc.expected_output.columns || []).map((cn: string, ci: number) => (<th key={ci} className="px-2 py-1.5 text-left font-semibold text-green-700 border-b border-green-200">{cn}</th>))}</tr></thead>
+                                        <tbody>{(tc.expected_output.rows || []).map((row: string[], rIdx: number) => (<tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-green-50/30'}>{row.map((cell: string, ci: number) => (<td key={ci} className="px-2 py-1 font-mono border-b border-green-100">{cell || <span className="italic text-gray-400">NULL</span>}</td>))}</tr>))}</tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Chapter for SQL */}
+                    {question.chapter && (
+                      <div>
+                        <h2 className="text-lg font-bold text-gray-900 mb-2">Chapter</h2>
+                        <p className="text-sm text-gray-900">{question.chapter}</p>
+                      </div>
+                    )}
+
+                    {/* Hint for SQL */}
+                    {question.hint && (
+                      <div>
+                        <h2 className="text-lg font-bold text-gray-900 mb-2">Hint</h2>
+                        <p className="text-sm text-gray-700 italic">{question.hint}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Footer */}
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                   <div className="flex items-center space-x-4 text-xs text-gray-500">
                     <div className="flex items-center space-x-1">
                       <FontAwesomeIcon icon={faUser} />
-                      <span>{question.createdByName}</span>
+                      <span>{question.createdByName ? question.createdByName.charAt(0).toUpperCase() + question.createdByName.slice(1) : ''}</span>
                     </div>
                     <div className="flex items-center space-x-1">
                       <FontAwesomeIcon icon={faCalendar} />
@@ -1916,6 +2051,18 @@ export default function QuestionList({
                     >
                       {expandedQuestionId === question.id ? 'Hide Details' : 'View Details'}
                     </button>
+
+                    {/* Delete button - System Admin only */}
+                    {isSystemAdmin && (
+                      <button
+                        onClick={() => setDeleteConfirmQuestion(question)}
+                        className="text-xs font-medium px-3 py-1.5 rounded-md transition-colors text-red-500 hover:bg-red-50"
+                        title="Delete question"
+                      >
+                        <FontAwesomeIcon icon={faTrash} className="mr-1" />
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2123,6 +2270,83 @@ export default function QuestionList({
         </div>
       )}
     
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirmQuestion && (
+        <div 
+          className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => !isDeleting && setDeleteConfirmQuestion(null)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-in fade-in zoom-in duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-50 to-orange-50 px-6 pt-6 pb-4 text-center">
+              <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-red-100 flex items-center justify-center">
+                <FontAwesomeIcon icon={faTriangleExclamation} className="text-2xl text-red-500" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Delete Question</h3>
+              <p className="text-sm text-gray-500 mt-1">This action cannot be undone</p>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-4">
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <p className="text-sm text-gray-700 line-clamp-3" 
+                  dangerouslySetInnerHTML={{ 
+                    __html: (() => {
+                      const tmp = document.createElement('div');
+                      tmp.innerHTML = deleteConfirmQuestion.questionText || '';
+                      const text = tmp.textContent || tmp.innerText || 'Untitled Question';
+                      return text.length > 150 ? text.substring(0, 150) + '...' : text;
+                    })()
+                  }} 
+                />
+                <div className="flex items-center space-x-3 mt-3 pt-3 border-t border-gray-200">
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-100 text-blue-700">
+                    {deleteConfirmQuestion.type?.toUpperCase() || 'N/A'}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {deleteConfirmQuestion.marks || 0} marks
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {deleteConfirmQuestion.isProprietaryQuestion ? '🔒 Private' : '🌐 Public'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="px-6 pb-6 flex items-center space-x-3">
+              <button
+                onClick={() => setDeleteConfirmQuestion(null)}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-sm rounded-xl transition-all disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteQuestion}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white font-bold text-sm rounded-xl transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex items-center justify-center space-x-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <FontAwesomeIcon icon={faSpinner} className="animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faTrash} />
+                    <span>Delete Question</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     <style>{`
       .highlight-question {
         animation: highlight-pulse 1s ease-in-out 3;

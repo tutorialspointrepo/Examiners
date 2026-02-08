@@ -289,28 +289,28 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
 
       {/* Sliding Panel */}
       <div
-        className={`fixed top-0 right-0 h-full w-full max-w-2xl transform transition-transform duration-300 ease-in-out z-[10001] ${
+        className={`fixed top-0 right-0 h-full w-full max-w-lg transform transition-transform duration-300 ease-in-out z-[10001] ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         } ${darkMode ? 'bg-gray-900' : 'bg-white'} shadow-2xl flex flex-col`}
       >
         {/* Header */}
         <div
-          className={`px-6 py-4 border-b flex items-center justify-between ${
+          className={`px-4 py-2.5 border-b flex items-center justify-between ${
             darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50'
           }`}
         >
-          <div className="flex items-center space-x-3">
-            <FontAwesomeIcon icon={faListCheck} className="text-2xl" style={{ color: brand.colors.primary }} />
+          <div className="flex items-center space-x-2">
+            <FontAwesomeIcon icon={faListCheck} className="text-lg" style={{ color: brand.colors.primary }} />
             <div>
               <h2
-                className={`text-xl font-extrabold ${
+                className={`text-sm font-extrabold ${
                   darkMode ? 'text-white' : 'text-gray-900'
                 }`}
               >
                 Test Cases
               </h2>
               <p
-                className={`text-sm ${
+                className={`text-xs ${
                   darkMode ? 'text-gray-400' : 'text-gray-600'
                 }`}
               >
@@ -326,12 +326,12 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                 : 'hover:bg-gray-200 text-gray-600'
             }`}
           >
-            <FontAwesomeIcon icon={faXmark} className="text-xl" />
+            <FontAwesomeIcon icon={faXmark} className="text-base" />
           </button>
         </div>
 
         {/* Test Cases List */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
           {testCases.map((testCase, index) => {
             const result = testResults[index];
             
@@ -360,7 +360,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
               >
                 {/* Test Case Header */}
                 <div
-                  className={`px-4 py-3 flex items-center justify-between ${
+                  className={`px-3 py-2 flex items-center justify-between ${
                     darkMode ? 'bg-gray-750' : 'bg-gray-50'
                   }`}
                 >
@@ -368,25 +368,25 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                     {result.passed === true && (
                       <FontAwesomeIcon
                         icon={faCircleCheck}
-                        className="text-lg"
+                        className="text-sm"
                         style={{ color: brand.colors.primary }}
                       />
                     )}
                     {result.passed === false && (
                       <FontAwesomeIcon
                         icon={faCircleXmark}
-                        className="text-red-500 text-lg"
+                        className="text-red-500 text-sm"
                       />
                     )}
                     {result.running && (
                       <FontAwesomeIcon
                         icon={faSpinner}
-                        className="text-lg animate-spin"
+                        className="text-sm animate-spin"
                         style={{ color: brand.colors.primary }}
                       />
                     )}
                     <span
-                      className={`font-semibold ${
+                      className={`text-xs font-semibold ${
                         darkMode ? 'text-gray-200' : 'text-gray-900'
                       }`}
                     >
@@ -396,7 +396,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                   <button
                     onClick={() => runTestCase(index)}
                     disabled={result.running || isRunningAll}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center space-x-2 text-white shadow-lg hover:shadow-xl ${
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center space-x-1.5 text-white shadow hover:shadow-md ${
                       result.running || isRunningAll
                         ? 'bg-gray-400 cursor-not-allowed'
                         : ''
@@ -422,18 +422,18 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                 </div>
 
                 {/* Test Case Content */}
-                <div className="px-4 py-4 space-y-3">
+                <div className="px-3 py-2.5 space-y-2">
                   {/* Input */}
                   <div>
                     <label
-                      className={`block text-xs font-semibold mb-2 uppercase tracking-wide ${
+                      className={`block text-[10px] font-semibold mb-1 uppercase tracking-wide ${
                         darkMode ? 'text-gray-400' : 'text-gray-600'
                       }`}
                     >
                       Input
                     </label>
                     <div
-                      className={`p-3 rounded-lg font-mono text-sm whitespace-pre-wrap ${
+                      className={`p-2 rounded-md font-mono text-xs whitespace-pre-wrap ${
                         darkMode
                           ? 'bg-gray-900 text-gray-300'
                           : 'bg-gray-100 text-gray-800'
@@ -446,14 +446,14 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                   {/* Expected Output */}
                   <div>
                     <label
-                      className={`block text-xs font-semibold mb-2 uppercase tracking-wide ${
+                      className={`block text-[10px] font-semibold mb-1 uppercase tracking-wide ${
                         darkMode ? 'text-gray-400' : 'text-gray-600'
                       }`}
                     >
                       Expected Output
                     </label>
                     <div
-                      className={`p-3 rounded-lg font-mono text-sm whitespace-pre-wrap ${
+                      className={`p-2 rounded-md font-mono text-xs whitespace-pre-wrap ${
                         darkMode
                           ? 'bg-gray-900 text-gray-300'
                           : 'bg-gray-100 text-gray-800'
@@ -467,14 +467,14 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                   {result.passed !== null && (
                     <div>
                       <label
-                        className={`block text-xs font-semibold mb-2 uppercase tracking-wide ${
+                        className={`block text-[10px] font-semibold mb-1 uppercase tracking-wide ${
                           darkMode ? 'text-gray-400' : 'text-gray-600'
                         }`}
                       >
                         Your Output
                       </label>
                       <div
-                        className={`p-3 rounded-lg font-mono text-sm whitespace-pre-wrap ${
+                        className={`p-2 rounded-md font-mono text-xs whitespace-pre-wrap ${
                           darkMode
                             ? 'bg-gray-900 text-gray-300'
                             : 'bg-gray-100 text-gray-800'
@@ -489,12 +489,12 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                   {result.error && (
                     <div>
                       <label
-                        className={`block text-xs font-semibold mb-2 uppercase tracking-wide text-red-500`}
+                        className={`block text-[10px] font-semibold mb-1 uppercase tracking-wide text-red-500`}
                       >
                         Error
                       </label>
                       <div
-                        className={`p-3 rounded-lg font-mono text-sm whitespace-pre-wrap ${
+                        className={`p-2 rounded-md font-mono text-xs whitespace-pre-wrap ${
                           darkMode
                             ? 'bg-red-900/30 text-red-300'
                             : 'bg-red-100 text-red-800'
@@ -508,7 +508,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                   {/* Metrics (if run) */}
                   {result.passed !== null && (
                     <div
-                      className={`flex items-center justify-between pt-3 border-t text-xs ${
+                      className={`flex items-center justify-between pt-2 border-t text-[10px] ${
                         darkMode ? 'border-gray-700' : 'border-gray-300'
                       }`}
                     >
@@ -531,7 +531,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                         </span>
                       </div>
                       <span
-                        className={`font-bold text-sm px-3 py-1 rounded ${
+                        className={`font-bold text-xs px-2 py-0.5 rounded ${
                           result.passed === true 
                             ? 'bg-green-100 text-green-700'
                             : result.passed === false
@@ -555,14 +555,14 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
 
         {/* Footer */}
         <div
-          className={`px-6 py-4 border-t ${
+          className={`px-4 py-2.5 border-t ${
             darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-gray-50'
           }`}
         >
           {/* Stats and Action Buttons - Same Row */}
           <div className="flex items-center justify-between">
             {/* Stats - Left Side */}
-            <div className="flex items-center space-x-4 text-sm">
+            <div className="flex items-center space-x-3 text-xs">
               <span className="flex items-center space-x-2">
                 <FontAwesomeIcon icon={faCircleCheck} style={{ color: brand.colors.primary }} />
                 <span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
@@ -577,7 +577,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
               </span>
               {notRunCount > 0 && (
                 <span
-                  className={`text-sm ${
+                  className={`text-xs ${
                     darkMode ? 'text-gray-400' : 'text-gray-600'
                   }`}
                 >
@@ -587,10 +587,10 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
             </div>
 
             {/* Action Buttons - Right Side */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
               <button
                 onClick={onClose}
-                className={`px-5 py-2.5 rounded-lg font-medium text-sm transition-colors ${
+                className={`px-3 py-1.5 rounded-md font-medium text-xs transition-colors ${
                   darkMode
                     ? 'bg-gray-700 hover:bg-gray-600 text-white'
                     : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
@@ -601,7 +601,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
               <button
                 onClick={runAllTestCases}
                 disabled={isRunningAll}
-                className={`px-5 py-2.5 rounded-lg font-medium text-sm transition-all flex items-center space-x-2 text-white shadow-lg hover:shadow-xl ${
+                className={`px-3 py-1.5 rounded-md font-medium text-xs transition-all flex items-center space-x-1.5 text-white shadow hover:shadow-md ${
                   isRunningAll
                     ? 'bg-gray-400 cursor-not-allowed'
                     : ''

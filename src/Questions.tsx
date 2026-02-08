@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faChevronLeft, 
@@ -15,7 +15,7 @@ import { QUESTION_TYPES, QUESTION_TYPE_LABELS } from './constants';
 
 interface QuestionsProps {
   activeCollegeId?: string;
-  onSubjectSelect?: (subject: SubjectQuestionStats | null, questionType: 'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code') => void;
+  onSubjectSelect?: (subject: SubjectQuestionStats | null, questionType: 'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code' | 'sql') => void;
   selectedSubject?: SubjectQuestionStats | null;
   onCollapse?: () => void;
   refreshTrigger?: number; // Increment this to force reload of question stats
@@ -24,7 +24,7 @@ interface QuestionsProps {
 
 export default function Questions({ activeCollegeId, onSubjectSelect, selectedSubject: externalSelectedSubject, onCollapse, refreshTrigger }: QuestionsProps) {
   const brandTheme = useBrand();
-  const [questionFilter, setQuestionFilter] = useState<'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code'>('all');
+  const [questionFilter, setQuestionFilter] = useState<'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code' | 'sql'>('all');
   
   // Map filter to question type constant
   const getQuestionType = (filter: typeof questionFilter): string | undefined => {
@@ -34,6 +34,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
     if (filter === 'jumbled') return QUESTION_TYPES.JUMBLED;   // 'jumbled'
     if (filter === 'descriptive') return QUESTION_TYPES.DESCRIPTIVE; // 'descriptive'
     if (filter === 'code') return QUESTION_TYPES.CODE;         // 'code'
+    if (filter === 'sql') return QUESTION_TYPES.SQL;           // 'sql'
     return undefined;
   };
   
@@ -45,6 +46,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
     if (filter === 'jumbled') return QUESTION_TYPE_LABELS[QUESTION_TYPES.JUMBLED];
     if (filter === 'descriptive') return QUESTION_TYPE_LABELS[QUESTION_TYPES.DESCRIPTIVE];
     if (filter === 'code') return QUESTION_TYPE_LABELS[QUESTION_TYPES.CODE];
+    if (filter === 'sql') return QUESTION_TYPE_LABELS[QUESTION_TYPES.SQL];
     return 'All';
   };
   
@@ -183,6 +185,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
       if (questionFilter === 'descriptive') return subject.descriptiveCount > 0;
       if (questionFilter === 'jumbled') return subject.jumbledCount > 0;
       if (questionFilter === 'code') return subject.codeCount > 0;
+      if (questionFilter === 'sql') return (subject.sqlCount || 0) > 0;
       return true;
     });
     
@@ -207,9 +210,78 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
     if (questionFilter === 'descriptive') return subject.descriptiveCount > 0;
     if (questionFilter === 'jumbled') return subject.jumbledCount > 0;
     if (questionFilter === 'code') return subject.codeCount > 0;
+    if (questionFilter === 'sql') return (subject.sqlCount || 0) > 0;
     
     return true;
   });
+
+  // Group filtered subjects by subject name (merge classes)
+  const groupedSubjects = useMemo(() => {
+    const grouped: Record<string, {
+      subject: string;
+      classes: string[];
+      subjectCode: string;
+      totalQuestions: number;
+      mcqCount: number;
+      fitbCount: number;
+      descriptiveCount: number;
+      jumbledCount: number;
+      codeCount: number;
+      sqlCount: number;
+      proprietaryQuestions: number;
+      easyQuestions: number;
+      mediumQuestions: number;
+      hardQuestions: number;
+      originalStats: SubjectQuestionStats[];
+    }> = {};
+
+    filteredSubjectStats.forEach(stat => {
+      const key = stat.subject;
+      if (!grouped[key]) {
+        grouped[key] = {
+          subject: stat.subject,
+          classes: [],
+          subjectCode: stat.subjectCode || '',
+          totalQuestions: 0,
+          mcqCount: 0,
+          fitbCount: 0,
+          descriptiveCount: 0,
+          jumbledCount: 0,
+          codeCount: 0,
+          sqlCount: 0,
+          proprietaryQuestions: 0,
+          easyQuestions: 0,
+          mediumQuestions: 0,
+          hardQuestions: 0,
+          originalStats: []
+        };
+      }
+      // Split comma-separated class values and deduplicate
+      const classValues = stat.class.split(',').map(c => c.trim()).filter(c => c);
+      classValues.forEach(cls => {
+        if (!grouped[key].classes.includes(cls)) {
+          grouped[key].classes.push(cls);
+        }
+      });
+      if (!grouped[key].subjectCode && stat.subjectCode) {
+        grouped[key].subjectCode = stat.subjectCode;
+      }
+      grouped[key].totalQuestions += stat.totalQuestions;
+      grouped[key].mcqCount += stat.mcqCount;
+      grouped[key].fitbCount += stat.fitbCount;
+      grouped[key].descriptiveCount += stat.descriptiveCount;
+      grouped[key].jumbledCount += stat.jumbledCount;
+      grouped[key].codeCount += stat.codeCount;
+      grouped[key].sqlCount += (stat.sqlCount || 0);
+      grouped[key].proprietaryQuestions += (stat.proprietaryQuestions || 0);
+      grouped[key].easyQuestions += (stat.easyQuestions || 0);
+      grouped[key].mediumQuestions += (stat.mediumQuestions || 0);
+      grouped[key].hardQuestions += (stat.hardQuestions || 0);
+      grouped[key].originalStats.push(stat);
+    });
+
+    return Object.values(grouped);
+  }, [filteredSubjectStats]);
 
   // Calculate total questions for each filter type from ALL stats (not filtered)
   const totalQuestionsByType = {
@@ -218,7 +290,8 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
     fitb: allSubjectStats.reduce((sum, s) => sum + s.fitbCount, 0),
     descriptive: allSubjectStats.reduce((sum, s) => sum + (s.descriptiveCount || 0), 0),
     jumbled: allSubjectStats.reduce((sum, s) => sum + s.jumbledCount, 0),
-    code: allSubjectStats.reduce((sum, s) => sum + (s.codeCount || 0), 0)
+    code: allSubjectStats.reduce((sum, s) => sum + (s.codeCount || 0), 0),
+    sql: allSubjectStats.reduce((sum, s) => sum + (s.sqlCount || 0), 0)
   };
 
   return (
@@ -380,6 +453,22 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
               <span>FITB</span>
               <span className="ml-1 text-xs font-semibold">{totalQuestionsByType.fitb}</span>
             </button>
+            <button 
+              onClick={() => setQuestionFilter('sql')}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-xl font-medium transition-colors text-xs flex-shrink-0 ${
+                questionFilter === 'sql' ? '' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              style={questionFilter === 'sql' ? { 
+                backgroundColor: `${brandTheme.colors.primary}20`, 
+                color: brandTheme.colors.primary 
+              } : {}}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+              </svg>
+              <span>SQL</span>
+              <span className="ml-1 text-xs font-semibold">{totalQuestionsByType.sql}</span>
+            </button>
             </div>
           </div>
         </div>
@@ -387,7 +476,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
          <div className="px-6 pb-6 pt-4"> 
       
         <p className="text-sm text-gray-600 mb-4">
-          {filteredSubjectStats.length} subject{filteredSubjectStats.length !== 1 ? 's' : ''}
+          {groupedSubjects.length} subject{groupedSubjects.length !== 1 ? 's' : ''}
           {questionFilter !== 'all' && ` with ${getQuestionTypeLabel(questionFilter)} questions`}
         </p>
 
@@ -401,7 +490,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
             />
             <p className="text-gray-600 font-medium">Loading questions...</p>
           </div>
-        ) : filteredSubjectStats.length === 0 ? (
+        ) : groupedSubjects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
               <div className="relative mb-6">
                 <FontAwesomeIcon icon={faListCheck} style={{ fontSize: '80px' }} className="text-gray-300" />
@@ -427,39 +516,39 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
           </div>
         ) : (
         <div className="grid grid-cols-1 gap-4 pb-20">
-          {filteredSubjectStats.map((subject) => {
+          {groupedSubjects.map((group) => {
             // Get the count for the active filter, or total if 'all'
-            const displayCount = questionFilter === 'all' ? subject.totalQuestions :
-                               questionFilter === 'mcq' ? subject.mcqCount :
-                               questionFilter === 'fitb' ? subject.fitbCount :
-                               questionFilter === 'descriptive' ? subject.descriptiveCount :
-                               questionFilter === 'jumbled' ? subject.jumbledCount :
-                               subject.codeCount;
+            const displayCount = questionFilter === 'all' ? group.totalQuestions :
+                               questionFilter === 'mcq' ? group.mcqCount :
+                               questionFilter === 'fitb' ? group.fitbCount :
+                               questionFilter === 'descriptive' ? group.descriptiveCount :
+                               questionFilter === 'jumbled' ? group.jumbledCount :
+                               questionFilter === 'code' ? group.codeCount :
+                               group.sqlCount;
+
+            // Check if this grouped subject is selected
+            const isSelected = externalSelectedSubject?.subject === group.subject;
 
             return (
             <div 
-                key={`${subject.subject}-${subject.class}`} 
-                onClick={() => onSubjectSelect?.(subject, questionFilter)}
+                key={group.subject} 
+                onClick={() => onSubjectSelect?.(group.originalStats[0], questionFilter)}
                 className={`rounded-xl shadow-sm border p-5 cursor-pointer transition-all duration-200 ${
-                  externalSelectedSubject?.subject === subject.subject && 
-                  externalSelectedSubject?.class === subject.class
+                  isSelected
                     ? 'shadow-md' 
                     : 'bg-white border-gray-200 hover:shadow-md'
                 }`}
-                style={externalSelectedSubject?.subject === subject.subject && 
-                       externalSelectedSubject?.class === subject.class ? {
+                style={isSelected ? {
                   backgroundColor: `${brandTheme.colors.primary}08`,
                   borderColor: brandTheme.colors.primary
                 } : {}}
                 onMouseEnter={(e) => {
-                  if (!(externalSelectedSubject?.subject === subject.subject && 
-                        externalSelectedSubject?.class === subject.class)) {
+                  if (!isSelected) {
                     e.currentTarget.style.borderColor = brandTheme.colors.primary;
                   }
                 }}
                 onMouseLeave={(e) => {
-                  if (!(externalSelectedSubject?.subject === subject.subject && 
-                        externalSelectedSubject?.class === subject.class)) {
+                  if (!isSelected) {
                     e.currentTarget.style.borderColor = '#e5e7eb';
                   }
                 }}
@@ -468,12 +557,12 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                      {subject.subject}
+                      {group.subject}
                     </h3>
                   </div>
                   <div className="flex-shrink-0 bg-gray-100 px-4 py-2 rounded-lg">
                     <span className="text-sm font-semibold text-gray-700">
-                      {subject.subjectCode}
+                      {group.subjectCode}
                     </span>
                   </div>
                 </div>
@@ -481,11 +570,9 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
                 {/* Info Grid */}
                 <div 
                   className={`grid grid-cols-2 gap-3 mb-4 p-3 rounded-lg ${
-                    !(externalSelectedSubject?.subject === subject.subject && 
-                      externalSelectedSubject?.class === subject.class) ? 'bg-gray-50' : ''
+                    !isSelected ? 'bg-gray-50' : ''
                   }`}
-                  style={externalSelectedSubject?.subject === subject.subject && 
-                         externalSelectedSubject?.class === subject.class ? {
+                  style={isSelected ? {
                     backgroundColor: `${brandTheme.colors.primary}15`
                   } : {}}
                 >
@@ -500,9 +587,20 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
                   </div>
                   <div className="flex items-center space-x-2">
                     <FontAwesomeIcon icon={faGraduationCap} className="text-gray-500" />
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <p className="text-xs text-gray-500">Class</p>
-                      <p className="text-sm font-medium text-gray-900">Class {subject.class}</p>
+                      {group.classes.length === 1 ? (
+                        <p className="text-sm font-medium text-gray-900">Class {group.classes[0]}</p>
+                      ) : (
+                        <div className="relative group/classes">
+                          <p className="text-sm font-medium text-gray-900 cursor-default">{group.classes.length} Classes</p>
+                          <div className="absolute left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1.5 z-20 hidden group-hover/classes:block min-w-[140px]">
+                            {group.classes.map(cls => (
+                              <div key={cls} className="px-3 py-1 text-xs text-gray-700">{cls}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -516,7 +614,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
                     <FontAwesomeIcon icon={faTrophy} className="text-gray-500" />
                     <div>
                       <p className="text-xs text-gray-500">Proprietary</p>
-                      <p className="text-sm font-medium text-gray-900">{subject.proprietaryQuestions}</p>
+                      <p className="text-sm font-medium text-gray-900">{group.proprietaryQuestions > 0 ? `${group.proprietaryQuestions} Qs` : 'None'}</p>
                     </div>
                   </div>
                 </div>
@@ -524,19 +622,19 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
                 {/* Complexity Breakdown */}
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                   <div className="flex items-center space-x-3">
-                    {subject.hardQuestions > 0 && (
+                    {group.hardQuestions > 0 && (
                       <span className="text-xs font-semibold bg-cyan-100 text-cyan-700 px-2.5 py-1 rounded-md">
-                        Complex {subject.hardQuestions}
+                        Complex {group.hardQuestions}
                       </span>
                     )}
-                    {subject.mediumQuestions > 0 && (
+                    {group.mediumQuestions > 0 && (
                       <span className="text-xs font-semibold bg-green-100 text-green-700 px-2.5 py-1 rounded-md">
-                        Medium {subject.mediumQuestions}
+                        Medium {group.mediumQuestions}
                       </span>
                     )}
-                    {subject.easyQuestions > 0 && (
+                    {group.easyQuestions > 0 && (
                       <span className="text-xs font-semibold bg-pink-100 text-pink-700 px-2.5 py-1 rounded-md">
-                        Easy {subject.easyQuestions}
+                        Easy {group.easyQuestions}
                       </span>
                     )}
                   </div>
@@ -544,7 +642,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
-                        onSubjectSelect?.(subject, questionFilter);
+                        onSubjectSelect?.(group.originalStats[0], questionFilter);
                       }}
                       className="text-xs font-medium px-3 py-1.5 rounded-md transition-colors"
                       style={{ color: brandTheme.colors.primary }}

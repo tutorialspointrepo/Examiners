@@ -1863,9 +1863,9 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
           darkMode ? 'bg-gray-900' : 'bg-white'
         }`}
         style={{ 
-          height: height !== 'auto' ? height : minHeight,  // ✅ Use height prop if provided
-          minHeight: '100px',
-          maxHeight: height !== 'auto' ? 'none' : '500px',  // ✅ Remove maxHeight if custom height provided
+          height: height !== 'auto' ? height : 'auto',
+          minHeight: height !== 'auto' ? height : minHeight,
+          maxHeight: height !== 'auto' ? 'none' : '500px',
           resize: 'vertical',
           overflow: 'auto',
           scrollbarWidth: 'none',

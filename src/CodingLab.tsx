@@ -32,6 +32,7 @@ import {
   faPenToSquare,
   faCircleQuestion,
   faCopy,
+  faPaste,
   faExpand,
   faTerminal,
   faKeyboard,
@@ -270,8 +271,22 @@ function transformProblemData(data: any): ProblemData | null {
       testCases = (data.testCases || []).map((tc: any, idx: number) => {
         const params: Record<string, string> = {};
         if (tc.input) {
-          Object.entries(tc.input).forEach(([k, v]: [string, any]) => {
-            params[k] = typeof v === 'object' ? JSON.stringify(v) : String(v ?? '');
+          // Use paramOrder from Firebase (same as PHP), fallback to sorted keys
+          const paramOrder: string[] = data.paramOrder && data.paramOrder.length > 0
+            ? data.paramOrder
+            : Object.keys(tc.input).sort();
+          paramOrder.forEach((k: string) => {
+            if (k in tc.input) {
+              const v = tc.input[k];
+              params[k] = typeof v === 'object' ? JSON.stringify(v) : String(v ?? '');
+            }
+          });
+          // Include any keys not in paramOrder
+          Object.keys(tc.input).forEach((k: string) => {
+            if (!(k in params)) {
+              const v = tc.input[k];
+              params[k] = typeof v === 'object' ? JSON.stringify(v) : String(v ?? '');
+            }
           });
         }
         return {
@@ -711,7 +726,11 @@ const CodingLab: React.FC<CodingLabProps> = ({
           // Pre-populate Stdin with first test case (coding problems only)
           if (!data.isSql && data.testCases?.length > 0) {
             const firstTC = data.testCases[0];
-            const stdinValue = Object.values(firstTC.params || {}).join('\n');
+            const paramOrder = data.params || [];
+            const paramKeys = paramOrder.length > 0
+              ? paramOrder.map((p: any) => p.name)
+              : Object.keys(firstTC.params || {}).sort();
+            const stdinValue = paramKeys.map((k: string) => firstTC.params?.[k] || '').join('\n');
             if (stdinValue.trim()) {
               setStdinInput(stdinValue);
             }
@@ -1631,9 +1650,11 @@ const CodingLab: React.FC<CodingLabProps> = ({
     setTestResults(prev => prev.map((r, i) => i === index ? { ...r, running: true } : r));
 
     try {
-      // Convert params to stdin - use values from testCase.params directly
-      const paramValues = Object.values(testCase.params || {});
-      const stdin = paramValues.join('\n');
+      // Convert params to stdin - respect param order from problem definition (matches PHP behavior)
+      const paramKeys = (problem?.params || []).length > 0
+        ? problem.params.map((p: any) => p.name)
+        : Object.keys(testCase.params || {}).sort();
+      const stdin = paramKeys.map((k: string) => testCase.params[k] || '').join('\n');
       
       const result = await executeCode(code, selectedLanguage, stdin);
       
@@ -2768,47 +2789,39 @@ const CodingLab: React.FC<CodingLabProps> = ({
               />
             </div>
             {expandedSections.approaches && (
-              <div className="mt-4 overflow-x-auto">
-                <div className="rounded-xl border-2 border-amber-200 overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-amber-50">
-                        <th className="px-4 py-3 text-left text-gray-700 font-semibold border-b border-amber-200">Approach</th>
-                        <th className="px-4 py-3 text-center text-gray-700 font-semibold border-b border-amber-200">Time</th>
-                        <th className="px-4 py-3 text-center text-gray-700 font-semibold border-b border-amber-200">Space</th>
-                        <th className="px-4 py-3 text-left text-gray-700 font-semibold border-b border-amber-200">Notes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {approaches.map(([key, approach], index) => (
-                        <tr 
-                          key={key}
-                          onClick={() => setSelectedApproach(key)}
-                          className={`cursor-pointer transition-all ${
-                            selectedApproach === key 
-                              ? 'bg-green-50 border-l-4 border-l-green-500' 
-                              : 'bg-white hover:bg-amber-50/50'
-                          } ${index !== approaches.length - 1 ? 'border-b border-amber-100' : ''}`}
-                        >
-                          <td className="px-4 py-4 text-gray-800">
-                            {selectedApproach === key && (
-                              <span className="text-green-600 mr-2">✓</span>
-                            )}
-                            {approach.name}
-                          </td>
-                          <td className={`px-4 py-4 text-center font-mono font-semibold ${getComplexityColor(approach.complexity?.time, 'time')}`}>
-                            {approach.complexity?.time}
-                          </td>
-                          <td className={`px-4 py-4 text-center font-mono font-semibold ${getComplexityColor(approach.complexity?.space, 'space')}`}>
-                            {approach.complexity?.space}
-                          </td>
-                          <td className="px-4 py-4 text-gray-500 text-sm">
-                            {approach.description?.slice(0, 60)}{approach.description?.length > 60 ? '...' : ''}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <div className="mt-4">
+                <div className="flex flex-col">
+                  {approaches.map(([key, approach], index) => (
+                    <div 
+                      key={key}
+                      onClick={() => setSelectedApproach(key)}
+                      className={`px-4 py-3.5 cursor-pointer transition-all ${
+                        selectedApproach === key 
+                          ? 'bg-green-50/60 border-l-[3px] border-l-green-500' 
+                          : 'border-l-[3px] border-l-transparent hover:bg-amber-50/30'
+                      } ${index !== approaches.length - 1 ? 'border-b border-gray-200' : ''}`}
+                    >
+                      <div className="flex items-center gap-2 text-gray-800 font-semibold text-[14.5px] mb-1.5">
+                        {selectedApproach === key && (
+                          <span className="text-green-600 text-[15px]">✓</span>
+                        )}
+                        {approach.name}
+                      </div>
+                      <div className="flex items-center gap-3.5 mb-1.5">
+                        <span className={`text-xs font-semibold font-mono flex items-center gap-1 ${getComplexityColor(approach.complexity?.time, 'time')}`}>
+                          <span>⏱️</span> Time: {approach.complexity?.time}
+                        </span>
+                        <span className={`text-xs font-semibold font-mono flex items-center gap-1 ${getComplexityColor(approach.complexity?.space, 'space')}`}>
+                          <FontAwesomeIcon icon={faMicrochip} className="w-3 h-3" /> Space: {approach.complexity?.space}
+                        </span>
+                      </div>
+                      {approach.description && (
+                        <div className="text-gray-500 text-[13px] leading-relaxed">
+                          {approach.description}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -3345,7 +3358,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
               </div>
               {expandedSections.code && currentApproach.code?.[solutionLanguage] && (
                 <div className="mt-4 rounded-xl overflow-hidden border-2 border-amber-200">
-                  {/* Terminal Header - Light Theme */}
+                  {/* Terminal Header - traffic lights left, filename right */}
                   <div className="flex items-center justify-between px-4 py-2 bg-amber-50 border-b border-amber-200">
                     <div className="flex items-center gap-2">
                       <span className="w-3 h-3 rounded-full bg-red-400"></span>
@@ -3355,26 +3368,26 @@ const CodingLab: React.FC<CodingLabProps> = ({
                     <span className="text-gray-600 text-sm font-mono">
                       solution.{LANGUAGE_CONFIG.find(l => l.id === solutionLanguage)?.extension} — {LANGUAGE_CONFIG.find(l => l.id === solutionLanguage)?.name}
                     </span>
+                  </div>
+                  {/* Terminal Body with sticky copy button */}
+                  <div className="relative bg-amber-50/30 overflow-auto max-h-96">
                     <button 
                       onClick={() => {
                         setCode(currentApproach.code?.[solutionLanguage] || '');
+                        navigator.clipboard.writeText(currentApproach.code?.[solutionLanguage] || '');
                         setSolutionCodeCopied(true);
                         setTimeout(() => setSolutionCodeCopied(false), 2000);
                       }}
-                      className={`flex items-center gap-1.5 px-2 py-1 rounded transition-all text-sm ${
+                      className={`sticky top-2 float-right mr-3 mt-2 p-1.5 rounded border transition-all z-10 ${
                         solutionCodeCopied 
-                          ? 'text-green-600 bg-green-50' 
-                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                          ? 'text-green-600 bg-green-50 border-green-300' 
+                          : 'text-gray-400 border-transparent hover:text-gray-600 hover:border-amber-200'
                       }`}
-                      title={solutionCodeCopied ? 'Copied to Editor!' : 'Copy to Editor'}
+                      title={solutionCodeCopied ? 'Copied!' : 'Copy to Editor & Clipboard'}
                     >
-                      <FontAwesomeIcon icon={solutionCodeCopied ? faCheck : faCopy} className="w-3.5 h-3.5" />
-                      <span>{solutionCodeCopied ? 'Copied!' : 'Copy to Editor'}</span>
+                      <FontAwesomeIcon icon={solutionCodeCopied ? faCheck : faPaste} className="w-4 h-4" />
                     </button>
-                  </div>
-                  {/* Terminal Body - Light Theme with max height */}
-                  <div className="bg-amber-50/30 p-4 overflow-auto max-h-96">
-                    <pre className="text-sm font-mono leading-relaxed text-gray-800 whitespace-pre-wrap">
+                    <pre className="text-sm font-mono leading-relaxed text-gray-800 whitespace-pre-wrap p-4 pt-0">
                       <code dangerouslySetInnerHTML={{ __html: highlightCode(currentApproach.code[solutionLanguage] || '', solutionLanguage) }} />
                     </pre>
                   </div>
