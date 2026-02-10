@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useBrand } from './BrandContext';
-import { firebaseService, type UserModel, type ExamModel, type ExamEnrollmentModel, type QuestionBankItem } from './services/firebase_service';
+import { firebaseService, type UserModel, type ExamModel, type QuestionBankItem } from './services/firebase_service';
 import { 
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
@@ -14,6 +14,10 @@ import {
   type SecurityLevel,
   type ComplexityLevel,
 } from './constants';
+// Extend QuestionBankItem to include solution field used in question bank display
+interface QuestionBankItemWithSolution extends QuestionBankItem {
+  solution?: string;
+}
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import 'katex/dist/katex.min.css';
@@ -22,7 +26,6 @@ import RichTextEditor from './RichTextEditor';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faXmark, 
-  faBookOpen,
   faUpload, 
   faCalendar, 
   faFileLines, 
@@ -61,29 +64,7 @@ import {
   faCode,
   faCheckDouble,
   faCopy,
-  faSnake,
-  faCoffee,
-  faSquare as faSquareJs,
-  faWrench,
-  faGear,
-  faDeer,
-  faGem,
-  faElephant,
-  faCrab,
-  faDove,
-  faK,
-  faChartBar,
-  faRulerCombined,
   faDatabase,
-  faDisplay,
-  faTerminal,
-  faHorse,
-  faTriangleExclamation,
-  faBullseye,
-  faAppleWhole,
-  faGamepad,
-  faEarthAmericas,
-  faPalette,
   faClock,
   faHourglass,
   faCheckCircle,
@@ -280,37 +261,6 @@ const parseExamDate = (dateStr: string): Date | null => {
   }
 };
 
-const getProgrammingLanguageIcon = (language: string): any => {
-  const iconMap: Record<string, any> = {
-    'Python': faSnake,
-    'Java': faCoffee,
-    'JavaScript': faSquareJs,
-    'Javascript': faSquareJs,
-    'C': faWrench,
-    'C++': faGear,
-    'Go': faDeer,
-    'Ruby': faGem,
-    'PHP': faElephant,
-    'Rust': faCrab,
-    'Swift': faDove,
-    'Kotlin': faK,
-    'TypeScript': faBook,
-    'R': faChartBar,
-    'MATLAB': faRulerCombined,
-    'SQL': faDatabase,
-    'Bash': faDisplay,
-    'Shell': faTerminal,
-    'Perl': faHorse,
-    'Scala': faTriangleExclamation,
-    'Dart': faBullseye,
-    'Objective-C': faAppleWhole,
-    'C#': faGamepad,
-    'HTML': faEarthAmericas,
-    'CSS': faPalette
-  };
-  return iconMap[language] || faLaptop;
-};
-
 // Get academic year from database for a college
 const getCurrentAcademicYear = async (collegeId?: string): Promise<string> => {
   if (collegeId) {
@@ -381,9 +331,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   
   const [showQuestionBankModal, setShowQuestionBankModal] = useState(false);
   const [showCustomQuestionModal, setShowCustomQuestionModal] = useState(false);
-  const [questionBankItems, setQuestionBankItems] = useState<QuestionBankItem[]>([]);
+  const [questionBankItems, setQuestionBankItems] = useState<QuestionBankItemWithSolution[]>([]);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
-  const [selectedQuestionsMap, setSelectedQuestionsMap] = useState<Map<string, QuestionBankItem>>(new Map());
+  const [selectedQuestionsMap, setSelectedQuestionsMap] = useState<Map<string, QuestionBankItemWithSolution>>(new Map());
   const [isLoadingQuestionBank, setIsLoadingQuestionBank] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
@@ -403,7 +353,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [complexityFilter, setComplexityFilter] = useState<string>(FILTER_VALUES.ALL);
   const [chapterFilter, setChapterFilter] = useState<string>(FILTER_VALUES.ALL);
   const [tagFilter, setTagFilter] = useState<string>(FILTER_VALUES.ALL);
-  const [proprietaryFilter, setProprietaryFilter] = useState<string>('all');
+  const [proprietaryFilter, setProprietaryFilter] = useState<'common' | 'all' | 'proprietary'>('all');
   const [showQuestionTypeDropdown, setShowQuestionTypeDropdown] = useState(false);
   const [showComplexityDropdown, setShowComplexityDropdown] = useState(false);
   const [showChapterDropdown, setShowChapterDropdown] = useState(false);
@@ -422,8 +372,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [boards, setBoards] = useState<string[]>([]);
   const [isLoadingData, setIsLoadingData] = useState(true);
 
-  const [totalStudents, setTotalStudents] = useState(0);
-  const [isLoadingStudentCount, setIsLoadingStudentCount] = useState(false);
+  const [, setTotalStudents] = useState(0);
+  const [, setIsLoadingStudentCount] = useState(false);
 
   // Custom Question Modal States
   const [customQuestionType, setCustomQuestionType] = useState<QuestionType>(QUESTION_TYPES.DESCRIPTIVE);
@@ -461,8 +411,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   }>>([{ title: 'Test Case 1', table_data: {}, expected_output: { columns: [''], rows: [['']] }, marks: 0 }]);
   const [showStarterCodeHelp, setShowStarterCodeHelp] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
-  const [codingLanguages, setCodingLanguages] = useState<string[]>(['Python', 'Java', 'C++', 'C', 'JavaScript', 'Go', 'Ruby']);
-  const [isLoadingLanguages, setIsLoadingLanguages] = useState(false);
+  const [, setCodingLanguages] = useState<string[]>(['Python', 'Java', 'C++', 'C', 'JavaScript', 'Go', 'Ruby']);
+  const [, setIsLoadingLanguages] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const [alertConfig, setAlertConfig] = useState<{
@@ -860,10 +810,17 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         setAvProctoring(false);
         setCompletionPolicy('strict');
         getCurrentAcademicYear().then(year => setAcademicYear(year));
+        setExamType('');
+        setExamLabel('');
+        setClassName('');
+        setSubject('');
+        setBoard('');
         setMaximumMarks(100);
         setExamDate('');
         setExamTime('');
         setDuration(180);
+        setDurationUnit('minutes');
+        setDurationDisplayValue(180);
         setQuestionPaperImages([]);
         setQuestions([]);
         setEnableQuestionPool(false);
@@ -1150,7 +1107,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         type: examType,
         typeColor: getExamTypeColor(examType),
         year: academicYear,
-        subject: subject || '',  // Optional now
         title: generatedTitle,
         board: board || activeCollegeId || '',
         status: 'upcoming',
@@ -2002,7 +1958,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         className || undefined,
         undefined, // board - show all
         subject || undefined,
-        actualQuestionType,
+        actualQuestionType as any,
         proprietaryFilter, // Public/Private filter
         questionsPerPage,
         currentPage,
@@ -2245,7 +2201,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         className || undefined,
         boardFilter,
         subject || undefined,
-        actualQuestionType,
+        actualQuestionType as any,
         'all',
         10000, // Large limit to get all questions
         1,
@@ -2337,6 +2293,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           programmingLanguage: item.programmingLanguage,
           testCases: item.testCases,
           testStub: item.testStub,
+          // SQL question specific fields
+          sqlSchema: (item as any).sqlSchema,
+          sqlTestCases: (item as any).sqlTestCases,
           // Image URLs
           imageUrls: item.imageUrls || [],
         } as any;
@@ -3023,13 +2982,13 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   {/* Exam Label */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-900 mb-1.5">
-                      Exam Label <span className="text-gray-400 font-normal">(optional, 6-15 chars)</span>
+                      Exam Label <span className="text-gray-400 font-normal">(optional, 6-25 chars)</span>
                     </label>
                     <input
                       type="text"
                       value={examLabel}
                       onChange={(e) => {
-                        if (e.target.value.length <= 15) setExamLabel(e.target.value);
+                        if (e.target.value.length <= 25) setExamLabel(e.target.value);
                       }}
                       placeholder="e.g. Infosys Test"
                       className="w-full px-3 py-3 border border-gray-300 rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent hover:border-gray-400 bg-white"
@@ -5454,7 +5413,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     <button
                       key={opt.value}
                       onClick={() => {
-                        setProprietaryFilter(opt.value);
+                        setProprietaryFilter(opt.value as 'common' | 'all' | 'proprietary');
                         setCurrentPage(1);
                         setQbPageDocs(new Map());
                       }}

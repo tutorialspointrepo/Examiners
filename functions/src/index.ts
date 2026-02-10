@@ -8,6 +8,7 @@ import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
 import * as nodemailer from 'nodemailer';
 import { PubSub } from '@google-cloud/pubsub';
+import { PGlite } from '@electric-sql/pglite';
 
 // Import report processing from separate file
 export { processReportInstance } from './reports';
@@ -836,6 +837,18 @@ function sanitizeQuestionForClient(question: any): any {
         console.log(`[SANITIZE] ✅ Preserved ${safeQuestion.testCases.length} test cases with expected outputs`);
       }
     }
+
+  // SQL: Keep sqlSchema and sqlTestCases for client-side display (students need to see table structure and test data)
+  if (question.type === 'sql') {
+    if (question.sqlSchema) {
+      safeQuestion.sqlSchema = question.sqlSchema;
+      console.log(`[SANITIZE] ✅ Kept sqlSchema (${Array.isArray(question.sqlSchema) ? question.sqlSchema.length : 1} tables)`);
+    }
+    if (question.sqlTestCases && Array.isArray(question.sqlTestCases)) {
+      safeQuestion.sqlTestCases = question.sqlTestCases;
+      console.log(`[SANITIZE] ✅ Kept ${question.sqlTestCases.length} SQL test cases`);
+    }
+  }
   
   // JUMBLED: Keep jumbledOptions
   if (question.type === 'jumbled') {
@@ -1396,6 +1409,203 @@ export const getExamForStudent = functions
 // ============================================
 
 /**
+ * 🐘 Helper: Grade SQL question using PGlite (in-memory PostgreSQL)
+ * Mirrors Judge0 grading pattern: run all test cases, count passed, calculate marks
+ */
+async function gradeSqlWithPGlite(params: {
+  studentCode: string;
+  sqlSchema: any[];
+  sqlTestCases: any[];
+  questionMaxMarks: number;
+}): Promise<{
+  passedCount: number;
+  totalTests: number;
+  testResults: any[];
+  marksAwarded: number;
+  isCorrect: boolean;
+  error?: string;
+}> {
+  const { studentCode, sqlSchema, sqlTestCases, questionMaxMarks } = params;
+  const totalTests = sqlTestCases.length;
+  let passedCount = 0;
+  const testResults: any[] = [];
+
+  let db: any = null;
+  try {
+    // Spin up in-memory PGlite instance
+    db = new PGlite();
+    await db.waitReady;
+
+    // Create tables from schema
+    const schemas = Array.isArray(sqlSchema) ? sqlSchema : [sqlSchema];
+    for (const schema of schemas) {
+      const tableName = schema.tableName || schema.table_name || 'Table';
+      let columns = schema.columns;
+      if (columns && typeof columns === 'object' && !Array.isArray(columns)) {
+        columns = Object.keys(columns).sort((a: string, b: string) => Number(a) - Number(b)).map((key: string) => columns[key]);
+      }
+      if (!columns || columns.length === 0) continue;
+
+      let createSQL = `CREATE TABLE IF NOT EXISTS ${tableName} (`;
+      createSQL += columns.map((col: any) => {
+        let type = (col.type || 'TEXT').toUpperCase();
+        if (type.includes('ENUM')) type = 'TEXT';
+        if (type.includes('INT')) type = 'INTEGER';
+        if (type.includes('VARCHAR') || type.includes('CHAR')) type = 'TEXT';
+        if (type.includes('DECIMAL') || type.includes('FLOAT') || type.includes('DOUBLE') || type.includes('NUMERIC')) type = 'REAL';
+        if (type.includes('DATE') || type.includes('TIMESTAMP')) type = 'TEXT';
+        if (type.includes('BOOLEAN') || type.includes('BOOL')) type = 'BOOLEAN';
+        return `${col.name} ${type}`;
+      }).join(', ');
+      createSQL += ')';
+
+      console.log(`      🗄️ Creating table: ${tableName}`);
+      await db.query(createSQL);
+    }
+
+    // Run each test case
+    for (let i = 0; i < sqlTestCases.length; i++) {
+      const tc = sqlTestCases[i];
+      const testNum = i + 1;
+
+      try {
+        // Truncate all tables for clean state
+        for (const schema of schemas) {
+          const tableName = schema?.tableName || schema?.table_name || 'Table';
+          try { await db.query(`DELETE FROM ${tableName}`); } catch (e) { /* ignore */ }
+        }
+
+        // Insert test data
+        // table_data format: { "TableName": [["col1","col2"], ["val1","val2"], ...] }
+        // May be JSON string (from Firestore) or already parsed object
+        let tableData = tc.table_data;
+        if (typeof tableData === 'string') {
+          try { tableData = JSON.parse(tableData); } catch (e) { tableData = {}; }
+        }
+
+        for (const tableName of Object.keys(tableData || {})) {
+          const rows = tableData[tableName];
+          if (!Array.isArray(rows) || rows.length < 2) continue;
+          const headers = rows[0];
+          const dataRows = rows.slice(1);
+
+          for (const row of dataRows) {
+            const vals = headers.map((_h: string, idx: number) => {
+              const val = row[idx];
+              if (val === null || val === undefined) return 'NULL';
+              if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+              return val;
+            });
+            await db.query(`INSERT INTO ${tableName} (${headers.join(', ')}) VALUES (${vals.join(', ')})`);
+          }
+        }
+
+        // Execute student's SQL
+        const startTime = Date.now();
+        const result = await db.query(studentCode);
+        const executionTime = Date.now() - startTime;
+
+        const actualRows = result.rows || [];
+        const actualHeaders = actualRows.length > 0 ? Object.keys(actualRows[0]) : [];
+
+        // Get expected output
+        let expectedOutput = tc.expected_output;
+        if (typeof expectedOutput === 'string') {
+          try { expectedOutput = JSON.parse(expectedOutput); } catch (e) { expectedOutput = { columns: [], rows: [] }; }
+        }
+        const expectedColumns = expectedOutput?.columns || [];
+        const expectedRows = expectedOutput?.rows || [];
+
+        // Compare results
+        let passed = false;
+        if (actualHeaders.length === expectedColumns.length && actualRows.length === expectedRows.length) {
+          passed = true;
+          for (let ri = 0; ri < expectedRows.length && passed; ri++) {
+            for (let ci = 0; ci < expectedColumns.length && passed; ci++) {
+              const expectedVal = expectedRows[ri][ci];
+              const headerName = expectedColumns[ci];
+              const actualKey = actualHeaders.find((h: string) => h.toLowerCase() === headerName.toLowerCase()) || actualHeaders[ci];
+              const actualVal = actualRows[ri]?.[actualKey];
+
+              if (actualVal === null && expectedVal === null) continue;
+              if (actualVal === null || expectedVal === null) { passed = false; break; }
+
+              const aStr = String(actualVal).trim().toLowerCase();
+              const eStr = String(expectedVal).trim().toLowerCase();
+              if (aStr !== eStr) {
+                const aNum = parseFloat(String(actualVal));
+                const eNum = parseFloat(String(expectedVal));
+                if (isNaN(aNum) || isNaN(eNum) || Math.abs(aNum - eNum) >= 0.0001) {
+                  passed = false;
+                }
+              }
+            }
+          }
+        }
+
+        if (passed) passedCount++;
+
+        testResults.push({
+          testNumber: testNum,
+          title: tc.title || `Test ${testNum}`,
+          passed,
+          actualHeaders,
+          actualRowCount: actualRows.length,
+          expectedColumns,
+          expectedRowCount: expectedRows.length,
+          executionTime: `${executionTime}ms`,
+          error: null
+        });
+
+        console.log(`         Test ${testNum}: ${passed ? '✅ PASSED' : '❌ FAILED'} (${executionTime}ms)`);
+
+      } catch (testError: any) {
+        testResults.push({
+          testNumber: testNum,
+          title: tc.title || `Test ${testNum}`,
+          passed: false,
+          actualHeaders: [],
+          actualRowCount: 0,
+          expectedColumns: [],
+          expectedRowCount: 0,
+          executionTime: null,
+          error: testError.message
+        });
+        console.log(`         Test ${testNum}: ❌ ERROR: ${testError.message}`);
+      }
+    }
+
+    // Cleanup
+    try { await db.close(); } catch (e) { /* ignore */ }
+
+    // Calculate marks (identical to Judge0 pattern)
+    const score = totalTests > 0 ? passedCount / totalTests : 0;
+    const marksAwarded = Math.round(score * questionMaxMarks * 100) / 100;
+
+    return {
+      passedCount,
+      totalTests,
+      testResults,
+      marksAwarded,
+      isCorrect: passedCount === totalTests
+    };
+
+  } catch (initError: any) {
+    // Cleanup on error
+    if (db) { try { await db.close(); } catch (e) { /* ignore */ } }
+    console.error(`      ❌ PGlite initialization failed: ${initError.message}`);
+    return {
+      passedCount: 0,
+      totalTests,
+      testResults,
+      marksAwarded: 0,
+      isCorrect: false,
+      error: initError.message
+    };
+  }
+}
+
+/**
  * Shared grading logic - handles all question types
  * Used by both submitAndGradeExam and autoSubmitPendingAttempts
  */
@@ -1838,6 +2048,131 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
     }
     
     // ============================================
+    // SQL GRADING (SERVER-SIDE PGlite + Test Cases)
+    // ============================================
+    else if (question.type === 'sql' && isAttempted) {
+      console.log(`      🐘 Grading SQL with PGlite execution...`);
+      
+      const studentCode = response.studentAnswer as string;
+      
+      // CHECK: If code is empty, mark as not attempted
+      if (!studentCode || studentCode.trim() === '') {
+        console.log(`      ⚠️ No SQL submitted for Q${response.questionNo} - marking as unattempted`);
+        
+        gradedResponses.push({
+          ...response,
+          studentAnswer: '',
+          marksAwarded: 0,
+          maxMarks: questionMaxMarks,
+          isCorrect: false,
+          evaluationStatus: 'not_attempted',
+          evaluationMethod: 'not_attempted',
+          autoEvaluated: false,
+          evaluatedBy: null,
+          evaluatedAt: null,
+          evaluationError: 'No SQL query submitted'
+        });
+        
+        continue;
+      }
+      
+      const sqlSchema = question.sqlSchema || question.sql_schema || [];
+      const sqlTestCases = question.sqlTestCases || question.sql_test_cases || [];
+      
+      if (sqlTestCases.length === 0) {
+        console.log(`      ⚠️ No SQL test cases for Q${response.questionNo} - pending manual`);
+        evaluationMethod = 'pending_manual';
+        pendingManualGrading++;
+        
+        gradedResponses.push({
+          ...response,
+          questionType: 'sql',
+          complexity: question.complexity,
+          chapter: question.chapter,
+          studentAnswer: studentCode || '',
+          marksAwarded: 0,
+          maxMarks: questionMaxMarks,
+          isCorrect: false,
+          evaluationStatus: 'pending',
+          evaluationMethod: 'pending_manual',
+          autoEvaluated: false,
+          evaluatedBy: 'system',
+          evaluationError: 'No SQL test cases configured',
+          evaluatedAt: new Date()
+        });
+        
+        continue;
+      }
+      
+      try {
+        console.log(`      🚀 Executing ${sqlTestCases.length} SQL test cases with PGlite...`);
+        
+        const sqlResult = await gradeSqlWithPGlite({
+          studentCode,
+          sqlSchema,
+          sqlTestCases,
+          questionMaxMarks
+        });
+        
+        marksAwarded = sqlResult.marksAwarded;
+        isCorrect = sqlResult.isCorrect;
+        evaluationMethod = 'sql_auto_pglite';
+        
+        console.log(`      📊 SQL Test Results: ${sqlResult.passedCount}/${sqlResult.totalTests} passed`);
+        console.log(`      💯 Marks: ${marksAwarded}/${questionMaxMarks}`);
+        
+        // Store graded response (mirrors CODE pattern)
+        gradedResponses.push({
+          ...response,
+          questionType: 'sql',
+          complexity: question.complexity,
+          chapter: question.chapter,
+          studentAnswer: studentCode || '',
+          marksAwarded,
+          maxMarks: questionMaxMarks,
+          isCorrect,
+          evaluationStatus: 'completed',
+          evaluationMethod,
+          autoEvaluated: true,
+          evaluatedBy: 'auto-grading-system',
+          testResults: sqlResult.testResults,
+          passedTests: sqlResult.passedCount,
+          totalTests: sqlResult.totalTests,
+          evaluatedAt: new Date()
+        });
+        
+        continue;
+        
+      } catch (sqlError: any) {
+        console.error(`      ❌ PGlite execution failed:`, sqlError.message);
+        
+        marksAwarded = 0;
+        isCorrect = false;
+        evaluationMethod = 'pending_manual';
+        pendingManualGrading++;
+        
+        gradedResponses.push({
+          ...response,
+          questionType: 'sql',
+          complexity: question.complexity,
+          chapter: question.chapter,
+          studentAnswer: studentCode || '',
+          marksAwarded: 0,
+          maxMarks: questionMaxMarks,
+          isCorrect: false,
+          evaluationStatus: 'pending',
+          evaluationMethod: 'pending_manual',
+          autoEvaluated: false,
+          evaluatedBy: 'system',
+          evaluationError: `PGlite execution failed: ${sqlError.message}`,
+          evaluatedAt: new Date()
+        });
+        
+        continue;
+      }
+    }
+    
+    // ============================================
     // OTHER TYPES - Pending
     // ============================================
     else if (isAttempted) {
@@ -1854,19 +2189,21 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
     if (!byType[qType]) {
       byType[qType] = { attempted: 0, score: 0, maxScore: 0 };
     }
+    byType[qType].maxScore += questionMaxMarks;
     if (isAttempted) {
       byType[qType].attempted++;
       byType[qType].score += marksAwarded;
-      byType[qType].maxScore += questionMaxMarks;
     }
     
     // Track by complexity
     if (question.complexity) {
       const complexity = question.complexity.toLowerCase() as 'easy' | 'medium' | 'hard';
       if (byComplexity[complexity]) {
-        if (isAttempted) byComplexity[complexity].attempted++;
-        byComplexity[complexity].score += marksAwarded;
         byComplexity[complexity].maxScore += questionMaxMarks;
+        if (isAttempted) {
+          byComplexity[complexity].attempted++;
+          byComplexity[complexity].score += marksAwarded;
+        }
       }
     }
     
@@ -1875,16 +2212,17 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       if (!byChapter[question.chapter]) {
         byChapter[question.chapter] = { attempted: 0, score: 0, maxScore: 0 };
       }
+      byChapter[question.chapter].maxScore += questionMaxMarks;
       if (isAttempted) {
         byChapter[question.chapter].attempted++;
         byChapter[question.chapter].score += marksAwarded;
-        byChapter[question.chapter].maxScore += questionMaxMarks;
       }
     }
     
     // Store graded response
     gradedResponses.push({
       ...response,
+      chapter: response.chapter || question.chapter || undefined,
       marksAwarded,
       scoredMarks: marksAwarded,
       maxMarks: questionMaxMarks,
@@ -1899,6 +2237,35 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
   }
   
   const percentage = maxMarks > 0 ? (totalScore / maxMarks) * 100 : 0;
+  
+  // ✅ Add unattempted questions to byType, byComplexity, byChapter
+  for (const question of allQuestions) {
+    const hasResponse = responses.some((r: any) => r.questionId === question.id);
+    if (!hasResponse) {
+      const qMaxMarks = question.maximumMarks || question.marks || question.maxMarks || 0;
+      
+      // byType
+      const qType = question.type;
+      if (qType) {
+        if (!byType[qType]) byType[qType] = { attempted: 0, score: 0, maxScore: 0 };
+        byType[qType].maxScore += qMaxMarks;
+      }
+      
+      // byComplexity
+      if (question.complexity) {
+        const complexity = question.complexity.toLowerCase() as 'easy' | 'medium' | 'hard';
+        if (byComplexity[complexity]) {
+          byComplexity[complexity].maxScore += qMaxMarks;
+        }
+      }
+      
+      // byChapter
+      if (question.chapter) {
+        if (!byChapter[question.chapter]) byChapter[question.chapter] = { attempted: 0, score: 0, maxScore: 0 };
+        byChapter[question.chapter].maxScore += qMaxMarks;
+      }
+    }
+  }
   
   // Calculate total questions from exam and time spent from responses
   const totalQuestions = allQuestions.length;  // Total questions in exam

@@ -39,7 +39,7 @@ const ProblemsListModal: React.FC<ProblemsListModalProps> = ({
   // User attempt stats
   const [userAttempts, setUserAttempts] = useState<Map<string, { status: 'attempted' | 'completed'; attemptCount: number }>>(new Map());
   const [userStats, setUserStats] = useState<{ solved: number; attempted: number }>({ solved: 0, attempted: 0 });
-  const [attemptsLoading, setAttemptsLoading] = useState(false);
+  const [, setAttemptsLoading] = useState(false);
 
   // Check if any filter is active
   const hasActiveFilters = problemsDifficultyFilter !== 'All' || problemsTopicFilter !== 'All' || problemsCompanyFilter !== 'All' || problemsSearchQuery.trim() !== '';

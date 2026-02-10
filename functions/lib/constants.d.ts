@@ -26,6 +26,7 @@ export declare const QUESTION_TYPES: {
     readonly JUMBLED: "jumbled";
     readonly DESCRIPTIVE: "descriptive";
     readonly CODE: "code";
+    readonly SQL: "sql";
 };
 export type QuestionType = typeof QUESTION_TYPES[keyof typeof QUESTION_TYPES];
 /**
@@ -37,6 +38,7 @@ export declare const QUESTION_TYPE_LABELS: {
     readonly jumbled: "Jumbled";
     readonly descriptive: "Descriptive";
     readonly code: "Code";
+    readonly sql: "SQL";
 };
 /**
  * User role types
@@ -858,6 +860,7 @@ export declare const APP_CONSTANTS: {
         readonly JUMBLED: "jumbled";
         readonly DESCRIPTIVE: "descriptive";
         readonly CODE: "code";
+        readonly SQL: "sql";
     };
     readonly QUESTION_TYPE_LABELS: {
         readonly mcq: "MCQ";
@@ -865,6 +868,7 @@ export declare const APP_CONSTANTS: {
         readonly jumbled: "Jumbled";
         readonly descriptive: "Descriptive";
         readonly code: "Code";
+        readonly sql: "SQL";
     };
     readonly USER_TYPES: {
         readonly SYSTEM_ADMIN: "system_admin";

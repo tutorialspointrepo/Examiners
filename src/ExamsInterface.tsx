@@ -69,6 +69,19 @@ import * as faceapi from 'face-api.js';
 // ==================== HELPER FUNCTIONS ====================
 
 /**
+ * Normalize SQL rows - handles both array and object formats from Firebase
+ * Firebase may store rows as {0: {...}, 1: {...}} instead of [{...}, {...}]
+ */
+function normalizeRows(rows: any): any[] {
+  if (!rows) return [];
+  if (Array.isArray(rows)) return rows;
+  if (typeof rows === 'object') {
+    return Object.keys(rows).sort((a, b) => Number(a) - Number(b)).map(key => rows[key]);
+  }
+  return [];
+}
+
+/**
  * Normalize question type from various formats to standard QuestionType
  */
 const normalizeQuestionType = (type: string): QuestionType => {
@@ -78,7 +91,8 @@ const normalizeQuestionType = (type: string): QuestionType => {
     'fitb': QUESTION_TYPES.FITB,
     'descriptive': QUESTION_TYPES.DESCRIPTIVE,
     'jumbled': QUESTION_TYPES.JUMBLED,
-    'code': QUESTION_TYPES.CODE
+    'code': QUESTION_TYPES.CODE,
+    'sql': QUESTION_TYPES.SQL
   };
   return typeMap[normalized] || type as QuestionType;
 };
@@ -124,11 +138,15 @@ interface Question {
   jumbledItems?: string[]; // Items to be arranged (backend field name)
   jumbledOptions?: string[]; // Alternative field name for jumbled items
   // Coding specific
-  boilerplate?: string; // Starting code (testStub in backend)
-  testCases?: Array<{ input: string; expected_output?: string; output?: string; marks?: number }>; // Test cases
+  boilerplate?: string; // Starting code (testStub in backend) - legacy single language
+  starterCodes?: Array<{ code: string; language: string }>; // Multi-language starter codes
+  testCases?: Array<{ input: string; expected_output?: string; output?: string; marks?: number; sqlInput?: any; sqlExpectedOutput?: any }>; // Test cases
   language?: string; // Programming language
   solution?: string; // Correct solution (for reference, not shown to student)
   hint?: string; // Optional hint
+  // SQL specific
+  isSql?: boolean; // Flag for SQL type questions
+  tableSchema?: any; // Table schema(s) for SQL problems
   // Pool flag
   fromPool?: boolean; // Flag indicating if question is from random pool
 }
@@ -300,19 +318,26 @@ const seededShuffle = <T,>(array: T[], seed: string): T[] => {
  * ✅ NEW: Get visible test cases for display (1/3 of total, minimum 2)
  * The full test cases are still used for evaluation
  */
-const getVisibleTestCases = (testCases: any[]): any[] => {
+const getVisibleTestCases = (testCases: any[], isSql?: boolean): any[] => {
   if (!testCases || testCases.length === 0) return [];
   
   // Calculate 1/3 of test cases, minimum 2
   const visibleCount = Math.max(2, Math.ceil(testCases.length / 3));
   
-  // Return first N test cases with unescaped newlines
-  return testCases.slice(0, visibleCount).map(tc => ({
-    ...tc,
-    input: tc.input ? tc.input.replace(/\\n/g, '\n').replace(/\\t/g, '\t') : tc.input,
-    expected_output: tc.expected_output ? tc.expected_output.replace(/\\n/g, '\n').replace(/\\t/g, '\t') : tc.expected_output,
-    output: tc.output ? tc.output.replace(/\\n/g, '\n').replace(/\\t/g, '\t') : tc.output
-  }));
+  // Return first N test cases
+  return testCases.slice(0, visibleCount).map(tc => {
+    // SQL test cases have sqlInput/sqlExpectedOutput, not string input/output
+    if (isSql || tc.sqlInput || tc.sqlExpectedOutput) {
+      return { ...tc };
+    }
+    // CODE test cases — unescape newlines
+    return {
+      ...tc,
+      input: tc.input ? tc.input.replace(/\\n/g, '\n').replace(/\\t/g, '\t') : tc.input,
+      expected_output: tc.expected_output ? tc.expected_output.replace(/\\n/g, '\n').replace(/\\t/g, '\t') : tc.expected_output,
+      output: tc.output ? tc.output.replace(/\\n/g, '\n').replace(/\\t/g, '\t') : tc.output
+    };
+  });
 };
 
 /**
@@ -685,9 +710,11 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
           } else if (typeStr === QUESTION_TYPES.JUMBLED) {
             // ✅ FIX: Also detect jumbled by presence of jumbledOptions/jumbledItems
             questionType = QUESTION_TYPES.JUMBLED;
-          } else if (typeStr ===  QUESTION_TYPES.CODE) {
+          } else if (typeStr === QUESTION_TYPES.CODE) {
             // ✅ FIX: Also detect coding by presence of testCases
             questionType = QUESTION_TYPES.CODE;
+          } else if (typeStr === QUESTION_TYPES.SQL) {
+            questionType = QUESTION_TYPES.SQL;
           } else if (typeStr === QUESTION_TYPES.DESCRIPTIVE) {
             questionType = QUESTION_TYPES.DESCRIPTIVE;
           } else if (hasOptions) {
@@ -730,11 +757,28 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
             jumbledOptions: q.jumbledOptions || q.jumbledItems || [],
             jumbledItems: q.jumbledItems || q.jumbledOptions || [], // Also set jumbledItems for compatibility
             // Coding specific - CRITICAL: Never load solution, only testStub
-            boilerplate: q.testStub || q.boilerplate || '',
-            testCases: q.testCases || [],
-            language: (q.programmingLanguage || q.programming_language || 'javascript').toLowerCase(),
+            starterCodes: q.starterCodes || [],
+            boilerplate: q.starterCodes?.length > 0
+              ? (q.starterCodes[0].code || '')
+              : (q.testStub || q.boilerplate || ''),
+            testCases: questionType === QUESTION_TYPES.SQL
+              ? (q.sqlTestCases || q.sql_test_cases || []).map((tc: any) => ({
+                  input: '', expected_output: '', marks: tc.marks || q.maxMarks || 5,
+                  title: tc.title || '',
+                  sqlInput: typeof tc.table_data === 'string' ? JSON.parse(tc.table_data || '{}') : (tc.table_data || {}),
+                  sqlExpectedOutput: typeof tc.expected_output === 'string' ? JSON.parse(tc.expected_output || '{"columns":[],"rows":[]}') : (tc.expected_output || { columns: [], rows: [] })
+                }))
+              : (q.testCases || []),
+            language: typeStr === QUESTION_TYPES.SQL
+              ? 'sql'
+              : q.starterCodes?.length > 0
+                ? q.starterCodes[0].language.toLowerCase()
+                : (q.programmingLanguage || q.programming_language || 'javascript').toLowerCase(),
             solution: q.solution || '', // ONLY for grading reference, NEVER shown to student
             hint: q.hint || '', // Optional hint
+            // SQL specific
+            isSql: questionType === QUESTION_TYPES.SQL,
+            tableSchema: q.sqlSchema || q.sql_schema || q.tableSchema || null,
             fromPool: false // Flag to identify regular questions (not from pool)
           };
           
@@ -784,7 +828,7 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
               console.error('          This question will not display properly.');
               console.error('          Please check Firebase data for this question.');
             }
-        } else if (questionType === QUESTION_TYPES.CODE) {
+        } else if (questionType === QUESTION_TYPES.CODE || questionType === QUESTION_TYPES.SQL) {
             console.log('    - Programming language:', mappedQuestion.language);
             console.log('    - Has boilerplate/testStub:', !!mappedQuestion.boilerplate);
             console.log('    - Boilerplate length:', mappedQuestion.boilerplate?.length || 0);
@@ -847,6 +891,7 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
             else if (typeStr === QUESTION_TYPES.FITB) questionType = QUESTION_TYPES.FITB;
             else if (typeStr === QUESTION_TYPES.JUMBLED) questionType = QUESTION_TYPES.JUMBLED;
             else if (typeStr === QUESTION_TYPES.CODE) questionType = QUESTION_TYPES.CODE;
+            else if (typeStr === QUESTION_TYPES.SQL) questionType = QUESTION_TYPES.SQL;
             else if (typeStr === QUESTION_TYPES.DESCRIPTIVE) questionType = QUESTION_TYPES.DESCRIPTIVE;
             else if (hasOptions) questionType = QUESTION_TYPES.MCQ;
             
@@ -875,11 +920,27 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
               correctBlanks: q.correctAnswers || [],
               jumbledOptions: q.jumbledOptions || q.jumbledItems || [],
               jumbledItems: q.jumbledItems || q.jumbledOptions || [],
-              boilerplate: q.testStub || q.boilerplate || '',
-              testCases: q.testCases || [],
-              language: (q.programmingLanguage || q.programming_language || 'javascript').toLowerCase(),
+              starterCodes: q.starterCodes || [],
+              boilerplate: q.starterCodes?.length > 0
+                ? (q.starterCodes[0].code || '')
+                : (q.testStub || q.boilerplate || ''),
+              testCases: questionType === QUESTION_TYPES.SQL
+                ? (q.sqlTestCases || q.sql_test_cases || []).map((tc: any) => ({
+                    input: '', expected_output: '', marks: tc.marks || q.maxMarks || 5,
+                    title: tc.title || '',
+                    sqlInput: typeof tc.table_data === 'string' ? JSON.parse(tc.table_data || '{}') : (tc.table_data || {}),
+                    sqlExpectedOutput: typeof tc.expected_output === 'string' ? JSON.parse(tc.expected_output || '{"columns":[],"rows":[]}') : (tc.expected_output || { columns: [], rows: [] })
+                  }))
+                : (q.testCases || []),
+              language: typeStr === QUESTION_TYPES.SQL
+                ? 'sql'
+                : q.starterCodes?.length > 0
+                  ? q.starterCodes[0].language.toLowerCase()
+                  : (q.programmingLanguage || q.programming_language || 'javascript').toLowerCase(),
               solution: q.solution || '',
               hint: q.hint || '',
+              isSql: questionType === QUESTION_TYPES.SQL,
+              tableSchema: q.sqlSchema || q.sql_schema || q.tableSchema || null,
               fromPool: true // Flag to identify pool questions
             };
             
@@ -1839,6 +1900,9 @@ useEffect(() => {
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
   
+  // PGlite (PostgreSQL in browser) for SQL problems
+  const pgliteRef = useRef<any>(null);
+  
   // Code execution states
   const [codeOutput, setCodeOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
@@ -1873,9 +1937,8 @@ useEffect(() => {
 
   // ✅ NEW: Calculate visible test cases for UI display
   const visibleTestCases = currentQuestion?.testCases 
-    ? getVisibleTestCases(currentQuestion.testCases) 
+    ? getVisibleTestCases(currentQuestion.testCases, currentQuestion.type === QUESTION_TYPES.SQL) 
     : [];
-  const totalTestCases = currentQuestion?.testCases?.length || 0;
   const visibleTestCasesCount = visibleTestCases.length;
 // ==================== CLEAR OLD QUEUE ON EXAM START ====================
 useEffect(() => {
@@ -2264,6 +2327,7 @@ useEffect(() => {
   const questionType = currentQuestion.type.toLowerCase();
   
   switch (questionType) {
+    case QUESTION_TYPES.SQL:
     case QUESTION_TYPES.CODE:
       answer = editorRef.current ? editorRef.current.getValue() : codeInput;
       break;
@@ -2327,7 +2391,7 @@ useEffect(() => {
     isEmptyAnswer = true;
   } else if (typeof answer === 'string') {
     // String answer (Descriptive, Coding)
-    if (currentQuestion.type === QUESTION_TYPES.CODE) {
+    if (currentQuestion.type === QUESTION_TYPES.CODE || currentQuestion.type === QUESTION_TYPES.SQL) {
       // For coding, allow submission even if code matches boilerplate (student may want partial credit)
       isEmptyAnswer = !answer.trim();
     } else if (currentQuestion.type === QUESTION_TYPES.DESCRIPTIVE) {
@@ -2499,7 +2563,8 @@ useEffect(() => {
           maximumMarks: questionData.maxMarks,
           options: questionData.options,
           correctAnswers: (questionData.type.toLowerCase() === QUESTION_TYPES.DESCRIPTIVE || 
-              questionData.type.toLowerCase() === QUESTION_TYPES.CODE) && questionData.solution
+              questionData.type.toLowerCase() === QUESTION_TYPES.CODE ||
+              questionData.type.toLowerCase() === QUESTION_TYPES.SQL) && questionData.solution
             ? [questionData.solution]
             : (questionData as any).correctAnswers,
           programmingLanguage: questionData.language,
@@ -2602,7 +2667,8 @@ useEffect(() => {
           maximumMarks: questionData.maxMarks,
           options: questionData.options,
           correctAnswers: (questionData.type === QUESTION_TYPES.DESCRIPTIVE || 
-                questionData.type === QUESTION_TYPES.CODE) && questionData.solution
+                questionData.type === QUESTION_TYPES.CODE ||
+                questionData.type === QUESTION_TYPES.SQL) && questionData.solution
               ? [questionData.solution]  // ✅ For Descriptive & Code: use solution field
               : (questionData as any).correctAnswers,  // ✅ For MCQ, FITB, Jumbled: use correctAnswers array
           programmingLanguage: questionData.language,
@@ -2700,7 +2766,8 @@ useEffect(() => {
   if (currentQuestion) {
     let currentAnswer: any;
     switch (currentQuestion.type) {
-      case QUESTION_TYPES.CODE:
+      case QUESTION_TYPES.SQL:
+    case QUESTION_TYPES.CODE:
         currentAnswer = editorRef.current ? editorRef.current.getValue() : codeInput;
         break;
       case QUESTION_TYPES.MCQ:
@@ -3232,7 +3299,8 @@ useEffect(() => {
     let currentAnswer: any;
     
     switch (currentQ.type) {
-      case QUESTION_TYPES.CODE:
+      case QUESTION_TYPES.SQL:
+    case QUESTION_TYPES.CODE:
         // editorRef is already a ref, so this is safe
         currentAnswer = editorRef.current ? editorRef.current.getValue() : '';
         break;
@@ -3254,7 +3322,8 @@ useEffect(() => {
     let hasAnswer = false;
     
     switch (currentQ.type) {
-      case QUESTION_TYPES.CODE:
+      case QUESTION_TYPES.SQL:
+    case QUESTION_TYPES.CODE:
         hasAnswer = currentAnswer && currentAnswer.trim() !== (currentQ.boilerplate || '');
         break;
       case QUESTION_TYPES.MCQ:
@@ -3290,8 +3359,8 @@ useEffect(() => {
     const saveTime = new Date().toLocaleTimeString();
     console.log('⏰ Auto-save triggered for Q' + currentQ.questionNo + ' - answer changed!');
     console.log('💾 SAVING NOW at', saveTime);
-    console.log('  - Code length:', currentQ.type === QUESTION_TYPES.CODE ? currentAnswer?.length : 'N/A');
-    console.log('  - Last saved length:', currentQ.type === QUESTION_TYPES.CODE ? lastSaved?.length : 'N/A');
+    console.log('  - Code length:', currentQ.type === QUESTION_TYPES.CODE || currentQ.type === QUESTION_TYPES.SQL ? currentAnswer?.length : 'N/A');
+    console.log('  - Last saved length:', currentQ.type === QUESTION_TYPES.CODE || currentQ.type === QUESTION_TYPES.SQL ? lastSaved?.length : 'N/A');
     saveCurrentAnswer(true);
   }, 60000); // 60 seconds
 
@@ -3594,6 +3663,7 @@ useEffect(() => {
     // ✅ Allow loading default content for CODE, JUMBLED, and DESCRIPTIVE without waiting for attempt
     const immediateLoadTypes: QuestionType[] = [
       QUESTION_TYPES.CODE, 
+      QUESTION_TYPES.SQL,
       QUESTION_TYPES.JUMBLED, 
       QUESTION_TYPES.DESCRIPTIVE
     ];
@@ -3622,9 +3692,34 @@ useEffect(() => {
       console.log('='.repeat(80) + '\n');
       
       switch (currentQuestion.type) {
-        case QUESTION_TYPES.CODE:
+        case QUESTION_TYPES.SQL:
+    case QUESTION_TYPES.CODE: {
+          // ✅ Auto-set language from question data
+          const defaultLang = currentQuestion.language || 'javascript';
+          if (currentQuestion.type === QUESTION_TYPES.SQL) {
+            setSelectedLanguage('sql');
+          } else if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
+            // Use first starterCode language as default
+            setSelectedLanguage(currentQuestion.starterCodes[0].language.toLowerCase());
+          } else if (defaultLang) {
+            setSelectedLanguage(defaultLang);
+          }
+
           // CRITICAL: Load testStub (starter code), NEVER load solution
-          const newCode = savedAnswer || currentQuestion.boilerplate || '';
+          // For starterCodes: load the code for the selected language
+          let newCode = savedAnswer || '';
+          if (!newCode) {
+            if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
+              const lang = currentQuestion.type === QUESTION_TYPES.SQL ? 'sql'
+                : currentQuestion.starterCodes[0].language.toLowerCase();
+              const starterCode = currentQuestion.starterCodes.find(
+                (sc: any) => sc.language.toLowerCase() === lang
+              );
+              newCode = starterCode?.code || currentQuestion.boilerplate || '';
+            } else {
+              newCode = currentQuestion.boilerplate || '';
+            }
+          }
           
           // Defensive check: Ensure we're not accidentally loading solution
           if (newCode === currentQuestion.solution && currentQuestion.solution) {
@@ -3637,6 +3732,12 @@ useEffect(() => {
           
           // Store initial length for stable editor key (won't change while typing)
           initialCodeLengthRef.current[currentQuestion.id] = newCode.length;
+          
+          // SQL: Default placeholder if no code
+          if (!newCode && currentQuestion.type === QUESTION_TYPES.SQL) {
+            newCode = '-- Write your SQL query here\n';
+          }
+          
           console.log(`🔧 Setting codeInput for Q${currentQuestion.questionNo}:`, newCode.slice(0, 50) + '...');
           console.log(`🔑 Editor key will be: ${currentQuestion.id}-${newCode.length} (stable)`);
           setCodeInput(newCode);
@@ -3661,6 +3762,7 @@ useEffect(() => {
           break;
           // Editor will remount with new key, no need to setValue
           break;
+        }
         case QUESTION_TYPES.MCQ:
           // ✅ UPDATED: MCQ answer should be an array of actual option text (not indices)
           if (savedAnswer !== undefined && Array.isArray(savedAnswer)) {
@@ -3834,8 +3936,13 @@ useEffect(() => {
     if (!currentQuestion) return;
     
     // Clear states for question types OTHER than the current one
-    if (currentQuestion.type !== QUESTION_TYPES.CODE) {
+    if (currentQuestion.type !== QUESTION_TYPES.CODE && currentQuestion.type !== QUESTION_TYPES.SQL) {
       // Don't clear codeInput as it's managed separately with Monaco editor
+      // Cleanup PGlite when switching away from SQL
+      if (pgliteRef.current) {
+        try { pgliteRef.current.close(); } catch (e) { /* ignore */ }
+        pgliteRef.current = null;
+      }
     }
     if (currentQuestion.type !== QUESTION_TYPES.MCQ) {
       setMcqAnswer([]);
@@ -4430,6 +4537,12 @@ const formatTime = (seconds: number) => {
       saveCurrentAnswer(true);
       const newIndex = currentQuestionIndex - 1;
       setCurrentQuestionIndex(newIndex);
+      // Clear terminal output
+      setCodeOutput('');
+      setExecutionTime('0ms');
+      setExecutionMemory('0KB');
+      setIsRunning(false);
+      setActiveCodeTab('output');
       // 🔥 UPDATE REF: Keep ref in sync
       currentQuestionRef.current = {
         index: newIndex,
@@ -4444,6 +4557,12 @@ const formatTime = (seconds: number) => {
       saveCurrentAnswer(true);
       const newIndex = currentQuestionIndex + 1;
       setCurrentQuestionIndex(newIndex);
+      // Clear terminal output
+      setCodeOutput('');
+      setExecutionTime('0ms');
+      setExecutionMemory('0KB');
+      setIsRunning(false);
+      setActiveCodeTab('output');
       // 🔥 UPDATE REF: Keep ref in sync
       currentQuestionRef.current = {
         index: newIndex,
@@ -4456,6 +4575,12 @@ const formatTime = (seconds: number) => {
   const handleQuestionClick = (index: number) => {
     saveCurrentAnswer(true); // ✅ Save before navigating
     setCurrentQuestionIndex(index);
+    // Clear terminal output
+    setCodeOutput('');
+    setExecutionTime('0ms');
+    setExecutionMemory('0KB');
+    setIsRunning(false);
+    setActiveCodeTab('output');
     // 🔥 UPDATE REF: Keep ref in sync
     currentQuestionRef.current = {
       index: index,
@@ -4590,8 +4715,314 @@ const calculateStudentEndTime = (
     jumbledAnswersRef.current = newItems; // ✅ Sync ref immediately
   };
 
-  // Run code (Mock Judge0 integration)
+  // ==================== PGlite SQL Functions ====================
+  
+  /** Initialize PGlite and create tables from question.tableSchema */
+  const initPGliteForQuestion = async (question: Question): Promise<boolean> => {
+    if (pgliteRef.current) return true; // Already initialized
+    
+    setCodeOutput('🐘 Initializing PostgreSQL database...\n⏳ Please wait (first time may take a few seconds)...');
+    
+    try {
+      const { PGlite } = await import('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js' as any);
+      pgliteRef.current = new PGlite();
+      await pgliteRef.current.waitReady;
+      
+      const tableSchema = question.tableSchema;
+      if (tableSchema) {
+        const isMultiTable = Array.isArray(tableSchema);
+        const schemas = isMultiTable ? tableSchema : [tableSchema];
+        
+        for (const schema of schemas) {
+          let columns = schema.columns;
+          if (columns && typeof columns === 'object' && !Array.isArray(columns)) {
+            columns = Object.keys(columns).sort((a: string, b: string) => Number(a) - Number(b)).map((key: string) => columns[key]);
+          }
+          if (!columns || columns.length === 0) continue;
+          
+          const tableName = schema.tableName || schema.table_name || 'Table';
+          let createSQL = `CREATE TABLE IF NOT EXISTS ${tableName} (`;
+          createSQL += columns.map((col: any) => {
+            let type = (col.type || 'TEXT').toUpperCase();
+            if (type.includes('ENUM')) type = 'TEXT';
+            if (type.includes('INT')) type = 'INTEGER';
+            if (type.includes('VARCHAR')) type = 'TEXT';
+            if (type.includes('DATE')) type = 'TEXT';
+            return `${col.name} ${type}`;
+          }).join(', ');
+          createSQL += ')';
+          
+          await pgliteRef.current.query(createSQL);
+          console.log(`✅ Table ${tableName} created`);
+        }
+        
+        // Insert data from first test case
+        if (question.testCases && question.testCases.length > 0) {
+          const firstTC = question.testCases[0];
+          if (firstTC?.sqlInput) {
+            await insertSqlTestData(firstTC.sqlInput, schemas);
+          }
+        }
+      }
+      
+      setCodeOutput('🐘 PostgreSQL Ready\n✓ Database initialized. Click "Run" to execute your SQL query.');
+      return true;
+    } catch (initError: any) {
+      console.error('PGlite initialization error:', initError);
+      setCodeOutput(`❌ Failed to initialize PostgreSQL database.\n\nError: ${initError.message}\n\n💡 Please check your internet connection and try again.`);
+      return false;
+    }
+  };
+  
+  /** Insert test data into PGlite tables - handles Firebase format:
+   *  table_data: { "TableName": [["col1","col2"], ["val1","val2"], ...] }
+   *  First row is headers, rest are data rows.
+   *  Also supports CodingLab format with input.tables[].headers/rows */
+  const insertSqlTestData = async (input: any, schemas: any[]) => {
+    if (!pgliteRef.current || !input) return;
+    
+    // Firebase exam format: input = { "TableName": [["headers..."],["row1..."],...] }
+    const tableNames = Object.keys(input);
+    if (tableNames.length > 0 && Array.isArray(input[tableNames[0]])) {
+      for (const tableName of tableNames) {
+        const tableRows = input[tableName];
+        if (!Array.isArray(tableRows) || tableRows.length < 2) continue;
+        const headers = tableRows[0]; // First row is headers
+        const dataRows = tableRows.slice(1); // Rest are data
+        
+        for (const row of dataRows) {
+          const vals = headers.map((_h: string, i: number) => {
+            const val = row[i];
+            if (val === null || val === undefined) return 'NULL';
+            if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+            return val;
+          });
+          const insertSQL = `INSERT INTO ${tableName} (${headers.join(', ')}) VALUES (${vals.join(', ')})`;
+          await pgliteRef.current.query(insertSQL);
+        }
+      }
+      return;
+    }
+
+    // CodingLab format: input.tables array
+    if (input.tables && Array.isArray(input.tables)) {
+      for (const tableData of input.tables) {
+        const tableName = tableData.name;
+        const headers = tableData.headers || [];
+        const rows = normalizeRows(tableData.rows);
+        
+        for (const row of rows) {
+          const vals = headers.map((_header: string, i: number) => {
+            const val = row['i' + i];
+            if (val === null || val === undefined) return 'NULL';
+            if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+            return val;
+          });
+          const insertSQL = `INSERT INTO ${tableName} (${headers.join(', ')}) VALUES (${vals.join(', ')})`;
+          await pgliteRef.current.query(insertSQL);
+        }
+      }
+    }
+    // CodingLab single-table format
+    else if (input.headers && input.rows) {
+      const tableName = schemas[0]?.tableName || schemas[0]?.table_name || 'Table';
+      const headers = input.headers;
+      const rows = normalizeRows(input.rows);
+      
+      for (const row of rows) {
+        const vals = headers.map((_header: string, i: number) => {
+          const val = row['i' + i];
+          if (val === null || val === undefined) return 'NULL';
+          if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
+          return val;
+        });
+        const insertSQL = `INSERT INTO ${tableName} (${headers.join(', ')}) VALUES (${vals.join(', ')})`;
+        await pgliteRef.current.query(insertSQL);
+      }
+    }
+  };
+  
+  /** Compare SQL results against expected output
+   *  Handles Firebase format: expected_output.columns + expected_output.rows (string[][])
+   *  And CodingLab format: headers + rows (object with i0, i1 keys) */
+  const compareSqlResults = (actualHeaders: string[], actualRows: any[], expectedColumns: string[], expectedRowsRaw: any[]): boolean => {
+    const normalizedActualHeaders = actualHeaders.map(h => h.toLowerCase());
+    const normalizedExpectedHeaders = expectedColumns.map(h => h.toLowerCase());
+    
+    if (normalizedActualHeaders.length !== normalizedExpectedHeaders.length) return false;
+    
+    // Normalize expected rows - could be string[][] (Firebase) or object[] (CodingLab)
+    const expectedRows = Array.isArray(expectedRowsRaw) ? expectedRowsRaw : normalizeRows(expectedRowsRaw);
+    if (actualRows.length !== expectedRows.length) return false;
+    
+    for (let i = 0; i < expectedRows.length; i++) {
+      const expectedRow = expectedRows[i];
+      const actualRow = actualRows[i];
+      
+      for (let j = 0; j < expectedColumns.length; j++) {
+        // Firebase format: expectedRow is string[] (array), CodingLab: object with 'i0','i1' keys
+        const expectedVal = Array.isArray(expectedRow) ? expectedRow[j] : expectedRow['i' + j];
+        const headerName = expectedColumns[j];
+        const actualKey = actualHeaders.find(h => h.toLowerCase() === headerName.toLowerCase()) || actualHeaders[j];
+        const actualVal = actualRow[actualKey];
+        
+        // Compare values with tolerance
+        if (actualVal === null && expectedVal === null) continue;
+        if (actualVal === null || expectedVal === null) return false;
+        
+        const actualStr = String(actualVal).trim().toLowerCase();
+        const expectedStr = String(expectedVal).trim().toLowerCase();
+        if (actualStr !== expectedStr) {
+          const actualNum = parseFloat(String(actualVal));
+          const expectedNum = parseFloat(String(expectedVal));
+          if (isNaN(actualNum) || isNaN(expectedNum) || Math.abs(actualNum - expectedNum) >= 0.0001) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  };
+  
+  /** Run user's SQL code in PGlite */
+  const handleRunSqlCode = async () => {
+    if (!currentQuestion) return;
+    
+    setIsRunning(true);
+    setActiveCodeTab('output');
+    setCodeOutput('🔄 Executing SQL...');
+    
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    if (!pgliteRef.current) {
+      const success = await initPGliteForQuestion(currentQuestion);
+      if (!success) { setIsRunning(false); return; }
+    }
+    
+    try {
+      const freshCode = editorRef.current ? editorRef.current.getValue() : codeInput;
+      const startTime = performance.now();
+      
+      const codeWithoutComments = freshCode
+        .split('\n')
+        .map((line: string) => {
+          const commentIndex = line.indexOf('--');
+          if (commentIndex !== -1) return line.substring(0, commentIndex).trim();
+          return line;
+        })
+        .join('\n');
+      
+      const statements = codeWithoutComments.split(';').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+      
+      let outputText = '';
+      for (const statement of statements) {
+        if (!statement) continue;
+        try {
+          const result = await pgliteRef.current.query(statement);
+          const upperStatement = statement.toUpperCase().trim();
+          
+          if (upperStatement.startsWith('SELECT') || upperStatement.startsWith('TABLE') || upperStatement.startsWith('WITH')) {
+            if (result && result.rows && result.rows.length > 0) {
+              const columns = result.fields?.map((f: any) => f.name) || Object.keys(result.rows[0]);
+              const colWidths = columns.map((col: string) => {
+                const maxDataWidth = Math.max(...result.rows.map((row: any) => String(row[col] ?? 'NULL').length));
+                return Math.max(col.length, maxDataWidth, 4);
+              });
+              const header = columns.map((col: string, i: number) => col.padEnd(colWidths[i])).join(' │ ');
+              const separator = colWidths.map((w: number) => '─'.repeat(w)).join('─┼─');
+              const rows = result.rows.map((row: any) =>
+                columns.map((col: string, i: number) => String(row[col] ?? 'NULL').padEnd(colWidths[i])).join(' │ ')
+              ).join('\n');
+              outputText += `\n${header}\n${separator}\n${rows}\n\n(${result.rows.length} row${result.rows.length !== 1 ? 's' : ''})\n`;
+            } else {
+              outputText += `\n(0 rows)\n`;
+            }
+          } else if (upperStatement.startsWith('INSERT')) {
+            const count = result?.affectedRows ?? result?.rowCount ?? 1;
+            outputText += `\n✅ INSERT ${count} row${count !== 1 ? 's' : ''}\n`;
+          } else if (upperStatement.startsWith('UPDATE')) {
+            const count = result?.affectedRows ?? result?.rowCount ?? 0;
+            outputText += `\n✅ UPDATE ${count} row${count !== 1 ? 's' : ''}\n`;
+          } else if (upperStatement.startsWith('DELETE')) {
+            const count = result?.affectedRows ?? result?.rowCount ?? 0;
+            outputText += `\n✅ DELETE ${count} row${count !== 1 ? 's' : ''}\n`;
+          } else {
+            outputText += `\n✅ Query executed successfully\n`;
+          }
+        } catch (stmtError: any) {
+          outputText += `\n❌ Error: ${stmtError.message}\n`;
+        }
+      }
+      
+      const endTime = performance.now();
+      const execTime = ((endTime - startTime) / 1000).toFixed(3);
+      setCodeOutput(`🐘 PostgreSQL (PGlite)\n════════════════════════════════\n${outputText}\n════════════════════════════════`);
+      setExecutionTime(`${execTime}s`);
+      setExecutionMemory('In-Browser');
+    } catch (error: any) {
+      setCodeOutput(`❌ SQL Error: ${error.message}`);
+    } finally {
+      setIsRunning(false);
+    }
+  };
+  
+  // Run single SQL test case (for TestCasesPanel)
+  const runSingleSqlTestCase = async (index: number): Promise<{passed: boolean; actual?: string; error?: string}> => {
+    if (!currentQuestion || !currentQuestion.tableSchema) return { passed: false, error: 'No schema' };
+    
+    // Initialize PGlite if needed
+    if (!pgliteRef.current) {
+      const success = await initPGliteForQuestion(currentQuestion);
+      if (!success) return { passed: false, error: 'PGlite init failed' };
+    }
+    
+    const freshCode = editorRef.current ? editorRef.current.getValue() : codeInput;
+    const tableSchema = currentQuestion.tableSchema;
+    const schemas = Array.isArray(tableSchema) ? tableSchema : [tableSchema];
+    const tc = visibleTestCases[index];
+    if (!tc) return { passed: false, error: 'Test case not found' };
+    
+    try {
+      // Truncate all tables
+      for (const schema of schemas) {
+        const tableName = schema?.tableName || schema?.table_name || 'Table';
+        try { await pgliteRef.current.query(`DELETE FROM ${tableName}`); } catch (e) { /* ignore */ }
+      }
+      
+      // Insert test data
+      if (tc.sqlInput) {
+        await insertSqlTestData(tc.sqlInput, schemas);
+      }
+      
+      // Run user query
+      const result = await pgliteRef.current.query(freshCode);
+      const actualRows = result.rows || [];
+      const actualHeaders = actualRows.length > 0 ? Object.keys(actualRows[0]) : [];
+      
+      // Compare with expected
+      const expectedColumns = tc.sqlExpectedOutput?.columns || [];
+      const expectedRows = tc.sqlExpectedOutput?.rows || [];
+      const isCorrect = compareSqlResults(actualHeaders, actualRows, expectedColumns, expectedRows);
+      
+      // Format actual output for display
+      const actualStr = actualHeaders.join(' | ') + '\n' + actualRows.map((row: any) => actualHeaders.map(h => String(row[h] ?? 'NULL')).join(' | ')).join('\n');
+      
+      return { passed: isCorrect, actual: actualStr } as any;
+    } catch (err: any) {
+      return { passed: false, error: err.message };
+    }
+  };
+  
+  // ==================== End PGlite SQL Functions ====================
+
+  // Run code (Judge0 for code, PGlite for SQL)
   const handleRunCode = async () => {
+    // For SQL questions, use PGlite instead of Judge0
+    if (currentQuestion?.type === QUESTION_TYPES.SQL) {
+      await handleRunSqlCode();
+      return;
+    }
+
     if (!isOnline) {
       setCodeOutput('❌ Cannot run code while offline. Please check your internet connection.');
       return;
@@ -4819,20 +5250,46 @@ const calculateStudentEndTime = (
   const renderAnswerSection = () => {
     const normalizedType = normalizeQuestionType(currentQuestion.type);
     switch (normalizedType) {
-      case QUESTION_TYPES.CODE:
+      case QUESTION_TYPES.SQL:
+    case QUESTION_TYPES.CODE:
         return (
           <div className="flex flex-col h-full">
             {/* Header with Buttons in Same Row */}
             <div className={`px-4 py-1.5 border-b ${darkMode ? 'border-gray-700 bg-gray-750' : 'border-gray-200 bg-gray-50'} flex items-center justify-between gap-2 overflow-hidden`}>
               <h4 className={`text-xs font-bold flex items-center space-x-2 flex-shrink-0 ${darkMode ? 'text-gray-200' : 'text-gray-900'}`}>
                 <FontAwesomeIcon icon={faCode} />
-                <span>Code Editor</span>
+                <span>{currentQuestion.type === QUESTION_TYPES.SQL ? 'SQL Editor' : 'Code Editor'}</span>
               </h4>
               <div className="flex items-center space-x-2 overflow-x-auto flex-shrink-0">
-                {/* Language Selector Dropdown */}
+                {/* Language Selector Dropdown - hidden for SQL */}
+                {currentQuestion.type === QUESTION_TYPES.SQL ? (
+                  <span className={`px-2 py-1 rounded-lg text-xs font-medium border ${
+                    darkMode ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-800'
+                  }`}>SQL</span>
+                ) : (
                 <select
                   value={selectedLanguage}
-                  onChange={(e) => setSelectedLanguage(e.target.value)}
+                  onChange={(e) => {
+                    const newLang = e.target.value;
+                    setSelectedLanguage(newLang);
+                    // If question has starterCodes, load the matching boilerplate
+                    if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
+                      const currentCode = editorRef.current ? editorRef.current.getValue() : codeInput;
+                      // Only switch boilerplate if current code is empty or matches another starterCode
+                      const isBoilerplate = !currentCode.trim() || currentQuestion.starterCodes.some(
+                        (sc: any) => sc.code.trim() === currentCode.trim()
+                      );
+                      if (isBoilerplate) {
+                        const starterCode = currentQuestion.starterCodes.find(
+                          (sc: any) => sc.language.toLowerCase() === newLang
+                        );
+                        if (starterCode) {
+                          setCodeInput(starterCode.code);
+                          initialCodeLengthRef.current[currentQuestion.id] = starterCode.code.length;
+                        }
+                      }
+                    }
+                  }}
                   className={`px-2 py-1 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
                     darkMode 
                       ? 'bg-gray-700 border-gray-600 text-gray-200 hover:bg-gray-600' 
@@ -4840,19 +5297,34 @@ const calculateStudentEndTime = (
                   }`}
                   title="Select programming language"
                 >
-                  <option value="cpp">C++</option>
-                  <option value="c">C</option>
-                  <option value="java">Java</option>
-                  <option value="python">Python</option>
-                  <option value="javascript">JavaScript</option>
-                  <option value="typescript">TypeScript</option>
-                  <option value="csharp">C#</option>
-                  <option value="go">Go</option>
-                  <option value="rust">Rust</option>
-                  <option value="ruby">Ruby</option>
-                  <option value="kotlin">Kotlin</option>
-                  <option value="swift">Swift</option>
+                  {currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0
+                    ? currentQuestion.starterCodes.map((sc: any) => {
+                        const lang = sc.language.toLowerCase();
+                        const labels: Record<string, string> = {
+                          cpp: 'C++', c: 'C', java: 'Java', python: 'Python',
+                          javascript: 'JavaScript', typescript: 'TypeScript',
+                          csharp: 'C#', go: 'Go', rust: 'Rust', ruby: 'Ruby',
+                          kotlin: 'Kotlin', swift: 'Swift', sql: 'SQL'
+                        };
+                        return <option key={lang} value={lang}>{labels[lang] || lang}</option>;
+                      })
+                    : <>
+                        <option value="cpp">C++</option>
+                        <option value="c">C</option>
+                        <option value="java">Java</option>
+                        <option value="python">Python</option>
+                        <option value="javascript">JavaScript</option>
+                        <option value="typescript">TypeScript</option>
+                        <option value="csharp">C#</option>
+                        <option value="go">Go</option>
+                        <option value="rust">Rust</option>
+                        <option value="ruby">Ruby</option>
+                        <option value="kotlin">Kotlin</option>
+                        <option value="swift">Swift</option>
+                      </>
+                  }
                 </select>
+                )}
                 <button 
                   onClick={() => saveCurrentAnswer(true)}
                   disabled={isSavingAnswer}
@@ -4980,6 +5452,8 @@ const calculateStudentEndTime = (
                   <FontAwesomeIcon icon={faTerminal} className="text-sm" />
                   <span>Output</span>
                 </button>
+                {/* Stdin tab - not needed for SQL */}
+                {currentQuestion.type !== QUESTION_TYPES.SQL && (
                 <button
                   onClick={() => setActiveCodeTab('stdin')}
                   className={`px-4 py-2 text-sm font-medium flex items-center space-x-2 border-b-2 transition-colors ${
@@ -4995,14 +5469,14 @@ const calculateStudentEndTime = (
                   <FontAwesomeIcon icon={faKeyboard} className="text-sm" />
                   <span>Stdin</span>
                 </button>
+                )}
                 <button
-                  onClick={() => {
-                    // Get latest code from Monaco editor
+                  onClick={async () => {
+                    // Open TestCasesPanel overlay for both CODE and SQL
                     if (editorRef.current) {
                       const latestCode = editorRef.current.getValue();
                       setCodeInput(latestCode);
                     }
-                    // Open the TestCasesPanel overlay
                     setTimeout(() => {
                       setShowTestCasesPanel(true);
                     }, 100);
@@ -5680,7 +6154,7 @@ const calculateStudentEndTime = (
                     Question No {currentQuestion.questionNo}/{questions.length}
                   </h2>
                   <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                   {currentQuestion.type === QUESTION_TYPES.FITB ? 'FITB' : currentQuestion.type === QUESTION_TYPES.MCQ ? 'MCQ' : currentQuestion.type === QUESTION_TYPES.CODE ? 'Code' : currentQuestion.type === QUESTION_TYPES.DESCRIPTIVE ? 'Descriptive' : currentQuestion.type}, Marks: {currentQuestion.maxMarks}
+                   {(QUESTION_TYPE_LABELS as any)[currentQuestion.type] || currentQuestion.type}, Marks: {currentQuestion.maxMarks}
                   </p>
                 </div>
 
@@ -5883,6 +6357,54 @@ const calculateStudentEndTime = (
                   return processHTML(currentQuestion.questionText || '');
                 })()}
               </div>
+
+              {/* SQL Schema - Right below question text, inside scrollable area */}
+              {currentQuestion.type === QUESTION_TYPES.SQL && currentQuestion.tableSchema && (() => {
+                const schemas = Array.isArray(currentQuestion.tableSchema) ? currentQuestion.tableSchema : [currentQuestion.tableSchema];
+                if (schemas.length === 0 || !schemas[0]) return null;
+                return (
+                  <div className="mt-6">
+                    <h3 className={`text-base font-bold mb-3 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>Table Schema</h3>
+                    <div className="space-y-3">
+                      {schemas.map((schema: any, sIdx: number) => {
+                        const tableName = schema?.tableName || schema?.table_name || `Table ${sIdx + 1}`;
+                        const columns = schema?.columns || [];
+                        const pk = schema?.primaryKey || schema?.primary_key || '';
+                        const note = schema?.note || '';
+                        return (
+                          <div key={sIdx} className={`border rounded-lg overflow-hidden ${darkMode ? 'border-gray-700' : 'border-green-200'}`}>
+                            <div className={`px-3 py-2 flex items-center justify-between ${darkMode ? 'bg-gray-800 border-b border-gray-700' : 'bg-green-50 border-b border-green-200'}`}>
+                              <span className={`text-sm font-bold font-mono ${darkMode ? 'text-green-400' : 'text-green-700'}`}>{tableName}</span>
+                              {pk && <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>PK: <span className="font-mono font-semibold">{pk}</span></span>}
+                            </div>
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className={darkMode ? 'bg-gray-800/50' : 'bg-gray-50'}>
+                                  <th className={`px-3 py-2 text-left font-semibold border-b ${darkMode ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-600'}`}>Column</th>
+                                  <th className={`px-3 py-2 text-left font-semibold border-b ${darkMode ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-600'}`}>Type</th>
+                                  <th className={`px-3 py-2 text-left font-semibold border-b ${darkMode ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-600'}`}>Description</th>
+                                  <th className={`px-3 py-2 text-left font-semibold border-b ${darkMode ? 'border-gray-700 text-gray-400' : 'border-gray-200 text-gray-600'}`}>Constraints</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {columns.filter((c: any) => c.name).map((col: any, cIdx: number) => (
+                                  <tr key={cIdx} className={cIdx % 2 === 0 ? '' : (darkMode ? 'bg-gray-800/30' : 'bg-gray-50/50')}>
+                                    <td className={`px-3 py-2 font-mono font-semibold border-b ${darkMode ? 'border-gray-700/50 text-gray-200' : 'border-gray-100 text-gray-900'}`}>{col.name}</td>
+                                    <td className={`px-3 py-2 font-mono border-b ${darkMode ? 'border-gray-700/50 text-blue-400' : 'border-gray-100 text-blue-600'}`}>{col.type}</td>
+                                    <td className={`px-3 py-2 border-b ${darkMode ? 'border-gray-700/50 text-gray-400' : 'border-gray-100 text-gray-600'}`}>{col.description || '—'}</td>
+                                    <td className={`px-3 py-2 border-b ${darkMode ? 'border-gray-700/50 text-gray-500' : 'border-gray-100 text-gray-500'}`}>{col.constraints || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {note && <div className={`px-2 py-1 text-[10px] italic border-t ${darkMode ? 'border-gray-700 text-gray-500 bg-gray-800/30' : 'border-gray-100 text-gray-500 bg-gray-50/50'}`}>📝 {note}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Image Carousel - Opens in Left Panel */}
@@ -6969,8 +7491,8 @@ const calculateStudentEndTime = (
         </div>
       )}
 
-      {/* Test Cases Panel */}
-      {currentQuestion && currentQuestion.type === QUESTION_TYPES.CODE && (
+      {/* Test Cases Panel - CODE and SQL */}
+      {currentQuestion && (currentQuestion.type === QUESTION_TYPES.CODE || currentQuestion.type === QUESTION_TYPES.SQL) && (
         <TestCasesPanel
           isOpen={showTestCasesPanel}
           onClose={() => setShowTestCasesPanel(false)}
@@ -6978,7 +7500,9 @@ const calculateStudentEndTime = (
           code={codeInput}
           language={selectedLanguage}
           darkMode={darkMode}
-          editorRef={editorRef}  // ✅ Pass editor ref
+          editorRef={editorRef}
+          isSql={currentQuestion.type === QUESTION_TYPES.SQL}
+          onRunSqlTestCase={currentQuestion.type === QUESTION_TYPES.SQL ? runSingleSqlTestCase : undefined}
         />
       )}
 

@@ -85,7 +85,7 @@ export default function UserList({
   selectedClass, 
   activeCollegeId, 
   brandTheme, 
-  onClose,
+
   currentUserRole = USER_TYPES.STUDENT,  // Production default - must be overridden by parent
   isSuperUser = false,
   highlightUserId = null,

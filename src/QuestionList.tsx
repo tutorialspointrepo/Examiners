@@ -72,6 +72,10 @@ export default function QuestionList({
   const [selectedChapter, setSelectedChapter] = useState<string>(FILTER_VALUES.ALL);
   const [isChapterDropdownOpen, setIsChapterDropdownOpen] = useState(false);
   const [availableChapters, setAvailableChapters] = useState<string[]>([]);
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>(FILTER_VALUES.ALL);
+  const [isClassDropdownOpen, setIsClassDropdownOpen] = useState(false);
+  const [availableClasses, setAvailableClasses] = useState<string[]>([]);
+  const classDropdownRef = useRef<HTMLDivElement>(null);
   const [boards, setBoards] = useState<string[]>([FILTER_VALUES.ALL]);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -244,7 +248,7 @@ export default function QuestionList({
 
       try {
         // Handle comma-separated classes by fetching chapters for each class and merging
-        const classValues = selectedSubject.class.split(',').map(c => c.trim()).filter(c => c);
+        const classValues = selectedSubject.class.split(',').map((c: string) => c.trim()).filter((c: string) => c);
         const allChapters: string[] = [];
         
         for (const cls of classValues) {
@@ -271,6 +275,45 @@ export default function QuestionList({
     fetchAllChapters();
   }, [selectedSubject, activeCollegeId]);
 
+  // Fetch all available classes for the subject
+  useEffect(() => {
+    const fetchClasses = async () => {
+      if (!selectedSubject || !activeCollegeId) {
+        setAvailableClasses([]);
+        return;
+      }
+      try {
+        // Fetch all questions for this subject to extract unique classes
+        const result = await firebaseService.getQuestionsPaginated(
+          activeCollegeId,
+          undefined, // no class filter
+          undefined, // no board filter
+          selectedSubject.subject,
+          'all' as any,
+          'all',
+          10000, // large fetch to get all
+          1
+        );
+        const classSet = new Set<string>();
+        result.questions.forEach((q: any) => {
+          const cls = q.class || '';
+          if (cls.includes(', ')) {
+            cls.split(', ').forEach((c: string) => c.trim() && classSet.add(c.trim()));
+          } else if (cls.trim()) {
+            classSet.add(cls.trim());
+          }
+        });
+        const sorted = Array.from(classSet).sort();
+        setAvailableClasses(sorted);
+        console.log(`✅ Loaded ${sorted.length} unique classes for ${selectedSubject.subject}:`, sorted);
+      } catch (error) {
+        console.error('❌ Error fetching classes:', error);
+        setAvailableClasses([]);
+      }
+    };
+    fetchClasses();
+  }, [selectedSubject, activeCollegeId]);
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -285,6 +328,9 @@ export default function QuestionList({
       }
       if (chapterDropdownRef.current && !chapterDropdownRef.current.contains(event.target as Node)) {
         setIsChapterDropdownOpen(false);
+      }
+      if (classDropdownRef.current && !classDropdownRef.current.contains(event.target as Node)) {
+        setIsClassDropdownOpen(false);
       }
     };
 
@@ -322,14 +368,13 @@ export default function QuestionList({
         });
 
         // Fetch questions with all filters applied at Firebase level
-        // When class contains multiple comma-separated values, pass undefined to avoid mismatch
-        const classForQuery = selectedSubject.class.includes(',') ? undefined : selectedSubject.class;
+        // Don't filter by class - show all questions for the subject regardless of class
         const result = await firebaseService.getQuestionsPaginated(
           activeCollegeId,
-          classForQuery,
+          selectedClassFilter !== FILTER_VALUES.ALL ? selectedClassFilter : undefined,
           selectedBoard !== FILTER_VALUES.ALL ? selectedBoard : undefined,
           selectedSubject.subject,
-          actualQuestionType, // Pass modern question type directly to Firebase
+          actualQuestionType as any, // Pass modern question type directly to Firebase
           selectedProprietaryFilter, // Already typed as ProprietaryFilter
           questionsPerPage,
           currentPage,
@@ -366,12 +411,17 @@ export default function QuestionList({
     };
 
     fetchQuestions();
-  }, [selectedSubject, activeCollegeId, questionType, selectedBoard, selectedProprietaryFilter, selectedTag, selectedChapter, currentPage]);
+  }, [selectedSubject, activeCollegeId, questionType, selectedBoard, selectedProprietaryFilter, selectedTag, selectedChapter, selectedClassFilter, currentPage]);
 
   // Reset pagination when filters change (but not currentPage)
   useEffect(() => {
     setCurrentPage(1);
-  }, [selectedSubject, questionType, selectedBoard, selectedProprietaryFilter, selectedTag, selectedChapter]);
+  }, [selectedSubject, questionType, selectedBoard, selectedProprietaryFilter, selectedTag, selectedChapter, selectedClassFilter]);
+
+  // Reset class filter when subject changes
+  useEffect(() => {
+    setSelectedClassFilter(FILTER_VALUES.ALL);
+  }, [selectedSubject]);
 
   // Keyboard navigation for image carousel
   useEffect(() => {
@@ -475,29 +525,51 @@ export default function QuestionList({
             >
               {selectedSubject.subject}
             </span>
-            {(() => {
-              const classList = selectedSubject.class.split(',').map(c => c.trim()).filter(c => c);
-              const uniqueClasses = [...new Set(classList)];
-              if (uniqueClasses.length <= 1) {
-                return (
-                  <span className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-700">
-                    Class {uniqueClasses[0] || selectedSubject.class}
-                  </span>
-                );
-              }
-              return (
-                <select
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gray-100 text-gray-700 border-none focus:ring-1 focus:outline-none cursor-pointer appearance-none"
-                  defaultValue=""
-                  style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23374151' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center', paddingRight: '24px' }}
-                >
-                  <option value="" disabled>{uniqueClasses.length} Classes</option>
-                  {uniqueClasses.map(cls => (
-                    <option key={cls} value={cls}>{cls}</option>
+            {/* Class Filter Dropdown */}
+            <div ref={classDropdownRef} className="relative inline-block">
+              <button
+                onClick={() => setIsClassDropdownOpen(!isClassDropdownOpen)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-semibold transition-colors text-xs bg-gray-100 text-gray-700 hover:bg-gray-200"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
+                </svg>
+                <span>
+                  {selectedClassFilter === FILTER_VALUES.ALL 
+                    ? (availableClasses.length > 1 ? `All Classes (${availableClasses.length})` : `Class ${selectedSubject.class}`)
+                    : selectedClassFilter}
+                </span>
+                {availableClasses.length > 1 && (
+                  <FontAwesomeIcon icon={faChevronDown} className={`transition-transform ${isClassDropdownOpen ? 'rotate-180' : ''}`} />
+                )}
+              </button>
+
+              {isClassDropdownOpen && availableClasses.length > 1 && (
+                <div className="fixed w-48 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[9999] flex flex-col max-h-60 overflow-y-auto"
+                  style={{
+                    top: `${classDropdownRef.current?.getBoundingClientRect().bottom ?? 0 + 8}px`,
+                    left: `${classDropdownRef.current?.getBoundingClientRect().left ?? 0}px`
+                  }}>
+                  <button
+                    onClick={() => { setSelectedClassFilter(FILTER_VALUES.ALL); setIsClassDropdownOpen(false); }}
+                    className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${selectedClassFilter === FILTER_VALUES.ALL ? 'font-medium' : 'text-gray-700 hover:bg-gray-50'}`}
+                    style={selectedClassFilter === FILTER_VALUES.ALL ? { backgroundColor: `${brandTheme.colors.primary}15`, color: brandTheme.colors.primary } : {}}
+                  >
+                    All Classes
+                  </button>
+                  {availableClasses.map(cls => (
+                    <button
+                      key={cls}
+                      onClick={() => { setSelectedClassFilter(cls); setIsClassDropdownOpen(false); }}
+                      className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${selectedClassFilter === cls ? 'font-medium' : 'text-gray-700 hover:bg-gray-50'}`}
+                      style={selectedClassFilter === cls ? { backgroundColor: `${brandTheme.colors.primary}15`, color: brandTheme.colors.primary } : {}}
+                    >
+                      {cls}
+                    </button>
                   ))}
-                </select>
-              );
-            })()}
+                </div>
+              )}
+            </div>
             <span className="px-3 py-1.5 rounded-xl  text-xs font-semibold bg-purple-100 text-purple-700">
               {getTypeDisplayName(questionType)}
             </span>

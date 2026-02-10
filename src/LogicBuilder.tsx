@@ -186,7 +186,6 @@ const PROBLEMS = [
 // Smartly parses the approach text into sections and renders each as a card
 
 // Icon helper for section config
-const faIcon = (icon: any, cls: string = 'w-4 h-4') => <FontAwesomeIcon icon={icon} className={cls} />;
 
 // Section config: maps known header keywords to icons, colors, and priority
 const SECTION_CONFIG: { keyword: string; icon: any; bg: string; border: string; accent: string }[] = [

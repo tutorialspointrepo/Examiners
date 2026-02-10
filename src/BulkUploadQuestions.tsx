@@ -6,7 +6,7 @@ import { firebaseService } from './services/firebase_service';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faCopy, faCheck, faChevronDown, faChevronUp, faGripVertical } from '@fortawesome/sharp-light-svg-icons';
+import { faCopy, faCheck, faGripVertical } from '@fortawesome/sharp-light-svg-icons';
 import {
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
@@ -55,7 +55,7 @@ interface QuestionRow {
   board?: string;
   is_public?: string | boolean;
   college_id?: string;
-  class: string;
+  class: string | string[];
   subject: string;
   chapter?: string;
   type: QuestionType | string;
@@ -67,11 +67,8 @@ interface QuestionRow {
   difficulty_level: ComplexityLevel | string;
   hint?: string;
   test_cases?: string;
-  test_stub?: string;
-  programming_language?: string;
   starter_codes?: string; // JSON array: [{"language":"python","code":"def solve():..."}]
   sql_schema?: string; // JSON array of table schemas
-  sql_test_cases?: string; // JSON array of SQL test cases
   tags?: string; // Comma-separated tags
 }
 
@@ -174,17 +171,14 @@ export default function BulkUploadQuestions({
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'The loop starts at i=0 and continues while i<5',
         test_cases: '',
-        test_stub: '',
-        programming_language: '',
         starter_codes: '',
         sql_schema: '',
-        sql_test_cases: '',
         tags: 'loops,for-loop,java-basics,control-flow'
       },
       {
         board: 'TPX',
         is_public: true,
-        class: 'MCA-1',
+        class: 'Generic',
         subject: 'Java',
         chapter: 'Java Loops',
         type: QUESTION_TYPES.MCQ,
@@ -196,18 +190,15 @@ export default function BulkUploadQuestions({
         difficulty_level: COMPLEXITY_LEVELS.MEDIUM,
         hint: 'Java has three main loop constructs',
         test_cases: '',
-        test_stub: '',
-        programming_language: '',
         starter_codes: '',
         sql_schema: '',
-        sql_test_cases: '',
         tags: 'loops,java-syntax,control-structures'
       },
       // Fill in the Blank Questions
       {
         board: 'TPX',
         is_public: true,
-        class: 'MCA-1',
+        class: 'MCA-1|MCA-2',
         subject: 'Java',
         chapter: 'Java OOPs Concepts',
         type: QUESTION_TYPES.FITB,
@@ -219,11 +210,8 @@ export default function BulkUploadQuestions({
         difficulty_level: COMPLEXITY_LEVELS.MEDIUM,
         hint: 'Static members belong to class, not individual objects',
         test_cases: '',
-        test_stub: '',
-        programming_language: '',
         starter_codes: '',
         sql_schema: '',
-        sql_test_cases: '',
         tags: 'oop,static,java-keywords,class-members'
       },
       {
@@ -241,18 +229,15 @@ export default function BulkUploadQuestions({
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'Use enum keyword to define, enum name for variable type',
         test_cases: '',
-        test_stub: '',
-        programming_language: '',
         starter_codes: '',
         sql_schema: '',
-        sql_test_cases: '',
         tags: 'enumerations,java-syntax,data-types'
       },
       // Jumbled Quiz Questions
       {
         board: 'TPX',
         is_public: true,
-        class: 'MCA-1',
+        class: 'Generic',
         subject: 'Java',
         chapter: 'Java Loops',
         type: QUESTION_TYPES.JUMBLED,
@@ -264,17 +249,14 @@ export default function BulkUploadQuestions({
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'Loop declaration first, then print statement, then closing brace',
         test_cases: '',
-        test_stub: '',
-        programming_language: '',
         starter_codes: '',
         sql_schema: '',
-        sql_test_cases: '',
         tags: 'loops,code-arrangement,java-basics'
       },
       {
         board: 'TPX',
         is_public: true,
-        class: 'MCA-1',
+        class: 'MCA-1|MCA-2|MCA-3',
         subject: 'Java',
         chapter: 'Java OOPs Concepts',
         type: QUESTION_TYPES.JUMBLED,
@@ -286,11 +268,8 @@ export default function BulkUploadQuestions({
         difficulty_level: COMPLEXITY_LEVELS.MEDIUM,
         hint: 'Define first add method with 2 params, second add with 3 params, call both',
         test_cases: '',
-        test_stub: '',
-        programming_language: '',
         starter_codes: '',
         sql_schema: '',
-        sql_test_cases: '',
         tags: 'oop,method-overloading,polymorphism'
       },
       // Descriptive Questions
@@ -309,17 +288,14 @@ export default function BulkUploadQuestions({
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'Use for loop from 1 to 5',
         test_cases: '',
-        test_stub: '',
-        programming_language: '',
         starter_codes: '',
         sql_schema: '',
-        sql_test_cases: '',
         tags: 'loops,for-loop,java-basics,programming'
       },
       {
         board: 'TPX',
         is_public: true,
-        class: 'MCA-1',
+        class: 'Generic',
         subject: 'Java',
         chapter: 'Java Loops',
         type: QUESTION_TYPES.DESCRIPTIVE,
@@ -331,11 +307,8 @@ export default function BulkUploadQuestions({
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'Start from 2, increment by 2',
         test_cases: '',
-        test_stub: '',
-        programming_language: '',
         starter_codes: '',
         sql_schema: '',
-        sql_test_cases: '',
         tags: 'loops,while-loop,even-numbers,programming'
       },
       // Code Questions
@@ -346,7 +319,7 @@ export default function BulkUploadQuestions({
         subject: 'Java',
         chapter: 'Java Strings',
         type: QUESTION_TYPES.CODE,
-        question_text: '<h2>Partition String into Minimum Substrings</h2><p>Given a string <strong>s</strong>, partition the string into one or more substrings such that the characters in each substring are <strong>unique</strong>. Return the <strong>minimum</strong> number of substrings in such a partition.</p><h3>Examples</h3><p><strong>Input:</strong> abacaba<br><strong>Output:</strong> 4</p>',
+        question_text: '<h2>Partition String into Minimum Substrings</h2><p>Given a string <strong>s</strong>, partition the string into one or more substrings such that the characters in each substring are <strong>unique</strong>. Return the <strong>minimum</strong> number of substrings in such a partition.</p><h3>Examples</h3><p><strong>Input:</strong></p><code>abacaba</code><p><strong>Output:</strong></p><code>4</code>',
         question_image_urls: '',
         options: '',
         correct_answers: '',
@@ -363,8 +336,6 @@ export default function BulkUploadQuestions({
           { input: 'abcdefghijklmnopqrstuvwxyz', expected_output: '1\n', marks: 0.5 },
           { input: 'aabbcc', expected_output: '3\n', marks: 0.5 }
         ]),
-        test_stub: '',
-        programming_language: 'java',
         starter_codes: JSON.stringify([
           { language: 'java', code: 'import java.util.Scanner;\nimport java.util.HashSet;\n\npublic class Main {\n    public static int partitionString(String s) {\n        // Your Code Starts Here\n\n        // Your Code Ends Here\n    }\n\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        String s = sc.next();\n        System.out.println(partitionString(s));\n    }\n}' },
           { language: 'python', code: 'def partition_string(s: str) -> int:\n    # Your Code Starts Here\n\n    # Your Code Ends Here\n    pass\n\nif __name__ == "__main__":\n    s = input()\n    print(partition_string(s))' },
@@ -373,7 +344,6 @@ export default function BulkUploadQuestions({
           { language: 'javascript', code: 'function partitionString(s) {\n    // Your Code Starts Here\n\n    // Your Code Ends Here\n}\n\nconst readline = require("readline");\nconst rl = readline.createInterface({ input: process.stdin });\nrl.on("line", (line) => {\n    console.log(partitionString(line.trim()));\n    rl.close();\n});' }
         ]),
         sql_schema: '',
-        sql_test_cases: '',
         tags: 'strings,partitioning,greedy,sets'
       },
       {
@@ -383,7 +353,7 @@ export default function BulkUploadQuestions({
         subject: 'Java',
         chapter: 'Java Arrays',
         type: QUESTION_TYPES.CODE,
-        question_text: '<h2>Find Maximum Element in Array</h2><p>Write a function that takes an integer <strong>n</strong> (size of array) followed by <strong>n</strong> integers, and returns the <strong>maximum</strong> element.</p><h3>Examples</h3><p><strong>Input:</strong> 5<br>3 1 4 1 5<br><strong>Output:</strong> 5</p>',
+        question_text: '<h2>Find Maximum Element in Array</h2><p>Write a function that takes an integer <strong>n</strong> (size of array) followed by <strong>n</strong> integers, and returns the <strong>maximum</strong> element.</p><h3>Examples</h3><p><strong>Input:</strong></p><code>5\n3 1 4 1 5</code><p><strong>Output:</strong></p><code>5</code>',
         question_image_urls: '',
         options: '',
         correct_answers: '',
@@ -400,8 +370,6 @@ export default function BulkUploadQuestions({
           { input: '5\n0 0 0 0 1', expected_output: '1\n', marks: 0.25 },
           { input: '2\n999 1000', expected_output: '1000\n', marks: 0.25 }
         ]),
-        test_stub: '',
-        programming_language: 'java',
         starter_codes: JSON.stringify([
           { language: 'java', code: 'import java.util.Scanner;\n\npublic class Main {\n    public static int findMax(int[] arr) {\n        // Your Code Starts Here\n\n        // Your Code Ends Here\n    }\n\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        int n = sc.nextInt();\n        int[] arr = new int[n];\n        for (int i = 0; i < n; i++) arr[i] = sc.nextInt();\n        System.out.println(findMax(arr));\n    }\n}' },
           { language: 'python', code: 'def find_max(arr: list) -> int:\n    # Your Code Starts Here\n\n    # Your Code Ends Here\n    pass\n\nif __name__ == "__main__":\n    n = int(input())\n    arr = list(map(int, input().split()))\n    print(find_max(arr))' },
@@ -410,14 +378,13 @@ export default function BulkUploadQuestions({
           { language: 'javascript', code: 'function findMax(arr) {\n    // Your Code Starts Here\n\n    // Your Code Ends Here\n}\n\nconst readline = require("readline");\nconst rl = readline.createInterface({ input: process.stdin });\nconst lines = [];\nrl.on("line", (line) => lines.push(line.trim()));\nrl.on("close", () => {\n    const n = parseInt(lines[0]);\n    const arr = lines[1].split(" ").map(Number);\n    console.log(findMax(arr));\n});' }
         ]),
         sql_schema: '',
-        sql_test_cases: '',
         tags: 'arrays,maximum,iteration,basics'
       },
       // SQL Questions
       {
-        board: 'LPU',
+        board: 'TPX',
         is_public: false,
-        class: 'MCA-1',
+        class: 'MCA-1|MCA-2',
         subject: 'Database',
         chapter: 'SQL Query',
         type: QUESTION_TYPES.SQL,
@@ -428,9 +395,32 @@ export default function BulkUploadQuestions({
         maximum_marks: 1,
         difficulty_level: COMPLEXITY_LEVELS.EASY,
         hint: 'Use SELECT * FROM table_name',
-        test_cases: '',
-        test_stub: '',
-        programming_language: '',
+        test_cases: JSON.stringify([{
+          title: 'Test Case 1 - Basic two rows',
+          table_data: { Employee: [['id', 'Name', 'Salary'], ['1', 'Mohtashim', '50000'], ['2', 'Mahnaz', '60000']] },
+          expected_output: { columns: ['id', 'Name', 'Salary'], rows: [['1', 'Mohtashim', '50000'], ['2', 'Mahnaz', '60000']] },
+          marks: 0.2
+        }, {
+          title: 'Test Case 2 - Single row',
+          table_data: { Employee: [['id', 'Name', 'Salary'], ['1', 'Ali', '45000']] },
+          expected_output: { columns: ['id', 'Name', 'Salary'], rows: [['1', 'Ali', '45000']] },
+          marks: 0.2
+        }, {
+          title: 'Test Case 3 - Multiple rows',
+          table_data: { Employee: [['id', 'Name', 'Salary'], ['1', 'Ravi', '30000'], ['2', 'Sara', '55000'], ['3', 'Priya', '70000'], ['4', 'Kiran', '42000']] },
+          expected_output: { columns: ['id', 'Name', 'Salary'], rows: [['1', 'Ravi', '30000'], ['2', 'Sara', '55000'], ['3', 'Priya', '70000'], ['4', 'Kiran', '42000']] },
+          marks: 0.2
+        }, {
+          title: 'Test Case 4 - Large salaries',
+          table_data: { Employee: [['id', 'Name', 'Salary'], ['1', 'Ahmed', '120000'], ['2', 'Fatima', '95000'], ['3', 'Zara', '150000']] },
+          expected_output: { columns: ['id', 'Name', 'Salary'], rows: [['1', 'Ahmed', '120000'], ['2', 'Fatima', '95000'], ['3', 'Zara', '150000']] },
+          marks: 0.2
+        }, {
+          title: 'Test Case 5 - Five rows',
+          table_data: { Employee: [['id', 'Name', 'Salary'], ['1', 'A', '10000'], ['2', 'B', '20000'], ['3', 'C', '30000'], ['4', 'D', '40000'], ['5', 'E', '50000']] },
+          expected_output: { columns: ['id', 'Name', 'Salary'], rows: [['1', 'A', '10000'], ['2', 'B', '20000'], ['3', 'C', '30000'], ['4', 'D', '40000'], ['5', 'E', '50000']] },
+          marks: 0.2
+        }]),
         starter_codes: '',
         sql_schema: JSON.stringify([{
           table_name: 'Employee',
@@ -442,15 +432,109 @@ export default function BulkUploadQuestions({
           primary_key: 'id',
           note: ''
         }]),
-        sql_test_cases: JSON.stringify([{
-          title: 'Test Case 1',
-          table_data: { Employee: [['id', 'Name', 'Salary'], ['1', 'Mohtashim', '50000'], ['2', 'Mahnaz', '60000']] },
-          expected_output: { columns: ['id', 'Name', 'Salary'], rows: [['1', 'Mohtashim', '50000'], ['2', 'Mahnaz', '60000']] },
-          marks: 1.0
-        }]),
-        programming_language: '',
-        starter_codes: '',
         tags: 'sql,select,basic-query'
+      },
+      // SQL Question with Two Tables (JOIN)
+      {
+        board: 'TPX',
+        is_public: true,
+        class: 'Generic',
+        subject: 'Database',
+        chapter: 'SQL Joins',
+        type: QUESTION_TYPES.SQL,
+        question_text: '<h2>Employee Department Report</h2><p>Write a SQL query to display each employee\'s <strong>Name</strong>, <strong>Salary</strong>, and their <strong>department_name</strong> by joining the <strong>Employee</strong> and <strong>Department</strong> tables. Order the results by <strong>Salary</strong> in descending order.</p>',
+        question_image_urls: '',
+        options: '',
+        correct_answers: '',
+        maximum_marks: 4,
+        difficulty_level: COMPLEXITY_LEVELS.MEDIUM,
+        hint: 'Use INNER JOIN on Employee.dept_id = Department.id and ORDER BY Salary DESC',
+        test_cases: JSON.stringify([
+          {
+            title: 'Basic JOIN Test',
+            table_data: {
+              Employee: [['id', 'Name', 'Salary', 'dept_id'], ['1', 'Mohtashim', '55000', '1'], ['2', 'Mahnaz', '70000', '1'], ['3', 'Ayesha', '48000', '2']],
+              Department: [['id', 'department_name'], ['1', 'Engineering'], ['2', 'Marketing']]
+            },
+            expected_output: {
+              columns: ['Name', 'Salary', 'department_name'],
+              rows: [['Mahnaz', '70000', 'Engineering'], ['Mohtashim', '55000', 'Engineering'], ['Ayesha', '48000', 'Marketing']]
+            },
+            marks: 0.8
+          },
+          {
+            title: 'Multiple Departments Test',
+            table_data: {
+              Employee: [['id', 'Name', 'Salary', 'dept_id'], ['1', 'Ali', '60000', '2'], ['2', 'Sara', '80000', '1'], ['3', 'Ravi', '45000', '3'], ['4', 'Priya', '72000', '1']],
+              Department: [['id', 'department_name'], ['1', 'Engineering'], ['2', 'HR'], ['3', 'Sales']]
+            },
+            expected_output: {
+              columns: ['Name', 'Salary', 'department_name'],
+              rows: [['Sara', '80000', 'Engineering'], ['Priya', '72000', 'Engineering'], ['Ali', '60000', 'HR'], ['Ravi', '45000', 'Sales']]
+            },
+            marks: 0.8
+          },
+          {
+            title: 'Single Employee Test',
+            table_data: {
+              Employee: [['id', 'Name', 'Salary', 'dept_id'], ['1', 'Kiran', '90000', '1']],
+              Department: [['id', 'department_name'], ['1', 'Finance']]
+            },
+            expected_output: {
+              columns: ['Name', 'Salary', 'department_name'],
+              rows: [['Kiran', '90000', 'Finance']]
+            },
+            marks: 0.8
+          },
+          {
+            title: 'Same Salary Ordering Test',
+            table_data: {
+              Employee: [['id', 'Name', 'Salary', 'dept_id'], ['1', 'Zara', '50000', '1'], ['2', 'Ahmed', '50000', '2'], ['3', 'Fatima', '75000', '1']],
+              Department: [['id', 'department_name'], ['1', 'IT'], ['2', 'Operations']]
+            },
+            expected_output: {
+              columns: ['Name', 'Salary', 'department_name'],
+              rows: [['Fatima', '75000', 'IT'], ['Zara', '50000', 'IT'], ['Ahmed', '50000', 'Operations']]
+            },
+            marks: 0.8
+          },
+          {
+            title: 'Large Dataset Test',
+            table_data: {
+              Employee: [['id', 'Name', 'Salary', 'dept_id'], ['1', 'A', '100000', '1'], ['2', 'B', '95000', '2'], ['3', 'C', '88000', '1'], ['4', 'D', '77000', '3'], ['5', 'E', '65000', '2']],
+              Department: [['id', 'department_name'], ['1', 'Engineering'], ['2', 'Design'], ['3', 'QA']]
+            },
+            expected_output: {
+              columns: ['Name', 'Salary', 'department_name'],
+              rows: [['A', '100000', 'Engineering'], ['B', '95000', 'Design'], ['C', '88000', 'Engineering'], ['D', '77000', 'QA'], ['E', '65000', 'Design']]
+            },
+            marks: 0.8
+          }
+        ]),
+        starter_codes: '',
+        sql_schema: JSON.stringify([
+          {
+            table_name: 'Employee',
+            columns: [
+              { name: 'id', type: 'INT', description: 'Employee ID', constraints: 'PK, NOT NULL' },
+              { name: 'Name', type: 'VARCHAR', description: 'Employee name', constraints: 'NOT NULL' },
+              { name: 'Salary', type: 'DECIMAL', description: 'Monthly salary', constraints: '' },
+              { name: 'dept_id', type: 'INT', description: 'Department reference', constraints: 'FK → Department.id' }
+            ],
+            primary_key: 'id',
+            note: ''
+          },
+          {
+            table_name: 'Department',
+            columns: [
+              { name: 'id', type: 'INT', description: 'Department ID', constraints: 'PK, NOT NULL' },
+              { name: 'department_name', type: 'VARCHAR', description: 'Department name', constraints: 'NOT NULL' }
+            ],
+            primary_key: 'id',
+            note: ''
+          }
+        ]),
+        tags: 'sql,join,inner-join,multi-table,ordering'
       }
     ];
 
@@ -470,12 +554,9 @@ export default function BulkUploadQuestions({
       { wch: EXCEL_COLUMN_WIDTHS.CONTENT_MEDIUM }, // 12. difficulty_level
       { wch: EXCEL_COLUMN_WIDTHS.CONTENT_MEDIUM }, // 13. hint
       { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 14. test_cases
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_LARGE }, // 15. test_stub
-      { wch: EXCEL_COLUMN_WIDTHS.STANDARD },      // 16. programming_language
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 17. starter_codes
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 18. sql_schema
-      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 19. sql_test_cases
-      { wch: EXCEL_COLUMN_WIDTHS.LARGE }           // 20. tags
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 15. starter_codes
+      { wch: EXCEL_COLUMN_WIDTHS.CONTENT_XXLARGE }, // 16. sql_schema
+      { wch: EXCEL_COLUMN_WIDTHS.LARGE }           // 17. tags
     ];
 
     const wb = XLSX.utils.book_new();
@@ -527,7 +608,7 @@ export default function BulkUploadQuestions({
       ['Column Descriptions:'],
       ['board', 'Educational board (e.g., CBSE, ICSE) - OPTIONAL (leave empty if not applicable)'],
       ['is_public', 'true (public - shared with all colleges) or false (private - your college only)'],
-      ['class', 'Class level (e.g., MCA-1, 10th, 11th, 12th)'],
+      ['class', 'Class level. Use "Generic" for all classes. For multiple classes use | separator (e.g., MCA-1|MCA-2). Single class: MCA-1, 10th, 11th'],
       ['subject', 'Subject name (e.g., Java, Mathematics, Computer Science)'],
       ['chapter', 'Chapter or topic name (e.g., Java Loops, Quadratic Equations)'],
       ['type', `Question type: ${QUESTION_TYPES.MCQ}, ${QUESTION_TYPES.FITB}, ${QUESTION_TYPES.DESCRIPTIVE}, ${QUESTION_TYPES.JUMBLED}, ${QUESTION_TYPES.CODE}, ${QUESTION_TYPES.SQL}`],
@@ -537,12 +618,9 @@ export default function BulkUploadQuestions({
       ['maximum_marks', 'Numeric value for marks (e.g., 1, 2, 5)'],
       ['difficulty_level', `${COMPLEXITY_LEVELS.EASY}, ${COMPLEXITY_LEVELS.MEDIUM}, or ${COMPLEXITY_LEVELS.HARD}`],
       ['hint', 'Hint for solving (optional). Supports HTML formatting.'],
-      ['test_cases', 'For CODE questions: JSON array of test cases with input, expected_output, and marks'],
-      ['test_stub', 'For CODE questions: Starter code template (backward compatible, use starter_codes for multi-language)'],
-      ['programming_language', 'For CODE questions: Primary programming language (e.g., java, python, cpp)'],
+      ['test_cases', 'For CODE questions: JSON array of test cases with input, expected_output, and marks. For SQL questions: JSON array with title, table_data, expected_output, and marks'],
       ['starter_codes', 'For CODE questions: JSON array of multi-language starter codes: [{"language":"java","code":"..."}]'],
       ['sql_schema', 'For SQL questions: JSON array of table schemas with columns, types, and constraints'],
-      ['sql_test_cases', 'For SQL questions: JSON array of test cases with table_data and expected_output'],
       ['tags', 'Optional: Comma-separated tags for categorization, max 4 (e.g., "loops,for-loop,java-basics"). Automatically lowercased.'],
       [''],
       ['HTML Formatting in question_text, hint:'],
@@ -559,26 +637,24 @@ export default function BulkUploadQuestions({
       [QUESTION_TYPES.FITB, 'Requires: correct_answers. Use | to separate answers for multiple blanks (e.g., "static|all" for 2 blanks)'],
       [QUESTION_TYPES.DESCRIPTIVE, 'No required additional fields. Students write free-form answers.'],
       [QUESTION_TYPES.JUMBLED, 'Requires: options (items to arrange) and correct_answers (correct sequence). Both separated by |'],
-      [QUESTION_TYPES.CODE, 'Requires: test_cases (JSON), test_stub or starter_codes. programming_language recommended.'],
-      [QUESTION_TYPES.SQL, 'Requires: sql_schema (JSON) and sql_test_cases (JSON). Subject must be "Database".'],
+      [QUESTION_TYPES.CODE, 'Requires: test_cases (JSON) and starter_codes (JSON array of multi-language code).'],
+      [QUESTION_TYPES.SQL, 'Requires: sql_schema (JSON) and test_cases (JSON with SQL format). Subject must be "Database".'],
       [''],
       ['Code Question Format:'],
       ['test_cases', 'JSON array format: [{"input":"John\\n101\\n85.5","expected_output":"Name: John, Roll: 101, Marks: 85.5\\n","marks":0.4}]'],
-      ['test_stub', 'Single-language starter code (backward compatible). Use starter_codes for multi-language support.'],
-      ['programming_language', 'Primary language: java, python, cpp, c, javascript, etc.'],
       ['starter_codes', 'JSON array: [{"language":"java","code":"..."},{"language":"python","code":"..."}]'],
       [''],
       ['SQL Question Format:'],
       ['sql_schema', 'JSON array: [{"table_name":"Employee","columns":[{"name":"id","type":"INT","description":"","constraints":"PK, NOT NULL"}],"primary_key":"id","note":""}]'],
-      ['sql_test_cases', 'JSON array: [{"title":"Test 1","table_data":{"Employee":[["id","Name"],["1","John"]]},"expected_output":{"columns":["id","Name"],"rows":[["1","John"]]},"marks":1.0}]'],
+      ['test_cases (SQL)', 'JSON array: [{"title":"Test 1","table_data":{"Employee":[["id","Name"],["1","John"]]},"expected_output":{"columns":["id","Name"],"rows":[["1","John"]]},"marks":1.0}]'],
       [''],
       ['Examples (See Questions sheet for complete examples):'],
       ['MCQ', 'Single answer: correct_answers = "0 1 2 3 4"  |  Multiple answers: correct_answers = "for loop|while loop|do-while loop"'],
       ['FITB', 'Two blanks: question has "The _____ keyword... among _____ instances"  |  correct_answers = "static|all"'],
       ['Jumbled', 'Code arrangement: options = "System.out.println(i);|}|for (int i = 1; i <= 5; i++) {"  |  correct_answers = "for (int i = 1; i <= 5; i++) {|System.out.println(i);|}"'],
       ['Descriptive', 'Open-ended questions where students write full answers. No options or correct_answers needed.'],
-      ['Code', 'Complete programming problems with automated testing. Requires test_cases JSON and test_stub/starter_codes.'],
-      ['SQL', 'Database query problems. Requires sql_schema JSON (table definitions) and sql_test_cases JSON (input data + expected output).']
+      ['Code', 'Complete programming problems with automated testing. Requires test_cases JSON and starter_codes.'],
+      ['SQL', 'Database query problems. Requires sql_schema JSON (table definitions) and test_cases JSON (SQL format with table_data + expected_output).']
     ];
 
     const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
@@ -739,9 +815,7 @@ export default function BulkUploadQuestions({
             } catch { validationErrors.push('test_cases has invalid JSON format'); }
           }
           if (!question.starter_codes || !question.starter_codes.toString().trim()) {
-            if (!question.test_stub || !question.test_stub.toString().trim()) {
-              validationErrors.push('starter_codes or test_stub is required for Code questions');
-            }
+              validationErrors.push('starter_codes is required for Code questions');
           } else {
             try {
               const sc = JSON.parse(question.starter_codes.toString().trim());
@@ -759,13 +833,13 @@ export default function BulkUploadQuestions({
               if (!Array.isArray(schema) || schema.length === 0) validationErrors.push('sql_schema must be a non-empty JSON array with table definitions');
             } catch { validationErrors.push('sql_schema has invalid JSON format'); }
           }
-          if (!question.sql_test_cases || !question.sql_test_cases.toString().trim()) {
-            validationErrors.push('sql_test_cases JSON is required for SQL questions');
+          if (!question.test_cases || !question.test_cases.toString().trim()) {
+            validationErrors.push('test_cases JSON is required for SQL questions');
           } else {
             try {
-              const tc = JSON.parse(question.sql_test_cases.toString().trim());
-              if (!Array.isArray(tc) || tc.length === 0) validationErrors.push('sql_test_cases must be a non-empty JSON array');
-            } catch { validationErrors.push('sql_test_cases has invalid JSON format'); }
+              const tc = JSON.parse(question.test_cases.toString().trim());
+              if (!Array.isArray(tc) || tc.length === 0) validationErrors.push('test_cases must be a non-empty JSON array');
+            } catch { validationErrors.push('test_cases has invalid JSON format'); }
           }
         }
         
@@ -793,7 +867,11 @@ export default function BulkUploadQuestions({
           // Base fields
           question_text: question.question_text,
           subject: question.subject,
-          class: question.class.toString().trim(),
+          class: question.class.toString().trim().includes('|')
+            ? question.class.toString().trim().split('|').map((c: string) => c.trim())
+            : question.class.toString().trim().toLowerCase() === 'generic'
+              ? ['Generic']
+              : [question.class.toString().trim()],
           board: question.board || collegeData?.boards?.[0] || QUESTION_DEFAULTS.EMPTY_STRING,
           chapter: question.chapter?.toString().trim() || '',
           year: new Date().getFullYear().toString(),
@@ -852,13 +930,9 @@ export default function BulkUploadQuestions({
             }
             return {
               test_cases: parsedTestCases,
-              test_stub: question.test_stub?.toString().trim() || '',
-              programming_language: question.programming_language?.toString().trim() || 'java',
               starter_codes: question.starter_codes
                 ? JSON.parse(question.starter_codes.toString().trim())
-                : question.test_stub 
-                  ? [{ language: question.programming_language?.toString().trim() || 'java', code: question.test_stub.toString().trim() }]
-                  : []
+                : []
             };
           })()),
           
@@ -866,8 +940,8 @@ export default function BulkUploadQuestions({
             const parsedSchema = question.sql_schema
               ? JSON.parse(question.sql_schema.toString().trim())
               : [];
-            const parsedSqlTestCases = question.sql_test_cases
-              ? JSON.parse(question.sql_test_cases.toString().trim())
+            const parsedSqlTestCases = question.test_cases
+              ? JSON.parse(question.test_cases.toString().trim())
               : [];
             // Auto-distribute SQL test case marks
             const maxMarks = parseFloat(question.maximum_marks.toString()) || QUESTION_DEFAULTS.MARKS;
@@ -888,7 +962,7 @@ export default function BulkUploadQuestions({
         };
         
         // Create question using unified service
-        const result = await firebaseService.createQuestion(questionInput as CreateQuestionInput);
+        const result = await firebaseService.createQuestion(questionInput as unknown as CreateQuestionInput);
         
         if (!result.success) {
           throw new Error(result.error || 'Failed to save question');
@@ -1120,7 +1194,7 @@ export default function BulkUploadQuestions({
                       <li className="flex items-start"><span className="mr-2">•</span><span><strong>Required columns:</strong> class, subject, chapter, question_text, type, maximum_marks, difficulty_level</span></li>
                       <li className="flex items-start"><span className="mr-2">•</span><span><strong>Optional:</strong> board (empty if not provided), hint</span></li>
                       <li className="flex items-start"><span className="mr-2">•</span><span><strong>MCQ with multiple correct answers:</strong> Separate correct answers with | (e.g., "Answer1|Answer2")</span></li>
-                      <li className="flex items-start"><span className="mr-2">•</span><span><strong>CODE questions:</strong> Must include test_cases (JSON) and test_stub</span></li>
+                      <li className="flex items-start"><span className="mr-2">•</span><span><strong>CODE questions:</strong> Must include test_cases (JSON) and starter_codes (JSON)</span></li>
                     </ul>
                   </div>
                 </div>
@@ -1408,16 +1482,6 @@ export default function BulkUploadQuestions({
                             } catch { return null; }
                           })()}
 
-                          {/* Code: test_stub fallback */}
-                          {qType === QUESTION_TYPES.CODE && !q.starter_codes && q.test_stub && (
-                            <div>
-                              <h4 className="text-sm font-semibold text-gray-700 mb-2">Starter Code</h4>
-                              <SyntaxHighlighter language={q.programming_language || 'java'} style={vscDarkPlus} customStyle={{ fontSize: '0.75rem', padding: '0.75rem', borderRadius: '0.5rem', maxHeight: '200px' }} showLineNumbers={false}>
-                                {q.test_stub}
-                              </SyntaxHighlighter>
-                            </div>
-                          )}
-
                           {/* SQL Schema */}
                           {qType === QUESTION_TYPES.SQL && q.sql_schema && (() => {
                             try {
@@ -1448,9 +1512,9 @@ export default function BulkUploadQuestions({
                           })()}
 
                           {/* SQL Test Cases */}
-                          {qType === QUESTION_TYPES.SQL && q.sql_test_cases && (() => {
+                          {qType === QUESTION_TYPES.SQL && q.test_cases && (() => {
                             try {
-                              const testCases = JSON.parse(q.sql_test_cases.toString());
+                              const testCases = JSON.parse(q.test_cases.toString());
                               const schema = q.sql_schema ? JSON.parse(q.sql_schema.toString()) : [];
                               return testCases.length > 0 ? (
                                 <div>

@@ -133,6 +133,7 @@ interface ProblemData {
   analogy: Analogy;
   hints: string[];
   params: { name: string; type: string }[];
+  paramOrder?: string[];
   defaultCode: Record<string, string>;
   relatedProblems: RelatedProblem[];
   views: number;
@@ -328,38 +329,29 @@ function transformProblemData(data: any): ProblemData | null {
       });
     }
 
-    // Transform analogy from Firebase format - handle dynamic approach fields
+    // Transform analogy from Firebase format
     const analogyApproaches: { key: string; label: string; content: string }[] = [];
     
-    // Map of known approach keys to their display labels and icons
-    const approachLabels: Record<string, { label: string; icon: string }> = {
-      bruteForce: { label: 'Brute Force Approach', icon: '🐢' },
-      optimal: { label: 'Optimal Approach', icon: '⚡' },
-      twoPass: { label: 'Two Pass Approach', icon: '🔄' },
-      twoPointers: { label: 'Two Pointers Approach', icon: '👆👆' },
-      hashMap: { label: 'Hash Map Approach', icon: '🗺️' },
-      binarySearch: { label: 'Binary Search Approach', icon: '🔍' },
-      dynamicProgramming: { label: 'Dynamic Programming', icon: '📊' },
-      greedy: { label: 'Greedy Approach', icon: '🎯' },
-      divideConquer: { label: 'Divide & Conquer', icon: '✂️' },
-      slidingWindow: { label: 'Sliding Window', icon: '🪟' },
-      bfs: { label: 'BFS Approach', icon: '🌊' },
-      dfs: { label: 'DFS Approach', icon: '🌲' }
-    };
-    
-    // Extract all approach fields from analogy (skip known non-approach fields)
-    const skipFields = ['icon', 'title', 'description', 'keyInsight', 'scenario'];
     if (data.analogy) {
-      Object.entries(data.analogy).forEach(([key, value]) => {
-        if (!skipFields.includes(key) && typeof value === 'string' && value.trim()) {
-          const labelInfo = approachLabels[key] || { label: key.replace(/([A-Z])/g, ' $1').trim(), icon: '💡' };
-          analogyApproaches.push({
-            key,
-            label: `${labelInfo.icon} ${labelInfo.label}`,
-            content: value as string
-          });
-        }
-      });
+      // Get approaches — Firebase may serialize arrays as objects {0: {...}, 1: {...}}
+      const rawApproaches = data.analogy.approaches;
+      const approachList = Array.isArray(rawApproaches)
+        ? rawApproaches
+        : (rawApproaches && typeof rawApproaches === 'object')
+          ? Object.keys(rawApproaches).sort((a, b) => Number(a) - Number(b)).map(k => rawApproaches[k])
+          : [];
+      
+      if (approachList.length > 0) {
+        approachList.forEach((a: any, idx: number) => {
+          if (a.label && a.content && a.content.trim() && a.content.trim().toLowerCase() !== 'n/a') {
+            analogyApproaches.push({
+              key: `approach-${idx}`,
+              label: a.label,
+              content: a.content
+            });
+          }
+        });
+      }
     }
     
     const analogy: Analogy = {
@@ -399,6 +391,7 @@ function transformProblemData(data: any): ProblemData | null {
       analogy,
       hints: data.hints || [],
       params: data.params || [],
+      paramOrder: data.paramOrder || [],
       defaultCode: data.defaultCode || {},
       relatedProblems,
       isSql,
@@ -559,7 +552,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
   const [aiOperationLoading, setAiOperationLoading] = useState<string | null>(null); // Track which AI operation is loading
   const [showAIResultModal, setShowAIResultModal] = useState(false);
   const [aiResultContent, setAiResultContent] = useState<{ title: string; content: string; operation: string } | null>(null);
-  const [problemAttemptRefreshTrigger, setProblemAttemptRefreshTrigger] = useState(0); // Trigger to refresh problems list attempts
+  const [_problemAttemptRefreshTrigger, setProblemAttemptRefreshTrigger] = useState(0); // Trigger to refresh problems list attempts
   
   // Slash command state
   const [showSlashMenu, setShowSlashMenu] = useState(false);
@@ -574,8 +567,8 @@ const CodingLab: React.FC<CodingLabProps> = ({
 
   // PGlite (PostgreSQL in browser) for SQL problems
   const pgliteRef = useRef<any>(null);
-  const [pgliteReady, setPgliteReady] = useState(false);
-  const [pgliteLoading, setPgliteLoading] = useState(false);
+  const [_pgliteReady, setPgliteReady] = useState(false);
+  const [_pgliteLoading, setPgliteLoading] = useState(false);
 
   // Resizer mouse event handlers
   useEffect(() => {
@@ -693,8 +686,9 @@ const CodingLab: React.FC<CodingLabProps> = ({
         
         if (data) {
           setProblem(data);
-          // Set first approach as selected
-          const firstApproach = Object.keys(data.approaches || {})[0];
+          // Set first approach as selected (sorted by name)
+          const sortedKeys = Object.entries(data.approaches || {}).sort(([, a]: any, [, b]: any) => (a.name || '').localeCompare(b.name || '')).map(([k]) => k);
+          const firstApproach = sortedKeys[0];
           if (firstApproach) setSelectedApproach(firstApproach);
           // For SQL problems, force SQL language
           if (data.isSql) {
@@ -726,11 +720,10 @@ const CodingLab: React.FC<CodingLabProps> = ({
           // Pre-populate Stdin with first test case (coding problems only)
           if (!data.isSql && data.testCases?.length > 0) {
             const firstTC = data.testCases[0];
-            const paramOrder = data.params || [];
-            const paramKeys = paramOrder.length > 0
-              ? paramOrder.map((p: any) => p.name)
-              : Object.keys(firstTC.params || {}).sort();
-            const stdinValue = paramKeys.map((k: string) => firstTC.params?.[k] || '').join('\n');
+            const paramKeys = (data.params || []).length > 0
+              ? data.params.map((p: any) => p.name)
+              : data.paramOrder!;
+            const stdinValue = paramKeys.map((k: string) => firstTC.params?.[k] ?? '').join('\n');
             if (stdinValue.trim()) {
               setStdinInput(stdinValue);
             }
@@ -842,7 +835,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
         let rows = normalizeRows(tableData.rows);
         
         for (const row of rows) {
-          const vals = headers.map((header: string, i: number) => {
+          const vals = headers.map((_header: string, i: number) => {
             const val = row['i' + i];
             if (val === null || val === undefined) return 'NULL';
             if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
@@ -860,7 +853,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
       let rows = normalizeRows(input.rows);
       
       for (const row of rows) {
-        const vals = headers.map((header: string, i: number) => {
+        const vals = headers.map((_header: string, i: number) => {
           const val = row['i' + i];
           if (val === null || val === undefined) return 'NULL';
           if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
@@ -1652,9 +1645,9 @@ const CodingLab: React.FC<CodingLabProps> = ({
     try {
       // Convert params to stdin - respect param order from problem definition (matches PHP behavior)
       const paramKeys = (problem?.params || []).length > 0
-        ? problem.params.map((p: any) => p.name)
-        : Object.keys(testCase.params || {}).sort();
-      const stdin = paramKeys.map((k: string) => testCase.params[k] || '').join('\n');
+        ? problem!.params.map((p: any) => p.name)
+        : problem!.paramOrder!;
+      const stdin = paramKeys.map((k: string) => testCase.params[k]).join('\n');
       
       const result = await executeCode(code, selectedLanguage, stdin);
       
@@ -2459,7 +2452,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
                       <span className="w-3 h-3 rounded-full bg-red-400"></span>
                       <span className="w-3 h-3 rounded-full bg-yellow-400"></span>
                       <span className="w-3 h-3 rounded-full bg-green-400"></span>
-                      <span className="ml-3 text-sm text-gray-500 font-mono">{example.title || `example_${idx + 1}.py`}</span>
+                      <span className="ml-3 text-sm text-gray-500 font-mono">{(example as any).title || `example_${idx + 1}.py`}</span>
                     </div>
                     {/* Terminal Body */}
                     <div className="p-4 font-mono text-xs">
@@ -2712,7 +2705,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
   const renderSolutionPanel = () => {
     if (!problem) return null;
     
-    const approaches = Object.entries(problem.approaches || {});
+    const approaches = Object.entries(problem.approaches || {}).sort(([, a]: any, [, b]: any) => (a.name || '').localeCompare(b.name || ''));
     const currentApproach = problem.approaches?.[selectedApproach];
 
     // Get complexity level for styling
@@ -2878,7 +2871,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
                   )}
                   
                   {/* Pros and Cons */}
-                  {(currentApproach.pros?.length > 0 || currentApproach.cons?.length > 0) && (
+                  {((currentApproach.pros?.length ?? 0) > 0 || (currentApproach.cons?.length ?? 0) > 0) && (
                     <div className="grid grid-cols-2 gap-4">
                       {currentApproach.pros && currentApproach.pros.length > 0 && (
                         <div className="p-3 bg-green-50 rounded-lg border border-green-200">
@@ -3374,7 +3367,6 @@ const CodingLab: React.FC<CodingLabProps> = ({
                     <button 
                       onClick={() => {
                         setCode(currentApproach.code?.[solutionLanguage] || '');
-                        navigator.clipboard.writeText(currentApproach.code?.[solutionLanguage] || '');
                         setSolutionCodeCopied(true);
                         setTimeout(() => setSolutionCodeCopied(false), 2000);
                       }}
@@ -3383,7 +3375,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
                           ? 'text-green-600 bg-green-50 border-green-300' 
                           : 'text-gray-400 border-transparent hover:text-gray-600 hover:border-amber-200'
                       }`}
-                      title={solutionCodeCopied ? 'Copied!' : 'Copy to Editor & Clipboard'}
+                      title={solutionCodeCopied ? 'Copied to Editor!' : 'Copy to Editor'}
                     >
                       <FontAwesomeIcon icon={solutionCodeCopied ? faCheck : faPaste} className="w-4 h-4" />
                     </button>
@@ -3563,66 +3555,90 @@ const CodingLab: React.FC<CodingLabProps> = ({
 
   const renderAnalogyPanel = () => {
     if (!problem) return null;
+
+    // Markdown to HTML converter for rich analogy content
+    const mdToHtml = (text: string): string => {
+      if (!text) return '';
+      return text
+        // Convert \n to actual newlines (JSON escape)
+        .replace(/\\n/g, '\n')
+        // Bold: **text** → <strong>text</strong>
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        // Bullet lines: - text → <li>text</li>
+        .replace(/^- (.+)$/gm, '<li style="margin-bottom: 6px; color: #4b5563; font-size: 14px; line-height: 1.6;">$1</li>')
+        // Wrap consecutive <li> in <ul>
+        .replace(/((?:<li[^>]*>.*?<\/li>\s*)+)/g, '<ul style="list-style: none; padding-left: 8px; margin: 10px 0;">$1</ul>')
+        // Paragraphs: double newline → paragraph break
+        .replace(/\n\n/g, '</p><p style="color: #4b5563; font-size: 14px; line-height: 1.7; margin: 0 0 10px 0;">')
+        // Single newlines → <br>
+        .replace(/\n/g, '<br>')
+        // Wrap in paragraph
+        .replace(/^/, '<p style="color: #4b5563; font-size: 14px; line-height: 1.7; margin: 0 0 10px 0;">')
+        .replace(/$/, '</p>')
+        // Clean up: remove <p> wrapping around <ul>
+        .replace(/<p[^>]*>\s*(<ul)/g, '$1')
+        .replace(/<\/ul>\s*<\/p>/g, '</ul>')
+        // Clean up empty paragraphs
+        .replace(/<p[^>]*>\s*<\/p>/g, '');
+    };
+
+    const renderMarkdown = (text: string) => (
+      <div dangerouslySetInnerHTML={{ __html: mdToHtml(text) }} />
+    );
     
     return (
     <div className="h-full overflow-y-auto bg-white p-6">
-      {/* Analogy Card - Same design as left panel */}
+      {/* Analogy Card */}
       <div className="rounded-xl border border-gray-200 p-5 mb-5" style={{ background: '#f9fbfd' }}>
         <div className="flex items-center gap-3 mb-4">
           <span className="text-3xl">{problem.analogy?.icon || '💡'}</span>
           <h3 className="text-lg font-bold text-gray-900">{problem.analogy?.title || 'Understanding the Problem'}</h3>
         </div>
         {problem.analogy?.description && (
-          <p className="text-gray-700 leading-relaxed">{problem.analogy.description}</p>
+          <div className="text-gray-700 text-sm leading-relaxed">
+            {renderMarkdown(problem.analogy.description)}
+          </div>
         )}
       </div>
       
-      {/* Understanding Approaches - Dynamic */}
-      {problem.analogy?.approaches && problem.analogy.approaches.length > 0 && (
-        <div className="rounded-xl border-l-4 mb-5" style={{ borderColor: brandTheme.colors.primary, background: 'rgb(254, 253, 251)' }}>
-          <div className="p-5">
-            <div className="flex items-center gap-2 mb-5">
-              <FontAwesomeIcon icon={faLightbulb} style={{ color: brandTheme.colors.primary }} className="w-5 h-5" />
-              <span className="font-bold text-gray-900">Understanding the Approaches</span>
-            </div>
-            
-            <div className="space-y-5">
-              {problem.analogy.approaches.map((approach, idx) => (
-                <div key={approach.key} className="flex gap-4 items-start">
-                  <div 
-                    className="w-7 h-7 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                    style={{ 
-                      background: idx === 0 ? '#f97316' : 
-                                 idx === problem.analogy.approaches.length - 1 ? brandTheme.gradients.primary : 
-                                 '#6b7280'
-                    }}
-                  >
-                    {idx + 1}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-900 mb-1 text-sm">{approach.label}</div>
-                    <div className="text-gray-600 text-sm leading-relaxed">
-                      {approach.content}
-                    </div>
-                  </div>
+      {/* Approach Cards — each approach gets its own card */}
+      {problem.analogy?.approaches && problem.analogy.approaches.length > 0 && 
+        problem.analogy.approaches.map((approach, idx) => (
+          <div key={approach.key} className="rounded-xl border-l-4 mb-4" style={{ 
+            borderColor: idx === 0 ? '#f97316' : idx === problem.analogy.approaches.length - 1 ? brandTheme.colors.primary : '#6b7280', 
+            background: 'rgb(254, 253, 251)' 
+          }}>
+            <div className="p-5">
+              <div className="flex gap-3 items-center mb-3">
+                <div 
+                  className="w-7 h-7 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                  style={{ 
+                    background: idx === 0 ? '#f97316' : 
+                               idx === problem.analogy.approaches.length - 1 ? brandTheme.colors.primary : 
+                               '#6b7280'
+                  }}
+                >
+                  {idx + 1}
                 </div>
-              ))}
-            </div>
-            
-            {/* Key Insight */}
-            {problem.analogy.keyInsight && (
-              <div className="mt-5 p-4 rounded-lg flex items-start gap-3" style={{ background: `linear-gradient(135deg, ${brandTheme.colors.primary}15, ${brandTheme.colors.primary}08)`, border: `1px solid ${brandTheme.colors.primary}30` }}>
-                <div className="w-9 h-9 rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: brandTheme.colors.primary }}>
-                  <FontAwesomeIcon icon={faCheck} className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="font-semibold mb-1 text-sm" style={{ color: brandTheme.colors.primary }}>Key Insight</div>
-                  <div className="text-sm leading-relaxed" style={{ color: brandTheme.colors.primary }}>
-                    {problem.analogy.keyInsight}
-                  </div>
-                </div>
+                <div className="font-bold text-gray-900 text-sm">{approach.label}</div>
               </div>
-            )}
+              <div className="ml-10">
+                {renderMarkdown(approach.content)}
+              </div>
+            </div>
+          </div>
+        ))
+      }
+
+      {/* Key Insight */}
+      {problem.analogy?.keyInsight && (
+        <div className="mb-5 p-4 rounded-lg flex items-start gap-3" style={{ background: `linear-gradient(135deg, ${brandTheme.colors.primary}15, ${brandTheme.colors.primary}08)`, border: `1px solid ${brandTheme.colors.primary}30` }}>
+          <div className="w-9 h-9 rounded-full flex items-center justify-center text-white flex-shrink-0" style={{ background: brandTheme.colors.primary }}>
+            <FontAwesomeIcon icon={faCheck} className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="font-semibold mb-1 text-sm" style={{ color: brandTheme.colors.primary }}>Key Insight</div>
+            <div className="text-sm leading-relaxed" style={{ color: brandTheme.colors.primary }} dangerouslySetInnerHTML={{ __html: problem.analogy.keyInsight.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
           </div>
         </div>
       )}
@@ -3950,14 +3966,16 @@ const CodingLab: React.FC<CodingLabProps> = ({
               scrollBeyondLastLine: false,
               automaticLayout: true,
               tabSize: 4,
-              wordWrap: 'off',
-              folding: true,
+              wordWrap: 'on',
+              folding: false,
+              stickyScroll: { enabled: false },
               lineNumbersMinChars: 3,
               padding: { top: 12, bottom: 12 },
               renderLineHighlight: 'line',
               renderLineHighlightOnlyWhenFocus: false,
               hideCursorInOverviewRuler: true,
               overviewRulerBorder: false,
+              overviewRulerLanes: 0,
               guides: {
                 indentation: false,
                 bracketPairs: false,
@@ -4929,36 +4947,39 @@ const CodingLab: React.FC<CodingLabProps> = ({
             style={{ animation: 'slideInRight 0.3s ease-out' }}
           >
             {/* Panel Header */}
-            <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white">
-              <div className="flex items-center gap-3">
-                <FontAwesomeIcon icon={faClipboardList} className="w-5 h-5" />
-                <span className="text-lg font-semibold">Test Cases</span>
+            <div className="flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white">
+              <div className="flex items-center gap-2">
+                <FontAwesomeIcon icon={faClipboardList} className="w-4 h-4" />
+                <div>
+                  <span className="text-sm font-extrabold">Test Cases</span>
+                  <p className="text-xs text-white/70">{testResults.length} test case{testResults.length !== 1 ? 's' : ''} available</p>
+                </div>
               </div>
               <button 
                 onClick={() => setShowTestCasesPanel(false)}
                 className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition"
               >
-                <FontAwesomeIcon icon={faXmark} className="w-5 h-5" />
+                <FontAwesomeIcon icon={faXmark} className="w-4 h-4" />
               </button>
             </div>
             
             {/* Summary Bar */}
-            <div className="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
-              <div className="flex items-center gap-4">
-                <span className="flex items-center gap-1.5 text-sm text-green-600">
-                  <FontAwesomeIcon icon={faCheck} className="w-4 h-4" />
+            <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
+              <div className="flex items-center gap-3 text-xs">
+                <span className="flex items-center gap-1.5 text-green-600">
+                  <FontAwesomeIcon icon={faCheck} className="w-3 h-3" />
                   <span>{testResults.filter(r => r.passed === true).length} passed</span>
                 </span>
-                <span className="flex items-center gap-1.5 text-sm text-red-500">
-                  <FontAwesomeIcon icon={faCircleXmark} className="w-4 h-4" />
+                <span className="flex items-center gap-1.5 text-red-500">
+                  <FontAwesomeIcon icon={faCircleXmark} className="w-3 h-3" />
                   <span>{testResults.filter(r => r.passed === false).length} failed</span>
                 </span>
-                <span className="flex items-center gap-1.5 text-sm text-gray-400">
-                  <FontAwesomeIcon icon={faClock} className="w-4 h-4" />
+                <span className="flex items-center gap-1.5 text-gray-400">
+                  <FontAwesomeIcon icon={faClock} className="w-3 h-3" />
                   <span>{testResults.filter(r => r.passed === null).length} pending</span>
                 </span>
               </div>
-              <span className="text-sm text-gray-500">{testResults.length} test cases</span>
+              <span className="text-xs text-gray-500">{testResults.length} test cases</span>
             </div>
             
             {/* Test Cases Content */}
@@ -4974,22 +4995,22 @@ const CodingLab: React.FC<CodingLabProps> = ({
                   }`}
                 >
                   {/* Test Case Header */}
-                  <div className="flex items-center justify-between px-4 py-3 bg-white border-b border-gray-100">
-                    <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-gray-100">
+                    <div className="flex items-center gap-2">
                       {result.running ? (
-                        <span className="w-4 h-4 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin"></span>
+                        <span className="w-3.5 h-3.5 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin"></span>
                       ) : result.passed === true ? (
-                        <FontAwesomeIcon icon={faCheck} className="w-4 h-4 text-green-500" />
+                        <FontAwesomeIcon icon={faCheck} className="w-3.5 h-3.5 text-green-500" />
                       ) : result.passed === false ? (
-                        <FontAwesomeIcon icon={faCircleXmark} className="w-4 h-4 text-red-500" />
+                        <FontAwesomeIcon icon={faCircleXmark} className="w-3.5 h-3.5 text-red-500" />
                       ) : (
-                        <span className="w-4 h-4 rounded-full border-2 border-dashed border-gray-300"></span>
+                        <span className="w-3.5 h-3.5 rounded-full border-2 border-dashed border-gray-300"></span>
                       )}
-                      <span className="font-semibold text-gray-800">Case {idx + 1}</span>
+                      <span className="text-xs font-semibold text-gray-800">Case {idx + 1}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       {!result.running && (
-                        <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                        <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-medium ${
                           result.passed === true ? 'bg-green-100 text-green-600' :
                           result.passed === false ? 'bg-red-100 text-red-600' :
                           'bg-gray-100 text-gray-500'
@@ -5000,12 +5021,12 @@ const CodingLab: React.FC<CodingLabProps> = ({
                       <button 
                         onClick={() => runSingleTestCase(idx)}
                         disabled={result.running}
-                        className="px-3 py-1 text-xs bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 flex items-center gap-1"
+                        className="px-2.5 py-1 text-xs bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 flex items-center gap-1"
                       >
                         {result.running ? (
                           <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin"></span>
                         ) : (
-                          <FontAwesomeIcon icon={faPlay} className="w-3 h-3" />
+                          <FontAwesomeIcon icon={faPlay} className="w-2.5 h-2.5" />
                         )}
                         Run
                       </button>
@@ -5014,38 +5035,38 @@ const CodingLab: React.FC<CodingLabProps> = ({
                         disabled={testResults.length <= 1}
                         className="p-1 text-gray-400 hover:text-red-500 disabled:opacity-30"
                       >
-                        <FontAwesomeIcon icon={faTrash} className="w-3.5 h-3.5" />
+                        <FontAwesomeIcon icon={faTrash} className="w-3 h-3" />
                       </button>
                     </div>
                   </div>
                   
                   {/* Test Case Body */}
-                  <div className="p-4 space-y-3">
+                  <div className="px-3 py-2.5 space-y-2">
                     {problem?.isSql && result.sqlInput ? (
                       /* ===== SQL Test Case: Table rendering ===== */
                       <>
                         {/* Input Table(s) */}
                         <div>
-                          <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                            <span className="text-green-500">→</span> Input {result.sqlInput?.tables ? 'Tables' : 'Table'}
+                          <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                            Input Tables
                           </div>
                           {result.sqlInput?.tables && Array.isArray(result.sqlInput.tables) ? (
                             result.sqlInput.tables.map((t: any, ti: number) => (
-                              <div key={ti} className="mb-3">
-                                {t.name && <div className="text-xs text-gray-500 font-semibold mb-1">{t.name}</div>}
-                                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                              <div key={ti} className="mb-2">
+                                {t.name && <p className="text-[10px] font-semibold mb-1 text-blue-600">📥 {t.name}</p>}
+                                <div className="overflow-x-auto rounded border border-gray-200">
                                   <table className="w-full text-xs font-mono">
-                                    <thead><tr className="bg-gray-100">{(t.headers || []).map((h: string, hi: number) => <th key={hi} className="px-3 py-1.5 text-left text-gray-600 font-semibold border-b border-gray-200">{h}</th>)}</tr></thead>
-                                    <tbody>{normalizeRows(t.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">{(t.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-3 py-1.5 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                                    <thead><tr className="bg-gray-100">{(t.headers || []).map((h: string, hi: number) => <th key={hi} className="px-2 py-1 text-left text-gray-600 font-semibold border-b border-gray-200">{h}</th>)}</tr></thead>
+                                    <tbody>{normalizeRows(t.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">{(t.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
                                   </table>
                                 </div>
                               </div>
                             ))
                           ) : (
-                            <div className="overflow-x-auto rounded-lg border border-gray-200">
+                            <div className="overflow-x-auto rounded border border-gray-200">
                               <table className="w-full text-xs font-mono">
-                                <thead><tr className="bg-gray-100">{(result.sqlInput?.headers || []).map((h: string, hi: number) => <th key={hi} className="px-3 py-1.5 text-left text-gray-600 font-semibold border-b border-gray-200">{h}</th>)}</tr></thead>
-                                <tbody>{normalizeRows(result.sqlInput?.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">{(result.sqlInput?.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-3 py-1.5 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                                <thead><tr className="bg-gray-100">{(result.sqlInput?.headers || []).map((h: string, hi: number) => <th key={hi} className="px-2 py-1 text-left text-gray-600 font-semibold border-b border-gray-200">{h}</th>)}</tr></thead>
+                                <tbody>{normalizeRows(result.sqlInput?.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">{(result.sqlInput?.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
                               </table>
                             </div>
                           )}
@@ -5055,13 +5076,13 @@ const CodingLab: React.FC<CodingLabProps> = ({
 
                         {/* Expected Output Table */}
                         <div>
-                          <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                            <span className="text-amber-500">◎</span> Expected Output
+                          <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                            Expected Output
                           </div>
-                          <div className="overflow-x-auto rounded-lg border border-green-200">
+                          <div className="overflow-x-auto rounded border border-green-200">
                             <table className="w-full text-xs font-mono">
-                              <thead><tr className="bg-green-50">{(result.sqlExpectedOutput?.headers || []).map((h: string, hi: number) => <th key={hi} className="px-3 py-1.5 text-left text-green-700 font-semibold border-b border-green-200">{h}</th>)}</tr></thead>
-                              <tbody>{normalizeRows(result.sqlExpectedOutput?.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-green-100 hover:bg-green-50/50">{(result.sqlExpectedOutput?.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-3 py-1.5 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                              <thead><tr className="bg-green-50">{(result.sqlExpectedOutput?.headers || []).map((h: string, hi: number) => <th key={hi} className="px-2 py-1 text-left text-green-700 font-semibold border-b border-green-200">{h}</th>)}</tr></thead>
+                              <tbody>{normalizeRows(result.sqlExpectedOutput?.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-green-100 hover:bg-green-50/50">{(result.sqlExpectedOutput?.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
                             </table>
                           </div>
                         </div>
@@ -5069,20 +5090,20 @@ const CodingLab: React.FC<CodingLabProps> = ({
                         {/* Actual Output (after run) */}
                         {result.passed !== null && result.sqlActualHeaders && (
                           <div>
-                            <div className="flex items-center gap-2 mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: result.passed ? '#40A944' : '#ef4444' }}>
-                              <span>{result.passed ? '✓' : '✗'}</span> Your Output
+                            <div className="text-[10px] font-semibold uppercase tracking-wide mb-1" style={{ color: result.passed ? '#40A944' : '#ef4444' }}>
+                              Your Output
                             </div>
-                            <div className={`overflow-x-auto rounded-lg border ${result.passed ? 'border-green-200' : 'border-red-200'}`}>
+                            <div className={`overflow-x-auto rounded border ${result.passed ? 'border-green-200' : 'border-red-200'}`}>
                               <table className="w-full text-xs font-mono">
-                                <thead><tr className={result.passed ? 'bg-green-50' : 'bg-red-50'}>{(result.sqlActualHeaders || []).map((h: string, hi: number) => <th key={hi} className={`px-3 py-1.5 text-left font-semibold border-b ${result.passed ? 'text-green-700 border-green-200' : 'text-red-700 border-red-200'}`}>{h}</th>)}</tr></thead>
+                                <thead><tr className={result.passed ? 'bg-green-50' : 'bg-red-50'}>{(result.sqlActualHeaders || []).map((h: string, hi: number) => <th key={hi} className={`px-2 py-1 text-left font-semibold border-b ${result.passed ? 'text-green-700 border-green-200' : 'text-red-700 border-red-200'}`}>{h}</th>)}</tr></thead>
                                 <tbody>{(result.sqlActualRows || []).length === 0 ? (
-                                  <tr><td colSpan={(result.sqlActualHeaders || []).length || 1} className="px-3 py-2 text-center text-gray-400 italic">No rows returned</td></tr>
-                                ) : (result.sqlActualRows || []).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100">{(result.sqlActualHeaders || []).map((h: string, ci: number) => { const val = row[h]; return <td key={ci} className="px-3 py-1.5 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                                  <tr><td colSpan={(result.sqlActualHeaders || []).length || 1} className="px-2 py-1 text-center text-gray-400 italic">No rows returned</td></tr>
+                                ) : (result.sqlActualRows || []).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100">{(result.sqlActualHeaders || []).map((h: string, ci: number) => { const val = row[h]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
                               </table>
                             </div>
                           </div>
                         )}
-                        {result.error && <div className="text-xs text-red-500 bg-red-50 p-2 rounded-lg">{result.error}</div>}
+                        {result.error && <div className="text-[10px] text-red-500 bg-red-50 p-2 rounded">{result.error}</div>}
                       </>
                     ) : (
                       /* ===== Coding Test Case: param=value style ===== */
@@ -5090,34 +5111,34 @@ const CodingLab: React.FC<CodingLabProps> = ({
                         {/* Input params */}
                         {Object.keys(result.params || {}).map((paramName, pi) => (
                           <div key={pi} className="flex items-center gap-2">
-                            <span className="text-sm font-mono text-gray-600 min-w-[60px]">{paramName}</span>
+                            <span className="text-xs font-mono text-gray-600 min-w-[60px]">{paramName}</span>
                             <span className="text-gray-400">=</span>
                             <input
                               type="text"
                               value={result.params[paramName] || ''}
                               onChange={(e) => updateTestCaseParam(idx, paramName, e.target.value)}
                               placeholder={paramName === 'nums' ? '[2, 7, 11, 15]' : paramName === 'target' ? '9' : ''}
-                              className="flex-1 px-3 py-1.5 text-sm font-mono bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-green-400"
+                              className="flex-1 px-2 py-1 text-xs font-mono bg-white border border-gray-200 rounded focus:outline-none focus:border-green-400"
                             />
                           </div>
                         ))}
                         
                         {Object.keys(result.params || {}).length === 0 && (
-                          <div className="text-sm text-gray-400 italic">No input parameters</div>
+                          <div className="text-xs text-gray-400 italic">No input parameters</div>
                         )}
                         
                         <div className="border-t border-dashed border-gray-200 my-2"></div>
                         
                         {/* Expected output */}
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-mono text-green-600 min-w-[60px]">expected</span>
+                          <span className="text-xs font-mono text-green-600 min-w-[60px]">expected</span>
                           <span className="text-gray-400">=</span>
                           <input
                             type="text"
                             value={result.expected || ''}
                             onChange={(e) => updateTestCaseExpected(idx, e.target.value)}
                             placeholder="[0, 1]"
-                            className="flex-1 px-3 py-1.5 text-sm font-mono bg-white border border-gray-200 rounded-lg focus:outline-none focus:border-green-400"
+                            className="flex-1 px-2 py-1 text-xs font-mono bg-white border border-gray-200 rounded focus:outline-none focus:border-green-400"
                           />
                         </div>
                         
@@ -5125,9 +5146,9 @@ const CodingLab: React.FC<CodingLabProps> = ({
                         {result.passed !== null && (
                           <>
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-mono text-gray-600 min-w-[60px]">output</span>
+                              <span className="text-xs font-mono text-gray-600 min-w-[60px]">output</span>
                               <span className="text-gray-400">=</span>
-                              <span className={`flex-1 px-3 py-1.5 text-sm font-mono rounded-lg ${
+                              <span className={`flex-1 px-2 py-1 text-xs font-mono rounded ${
                                 result.passed ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
                               }`}>
                                 {result.actual || result.error || '(empty)'}
@@ -5155,25 +5176,25 @@ const CodingLab: React.FC<CodingLabProps> = ({
             </div>
             
             {/* Panel Footer */}
-            <div className="px-5 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+            <div className="px-4 py-2.5 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
               <button 
                 onClick={addTestCase}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-green-600 hover:bg-green-50 rounded-lg transition"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-green-600 hover:bg-green-50 rounded-md transition"
               >
-                <FontAwesomeIcon icon={faPlus} className="w-4 h-4" />
+                <FontAwesomeIcon icon={faPlus} className="w-3 h-3" />
                 Add Test Case
               </button>
               <button 
                 onClick={runAllTestCases}
                 disabled={testResults.some(r => r.running)}
-                className="flex items-center gap-2 px-5 py-2 bg-green-500 text-white text-sm rounded-lg hover:bg-green-600 disabled:opacity-50 transition"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white text-xs rounded-md hover:bg-green-600 disabled:opacity-50 transition"
               >
                 {testResults.some(r => r.running) ? (
-                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
                 ) : (
-                  <FontAwesomeIcon icon={faPlay} className="w-4 h-4" />
+                  <FontAwesomeIcon icon={faPlay} className="w-3 h-3" />
                 )}
-                {testResults.some(r => r.running) ? 'Running...' : 'Run All'}
+                {testResults.some(r => r.running) ? 'Running...' : 'Run All Tests'}
               </button>
             </div>
           </div>

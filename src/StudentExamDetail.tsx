@@ -156,6 +156,7 @@ interface MergedQuestion {
   responseId?: string;
   evaluationRetries?: number;
   lastEvaluationAttempt?: any;
+  chapter?: string;
 }
 
 interface ChapterPerformance {
@@ -232,6 +233,11 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
       console.log('📊 [STUDENT_EXAM_DETAIL] Loading attempt data for student:', student?.studentName);
       console.log('📊 [STUDENT_EXAM_DETAIL] Student object:', student);
       console.log('📊 [STUDENT_EXAM_DETAIL] Exam object:', exam?.id);
+      
+      // ✅ Reset all state when switching exams/students to prevent stale data
+      setMergedQuestions([]);
+      setFullAttempt(null);
+      setAttemptData(null);
       
       if (student?.attemptData) {
         console.log('✅ [STUDENT_EXAM_DETAIL] Student has attemptData');
@@ -379,7 +385,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
           questionType: question.type || question.questionType || 'text',
           maxMarks: question.maximumMarks || question.marks || 0,
           complexity: question.complexity || question.difficulty,
-          correctAnswers: question.correctAnswers,
+          chapter: question.chapter || '',
           correctAnswer: question.correctAnswers || question.correctAnswer,
           options: question.options,
           hint: question.hint,
@@ -403,7 +409,8 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
         questionType: response.questionType || question.type,
         maxMarks: response.maxMarks || question.maximumMarks || question.marks || 0,
         complexity: response.complexity || question.complexity,
-        pool: response.pool || false,  // ✅ ADDED: Include pool field from response
+        chapter: question.chapter || response.chapter || '',
+        pool: response.pool || false,
         isAnswered: !!(response.studentAnswer !== undefined && response.studentAnswer !== null && response.studentAnswer !== '' && !(Array.isArray(response.studentAnswer) && response.studentAnswer.length === 0)),
         studentAnswer: response.studentAnswer,
         scoredMarks: response.marksAwarded || response.scoredMarks || 0,
@@ -737,35 +744,59 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
   const getStats = () => {
     const attempt = fullAttempt || attemptData;
     
-    // Use exam's totalQuestions if available, otherwise use mergedQuestions length
-    const totalQuestions = exam?.totalQuestions || exam?.numberOfQuestions || mergedQuestions.length || attempt?.totalQuestions || 0;
+    // ✅ All stats derived from mergedQuestions — single source of truth
+    const totalQuestions = exam?.totalQuestions || exam?.numberOfQuestions || mergedQuestions.length || 0;
     
-    // Calculate actual violation count from mergedQuestions to match modal
-    const actualViolationCount = mergedQuestions.reduce((total, question) => {
-      return total + (question.violations?.length || 0);
+    const attemptedQuestions = mergedQuestions.filter(q => q.isAnswered).length;
+    
+    const obtainedMarks = mergedQuestions.reduce((total, q) => {
+      return total + (q.marksAwarded || q.scoredMarks || 0);
     }, 0);
     
-    // ✅ Calculate total time spent by summing individual question times (same as violations)
-    const calculatedTimeSpent = mergedQuestions.reduce((total, question) => {
-      return total + (question.timeSpent || 0);
+    const actualViolationCount = mergedQuestions.reduce((total, q) => {
+      return total + (q.violations?.length || 0);
     }, 0);
     
-    if (!attempt) {
-      return {
-        totalQuestions: totalQuestions,
-        attemptedQuestions: 0,
-        totalMarks: parseInt(exam?.maxMarks || '0') || 0,
-        obtainedMarks: 0,
-        totalTimeSpent: calculatedTimeSpent,
-        violationCount: actualViolationCount
+    // ✅ Duration: Use startTime → submitTime (most accurate), fallback to attempt.timeSpent, then summed responses
+    let totalTimeSpent = 0;
+    const examDurationSeconds = (parseInt(exam?.duration || '0') || 0) * 60;
+    
+    if (attempt?.startTime && attempt?.submitTime) {
+      // Handle Firestore Timestamp (.toDate()), Date objects, or date strings
+      const toMs = (t: any): number => {
+        if (t?.toDate) return t.toDate().getTime();     // Firestore Timestamp
+        if (t instanceof Date) return t.getTime();       // Date object
+        if (typeof t === 'number') return t;             // epoch ms
+        return new Date(t).getTime();                    // string fallback
       };
+      const start = toMs(attempt.startTime);
+      const end = toMs(attempt.submitTime);
+      if (start > 0 && end > start) {
+        totalTimeSpent = Math.floor((end - start) / 1000);
+      }
     }
+    
+    // Fallback 1: attempt-level timeSpent (set by submitExam in firebase_service)
+    if (totalTimeSpent === 0 && attempt?.timeSpent && typeof attempt.timeSpent === 'number') {
+      totalTimeSpent = attempt.timeSpent;
+    }
+    
+    // Fallback 2: sum from responses
+    if (totalTimeSpent === 0) {
+      totalTimeSpent = mergedQuestions.reduce((total, q) => total + (q.timeSpent || 0), 0);
+    }
+    
+    // Cap to exam duration
+    if (examDurationSeconds > 0) {
+      totalTimeSpent = Math.min(totalTimeSpent, examDurationSeconds);
+    }
+    
     return {
-      totalQuestions: totalQuestions,
-      attemptedQuestions: attempt.attemptedQuestions || 0,
-      totalMarks: parseInt(exam?.maxMarks || '0') || attempt.totalScore || 0,
-      obtainedMarks: attempt.obtainedMarks || 0,
-      totalTimeSpent: calculatedTimeSpent,  // ✅ Sum from responses (like violations)
+      totalQuestions,
+      attemptedQuestions,
+      totalMarks: parseInt(exam?.maxMarks || '0') || 0,
+      obtainedMarks,
+      totalTimeSpent,
       violationCount: actualViolationCount
     };
   };
@@ -862,11 +893,21 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
 
   // Render chapter analysis section
   const renderChapterAnalysis = () => {
-    if (!fullAttempt?.performanceByChapter) {
-      return null;
+    // ✅ Chapter performance from examAttempts.performanceByChapter (source of truth after grading)
+    const attempt = fullAttempt || attemptData;
+    const chapterMap: Record<string, ChapterPerformance> = {};
+    
+    if (attempt?.performanceByChapter && Object.keys(attempt.performanceByChapter).length > 0) {
+      Object.entries(attempt.performanceByChapter).forEach(([ch, perf]: [string, any]) => {
+        chapterMap[ch || 'Uncategorized'] = {
+          attempted: perf.attempted || 0,
+          maxScore: perf.maxScore || 0,
+          score: perf.score || 0
+        };
+      });
     }
 
-    const chapters = Object.entries(fullAttempt.performanceByChapter) as [string, ChapterPerformance][];
+    const chapters = Object.entries(chapterMap) as [string, ChapterPerformance][];
     
     if (chapters.length === 0) {
       return null;
@@ -1807,27 +1848,27 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                     <div className="flex items-center space-x-3">
                       {/* Purple circle badge for question number */}
                       <div 
-                        className="w-12 h-12 rounded-xl flex items-center justify-center text-white text-xl font-bold"
+                        className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-base font-bold"
                         style={{ background: brandTheme.gradients.primary }}
                       >
                         {index + 1}
                       </div>
                       
                       {/* Type badge */}
-                      <span className="h-12 px-4 rounded-xl bg-blue-50 text-blue-700 font-semibold uppercase tracking-wide flex items-center justify-center text-sm border border-blue-200">
+                      <span className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 font-semibold uppercase tracking-wide flex items-center justify-center text-sm border border-blue-200">
                         {QUESTION_TYPE_LABELS[question.questionType as keyof typeof QUESTION_TYPE_LABELS] || question.questionType}
                       </span>
                       
                       {/* Complexity badge */}
                       {question.complexity && (
-                        <span className={`h-12 px-4 rounded-xl font-semibold uppercase tracking-wide flex items-center justify-center text-sm border ${getComplexityStyle(question.complexity).className}`}>
+                        <span className={`px-3 py-1.5 rounded-lg font-semibold uppercase tracking-wide flex items-center justify-center text-sm border ${getComplexityStyle(question.complexity).className}`}>
                           {getComplexityStyle(question.complexity).label}
                         </span>
                       )}
                       
                       {/* Question Pool badge */}
                       {isQuestionFromPool(question.questionId) && (
-                        <span className="h-12 px-4 rounded-xl bg-purple-50 text-purple-700 font-semibold uppercase tracking-wide flex items-center justify-center gap-1.5 text-sm border border-purple-200">
+                        <span className="px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 font-semibold uppercase tracking-wide flex items-center justify-center gap-1.5 text-sm border border-purple-200">
                           <FontAwesomeIcon icon={faLayerGroup} className="text-sm" />
                           Pool
                         </span>
@@ -2608,6 +2649,55 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                           </div>
                         )}
 
+                        {isQuestionType(question.questionType, 'sql') && (
+                          <div>
+                            <div className="relative rounded-lg overflow-hidden isolate">
+                              {/* Terminal-style header with dots and copy button */}
+                              <div className="absolute top-0 left-0 right-0 h-10 bg-gray-800/95 backdrop-blur-sm z-10 flex items-center justify-between px-3 rounded-t-lg">
+                                {/* macOS-style dots */}
+                                <div className="flex items-center space-x-2">
+                                  <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                                  <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                                </div>
+                                
+                                {/* Copy button */}
+                                <button
+                                  onClick={() => copyToClipboard(question.studentAnswer || '', `sql-answer-${question.questionNo}`)}
+                                  className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-all"
+                                  title="Copy to clipboard"
+                                >
+                                  {copiedCode === `sql-answer-${question.questionNo}` ? (
+                                    <FontAwesomeIcon icon={faCheck} className="text-sm" />
+                                  ) : (
+                                    <FontAwesomeIcon icon={faCopy} className="text-sm" />
+                                  )}
+                                </button>
+                              </div>
+                              
+                              {/* Code content with top padding for header */}
+                              <div className="pt-10">
+                                <SyntaxHighlighter
+                                  language="sql"
+                                  style={vscDarkPlus}
+                                  customStyle={{
+                                    margin: 0,
+                                    borderRadius: 0,
+                                    borderBottomLeftRadius: '0.5rem',
+                                    borderBottomRightRadius: '0.5rem',
+                                    fontSize: '0.875rem',
+                                    padding: '1rem',
+                                    paddingTop: '0.5rem'
+                                  }}
+                                  showLineNumbers={false}
+                                >
+                                  {question.studentAnswer || '-- No SQL query submitted'}
+                                </SyntaxHighlighter>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {question.imageUrl && (
                           <div>
                             <div className="mb-2">
@@ -2624,7 +2714,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                           </div>
                         )}
 
-                        {!question.imageUrl && !question.codeSubmitted && !isQuestionType(question.questionType, QUESTION_TYPES.MCQ) && !isQuestionType(question.questionType, QUESTION_TYPES.FITB) && !isQuestionType(question.questionType, QUESTION_TYPES.JUMBLED) && (
+                        {!question.imageUrl && !question.codeSubmitted && !isQuestionType(question.questionType, QUESTION_TYPES.MCQ) && !isQuestionType(question.questionType, QUESTION_TYPES.FITB) && !isQuestionType(question.questionType, QUESTION_TYPES.JUMBLED) && !isQuestionType(question.questionType, 'sql') && (
                           <div className="space-y-3">
                             {containsHTML(question.answerText || question.studentAnswer) ? (
                               processHTMLWithCode(question.answerText || question.studentAnswer, `answer-${question.questionNo}`)
@@ -3174,7 +3264,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                       <div className="text-center">
                         <p className="text-xs text-gray-500 mb-2">Time</p>
                         <p className="text-lg font-bold text-gray-900">
-                          {question.timeSpent ? formatTime(question.timeSpent) : 'N/A'}
+                          {question.timeSpent ? formatTime(Math.min(question.timeSpent, (parseInt(exam?.duration || '0') || 9999) * 60)) : 'N/A'}
                         </p>
                       </div>
                       
@@ -3263,9 +3353,6 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
               <h3 className="text-2xl font-bold text-gray-800 mb-3">No Questions Attempted</h3>
               <p className="text-gray-600 text-base leading-relaxed mb-2">
                 This student was present for the exam but did not attempt any questions.
-              </p>
-              <p className="text-gray-500 text-sm">
-                Check the exam settings or reach out to the student for more information.
               </p>
             </div>
 

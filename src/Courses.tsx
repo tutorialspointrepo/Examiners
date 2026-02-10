@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faSearch,
@@ -67,7 +67,7 @@ const Courses: React.FC<CoursesProps> = ({
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [totalCourses, setTotalCourses] = useState(0);
-  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [, setLastDoc] = useState<any>(null);
   const [pageCache, setPageCache] = useState<Map<number, { courses: Course[], lastDoc: any }>>(new Map());
   const coursesPerPage = 10;
 
@@ -125,8 +125,73 @@ const Courses: React.FC<CoursesProps> = ({
         let transformedCourses: Course[] = [];
         let totalCount = 0;
         
-        // System Admin: Show ALL courses, with college-specific counts if college selected
-        if (currentUser?.userType === 'system_admin') {
+        // Universal search: when user searches, query full database regardless of user type
+        if (debouncedSearchQuery && debouncedSearchQuery.trim().length > 0) {
+          const searchResults = await firebaseService.searchCourses(debouncedSearchQuery);
+          
+          // Get college-specific enrollment counts if applicable
+          let collegeCourseMap = new Map<number, number>();
+          const collegeId = currentUser?.userType === 'system_admin' 
+            ? (selectedCollege?.id || null) 
+            : (currentUser?.userType !== 'student' ? (currentUser?.collegeId || null) : null);
+          
+          if (collegeId) {
+            const collegeCourses = await firebaseService.getCoursesForCollege(collegeId);
+            collegeCourses.forEach(cc => {
+              collegeCourseMap.set(cc.courseId, cc.enrollmentCount);
+            });
+          }
+          
+          transformedCourses = searchResults.map(course => {
+            const courseData = course as any;
+            const numericCourseId = typeof course.courseId === 'number' ? course.courseId : parseInt(String(course.courseId), 10);
+            const enrollmentCount = collegeCourseMap.get(numericCourseId) || 0;
+            
+            return {
+              id: course.slug,
+              courseId: course.courseId,
+              name: course.courseName,
+              thumbnail: course.thumbnailUrl,
+              category: course.courseCategories?.[0] || 'General',
+              lectures: course.totalLectures || 0,
+              duration: formatDuration(course.totalDuration || 0),
+              quizzes: courseData.totalQuizzes || 0,
+              exercises: courseData.totalExercises || 0,
+              progress: 0,
+              isEnrolled: false,
+              totalChapters: course.totalChapters || 0,
+              assessments: course.totalUnits || 0,
+              completedCount: course.completedCount || 0,
+              tags: course.courseCategories,
+              rating: course.rating?.average || 0,
+              totalRatings: course.rating?.totalRatings || 0,
+              createdAt: course.dateOfPublishing || '',
+              instructor: courseData.courseAuthor || '',
+              level: courseData.complexityLevel === 1 ? 'Beginner' : courseData.complexityLevel === 2 ? 'Intermediate' : courseData.complexityLevel === 3 ? 'Advanced' : 'All Levels',
+              tagLine: courseData.tagLine || '',
+              language: courseData.language || 'English',
+              enrollmentCount: enrollmentCount,
+            };
+          });
+          
+          // Apply category filter
+          if (selectedCategory) {
+            transformedCourses = transformedCourses.filter(c => c.tags?.includes(selectedCategory));
+          }
+          
+          // Apply sorting
+          if (selectedFilter === 'recentlyAdded') {
+            transformedCourses.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+          } else if (selectedFilter === 'topRated') {
+            transformedCourses.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+          } else {
+            transformedCourses.sort((a, b) => a.name.localeCompare(b.name));
+          }
+          
+          totalCount = transformedCourses.length;
+          setLastDoc(null);
+          
+        } else if (currentUser?.userType === 'system_admin') {
           // Get the lastDoc from previous page for cursor-based pagination
           const previousPageCache = currentPage > 1 ? pageCache.get(currentPage - 1) : null;
           const startAfterDoc = previousPageCache?.lastDoc || null;
@@ -210,15 +275,15 @@ const Courses: React.FC<CoursesProps> = ({
             const courseDetails = await firebaseService.getCoursesByCourseId(courseIds);
             
             // Create a map for quick lookup of enrollment counts (by courseId)
-            const enrollmentCountMap = new Map<number, number>();
+            const enrollmentCountMap = new Map<string, number>();
             collegeCourses.forEach(cc => {
-              enrollmentCountMap.set(cc.courseId, cc.enrollmentCount);
+              enrollmentCountMap.set(String(cc.courseId), cc.enrollmentCount);
             });
             
             // Transform to Course type
             transformedCourses = courseDetails.map(course => {
               const courseData = course as any;
-              const enrollmentCount = enrollmentCountMap.get(course.courseId) || 0;
+              const enrollmentCount = enrollmentCountMap.get(String(course.courseId)) || 0;
               
               return {
                 id: course.slug,
@@ -309,16 +374,15 @@ const Courses: React.FC<CoursesProps> = ({
             const courseDetails = await firebaseService.getCoursesByCourseId(courseIds);
             
             // Create a map for quick lookup of enrollment data (key by courseId as number)
-            const enrollmentMap = new Map<number, any>();
+            const enrollmentMap = new Map<string, any>();
             result.enrollments.forEach(e => {
-              const id = typeof e.courseId === 'number' ? e.courseId : parseInt(e.courseId, 10);
-              if (!isNaN(id)) enrollmentMap.set(id, e);
+              enrollmentMap.set(String(e.courseId), e);
             });
             
             // Transform to Course type
             transformedCourses = courseDetails.map(course => {
               const courseData = course as any;
-              const enrollment = enrollmentMap.get(course.courseId);
+              const enrollment = enrollmentMap.get(String(course.courseId));
               const progress = enrollment?.progress || {};
               
               return {

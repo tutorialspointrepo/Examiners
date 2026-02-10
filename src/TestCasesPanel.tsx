@@ -19,6 +19,10 @@ interface TestCase {
   expected_output?: string;
   output?: string;
   marks?: number;
+  title?: string;
+  // SQL specific
+  sqlInput?: any;
+  sqlExpectedOutput?: any;
 }
 
 interface TestCasesPanelProps {
@@ -32,6 +36,9 @@ interface TestCasesPanelProps {
   userId?: string;        // User ID for tracking attempts
   problemSlug?: string;   // Problem slug for tracking attempts
   onAttemptRecorded?: (status: 'attempted' | 'completed') => void; // Callback when attempt is recorded
+  isSql?: boolean;        // Whether this is a SQL question
+  onRunSqlTestCase?: (index: number) => Promise<{passed: boolean; actual?: string; error?: string; actualHeaders?: string[]; actualRows?: any[][]}>;  // SQL test runner
+  onRunAllSqlTestCases?: () => Promise<void>;  // SQL run all
 }
 
 interface TestResult {
@@ -44,6 +51,9 @@ interface TestResult {
   memory: string;
   status: string;
   running: boolean;
+  // SQL structured output
+  actualHeaders?: string[];
+  actualRows?: any[][];
 }
 
 const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
@@ -57,6 +67,9 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
   userId,
   problemSlug,
   onAttemptRecorded,
+  isSql = false,
+  onRunSqlTestCase,
+  onRunAllSqlTestCases: _onRunAllSqlTestCases,
 }) => {
   const brand = useBrand(); // Get brand theme
   
@@ -74,7 +87,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
     }))
   );
   const [isRunningAll, setIsRunningAll] = useState(false);
-  const [attemptRecorded, setAttemptRecorded] = useState(false);
+  const [_attemptRecorded, setAttemptRecorded] = useState(false);
 
   // Helper: Record attempt to database
   const recordAttempt = async (results: TestResult[]) => {
@@ -119,15 +132,41 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
 
   // Run individual test case
   const runTestCase = async (index: number) => {
-    // Update state to show running
+    // Update state to show running - clear old results
     setTestResults(prev => 
       prev.map((result, i) => 
-        i === index ? { ...result, running: true, passed: null } : result
+        i === index ? { ...result, running: true, passed: null, actual: '', error: null, actualHeaders: undefined, actualRows: undefined } : result
       )
     );
+    
+    // Small delay to let UI show spinner
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     try {
       const testCase = testCases[index];
+      
+      if (isSql && onRunSqlTestCase) {
+        // SQL: Use PGlite runner from parent
+        console.log(`🧪 Running SQL Test Case ${index + 1}`);
+        const sqlResult = await onRunSqlTestCase(index);
+        
+        setTestResults(prev => prev.map((r, i) =>
+          i === index
+            ? {
+                ...r,
+                passed: sqlResult.passed,
+                actual: sqlResult.actual || '',
+                error: sqlResult.error || null,
+                status: sqlResult.passed ? 'Accepted' : sqlResult.error ? 'Runtime Error' : 'Wrong Answer',
+                running: false,
+                actualHeaders: sqlResult.actualHeaders,
+                actualRows: sqlResult.actualRows,
+              }
+            : r
+        ));
+        setTestResults(prev => { recordAttempt(prev); return prev; });
+      } else {
+      // CODE: Use Judge0
       const freshCode = getFreshCode();
       
       console.log(`🧪 Running Test Case ${index + 1} with fresh code`);
@@ -174,6 +213,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
       await recordAttempt(newResults);
       
       console.log('✅ State updated for test', index + 1, 'passed:', passed);
+      }
     } catch (error: any) {
       const newResults = testResults.map((r, i) =>
         i === index
@@ -197,12 +237,49 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
   const runAllTestCases = async () => {
     setIsRunningAll(true);
     
-    // Reset all results to running state
+    // Reset all results to running state - clear old data
     setTestResults(prev =>
-      prev.map(result => ({ ...result, running: true, passed: null }))
+      prev.map(result => ({ ...result, running: true, passed: null, actual: '', error: null, actualHeaders: undefined, actualRows: undefined }))
     );
 
     try {
+      if (isSql && onRunSqlTestCase) {
+        // SQL: Run each test case via PGlite sequentially
+        console.log(`🧪 Running ALL SQL Test Cases (${testCases.length} tests)`);
+        
+        for (let i = 0; i < testCases.length; i++) {
+          // Mark current test as running
+          setTestResults(prev => prev.map((r, idx) => 
+            idx === i ? { ...r, running: true, passed: null } : r
+          ));
+          
+          // Small delay to let UI show spinner
+          await new Promise(resolve => setTimeout(resolve, 50));
+          
+          const sqlResult = await onRunSqlTestCase(i);
+          
+          // Update this test case with result
+          setTestResults(prev => prev.map((r, idx) => 
+            idx === i ? {
+              ...r,
+              passed: sqlResult.passed,
+              actual: sqlResult.actual || '',
+              error: sqlResult.error || null,
+              status: sqlResult.passed ? 'Accepted' : sqlResult.error ? 'Runtime Error' : 'Wrong Answer',
+              running: false,
+              actualHeaders: sqlResult.actualHeaders,
+              actualRows: sqlResult.actualRows,
+            } : r
+          ));
+        }
+        
+        // Record attempt with final state
+        setTestResults(prev => {
+          recordAttempt(prev);
+          return prev;
+        });
+      } else {
+      // CODE: Use Judge0
       const freshCode = getFreshCode();
       
       console.log(`🧪 Running ALL Test Cases with fresh code (${testCases.length} tests)`);
@@ -245,6 +322,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
       await recordAttempt(newResults);
       
       console.log('✅ Test results set');
+      }
     } catch (error: any) {
       const newResults = testResults.map(r => ({
         ...r,
@@ -333,7 +411,7 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
         {/* Test Cases List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
           {testCases.map((testCase, index) => {
-            const result = testResults[index];
+            const result = testResults[index] || { passed: null, running: false, actual: '', error: null, time: '0ms', memory: '0 KB' };
             
             // Dynamic border colors - keep background grey/white
             const getCardStyle = () => {
@@ -390,8 +468,13 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                         darkMode ? 'text-gray-200' : 'text-gray-900'
                       }`}
                     >
-                      Test Case {index + 1}
+                      {testCase.title || `Test Case ${index + 1}`}
                     </span>
+                    {testCase.marks !== undefined && (
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${darkMode ? 'bg-orange-900 text-orange-300' : 'bg-orange-100 text-orange-700'}`}>
+                        {testCase.marks} marks
+                      </span>
+                    )}
                   </div>
                   <button
                     onClick={() => runTestCase(index)}
@@ -423,6 +506,140 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
 
                 {/* Test Case Content */}
                 <div className="px-3 py-2.5 space-y-2">
+                  {/* SQL Test Case Display */}
+                  {isSql ? (
+                    <>
+                      {/* SQL Input Tables */}
+                      {testCase.sqlInput && Object.keys(testCase.sqlInput).length > 0 && (
+                        <div>
+                          <label className={`block text-[10px] font-semibold mb-1 uppercase tracking-wide ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                            Input Tables
+                          </label>
+                          {Object.entries(testCase.sqlInput).map(([tableName, rawRows]: [string, any]) => {
+                            // Normalize rows: could be array or object like {0: [...], 1: [...]}
+                            const rows: any[][] = Array.isArray(rawRows) ? rawRows 
+                              : (rawRows && typeof rawRows === 'object') ? Object.keys(rawRows).sort().map(k => rawRows[k])
+                              : [];
+                            return (
+                            <div key={tableName} className="mb-2">
+                              <p className={`text-[10px] font-semibold mb-1 ${darkMode ? 'text-blue-400' : 'text-blue-600'}`}>📥 {tableName}</p>
+                              <div className={`border rounded overflow-x-auto ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                                <table className="w-full text-xs">
+                                  <tbody>
+                                    {rows.map((row: any, rIdx: number) => {
+                                      const cells = Array.isArray(row) ? row 
+                                        : (row && typeof row === 'object') ? Object.keys(row).sort().map(k => row[k])
+                                        : [String(row)];
+                                      return (
+                                      <tr key={rIdx} className={rIdx === 0 ? (darkMode ? 'bg-gray-800 font-semibold' : 'bg-gray-100 font-semibold') : ''}>
+                                        {cells.map((cell: any, ci: number) => (
+                                          <td key={ci} className={`px-2 py-1 font-mono border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>{cell}</td>
+                                        ))}
+                                      </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* SQL Expected Output */}
+                      {testCase.sqlExpectedOutput && testCase.sqlExpectedOutput.columns?.length > 0 && (
+                        <div>
+                          <label className={`block text-[10px] font-semibold mb-1 uppercase tracking-wide ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                            Expected Output
+                          </label>
+                          <div className={`border rounded overflow-x-auto ${darkMode ? 'border-gray-700' : 'border-green-200'}`}>
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className={darkMode ? 'bg-gray-800' : 'bg-green-50'}>
+                                  {testCase.sqlExpectedOutput.columns.map((col: string, ci: number) => (
+                                    <th key={ci} className={`px-2 py-1 text-left font-semibold border-b ${darkMode ? 'border-gray-700 text-green-400' : 'border-green-200 text-green-700'}`}>{col}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(() => {
+                                  const rawRows = testCase.sqlExpectedOutput.rows || [];
+                                  const normalizedRows = Array.isArray(rawRows) ? rawRows
+                                    : (rawRows && typeof rawRows === 'object') ? Object.keys(rawRows).sort().map(k => rawRows[k])
+                                    : [];
+                                  return normalizedRows.map((row: any, rIdx: number) => {
+                                    const cells = Array.isArray(row) ? row
+                                      : (row && typeof row === 'object') ? Object.keys(row).sort().map(k => row[k])
+                                      : [String(row)];
+                                    return (
+                                    <tr key={rIdx}>
+                                      {cells.map((cell: any, ci: number) => (
+                                        <td key={ci} className={`px-2 py-1 font-mono border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>{cell}</td>
+                                      ))}
+                                    </tr>
+                                    );
+                                  });
+                                })()}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SQL Your Output (if run) */}
+                      {result.passed !== null && result.actualHeaders && result.actualHeaders.length > 0 && (
+                        <div>
+                          <label className={`block text-[10px] font-semibold mb-1 uppercase tracking-wide ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                            Your Output
+                          </label>
+                          <div className={`border rounded overflow-x-auto ${
+                            result.passed 
+                              ? (darkMode ? 'border-green-700' : 'border-green-200') 
+                              : (darkMode ? 'border-red-700' : 'border-red-200')
+                          }`}>
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className={result.passed ? (darkMode ? 'bg-green-900/30' : 'bg-green-50') : (darkMode ? 'bg-red-900/30' : 'bg-red-50')}>
+                                  {result.actualHeaders.map((col: string, ci: number) => (
+                                    <th key={ci} className={`px-2 py-1 text-left font-semibold border-b ${
+                                      result.passed 
+                                        ? (darkMode ? 'border-green-700 text-green-400' : 'border-green-200 text-green-700')
+                                        : (darkMode ? 'border-red-700 text-red-400' : 'border-red-200 text-red-700')
+                                    }`}>{col}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(result.actualRows || []).map((row: any[], rIdx: number) => (
+                                  <tr key={rIdx}>
+                                    {(Array.isArray(row) ? row : Object.values(row)).map((cell: any, ci: number) => (
+                                      <td key={ci} className={`px-2 py-1 font-mono border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                                        {cell === null || cell === undefined ? <span className={darkMode ? 'text-gray-500 italic' : 'text-gray-400 italic'}>NULL</span> : String(cell)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SQL Error (if any) */}
+                      {result.error && (
+                        <div>
+                          <label className="block text-[10px] font-semibold mb-1 uppercase tracking-wide text-red-500">
+                            Error
+                          </label>
+                          <div className={`p-2 rounded-md font-mono text-xs whitespace-pre-wrap ${darkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-100 text-red-800'}`}>
+                            {result.error}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
                   {/* Input */}
                   <div>
                     <label
@@ -462,9 +679,11 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                       {(testCase.expected_output || testCase.output || '').trim() || '(empty)'}
                     </div>
                   </div>
+                    </>
+                  )}
 
-                  {/* Actual Output (if run) */}
-                  {result.passed !== null && (
+                  {/* Actual Output (if run) - CODE only */}
+                  {!isSql && result.passed !== null && (
                     <div>
                       <label
                         className={`block text-[10px] font-semibold mb-1 uppercase tracking-wide ${
@@ -485,8 +704,8 @@ const TestCasesPanel: React.FC<TestCasesPanelProps> = ({
                     </div>
                   )}
 
-                  {/* Error (if any) */}
-                  {result.error && (
+                  {/* Error (if any) - CODE only */}
+                  {!isSql && result.error && (
                     <div>
                       <label
                         className={`block text-[10px] font-semibold mb-1 uppercase tracking-wide text-red-500`}

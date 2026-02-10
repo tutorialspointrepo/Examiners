@@ -443,7 +443,7 @@ function Result({
     };
   }, [hasMoreExams, isLoadingMoreExams, isLoadingExams, loadMoreExams, viewingStudents]);
 
-  // Load students for selected exam - Get all students from Users table, then match with attendance
+  // Load students for selected exam - Use exam_enrollments + attendance + attempts (class-independent)
   const loadStudentsForExam = useCallback(async (exam: Exam) => {
     // Permission check - students cannot view student list
     if (!canViewStudentList) {
@@ -463,42 +463,33 @@ function Result({
     setHasMoreAbsentStudents(true);
     
     try {
-      console.log('👥 [RESULT.TSX] Loading students for exam:', exam.id, 'Class:', exam.class, 'Board:', exam.board);
+      console.log('👥 [RESULT.TSX] Loading students for exam:', exam.id, 'Board:', exam.board);
       console.log('📚 Total students (from Exams table):', exam.totalStudents || 0);
       
-      // STEP 1: Get all students from Users table for this class
-      const allStudentsResult = await firebaseService.getAllStudentsByClass(
-        activeCollegeId,
-        exam.class,
-        exam.board
-      );
-      
-      console.log('📊 [RESULT.TSX] Total students in class:', allStudentsResult.length);
+      // STEP 1: Get enrollment count (lightweight - no full list fetch)
+      const enrollmentCount = await firebaseService.getExamEnrollmentCount(exam.id);
+      console.log(`📋 Enrolled students:`, enrollmentCount);
       
       // STEP 2: Get attendance records for this exam
       const attendanceRecords = await firebaseService.getExamAttendance(exam.id);
       console.log(`📝 Total attendance records:`, attendanceRecords.length);
       
-      // Filter for present students only (status = 'present')
-      const presentAttendanceRecords = attendanceRecords.filter((record: any) => record.status === 'present');
-      console.log(`✅ Present students from attendance:`, presentAttendanceRecords.length);
-      
-      // Create a Set of present student IDs for fast lookup
-      const presentStudentIds = new Set(
-        presentAttendanceRecords.map((record: any) => record.studentId)
+      // Create set of present student IDs from attendance
+      const presentAttendanceIds = new Set(
+        attendanceRecords.filter((record: any) => record.status === 'present').map((record: any) => record.studentId)
       );
+      console.log(`✅ Present students from attendance:`, presentAttendanceIds.size);
       
-      // STEP 3: Get exam attempts for present students
+      // STEP 3: Get exam attempts
       const attemptsResult = await firebaseService.getExamAttempts(exam.id);
       
-      // Create a Map of attempts by studentId (handle duplicate attempts - keep latest)
+      // Create a Map of attempts by studentId (keep latest)
       const attemptsMap = new Map();
       attemptsResult.forEach((attempt: any) => {
         const existingAttempt = attemptsMap.get(attempt.studentId);
         if (!existingAttempt) {
           attemptsMap.set(attempt.studentId, attempt);
         } else {
-          // Keep the attempt with the most recent start time
           const existingStartTime = existingAttempt.startTime instanceof Date 
             ? existingAttempt.startTime 
             : new Date(existingAttempt.startTime);
@@ -514,51 +505,68 @@ function Result({
       
       console.log(`✅ Exam attempts:`, attemptsResult.length, '(unique students:', attemptsMap.size, ')');
       
-      // STEP 4: Separate all students into present and absent lists
+      // STEP 4: Build present students from attendance (present) + attempts
       const presentStudentsList: any[] = [];
-      const absentStudentsList: any[] = [];
+      const processedIds = new Set<string>();
       
-      allStudentsResult.forEach((student: any) => {
-        if (presentStudentIds.has(student.userId)) {
-          // Student is present
-          const attemptData = attemptsMap.get(student.userId);
+      // Add students marked present in attendance
+      attendanceRecords.filter((r: any) => r.status === 'present').forEach((record: any) => {
+        const attemptData = attemptsMap.get(record.studentId);
+        processedIds.add(record.studentId);
+        presentStudentsList.push({
+          studentId: record.studentId,
+          studentName: record.studentName || 'Unknown',
+          rollNumber: record.studentRollNumber || 'N/A',
+          hasAttempt: !!attemptData,
+          attemptData: attemptData || null
+        });
+      });
+      
+      // Add students with attempts but not in attendance
+      attemptsMap.forEach((attempt: any, studentId: string) => {
+        if (!processedIds.has(studentId)) {
+          processedIds.add(studentId);
           presentStudentsList.push({
-            studentId: student.userId,
-            studentName: student.fullName,
-            rollNumber: student.studentRoll || 'N/A',
-            hasAttempt: !!attemptData,
-            attemptData: attemptData || null
+            studentId: studentId,
+            studentName: attempt.studentName || 'Unknown',
+            rollNumber: attempt.rollNumber || 'N/A',
+            hasAttempt: true,
+            attemptData: attempt
           });
-        } else {
-          // Student is absent
+        }
+      });
+      
+      // STEP 5: Build absent from attendance records with status='absent'
+      const absentStudentsList: any[] = [];
+      attendanceRecords.filter((r: any) => r.status === 'absent').forEach((record: any) => {
+        if (!processedIds.has(record.studentId)) {
           absentStudentsList.push({
-            studentId: student.userId,
-            studentName: student.fullName,
-            rollNumber: student.studentRoll || 'N/A',
+            studentId: record.studentId,
+            studentName: record.studentName || 'Unknown',
+            rollNumber: record.studentRollNumber || 'N/A',
             hasAttempt: false,
             attemptData: null
           });
         }
       });
       
-      // STEP 5: Calculate totals using exam.totalStudents (matching LiveStats logic)
-      const totalStudentsCount = exam.totalStudents || allStudentsResult.length;
+      // STEP 6: Calculate totals - use enrollment count as total
+      const totalStudentsCount = enrollmentCount || exam.totalStudents || (presentStudentsList.length + absentStudentsList.length);
       
       console.log('✅ [RESULT.TSX] Loaded students:', {
+        enrolled: enrollmentCount,
         present: presentStudentsList.length,
         absent: absentStudentsList.length,
-        total: totalStudentsCount,
-        examTotalStudents: exam.totalStudents,
-        actualClassSize: allStudentsResult.length
+        total: totalStudentsCount
       });
       
       setPresentStudents(presentStudentsList);
       setAbsentStudents(absentStudentsList);
       setTotalStudents(totalStudentsCount);
       
-      // For pagination: if we have more than 25 students, set hasMore flags
+      // For pagination: absent has more if enrollment count > present + initial absent shown
       setHasMorePresentStudents(presentStudentsList.length > 25);
-      setHasMoreAbsentStudents(absentStudentsList.length > 25);
+      setHasMoreAbsentStudents(totalStudentsCount > presentStudentsList.length + absentStudentsList.length);
       
       
       setSelectedExamForStudents(exam);
@@ -874,10 +882,6 @@ function Result({
                       <span className="flex items-center">
                         <FontAwesomeIcon icon={faUsers} style={{ fontSize: '12px' }} className="mr-1" />
                         {selectedExamForStudents.totalStudents || 0} Students
-                      </span>
-                      <span className="flex items-center">
-                        <FontAwesomeIcon icon={faGraduationCap} style={{ fontSize: '12px' }} className="mr-1" />
-                        Class {selectedExamForStudents.class}
                       </span>
                       <span className="flex items-center">
                         <FontAwesomeIcon icon={faClipboardList} style={{ fontSize: '12px' }} className="mr-1" />
@@ -1730,13 +1734,14 @@ function Result({
                                       hasAttempt: studentData.hasAttempt
                                     });
                                     
-                                    // IMPORTANT: Select exam first, then student
+                                    // IMPORTANT: Select exam first, then student after state settles
                                     onExamSelect(exam);
                                     
                                     // Then select the student to trigger answer sheet view
+                                    // Use setTimeout to ensure this runs after onExamSelect's reset
                                     if (onStudentSelect) {
                                       console.log('📤 [RESULT.TSX] Calling onStudentSelect with student data');
-                                      onStudentSelect(studentData);
+                                      setTimeout(() => onStudentSelect(studentData), 0);
                                     } else {
                                       console.warn('⚠️ [RESULT.TSX] onStudentSelect callback is not defined!');
                                     }
@@ -1822,10 +1827,6 @@ function Result({
                                   <span className="flex items-center">
                                     <FontAwesomeIcon icon={faUsers} style={{ fontSize: '12px' }} className="mr-1" />
                                     <span className="font-medium">{exam.totalStudents || 0} Student{exam.totalStudents !== 1 ? 's' : ''}</span>
-                                  </span>
-                                  <span className="flex items-center">
-                                    <FontAwesomeIcon icon={faGraduationCap} style={{ fontSize: '12px' }} className="mr-1" />
-                                    <span>Class {exam.class}</span>
                                   </span>
                                   <span className="flex items-center">
                                     <FontAwesomeIcon icon={faClipboardList} style={{ fontSize: '12px' }} className="mr-1" />

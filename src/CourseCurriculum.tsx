@@ -15,7 +15,6 @@ import {
   faTriangleExclamation,
   faListCheck,
   faCode,
-  faAddressCard,
   faRobot,
   faNoteSticky,
   faPaperclip,
@@ -28,9 +27,7 @@ import {
   faFileZipper,
   faFile,
   faDownload,
-  faThumbsUp,
   faLightbulb,
-  faStar,
   faCircleCheck,
   faCircleXmark,
   faRotateRight,
@@ -38,7 +35,6 @@ import {
   faArrowLeft,
   faEye,
   faClock,
-  faTrophy,
   faCalendarDays,
   faPlay,
   faTerminal,
@@ -248,7 +244,6 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
   onBack,
   currentUser,
   collegeName,
-  brandTheme,
   enrollmentId,
   onEditProfile,
   onDownloadBrowser,
@@ -264,7 +259,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
   const [currentChapterName, setCurrentChapterName] = useState<string>('');
   const [pluginsLoaded, setPluginsLoaded] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
-  const [playerActive, setPlayerActive] = useState(false);
+  const [, setPlayerActive] = useState(false);
   const [isVideoLoading, setIsVideoLoading] = useState(false); // Video buffering state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showCurriculumInExercise, setShowCurriculumInExercise] = useState(false);
@@ -284,13 +279,13 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
   const feedbackTextRef = useRef<string>('');
   const feedbackTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Track if submit button should be enabled (only updates on blur/rating change)
-  const [canSubmitFeedback, setCanSubmitFeedback] = useState(false);
+  const [, setCanSubmitFeedback] = useState(false);
   
   // Quiz state
   const [quizStage, setQuizStage] = useState<'start' | 'quiz' | 'results'>('start');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<number, number>>({});
-  const [showResults, setShowResults] = useState(false);
+  const [, setShowResults] = useState(false);
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [previousQuizResult, setPreviousQuizResult] = useState<any>(null);
   const [quizStartTime, setQuizStartTime] = useState<number>(0);
@@ -315,7 +310,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
   const [exerciseLeftPanelWidth, setExerciseLeftPanelWidth] = useState(40); // percentage
   const [exerciseTerminalHeight, setExerciseTerminalHeight] = useState(150); // pixels
   const [isResizingPanel, setIsResizingPanel] = useState(false);
-  const [isResizingTerminal, setIsResizingTerminal] = useState(false);
+  const [, setIsResizingTerminal] = useState(false);
   const leftPanelRef = useRef<HTMLDivElement>(null);
   const [editorTheme, setEditorTheme] = useState<'vs-dark' | 'light'>('light');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('');
@@ -345,7 +340,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
     };
   } | null>(null);
   const [showEvaluationModal, setShowEvaluationModal] = useState(false);
-  const [isLoadingSubmission, setIsLoadingSubmission] = useState(false);
+  const [, setIsLoadingSubmission] = useState(false);
   // Map of all submissions for current lecture: { visibilityId: submission }
   const [allExerciseSubmissions, setAllExerciseSubmissions] = useState<Record<string, any>>({});
 
@@ -613,6 +608,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
       }
 
       const videoUrl = selectedLecture.videoUrl;
+      if (!videoUrl) return;
       
       // Determine video type based on URL
       let videoType = 'video/mp4';
@@ -991,7 +987,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
             quizQuestions: content.quizQuestions,
             exerciseQuestions: content.exerciseQuestions,
             assessmentQuestions: content.assessmentQuestions,
-            attachments: content.attachments,
+            attachments: content.attachments as Attachment[] | undefined,
             isContentLoaded: true,
           } : prev);
         }
@@ -1010,7 +1006,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
         setSelectedLecture(prev => prev ? {
           ...prev,
           textContent: content.textContent,
-          attachments: content.attachments,
+          attachments: content.attachments as Attachment[] | undefined,
           isContentLoaded: true,
         } : null);
       }
@@ -1054,22 +1050,6 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
       case 'assessment': return 'Assessment';
       default: return type;
     }
-  };
-
-  // Calculate total duration
-  const getTotalDuration = () => {
-    const totalSeconds = curriculumData.reduce((acc: number, sec: any) =>
-      acc + (sec.chapters || []).reduce((a: number, ch: any) =>
-        a + (ch.items || []).reduce((i: number, item: any) => {
-          if (item.duration && item.duration.includes(':')) {
-            const [mins, secs] = item.duration.split(':').map(Number);
-            return i + (mins * 60) + (secs || 0);
-          }
-          return i;
-        }, 0), 0), 0);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
   };
 
   const renderContent = () => {
@@ -1988,6 +1968,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                 
                 try {
                   // Load PGlite from CDN (handles WASM loading properly)
+                  // @ts-ignore - Dynamic CDN import
                   const { PGlite } = await import('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js');
                   pgliteRef.current = new PGlite();
                   await pgliteRef.current.waitReady;
@@ -2424,7 +2405,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                         
                         // Function to render text with inline markdown (bold, inline code)
                         const renderInlineMarkdown = (text: string, keyPrefix: string = '') => {
-                          const parts: JSX.Element[] = [];
+                          const parts: React.ReactElement[] = [];
                           let remaining = text;
                           let partIndex = 0;
                           
@@ -2480,7 +2461,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                         if (hasCodeBlock) {
                           // Try to split by code blocks (with or without closing ```)
                           const codeBlockRegex = /```(\w*)\n?([\s\S]*?)(?:```|$)/g;
-                          const elements: JSX.Element[] = [];
+                          const elements: React.ReactElement[] = [];
                           let lastIndex = 0;
                           let match;
                           let elementIdx = 0;
@@ -2494,7 +2475,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                                 let prevEmpty = false;
                                 elements.push(
                                   <div key={`text-${elementIdx++}`} className="text-gray-600 text-sm leading-relaxed mb-2">
-                                    {lines.map((line, lineIdx) => {
+                                    {lines.map((line: string, lineIdx: number) => {
                                       if (!line.trim()) {
                                         if (prevEmpty) return null;
                                         prevEmpty = true;
@@ -2549,7 +2530,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                               let prevEmpty = false;
                               elements.push(
                                 <div key={`text-${elementIdx++}`} className="text-gray-600 text-sm leading-relaxed mb-2">
-                                  {lines.map((line, lineIdx) => {
+                                  {lines.map((line: string, lineIdx: number) => {
                                     if (!line.trim()) {
                                       if (prevEmpty) return null;
                                       prevEmpty = true;
@@ -2571,7 +2552,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                         let prevWasEmpty = false;
                         return (
                           <div className="text-gray-600 text-sm leading-relaxed">
-                            {lines.map((line, lineIdx) => {
+                            {lines.map((line: string, lineIdx: number) => {
                               if (!line.trim()) {
                                 if (prevWasEmpty) return null; // Skip consecutive empty lines
                                 prevWasEmpty = true;
@@ -3232,7 +3213,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
           setSelectedLecture(prev => prev ? {
             ...prev,
             textContent: content.textContent,
-            attachments: content.attachments,
+            attachments: content.attachments as Attachment[] | undefined,
             isContentLoaded: true,
           } : null);
         }
@@ -3492,7 +3473,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                         onBlur={handleFeedbackTextBlur}
                         placeholder="How was this course? Any questions, suggestions, or areas that need clarification?"
                         className="w-full p-4 border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-opacity-20 text-sm"
-                        style={{ focusRing: brand.colors.primary }}
+                        style={{ '--tw-ring-color': brand.colors.primary } as React.CSSProperties}
                         rows={4}
                       />
                       

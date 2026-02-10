@@ -124,10 +124,7 @@ import {
   faCheckCircle,
   faDoorOpen,
   faImage,
-  faClipboardCheck,
-  faCode,
-  faAddressCard,
-  faBrain
+  faClipboardCheck
 } from '@fortawesome/sharp-light-svg-icons';
 
 import { 
@@ -1750,7 +1747,7 @@ function App() {
   const [showProblemsListModal, setShowProblemsListModal] = useState(false);
   const [selectedProblemSlug, setSelectedProblemSlug] = useState<string>('two-sum');
   const [selectedSubject, setSelectedSubject] = useState<any | null>(null);
-  const [selectedQuestionType, setSelectedQuestionType] = useState<'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code'>('all');
+  const [selectedQuestionType, setSelectedQuestionType] = useState<'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code' | 'sql'>('all');
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
   const [questionsRefreshKey, setQuestionsRefreshKey] = useState(0);
   const [examsRefreshKey, setExamsRefreshKey] = useState(0);
@@ -1841,7 +1838,7 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   });
   
   const [_rightPanelWidth, setRightPanelWidth] = useState(380); // Default 380px
-  const [actualRightWidth, setActualRightWidth] = useState(0); // Actual rendered width
+  const [actualRightWidth, _setActualRightWidth] = useState(0); // Actual rendered width
   const [isResizing, setIsResizing] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingExam, setEditingExam] = useState<Exam | null>(null);
@@ -3703,8 +3700,8 @@ const fetchCounts = async () => {
               </div>
             ) : null}
             
-            {/* Academic Year Dropdown - Hidden when in Learning mode */}
-            {!showLearning && (
+            {/* Academic Year Dropdown - Hidden when in Learning mode or for students */}
+            {!showLearning && currentUser?.userType !== 'student' && (
             <div className="relative year-dropdown-container">
               <button 
                 onClick={() => setIsYearDropdownOpen(!isYearDropdownOpen)}
@@ -6211,6 +6208,7 @@ const fetchCounts = async () => {
                         }).length;
                         const jumbledCount = selectedExam.questionsList.filter((q: any) => q.type === QUESTION_TYPES.JUMBLED).length;
                         const codeCount = selectedExam.questionsList.filter((q: any) => q.type === QUESTION_TYPES.CODE).length;
+                        const sqlCount = selectedExam.questionsList.filter((q: any) => q.type === QUESTION_TYPES.SQL).length;
                         
                         const parts = [
                           `Total Questions: ${selectedExam.questionsList.length}`,
@@ -6222,6 +6220,7 @@ const fetchCounts = async () => {
                         if (descriptiveCount > 0) parts.push(`Descriptive: ${descriptiveCount}`);
                         if (jumbledCount > 0) parts.push(`Jumbled: ${jumbledCount}`);
                         if (codeCount > 0) parts.push(`Code: ${codeCount}`);
+                        if (sqlCount > 0) parts.push(`SQL: ${sqlCount}`);
                         
                         return <span>{parts.join(' • ')}</span>;
                       })()}
@@ -6276,6 +6275,7 @@ const fetchCounts = async () => {
                                     if (hasBlanks || typeStr === QUESTION_TYPES.FITB || question.type === QUESTION_TYPES.FITB) return QUESTION_TYPE_LABELS[QUESTION_TYPES.FITB];
                                     if (question.type === QUESTION_TYPES.JUMBLED) return QUESTION_TYPE_LABELS[QUESTION_TYPES.JUMBLED];
                                     if (question.type === QUESTION_TYPES.CODE) return QUESTION_TYPE_LABELS[QUESTION_TYPES.CODE];
+                                    if (question.type === QUESTION_TYPES.SQL) return QUESTION_TYPE_LABELS[QUESTION_TYPES.SQL];
                                     return QUESTION_TYPE_LABELS[QUESTION_TYPES.DESCRIPTIVE];
                                   })()}
                                 </span>
@@ -6719,16 +6719,16 @@ const fetchCounts = async () => {
                             );
                           })()}
 
-                          {/* ===== NON-CODE QUESTIONS - Chapter ===== */}
-                          {expandedQuestionId === question.id && question.type !== 'code' && 'chapter' in question && question.chapter && (
+                          {/* ===== NON-CODE/SQL QUESTIONS - Chapter ===== */}
+                          {expandedQuestionId === question.id && question.type !== 'code' && question.type !== QUESTION_TYPES.SQL && 'chapter' in question && question.chapter && (
                             <div className="mt-3">
                               <h2 className="text-lg font-bold text-gray-900 mb-2">Chapter</h2>
                               <p className="text-sm text-gray-900">{(question as any).chapter}</p>
                             </div>
                           )}
 
-                          {/* ===== NON-CODE QUESTIONS - Hint ===== */}
-                          {expandedQuestionId === question.id && question.type !== 'code' && question.hint && (
+                          {/* ===== NON-CODE/SQL QUESTIONS - Hint ===== */}
+                          {expandedQuestionId === question.id && question.type !== 'code' && question.type !== QUESTION_TYPES.SQL && question.hint && (
                             <div className="mt-3">
                               <h2 className="text-lg font-bold text-gray-900 mb-2">Hint</h2>
                               <div 
@@ -6741,8 +6741,8 @@ const fetchCounts = async () => {
                             </div>
                           )}
 
-                          {/* ===== NON-CODE QUESTIONS - Solution ===== */}
-                          {expandedQuestionId === question.id && question.type !== 'code' && question.solution && (
+                          {/* ===== NON-CODE/SQL QUESTIONS - Solution ===== */}
+                          {expandedQuestionId === question.id && question.type !== 'code' && question.type !== QUESTION_TYPES.SQL && question.solution && (
                             <div className="mt-3">
                               <h2 className="text-lg font-bold text-gray-900 mb-2">Solution</h2>
                               {(question.type === QUESTION_TYPES.MCQ || question.type === QUESTION_TYPES.JUMBLED || question.type === QUESTION_TYPES.FITB || question.type === QUESTION_TYPES.DESCRIPTIVE) ? (
@@ -7139,9 +7139,132 @@ const fetchCounts = async () => {
                           )}
 
 
-                          
+                          {/* ===== SQL QUESTIONS - Schema & Test Cases ===== */}
+                          {expandedQuestionId === question.id && question.type === QUESTION_TYPES.SQL && (() => {
+                            const sqlSchema = (question as any).sqlSchema || [];
+                            const sqlTestCases = ((question as any).sqlTestCases || []).map((tc: any) => ({
+                              ...tc,
+                              table_data: typeof tc.table_data === 'string' ? JSON.parse(tc.table_data || '{}') : (tc.table_data || {}),
+                              expected_output: typeof tc.expected_output === 'string' ? JSON.parse(tc.expected_output || '{"columns":[],"rows":[]}') : (tc.expected_output || { columns: [], rows: [] })
+                            }));
+                            return (
+                              <div className="mt-3 space-y-4">
+                                {/* Schema Tables */}
+                                {sqlSchema.length > 0 && (
+                                  <div>
+                                    <h2 className="text-lg font-bold text-gray-900 mb-2">Table Schema</h2>
+                                    <div className="space-y-3">
+                                      {sqlSchema.map((table: any, tIdx: number) => (
+                                        <div key={tIdx} className="border border-green-200 rounded-lg overflow-hidden">
+                                          <div className="px-3 py-2 bg-green-50 border-b border-green-100 flex items-center justify-between">
+                                            <span className="text-sm font-bold text-green-700">{table.table_name || `Table ${tIdx + 1}`}</span>
+                                            {table.primary_key && <span className="text-xs text-gray-500">PK: <span className="font-mono font-semibold">{table.primary_key}</span></span>}
+                                          </div>
+                                          <div className="overflow-x-auto">
+                                            <table className="w-full text-xs">
+                                              <thead>
+                                                <tr className="bg-gray-50 border-b">
+                                                  <th className="px-3 py-1.5 text-left font-semibold text-gray-600">Column</th>
+                                                  <th className="px-3 py-1.5 text-left font-semibold text-gray-600">Type</th>
+                                                  <th className="px-3 py-1.5 text-left font-semibold text-gray-600">Description</th>
+                                                  <th className="px-3 py-1.5 text-left font-semibold text-gray-600">Constraints</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {(table.columns || []).filter((c: any) => c.name).map((col: any, cIdx: number) => (
+                                                  <tr key={cIdx} className={cIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                                                    <td className="px-3 py-1.5 font-mono font-semibold text-gray-900">{col.name}</td>
+                                                    <td className="px-3 py-1.5 font-mono text-blue-600 uppercase">{col.type}</td>
+                                                    <td className="px-3 py-1.5 text-gray-600">{col.description || '—'}</td>
+                                                    <td className="px-3 py-1.5 text-gray-600">{col.constraints || '—'}</td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                          {table.note && <div className="px-3 py-1.5 bg-gray-50 border-t text-xs text-gray-500 italic">{table.note}</div>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
 
-                          {/* Footer */}
+                                {/* SQL Test Cases */}
+                                {sqlTestCases.length > 0 && (
+                                  <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                      <h2 className="text-lg font-bold text-gray-900">Test Cases</h2>
+                                      <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-blue-100 text-blue-700">
+                                        Total: {sqlTestCases.reduce((sum: number, tc: any) => sum + (tc.marks || 0), 0).toFixed(1)} marks
+                                      </span>
+                                    </div>
+                                    <div className="space-y-3">
+                                      {sqlTestCases.map((tc: any, tcIdx: number) => (
+                                        <div key={tcIdx} className="border border-amber-200 rounded-lg overflow-hidden">
+                                          <div className="px-3 py-2 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
+                                            <span className="text-sm font-bold text-amber-700">{tc.title || `Test Case ${tcIdx + 1}`}</span>
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-orange-500 text-white">{(tc.marks || 0).toFixed(1)} marks</span>
+                                          </div>
+                                          <div className="p-3 space-y-3">
+                                            {/* Input Tables */}
+                                            {Object.entries(tc.table_data || {}).map(([tableName, rows]: [string, any]) => (
+                                              <div key={tableName} className="border border-blue-100 rounded overflow-hidden">
+                                                <div className="px-2 py-1 bg-blue-50 border-b border-blue-100">
+                                                  <span className="text-[10px] font-bold text-blue-600">📥 Input: {tableName}</span>
+                                                </div>
+                                                <div className="overflow-x-auto">
+                                                  <table className="w-full text-xs">
+                                                    <thead><tr className="bg-gray-50">{(sqlSchema.find((t: any) => t.table_name === tableName)?.columns || []).filter((c: any) => c.name).map((col: any, ci: number) => (<th key={ci} className="px-2 py-1 text-left font-semibold text-gray-600 border-b">{col.name}</th>))}</tr></thead>
+                                                    <tbody>{(rows as string[][]).map((row: string[], rIdx: number) => (<tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>{row.map((cell: string, ci: number) => (<td key={ci} className="px-2 py-1 font-mono border-b border-gray-100">{cell}</td>))}</tr>))}</tbody>
+                                                  </table>
+                                                </div>
+                                              </div>
+                                            ))}
+                                            {/* Expected Output */}
+                                            {tc.expected_output && tc.expected_output.columns?.length > 0 && (
+                                              <div className="border border-green-200 rounded overflow-hidden">
+                                                <div className="px-2 py-1 bg-green-50 border-b border-green-100">
+                                                  <span className="text-[10px] font-bold text-green-600">📤 Expected Output</span>
+                                                </div>
+                                                <div className="overflow-x-auto">
+                                                  <table className="w-full text-xs">
+                                                    <thead><tr className="bg-green-50/50">{tc.expected_output.columns.map((col: string, ci: number) => (<th key={ci} className="px-2 py-1 text-left font-semibold text-green-700 border-b">{col}</th>))}</tr></thead>
+                                                    <tbody>{(tc.expected_output.rows || []).map((row: string[], rIdx: number) => (<tr key={rIdx}>{row.map((cell: string, ci: number) => (<td key={ci} className="px-2 py-1 font-mono border-b border-gray-100">{cell}</td>))}</tr>))}</tbody>
+                                                  </table>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Chapter for SQL */}
+                                {(question as any).chapter && (
+                                  <div>
+                                    <h2 className="text-lg font-bold text-gray-900 mb-2">Chapter</h2>
+                                    <p className="text-sm text-gray-900">{(question as any).chapter}</p>
+                                  </div>
+                                )}
+
+                                {/* Hint for SQL */}
+                                {question.hint && (
+                                  <div>
+                                    <h2 className="text-lg font-bold text-gray-900 mb-2">Hint</h2>
+                                    <div 
+                                      className="text-sm text-gray-700 italic prose prose-sm max-w-none"
+                                      dangerouslySetInnerHTML={{ __html: question.hint }}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+
+
+                          
                           <div className="flex items-center justify-between pt-3 mt-3 border-t border-gray-100">
                             <div className="flex items-center space-x-4 text-xs text-gray-500">
                               {/* Source Label */}

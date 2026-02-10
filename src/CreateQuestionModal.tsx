@@ -3,8 +3,6 @@ import { faFileText, faCode, faDatabase, faCheckDouble, faShuffle, faPenToSquare
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { useBrand } from './BrandContext';
 import { firebaseService } from './services/firebase_service';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { 
   QUESTION_TYPES, 
   QUESTION_TYPE_LABELS,
@@ -661,7 +659,7 @@ export default function CreateQuestionModal({
       console.log('Submitting question:', questionInput);
       
       // Save to Firebase - transformation happens in firebase_service
-      const result = await firebaseService.createQuestion(questionInput as CreateQuestionInput);
+      const result = await firebaseService.createQuestion(questionInput as unknown as CreateQuestionInput);
       
       if (!result.success) {
         throw new Error(result.error || 'Failed to create question');

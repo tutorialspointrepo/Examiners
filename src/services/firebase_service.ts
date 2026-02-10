@@ -188,9 +188,15 @@ function createQuestionInputToQuestion(input: CreateQuestionInput): Partial<Ques
     correctAnswers: input.correct_answers,
     jumbledItems: input.correct_answers, // For jumbled questions
     testCases: input.test_cases,
-    testStub: input.test_stub,
     starterCodes: (input as any).starter_codes,
-    programmingLanguage: (input as any).programming_language,
+    // Backward compat: derive testStub from first starterCode for old clients
+    testStub: (input as any).starter_codes?.length > 0
+      ? (input as any).starter_codes[0].code
+      : (input as any).test_stub || '',
+    // Derive programmingLanguage from first starterCode
+    programmingLanguage: (input as any).starter_codes?.length > 0
+      ? (input as any).starter_codes[0].language
+      : (input as any).programming_language || '',
     
     // SQL-specific fields
     sqlSchema: input.sql_schema,
@@ -937,8 +943,9 @@ export interface Question {
     expected_output?: string; // 🔒 Removed by sanitizer before sending to client
     marks?: number; 
   }>;
-  testStub?: string; // Server-side field name
+  testStub?: string; // Legacy: kept for backward compat with old questions
   boilerplate?: string; // Client-side field name (renamed from testStub)
+  starterCodes?: Array<{ language: string; code: string }>; // Multi-language starter codes
   
   // Additional fields
   hint?: string; // OK to send - meant to help students
@@ -4479,7 +4486,7 @@ private calculateStatistics(numbers: number[]): {
         // Add to login history (keep last 50 entries)
         const userDocData = userDoc.data();
         const currentHistory = userDocData.loginHistory || [];
-        const updatedHistory = [loginHistoryEntry, ...currentHistory].slice(0, 50);
+        const updatedHistory = [loginHistoryEntry, ...currentHistory].slice(0, 20);
         updateData.loginHistory = updatedHistory;
         
         console.log('📍 Login from:', ipInfo.city, ipInfo.region, ipInfo.country);
@@ -5574,8 +5581,6 @@ const targetUserId = userId || currentUser?.uid;
         return { students: [], lastDoc: null, hasMore: false };
       }
       
-      const examData = examDoc.data();
-      const collegeId = examData.collegeId;
       
       // Strategy: Check if exam has enrollments in exam_enrollments collection
       const enrollmentCount = await this.getExamEnrollmentCount(examId);
@@ -7138,8 +7143,17 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           const existingClasses = existingData.enrolledClasses || [];
           const mergedClasses = [...new Set([...existingClasses, ...Array.from(enrolledClassesSet)])];
           
+          // Count actual active enrollments to get accurate totalStudents
+          const enrollmentsQuery = query(
+            collection(this.firestore!, 'exam_enrollments'),
+            where('examId', '==', examId),
+            where('status', '==', 'active')
+          );
+          const enrollmentsSnapshot = await getCountFromServer(enrollmentsQuery);
+          const actualCount = enrollmentsSnapshot.data().count;
+
           await updateDoc(examRef, {
-            totalStudents: increment(enrolledCount),
+            totalStudents: actualCount,
             enrolledClasses: mergedClasses,
             updatedAt: serverTimestamp(),
           });
@@ -9476,11 +9490,24 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       if (q.boilerplate) parsedQuestion.testStub = q.boilerplate;
       if (q.testStub) parsedQuestion.testStub = q.testStub;
       if (q.testCases) parsedQuestion.testCases = q.testCases;
+      if (q.starterCodes) parsedQuestion.starterCodes = q.starterCodes;
+      if (q.programmingLanguage) parsedQuestion.programmingLanguage = q.programmingLanguage;
       
       // Jumbled question specific fields
       // Firebase stores as 'jumbledOptions' or 'jumbledItems', copy both for compatibility
       if (q.jumbledOptions) parsedQuestion.jumbledOptions = q.jumbledOptions;
       if (q.jumbledItems) parsedQuestion.jumbledItems = q.jumbledItems;
+      
+      // SQL question specific fields
+      if (q.sqlSchema) parsedQuestion.sqlSchema = q.sqlSchema;
+      if (q.sqlTestCases) {
+        parsedQuestion.sqlTestCases = (q.sqlTestCases || []).map((tc: any) => ({
+          title: tc.title || '',
+          marks: tc.marks || 0,
+          table_data: typeof tc.table_data === 'string' ? JSON.parse(tc.table_data) : (tc.table_data || {}),
+          expected_output: typeof tc.expected_output === 'string' ? JSON.parse(tc.expected_output) : (tc.expected_output || { columns: [], rows: [] })
+        }));
+      }
       
       // Image URLs
       if (q.imageUrls && Array.isArray(q.imageUrls)) parsedQuestion.imageUrls = q.imageUrls;
@@ -11632,8 +11659,8 @@ async getExamPresentStudentsPaginated(
  */
 async getExamAbsentStudentsPaginated(
   examId: string, 
-  className: string, 
-  board: string,
+  _className: string, 
+  _board: string,
   pageSize: number = 25,
   lastDocument?: DocumentSnapshot | null
 ): Promise<{
@@ -11644,8 +11671,6 @@ async getExamAbsentStudentsPaginated(
 }> {
   console.log('👥 [FIREBASE_SERVICE] getExamAbsentStudentsPaginated called:', { 
     examId, 
-    className, 
-    board,
     pageSize,
     hasLastDoc: !!lastDocument 
   });
@@ -11670,14 +11695,19 @@ async getExamAbsentStudentsPaginated(
       const data = doc.data();
       attemptedStudentIds.add(data.studentId);
     });
+    
+    // Also get present students from attendance
+    const attendanceRecords = await this.getExamAttendance(examId);
+    const presentAttendanceIds = new Set(
+      attendanceRecords.filter((r: any) => r.status === 'present').map((r: any) => r.studentId)
+    );
 
-    // Get all students from class for this board
-    const studentsRef = collection(this.firestore, COLLECTIONS.USERS);
+    // Get enrolled students (paginated) - replaces class-based Users query
+    const enrollmentsRef = collection(this.firestore!, 'exam_enrollments');
     const constraints: any[] = [
-      where('userType', '==', USER_TYPES.STUDENT),
-      where('studentClass', '==', className),
-      where('board', '==', board),
-      orderBy('fullName', 'asc')
+      where('examId', '==', examId),
+      where('status', '==', 'active'),
+      orderBy('studentName', 'asc')
     ];
 
     // Add pagination
@@ -11685,20 +11715,21 @@ async getExamAbsentStudentsPaginated(
       constraints.push(startAfter(lastDocument));
     }
     
-    // Fetch more than needed since we'll filter out attempted students
-    constraints.push(limit(pageSize * 3)); // Fetch 3x to account for filtering
+    // Fetch more than needed since we'll filter out present students
+    constraints.push(limit(pageSize * 3));
 
-    const studentsQuery = query(studentsRef, ...constraints);
-    const studentsSnapshot = await getDocs(studentsQuery);
+    const enrollmentsQuery = query(enrollmentsRef, ...constraints);
+    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
 
-    // Filter out students who attempted (to get absent students)
+    // Filter: enrolled but NOT attempted and NOT marked present = absent
     const absentStudentDocs: DocumentSnapshot[] = [];
-    for (const studentDoc of studentsSnapshot.docs) {
-      // const studentData = studentDoc.data();
-      if (!attemptedStudentIds.has(studentDoc.id)) {
-        absentStudentDocs.push(studentDoc);
+    for (const enrollDoc of enrollmentsSnapshot.docs) {
+      const enrollData = enrollDoc.data();
+      const studentId = enrollData.studentId;
+      if (!attemptedStudentIds.has(studentId) && !presentAttendanceIds.has(studentId)) {
+        absentStudentDocs.push(enrollDoc);
         if (absentStudentDocs.length >= pageSize + 1) {
-          break; // Got enough
+          break;
         }
       }
     }
@@ -11708,13 +11739,13 @@ async getExamAbsentStudentsPaginated(
     const docs = hasMore ? absentStudentDocs.slice(0, pageSize) : absentStudentDocs;
 
     // Build absent students array
-    const absentStudents = docs.map(studentDoc => {
-      const studentData = studentDoc.data();
+    const absentStudents = docs.map(enrollDoc => {
+      const data = enrollDoc.data()!;
       return {
-        studentId: studentDoc.id,
-        studentName: studentData?.fullName,
-        studentEmail: studentData?.email,
-        rollNumber: studentData?.studentRoll || studentData?.rollNumber || 'N/A',
+        studentId: data.studentId,
+        studentName: data.studentName || 'Unknown',
+        studentEmail: data.studentEmail || '',
+        rollNumber: data.studentRoll || 'N/A',
         hasAttempt: false,
         attemptData: null
       };
@@ -11723,15 +11754,8 @@ async getExamAbsentStudentsPaginated(
     const lastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
 
     // Calculate total absent count
-    const allStudentsQuery = query(
-      studentsRef,
-      where('userType', '==', USER_TYPES.STUDENT),
-      where('studentClass', '==', className),
-      where('board', '==', board)
-    );
-    const allStudentsSnapshot = await getDocs(allStudentsQuery);
-    const totalStudents = allStudentsSnapshot.size;
-    const totalAbsent = totalStudents - attemptedStudentIds.size;
+    const totalEnrolled = await this.getExamEnrollmentCount(examId);
+    const totalAbsent = totalEnrolled - attemptedStudentIds.size;
 
     console.log('✅ [FIREBASE_SERVICE] Absent students paginated:', {
       fetched: absentStudents.length,
@@ -11743,7 +11767,7 @@ async getExamAbsentStudentsPaginated(
       students: absentStudents,
       lastDoc,
       hasMore,
-      totalCount: totalAbsent
+      totalCount: Math.max(totalAbsent, 0)
     };
     
   } catch (error) {
@@ -12027,55 +12051,20 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
   }
   const examData = examDoc.data();
 
-  // 2. Get students using the SAME logic as Attendance page (getStudentsByExamPaginated)
-  const className = examData.class;
+  // 2. Get exam metadata
   const collegeId = examData.collegeId;
   const board = examData.board;
-  const academicYear = examData.year || examData.academicYear;
   
-  console.log('📚 Fetching students with filters:');
-  console.log('  - Class:', className);
+  console.log('📚 Exam metadata:');
   console.log('  - College ID:', collegeId);
   console.log('  - Board:', board);
-  console.log('  - Academic Year:', academicYear);
-  
-  // Build where clauses dynamically (same as getStudentsByExamPaginated)
-  const clauses: any[] = [
-    where('userType', '==', USER_TYPES.STUDENT),
-    where('collegeId', '==', collegeId),
-    where('studentClass', '==', className), // Note: using 'studentClass' field
-    where('status', '==', USER_STATUS.ACTIVE)
-  ];
-  
-  if (board) {
-    clauses.push(where('board', '==', board));
-  }
-  if (academicYear) {
-    clauses.push(where('academicYear', '==', academicYear));
-  }
-  
-  const studentsQuery = query(
-    collection(this.firestore, COLLECTIONS.USERS),
-    ...clauses
-  );
 
-  const studentsSnapshot = await getDocs(studentsQuery);
-  const allStudents = studentsSnapshot.docs.map(doc => ({
-    studentId: doc.id,
-    studentName: doc.data().fullName || doc.data().displayName,
-    studentEmail: doc.data().email,
-    rollNumber: doc.data().rollNumber,
-    class: doc.data().studentClass,
-    ...doc.data()
-  }));
-
-  console.log('✅ Found students:', allStudents.length);
+  // 3. Get enrollment count for this exam
+  const totalEnrolled = await this.getExamEnrollmentCount(examId);
+  console.log('✅ Total enrolled students:', totalEnrolled);
 
   // 3. Get attendance records from Attendance table  
   const attendanceRecords = await this.getExamAttendance(examId);
-  const attendanceMap = new Map(
-    attendanceRecords.map(record => [record.studentId, record])
-  );
 
   console.log('✅ Found attendance records:', attendanceRecords.length);
 
@@ -12148,106 +12137,25 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
     attemptsByStudent.set(attempt.studentId, attempt);
   });
 
-  // 6. Categorize students based on ATTENDANCE (not attempts!)
+  // 6. Categorize students from ATTENDANCE + ATTEMPTS (no full student list needed for dashboard)
   const presentStudents: DashboardStudent[] = [];
   const absentStudents: DashboardStudent[] = [];
+  const processedStudentIds = new Set<string>();
 
-  allStudents.forEach(student => {
-    const attendanceRecord = attendanceMap.get(student.studentId);
-    const attempt = attemptsByStudent.get(student.studentId);
-    const isPresent = attendanceRecord?.status === 'present'; // ✅ Use attendance status!
+  // Build present list from attendance records with status='present'
+  const presentAttendanceRecords = attendanceRecords.filter((r: any) => r.status === 'present');
+  presentAttendanceRecords.forEach((record: any) => {
+    const attempt = attemptsByStudent.get(record.studentId);
+    processedStudentIds.add(record.studentId);
     
-    // ✅ FIX: Student is "present" if either:
-    // 1. Marked present in attendance, OR
-    // 2. Has submitted an exam attempt (implicit presence)
-    const hasAttemptData = !!attempt;
-    const shouldBeInPresent = isPresent || hasAttemptData;
-    
-    if (shouldBeInPresent) {
-      // Student is marked PRESENT in attendance OR has attempted the exam
-      if (attempt) {
-        // Has attempted the exam (with or without attendance marked)
-        const sessionData = this.extractSessionData(attempt);
-        
-        presentStudents.push({
-        studentId: student.studentId,
-        studentName: student.studentName,
-        studentEmail: student.studentEmail,
-        rollNumber: student.rollNumber || attempt.rollNumber, 
-        class: student.class,
-        hasAttempt: true,
-        attemptData: {
-          attemptId: attempt.attemptId,
-          percentage: attempt.percentage,
-          obtainedMarks: attempt.obtainedMarks,
-          totalScore: attempt.totalScore,
-          violationCount: (attempt as any).violationCount || 0,
-          status: attempt.status,
-          startTime: attempt.startTime,
-          submitTime: attempt.submitTime,
-          timeSpent: attempt.timeSpent,
-          correctAnswers: attempt.correctAnswers,
-          attemptedQuestions: attempt.attemptedQuestions,
-          totalQuestions: attempt.totalQuestions,
-          
-          // ADD SESSION DATA HERE 👇
-          enterIPAddress: sessionData.enterIPAddress,
-          exitIPAddress: sessionData.exitIPAddress,
-          browser: sessionData.browser,
-          operatingSystem: sessionData.operatingSystem,
-          deviceType: sessionData.deviceType,
-          tabSwitchCount: sessionData.tabSwitchCount,
-          totalEntries: sessionData.totalEntries,
-          enterCount: sessionData.enterCount,  // ✅ NEW: Enter activities count
-          exitCount: sessionData.exitCount,    // ✅ NEW: Exit activities count
-          
-          // ADD RESPONSES/ANSWERS HERE 👇
-          answers: (attempt as any).responses || [],
-          responses: (attempt as any).responses || [],
-          questionResponses: (attempt as any).responses || []
-        } as any
-      });
-      } else {
-        // Present but hasn't attempted yet
-        presentStudents.push({
-          studentId: student.studentId,
-          studentName: student.studentName,
-          studentEmail: student.studentEmail,
-          rollNumber: student.rollNumber,
-          class: student.class,
-          hasAttempt: false
-        });
-      }
-    } else {
-      // Student is marked ABSENT in attendance AND has no attempt
-      absentStudents.push({
-        studentId: student.studentId,
-        studentName: student.studentName,
-        studentEmail: student.studentEmail,
-        rollNumber: student.rollNumber,
-        class: student.class,
-        hasAttempt: false
-      });
-    }
-  });
-
-  // ✅ FIX: Also add students who have attempts but are NOT in allStudents list
-  // (e.g., students with different academicYear filter or missing from Users collection)
-  const processedStudentIds = new Set(allStudents.map(s => s.studentId));
-  
-  attempts.forEach(attempt => {
-    if (!processedStudentIds.has(attempt.studentId)) {
-      // This student has an attempt but wasn't in allStudents query
-      console.log(`📌 Adding student from attempt (not in Users query): ${attempt.studentName} (${attempt.studentId})`);
-      
+    if (attempt) {
       const sessionData = this.extractSessionData(attempt);
-      
       presentStudents.push({
-        studentId: attempt.studentId,
-        studentName: attempt.studentName || 'Unknown Student',
-        studentEmail: attempt.studentEmail || '',
-        rollNumber: attempt.rollNumber || '',
-        class: attempt.class || examData.class,
+        studentId: record.studentId,
+        studentName: record.studentName || attempt.studentName || 'Unknown',
+        studentEmail: record.studentEmail || attempt.studentEmail || '',
+        rollNumber: record.studentRollNumber || attempt.rollNumber || '',
+        class: attempt.class || '',
         hasAttempt: true,
         attemptData: {
           attemptId: attempt.attemptId,
@@ -12262,7 +12170,6 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
           correctAnswers: attempt.correctAnswers,
           attemptedQuestions: attempt.attemptedQuestions,
           totalQuestions: attempt.totalQuestions,
-          
           enterIPAddress: sessionData.enterIPAddress,
           exitIPAddress: sessionData.exitIPAddress,
           browser: sessionData.browser,
@@ -12272,7 +12179,57 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
           totalEntries: sessionData.totalEntries,
           enterCount: sessionData.enterCount,
           exitCount: sessionData.exitCount,
-          
+          answers: (attempt as any).responses || [],
+          responses: (attempt as any).responses || [],
+          questionResponses: (attempt as any).responses || []
+        } as any
+      });
+    } else {
+      presentStudents.push({
+        studentId: record.studentId,
+        studentName: record.studentName || 'Unknown',
+        studentEmail: record.studentEmail || '',
+        rollNumber: record.studentRollNumber || '',
+        class: '',
+        hasAttempt: false
+      });
+    }
+  });
+
+  // Add students who have attempts but aren't in attendance
+  attempts.forEach(attempt => {
+    if (!processedStudentIds.has(attempt.studentId)) {
+      processedStudentIds.add(attempt.studentId);
+      const sessionData = this.extractSessionData(attempt);
+      presentStudents.push({
+        studentId: attempt.studentId,
+        studentName: attempt.studentName || 'Unknown Student',
+        studentEmail: attempt.studentEmail || '',
+        rollNumber: attempt.rollNumber || '',
+        class: attempt.class || '',
+        hasAttempt: true,
+        attemptData: {
+          attemptId: attempt.attemptId,
+          percentage: attempt.percentage,
+          obtainedMarks: attempt.obtainedMarks,
+          totalScore: attempt.totalScore,
+          violationCount: (attempt as any).violationCount || 0,
+          status: attempt.status,
+          startTime: attempt.startTime,
+          submitTime: attempt.submitTime,
+          timeSpent: attempt.timeSpent,
+          correctAnswers: attempt.correctAnswers,
+          attemptedQuestions: attempt.attemptedQuestions,
+          totalQuestions: attempt.totalQuestions,
+          enterIPAddress: sessionData.enterIPAddress,
+          exitIPAddress: sessionData.exitIPAddress,
+          browser: sessionData.browser,
+          operatingSystem: sessionData.operatingSystem,
+          deviceType: sessionData.deviceType,
+          tabSwitchCount: sessionData.tabSwitchCount,
+          totalEntries: sessionData.totalEntries,
+          enterCount: sessionData.enterCount,
+          exitCount: sessionData.exitCount,
           answers: (attempt as any).responses || [],
           responses: (attempt as any).responses || [],
           questionResponses: (attempt as any).responses || []
@@ -12280,8 +12237,24 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
       });
     }
   });
+
+  // Build absent list from attendance records with status='absent'
+  const absentAttendanceRecords = attendanceRecords.filter((r: any) => r.status === 'absent');
+  absentAttendanceRecords.forEach((record: any) => {
+    if (!processedStudentIds.has(record.studentId)) {
+      processedStudentIds.add(record.studentId);
+      absentStudents.push({
+        studentId: record.studentId,
+        studentName: record.studentName || 'Unknown',
+        studentEmail: record.studentEmail || '',
+        rollNumber: record.studentRollNumber || '',
+        class: '',
+        hasAttempt: false
+      });
+    }
+  });
   
-  console.log(`✅ Final presentStudents count: ${presentStudents.length} (${presentStudents.filter(s => s.hasAttempt).length} with attempts)`);
+  console.log(`✅ Final: ${totalEnrolled} enrolled, ${presentStudents.length} present (${presentStudents.filter(s => s.hasAttempt).length} with attempts), ${absentStudents.length} absent from attendance`);
 
   // 6. Return structured data
   return {
@@ -12299,7 +12272,7 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
     },
     presentStudents,
     absentStudents,
-    totalStudents: allStudents.length,
+    totalStudents: totalEnrolled,
     attempts
   };
 }
@@ -14135,8 +14108,8 @@ async generateLogicAnalysis(
       const {
         category,
         limit: limitCount = 50,
-        orderBy: orderField = 'courseName',
-        orderDirection = 'asc'
+        orderBy: _orderField = 'courseName',
+        orderDirection: _orderDirection = 'asc'
       } = options;
 
       let q;
@@ -14465,7 +14438,7 @@ async getCoursesPaginated(options: {
 
   async searchCourses(searchQuery: string, limitCount: number = 20): Promise<CourseListing[]> {
     try {
-      const snapshot = await getDocs(query(collection(this.db!, COLLECTIONS.COURSES), where('isPublished', '==', true), limit(200)));
+      const snapshot = await getDocs(query(collection(this.firestore!, COLLECTIONS.COURSES), where('isPublished', '==', true), limit(200)));
       const searchLower = searchQuery.toLowerCase();
       const results: CourseListing[] = [];
       snapshot.docs.forEach(doc => {
@@ -14627,7 +14600,7 @@ async getCoursesPaginated(options: {
    * Get a specific enrollment
    * courseId should be numeric (as stored in course_enrollments)
    */
-  async getEnrollment(courseId: number, userId: string): Promise<any | null> {
+  async getEnrollment(courseId: string | number, userId: string): Promise<any | null> {
     try {
       console.log(`🔍 Getting enrollment for courseId: ${courseId}, userId: ${userId}`);
       const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
@@ -14698,7 +14671,7 @@ async getCoursesPaginated(options: {
       const collegeCourses = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      })) as CollegeCourse[];
+      })) as unknown as CollegeCourse[];
       
       console.log(`✅ Found ${collegeCourses.length} courses for college ${collegeId}`);
       return collegeCourses;
@@ -14824,6 +14797,162 @@ async getCoursesPaginated(options: {
   }
 
   /**
+   * Get paginated course enrollments for a student
+   */
+  async getStudentCourseEnrollmentsPaginated(options: {
+    userId: string;
+    limit?: number;
+    orderBy?: 'enrolledAt' | 'courseName';
+    orderDirection?: 'asc' | 'desc';
+    startAfterDoc?: any;
+    searchQuery?: string;
+  }): Promise<{ 
+    enrollments: {
+      enrollmentId: string;
+      courseId: string;
+      courseName?: string;
+      enrolledAt: any;
+      status: string;
+      progress: any;
+    }[];
+    totalCount: number;
+    lastDoc: any;
+  }> {
+    try {
+      const {
+        userId,
+        limit: limitCount = 10,
+        orderBy: orderField = 'enrolledAt',
+        orderDirection = 'desc',
+        startAfterDoc,
+        searchQuery,
+      } = options;
+
+      console.log('📚 Fetching paginated course enrollments for user:', userId);
+
+      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+
+      // If searching, fetch all and filter client-side
+      if (searchQuery && searchQuery.trim().length > 0) {
+        const searchLower = searchQuery.toLowerCase().trim();
+        
+        const q = query(
+          enrollmentsRef,
+          where('userId', '==', userId),
+          where('status', '==', 'active')
+        );
+
+        const snapshot = await getDocs(q);
+        
+        // Get all course IDs to fetch course details for search
+        const enrollmentData = snapshot.docs.map(docSnap => {
+          const data = docSnap.data();
+          return {
+            doc: docSnap,
+            enrollmentId: data.enrollmentId || docSnap.id,
+            courseId: data.courseId,
+            courseName: data.courseName || '',
+            enrolledAt: data.enrolledAt,
+            status: data.status || 'active',
+            progress: data.progress || {}
+          };
+        });
+
+        // If we don't have courseName in enrollment, fetch from courses
+        const courseIdsToFetch = enrollmentData
+          .filter(e => !e.courseName)
+          .map(e => typeof e.courseId === 'number' ? e.courseId : parseInt(e.courseId, 10))
+          .filter(id => !isNaN(id));
+        let courseNameMap = new Map<string, string>();
+        
+        if (courseIdsToFetch.length > 0) {
+          const courseDetails = await this.getCoursesByCourseId(courseIdsToFetch);
+          courseDetails.forEach(course => {
+            courseNameMap.set(course.courseId, course.courseName);
+          });
+        }
+
+        // Filter by search query
+        const filteredEnrollments = enrollmentData
+          .map(e => {
+            const numericCourseId = typeof e.courseId === 'number' ? e.courseId : parseInt(e.courseId, 10);
+            return {
+              ...e,
+              courseName: e.courseName || courseNameMap.get(String(numericCourseId)) || ''
+            };
+          })
+          .filter(e => 
+            e.courseName?.toLowerCase().includes(searchLower) ||
+            String(e.courseId).toLowerCase().includes(searchLower)
+          );
+
+        return {
+          enrollments: filteredEnrollments.map(e => ({
+            enrollmentId: e.enrollmentId,
+            courseId: e.courseId,
+            courseName: e.courseName,
+            enrolledAt: e.enrolledAt,
+            status: e.status,
+            progress: e.progress
+          })),
+          totalCount: filteredEnrollments.length,
+          lastDoc: null
+        };
+      }
+
+      // Get total count
+      const countQuery = query(
+        enrollmentsRef,
+        where('userId', '==', userId),
+        where('status', '==', 'active')
+      );
+      const countSnapshot = await getCountFromServer(countQuery);
+      const totalCount = countSnapshot.data().count;
+
+      // Build paginated query
+      const constraints: any[] = [
+        where('userId', '==', userId),
+        where('status', '==', 'active'),
+        orderBy(orderField, orderDirection)
+      ];
+
+      if (startAfterDoc) {
+        constraints.push(startAfter(startAfterDoc));
+      }
+
+      constraints.push(limit(limitCount));
+
+      const q = query(enrollmentsRef, ...constraints);
+      const snapshot = await getDocs(q);
+
+      const enrollments = snapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          enrollmentId: data.enrollmentId || docSnap.id,
+          courseId: data.courseId,
+          courseName: data.courseName,
+          enrolledAt: data.enrolledAt,
+          status: data.status || 'active',
+          progress: data.progress || {}
+        };
+      });
+
+      const lastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+
+      console.log('✅ Found', enrollments.length, 'enrollments, total:', totalCount);
+
+      return {
+        enrollments,
+        totalCount,
+        lastDoc
+      };
+    } catch (error) {
+      console.error('❌ Error fetching student course enrollments:', error);
+      return { enrollments: [], totalCount: 0, lastDoc: null };
+    }
+  }
+
+  /**
    * Update enrollment progress
    */
   async updateEnrollmentProgress(
@@ -14926,161 +15055,6 @@ async getCoursesPaginated(options: {
     }
   }
 
-  /**
-   * Get paginated course enrollments for a student
-   */
-  async getStudentCourseEnrollmentsPaginated(options: {
-    userId: string;
-    limit?: number;
-    orderBy?: 'enrolledAt' | 'courseName';
-    orderDirection?: 'asc' | 'desc';
-    startAfterDoc?: any;
-    searchQuery?: string;
-  }): Promise<{ 
-    enrollments: {
-      enrollmentId: string;
-      courseId: string;
-      courseName?: string;
-      enrolledAt: any;
-      status: string;
-      progress: any;
-    }[];
-    totalCount: number;
-    lastDoc: any;
-  }> {
-    try {
-      const {
-        userId,
-        limit: limitCount = 10,
-        orderBy: orderField = 'enrolledAt',
-        orderDirection = 'desc',
-        startAfterDoc,
-        searchQuery,
-      } = options;
-
-      console.log('📚 Fetching paginated course enrollments for user:', userId);
-
-      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
-
-      // If searching, fetch all and filter client-side
-      if (searchQuery && searchQuery.trim().length > 0) {
-        const searchLower = searchQuery.toLowerCase().trim();
-        
-        const q = query(
-          enrollmentsRef,
-          where('userId', '==', userId),
-          where('status', '==', 'active')
-        );
-
-        const snapshot = await getDocs(q);
-        
-        // Get all course IDs to fetch course details for search
-        const enrollmentData = snapshot.docs.map(docSnap => {
-          const data = docSnap.data();
-          return {
-            doc: docSnap,
-            enrollmentId: data.enrollmentId || docSnap.id,
-            courseId: data.courseId,
-            courseName: data.courseName || '',
-            enrolledAt: data.enrolledAt,
-            status: data.status || 'active',
-            progress: data.progress || {}
-          };
-        });
-
-        // If we don't have courseName in enrollment, fetch from courses
-        const courseIdsToFetch = enrollmentData
-          .filter(e => !e.courseName)
-          .map(e => typeof e.courseId === 'number' ? e.courseId : parseInt(e.courseId, 10))
-          .filter(id => !isNaN(id));
-        let courseNameMap = new Map<number, string>();
-        
-        if (courseIdsToFetch.length > 0) {
-          const courseDetails = await this.getCoursesByCourseId(courseIdsToFetch);
-          courseDetails.forEach(course => {
-            courseNameMap.set(course.courseId, course.courseName);
-          });
-        }
-
-        // Filter by search query
-        const filteredEnrollments = enrollmentData
-          .map(e => {
-            const numericCourseId = typeof e.courseId === 'number' ? e.courseId : parseInt(e.courseId, 10);
-            return {
-              ...e,
-              courseName: e.courseName || courseNameMap.get(numericCourseId) || ''
-            };
-          })
-          .filter(e => 
-            e.courseName?.toLowerCase().includes(searchLower) ||
-            String(e.courseId).toLowerCase().includes(searchLower)
-          );
-
-        return {
-          enrollments: filteredEnrollments.map(e => ({
-            enrollmentId: e.enrollmentId,
-            courseId: e.courseId,
-            courseName: e.courseName,
-            enrolledAt: e.enrolledAt,
-            status: e.status,
-            progress: e.progress
-          })),
-          totalCount: filteredEnrollments.length,
-          lastDoc: null
-        };
-      }
-
-      // Get total count
-      const countQuery = query(
-        enrollmentsRef,
-        where('userId', '==', userId),
-        where('status', '==', 'active')
-      );
-      const countSnapshot = await getCountFromServer(countQuery);
-      const totalCount = countSnapshot.data().count;
-
-      // Build paginated query
-      const constraints: any[] = [
-        where('userId', '==', userId),
-        where('status', '==', 'active'),
-        orderBy(orderField, orderDirection)
-      ];
-
-      if (startAfterDoc) {
-        constraints.push(startAfter(startAfterDoc));
-      }
-
-      constraints.push(limit(limitCount));
-
-      const q = query(enrollmentsRef, ...constraints);
-      const snapshot = await getDocs(q);
-
-      const enrollments = snapshot.docs.map(docSnap => {
-        const data = docSnap.data();
-        return {
-          enrollmentId: data.enrollmentId || docSnap.id,
-          courseId: data.courseId,
-          courseName: data.courseName,
-          enrolledAt: data.enrolledAt,
-          status: data.status || 'active',
-          progress: data.progress || {}
-        };
-      });
-
-      const lastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
-
-      console.log('✅ Found', enrollments.length, 'enrollments, total:', totalCount);
-
-      return {
-        enrollments,
-        totalCount,
-        lastDoc
-      };
-    } catch (error) {
-      console.error('❌ Error fetching student course enrollments:', error);
-      return { enrollments: [], totalCount: 0, lastDoc: null };
-    }
-  }
 
   /**
    * Update enrollment expiry date

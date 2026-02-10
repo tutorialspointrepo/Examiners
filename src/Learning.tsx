@@ -10,16 +10,14 @@ import {
   faFileLines,
   faBriefcase,
   faCode,
-  faRobot,
   faChevronLeft,
   faChevronDown,
+  faChevronRight,
+  faChevronsLeft,
+  faChevronsRight,
   faBookOpen,
   faBooks,
-  faLayerGroup,
-  faBookBookmark,
-  faBullseye,
   faAddressCard,
-  faQuoteLeft,
   faPlay,
   faDumbbell,
   faFileAlt,
@@ -63,6 +61,7 @@ export interface Course {
   description?: string;
   language?: string;
   enrollmentCount?: number;
+  enrollmentId?: string;
 }
 
 interface LearningProps {
@@ -296,6 +295,13 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
           }))
         }));
         setCachedCurriculum(transformedCurriculum);
+        // Auto-expand first unit and all its chapters by default
+        if (transformedCurriculum.length > 0) {
+          const firstUnit = transformedCurriculum[0];
+          setExpandedCurriculumUnits([firstUnit.id]);
+          const firstUnitChapterKeys = (firstUnit.chapters || []).map((ch: any) => `${firstUnit.id}-${ch.id}`);
+          setExpandedCurriculumChapters(firstUnitChapterKeys);
+        }
       } catch (error) {
         console.error('Error fetching curriculum for student:', error);
         setCachedCurriculum(null);
@@ -403,7 +409,6 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
   
   // Enroll Modal States
   const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
-  const [enrollModalTab, setEnrollModalTab] = useState<'students' | 'administrators'>('students');
   const [isLoadingEnrollData, setIsLoadingEnrollData] = useState(false);
   const [isEnrolling, setIsEnrolling] = useState(false);
   const [enrollmentResult, setEnrollmentResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -425,8 +430,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
   // Admin Assignment States (for administrators tab)
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [selectedAdmins, setSelectedAdmins] = useState<string[]>([]);
-  const [adminSearchQuery, setAdminSearchQuery] = useState('');
-  const [isLoadingAdmins, setIsLoadingAdmins] = useState(false);
+  const [, setAdminSearchQuery] = useState('');
   const [isAssigningToAdmins, setIsAssigningToAdmins] = useState(false);
 
   // Student Progress Modal States
@@ -435,12 +439,14 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
   const [currentStudentIndex, setCurrentStudentIndex] = useState(0);
   const [isStudentProfileModalOpen, setIsStudentProfileModalOpen] = useState(false);
 
-  // Sample enrolled courses for student profile
-  const studentEnrolledCourses = [
-    { id: 'CRS001', name: 'Data Structure and Algorithm in C++', lectures: 63, duration: '12h 55m', category: 'Coding', exercises: 275, notes: 63, quizzes: 570, assessments: 5, marks: 87, status: 'completed', assignedOn: 'Jan 10, 2025, 09:30 AM' },
-    { id: 'CRS002', name: 'Advanced Java Programming', lectures: 45, duration: '10h 30m', category: 'Coding', exercises: 180, notes: 45, quizzes: 320, assessments: 4, progress: 65, status: 'in_progress', assignedOn: 'Jan 12, 2025, 02:15 PM' },
-    { id: 'CRS003', name: 'Python for Data Science', lectures: 58, duration: '15h 20m', category: 'Data Science', exercises: 200, notes: 58, quizzes: 420, assessments: 6, progress: 30, status: 'in_progress', assignedOn: 'Jan 15, 2025, 11:00 AM' },
-  ];
+  // Student enrolled courses - paginated from server
+  const [studentEnrolledCourses, setStudentEnrolledCourses] = useState<any[]>([]);
+  const [studentEnrollCurrentPage, setStudentEnrollCurrentPage] = useState(1);
+  const [studentEnrollTotalCount, setStudentEnrollTotalCount] = useState(0);
+  const [studentEnrollPageCache, setStudentEnrollPageCache] = useState<Map<number, { courses: any[], lastDoc: any }>>(new Map());
+  const [isLoadingStudentEnrollments, setIsLoadingStudentEnrollments] = useState(false);
+  const studentEnrollPerPage = 5;
+  const studentEnrollScrollRef = React.useRef<HTMLDivElement>(null);
 
   // Enrolled Students Data
   const enrolledStudentsList = [
@@ -476,6 +482,117 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
       onActiveMenuChange(activeMenuItem);
     }
   }, [activeMenuItem, onActiveMenuChange]);
+
+  // Fetch student enrolled courses (paginated) when modal opens or page changes
+  React.useEffect(() => {
+    if (!isStudentProfileModalOpen || !selectedStudentForProgress) return;
+    
+    const fetchStudentEnrollments = async () => {
+      setIsLoadingStudentEnrollments(true);
+      try {
+        const userId = (selectedStudentForProgress as any).userId 
+          || (selectedStudentForProgress as any).id 
+          || (selectedStudentForProgress as any).uid
+          || (selectedStudentForProgress as any).studentId;
+        
+        if (!userId) {
+          setStudentEnrolledCourses([]);
+          setStudentEnrollTotalCount(0);
+          setIsLoadingStudentEnrollments(false);
+          return;
+        }
+
+        // Get cursor from previous page cache
+        const previousPageCache = studentEnrollCurrentPage > 1 ? studentEnrollPageCache.get(studentEnrollCurrentPage - 1) : null;
+        const startAfterDoc = previousPageCache?.lastDoc || null;
+
+        const result = await firebaseService.getStudentCourseEnrollmentsPaginated({
+          userId,
+          limit: studentEnrollPerPage,
+          startAfterDoc: startAfterDoc,
+        });
+
+        // Transform enrollment data to course card format
+        const courses = result.enrollments.map((enrollment: any) => ({
+          id: enrollment.courseId || enrollment.id,
+          name: enrollment.courseName || enrollment.courseTitle || `Course ${enrollment.courseId}`,
+          lectures: enrollment.totalLectures || 0,
+          duration: enrollment.totalDuration || '0m',
+          category: enrollment.category || '',
+          exercises: enrollment.totalExercises || 0,
+          totalChapters: enrollment.totalChapters || 0,
+          quizzes: enrollment.totalQuizzes || 0,
+          assessments: enrollment.totalAssessments || 0,
+          marks: enrollment.progress?.percentage === 100 ? (enrollment.marks || 0) : undefined,
+          progress: enrollment.progress?.percentage || 0,
+          status: enrollment.progress?.percentage === 100 ? 'completed' : 'in_progress',
+          assignedOn: enrollment.enrolledAt?.toDate ? 
+            enrollment.enrolledAt.toDate().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) :
+            (enrollment.enrolledAt?.seconds ? 
+              new Date(enrollment.enrolledAt.seconds * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) :
+              'N/A'),
+        }));
+
+        setStudentEnrolledCourses(courses);
+        setStudentEnrollTotalCount(result.totalCount);
+        
+        // Cache this page
+        setStudentEnrollPageCache(prev => new Map(prev).set(studentEnrollCurrentPage, {
+          courses,
+          lastDoc: result.lastDoc
+        }));
+      } catch (error) {
+        console.error('Error fetching student enrollments:', error);
+        setStudentEnrolledCourses([]);
+        setStudentEnrollTotalCount(0);
+      } finally {
+        setIsLoadingStudentEnrollments(false);
+      }
+    };
+
+    fetchStudentEnrollments();
+  }, [isStudentProfileModalOpen, selectedStudentForProgress, studentEnrollCurrentPage]);
+
+  // Reset pagination when student changes
+  React.useEffect(() => {
+    setStudentEnrollCurrentPage(1);
+    setStudentEnrollPageCache(new Map());
+    setStudentEnrolledCourses([]);
+    setStudentEnrollTotalCount(0);
+  }, [(selectedStudentForProgress as any)?.userId || selectedStudentForProgress?.id]);
+
+  // Student enrollment pagination helpers
+  const studentEnrollTotalPages = Math.ceil(studentEnrollTotalCount / studentEnrollPerPage);
+
+  const handleStudentEnrollPageChange = (page: number) => {
+    if (page < 1 || page > studentEnrollTotalPages || page === studentEnrollCurrentPage) return;
+    setStudentEnrollCurrentPage(page);
+    if (studentEnrollScrollRef.current) {
+      studentEnrollScrollRef.current.scrollTop = 0;
+    }
+  };
+
+  const getStudentEnrollPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const showEllipsisThreshold = 7;
+    
+    if (studentEnrollTotalPages <= showEllipsisThreshold) {
+      for (let i = 1; i <= studentEnrollTotalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      pages.push(1);
+      if (studentEnrollCurrentPage > 3) pages.push('...');
+      const start = Math.max(2, studentEnrollCurrentPage - 1);
+      const end = Math.min(studentEnrollTotalPages - 1, studentEnrollCurrentPage + 1);
+      for (let i = start; i <= end; i++) {
+        if (!pages.includes(i)) pages.push(i);
+      }
+      if (studentEnrollCurrentPage < studentEnrollTotalPages - 2) pages.push('...');
+      if (!pages.includes(studentEnrollTotalPages)) pages.push(studentEnrollTotalPages);
+    }
+    return pages;
+  };
 
   // State for valid classes in enroll modal
   const [enrollValidClasses, setEnrollValidClasses] = useState<string[]>([]);
@@ -653,7 +770,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
       
       try {
         // Fetch real curriculum from Firebase (V2 structure)
-        const curriculum = await firebaseService.getCourseCurriculum(selectedCourse?.id);
+        const curriculum = await firebaseService.getCourseCurriculum(selectedCourse?.id || '');
         
         // Transform Firebase data to page format
         // V2 structure: Unit.chapters is array, Chapter.lectures is array
@@ -695,15 +812,13 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     }
     
     // Fallback if no callback (shouldn't happen)
+    /* FALLBACK DISABLED - state variables removed
     setShowCurriculumPage(true);
     setIsLoadingCurriculum(true);
     
     try {
-      // Fetch real curriculum from Firebase (V2 structure)
-      const curriculum = await firebaseService.getCourseCurriculum(selectedCourse?.id);
+      const curriculum = await firebaseService.getCourseCurriculum(selectedCourse?.id || '');
       
-      // Transform Firebase data to page format
-      // V2 structure: Unit.chapters is array, Chapter.lectures is array
       const transformedCurriculum = curriculum.map((unit: any, unitIndex: number) => ({
         id: unit.unitId || `unit-${unitIndex + 1}`,
         title: unit.unitName || `Unit ${unitIndex + 1}`,
@@ -722,7 +837,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
       
       setCurriculumData(transformedCurriculum);
 
-      /* COMMENTED OUT - Sample Data
+      COMMENTED OUT - Sample Data
       // Simulating API call with sample data
       await new Promise(resolve => setTimeout(resolve, 800));
       const sampleCurriculum = [
@@ -796,20 +911,20 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
         }
       ];
       setCurriculumData(sampleCurriculum);
-      // Expand all sections and chapters by default
       setExpandedSections(sampleCurriculum.map(section => section.id));
       setExpandedChapters(sampleCurriculum.flatMap(section => section.chapters.map(chapter => chapter.id)));
-      END COMMENTED OUT */
+      END COMMENTED OUT
     } catch (error) {
       console.error('Error fetching curriculum:', error);
       setCurriculumData([]);
     } finally {
       setIsLoadingCurriculum(false);
     }
+    END FALLBACK DISABLED */
+    console.warn('openCurriculumPage: No onOpenCurriculum callback provided');
   };
 
   // Get unique classes and sections for filters
-  const uniqueClasses = [...new Set(availableUsers.map(u => u.className))];
 
   // Filter users based on search and class filter
   const filteredUsers = selectedClassFilter === 'administrators' 
@@ -1764,7 +1879,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                                       {/* Chapter Content - Lectures */}
                                       {isChapterExpanded && chapter.lectures && (
                                         <div className="bg-white">
-                                          {chapter.lectures.map((lecture: any, lectureIndex: number) => {
+                                          {chapter.lectures.map((lecture: any, _lectureIndex: number) => {
                                             const isVideo = lecture.type === 'video';
                                             const isQuiz = lecture.type === 'quiz' || lecture.type === 'mcq';
                                             const isExercise = lecture.type === 'exercise';
@@ -3110,7 +3225,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 </div>
                 <div>
                   <h3 className="font-bold text-white text-lg">{selectedStudentForProgress.name}</h3>
-                  <p className="text-sm text-white/80">{selectedStudentForProgress.className} | 2025-26 | {studentEnrolledCourses.length} Enrollments</p>
+                  <p className="text-sm text-white/80">{selectedStudentForProgress.className} | 2025-26 | {studentEnrollTotalCount} Enrollments</p>
                 </div>
               </div>
               <button 
@@ -3121,235 +3236,148 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               </button>
             </div>
             
-            {/* Scrollable Content - Course List */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            {/* Scrollable Content */}
+            <div ref={studentEnrollScrollRef} className="flex-1 overflow-y-auto p-5 space-y-5 bg-gray-50 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               
-              {/* Contact Info Cards - 2x2 Grid */}
-              <div className="grid grid-cols-2 gap-3">
-                {/* Email */}
-                <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
-                  <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-[18px] h-[18px] text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Email</p>
-                    <p className="text-sm font-semibold text-gray-800 truncate">{selectedStudentForProgress.email}</p>
-                  </div>
+              {/* ── Contact Info Card ── */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <h4 className="text-sm font-semibold text-gray-700">Student Info</h4>
                 </div>
-
-                {/* Phone */}
-                <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
-                  <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-[18px] h-[18px] text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                    </svg>
+                <div className="p-4 grid grid-cols-2 gap-x-6 gap-y-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wider">Email</p>
+                      <p className="text-sm font-medium text-gray-800 truncate">{selectedStudentForProgress.email}</p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Phone</p>
-                    <p className="text-sm font-semibold text-gray-800">+91 9876543210</p>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wider">Phone</p>
+                      <p className="text-sm font-medium text-gray-800">+91 9876543210</p>
+                    </div>
                   </div>
-                </div>
-
-                {/* Class */}
-                <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
-                  <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-[18px] h-[18px] text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 14l9-5-9-5-9 5 9 5z" />
-                      <path d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
-                    </svg>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-4 h-4 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wider">Class</p>
+                      <p className="text-sm font-medium text-gray-800">{selectedStudentForProgress.className}</p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Class</p>
-                    <p className="text-sm font-semibold text-gray-800">{selectedStudentForProgress.className}</p>
-                  </div>
-                </div>
-
-                {/* Academic Year */}
-                <div className="flex items-center gap-3 bg-white rounded-xl p-3 border border-gray-100 shadow-sm">
-                  <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
-                    <svg className="w-[18px] h-[18px] text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide">Academic Year</p>
-                    <p className="text-sm font-semibold text-gray-800">2025-26</p>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wider">Academic Year</p>
+                      <p className="text-sm font-medium text-gray-800">2025-26</p>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Assessment Stats - Section Header */}
-              <div className="flex items-center gap-2 mt-4">
-                <svg className="w-[18px] h-[18px]" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                </svg>
-                <h4 className="text-base font-bold text-gray-800">Assessments</h4>
-              </div>
-
-              {/* Assessment Stats Cards */}
-              <div className="grid grid-cols-3 gap-3">
-                {/* Total Assessments */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-blue-100">
-                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* ── Overview Stats (Assessments + Learning in one row) ── */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  <h4 className="text-sm font-semibold text-gray-700">Overview</h4>
+                </div>
+                <div className="p-4 grid grid-cols-5 gap-3">
+                  {/* Assessments Total */}
+                  <div className="text-center p-3 rounded-xl bg-blue-50/60">
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center mx-auto mb-1.5">
+                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Total</p>
-                      <p className="text-xl font-bold text-gray-900">{studentEnrolledCourses.reduce((sum, c) => sum + (c.assessments || 0), 0)}</p>
-                    </div>
+                    <p className="text-lg font-bold text-gray-900">{studentEnrolledCourses.reduce((sum, c) => sum + (c.assessments || 0), 0)}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Assessments</p>
                   </div>
-                </div>
-
-                {/* Assessments Completed */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-100">
-                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {/* Assessments Done */}
+                  <div className="text-center p-3 rounded-xl bg-green-50/60">
+                    <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center mx-auto mb-1.5">
+                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Completed</p>
-                      <p className="text-xl font-bold text-gray-900">{studentEnrolledCourses.filter(c => c.status === 'completed').reduce((sum, c) => sum + (c.assessments || 0), 0)}</p>
-                    </div>
+                    <p className="text-lg font-bold text-gray-900">{studentEnrolledCourses.filter(c => c.status === 'completed').reduce((sum, c) => sum + (c.assessments || 0), 0)}</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Completed</p>
                   </div>
-                </div>
-
-                {/* Assessment Avg Marks */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-orange-100">
-                      <svg className="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {/* Avg Marks */}
+                  <div className="text-center p-3 rounded-xl bg-orange-50/60">
+                    <div className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center mx-auto mb-1.5">
+                      <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                       </svg>
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Avg. %</p>
-                      <p className="text-xl font-bold text-gray-900">
-                        {Math.round(studentEnrolledCourses.filter(c => c.marks).reduce((sum, c) => sum + (c.marks || 0), 0) / Math.max(studentEnrolledCourses.filter(c => c.marks).length, 1) * 10) / 10}%
-                      </p>
-                    </div>
+                    <p className="text-lg font-bold text-gray-900">
+                      {Math.round(studentEnrolledCourses.filter(c => c.marks).reduce((sum, c) => sum + (c.marks || 0), 0) / Math.max(studentEnrolledCourses.filter(c => c.marks).length, 1) * 10) / 10}%
+                    </p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Avg. Marks</p>
                   </div>
-                </div>
-              </div>
-
-              {/* Learning Stats - Section Header */}
-              <div className="flex items-center gap-2 mt-4">
-                <svg className="w-[18px] h-[18px]" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <h4 className="text-base font-bold text-gray-800">Learning Activity</h4>
-              </div>
-
-              {/* Learning Stats Cards */}
-              <div className="grid grid-cols-2 gap-3">
-                {/* Total Learning Hours */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: `${brandTheme.colors.primary}15` }}
-                    >
-                      <svg className="w-5 h-5" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {/* Learning Time */}
+                  <div className="text-center p-3 rounded-xl" style={{ backgroundColor: `${brandTheme.colors.primary}08` }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-1.5" style={{ backgroundColor: `${brandTheme.colors.primary}15` }}>
+                      <svg className="w-4 h-4" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Total Learning</p>
-                      <p className="text-xl font-bold text-gray-900">38 Hrs</p>
-                    </div>
+                    <p className="text-lg font-bold text-gray-900">38h</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Learning</p>
                   </div>
-                </div>
-
-                {/* Average Learning Per Day */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-indigo-100">
-                      <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {/* Avg/Day */}
+                  <div className="text-center p-3 rounded-xl bg-indigo-50/60">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center mx-auto mb-1.5">
+                      <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                       </svg>
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Avg/Day</p>
-                      <p className="text-xl font-bold text-gray-900">2.5 Hrs</p>
-                    </div>
+                    <p className="text-lg font-bold text-gray-900">2.5h</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Avg/Day</p>
                   </div>
                 </div>
               </div>
 
-              {/* Enrolled Courses Section Header */}
-              <div className="flex items-center justify-between mt-4">
-                <div className="flex items-center gap-2">
-                  <svg className="w-[18px] h-[18px]" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                  <h4 className="text-base font-bold text-gray-800">Enrolled Courses</h4>
-                </div>
-                <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-lg">
-                  {studentEnrolledCourses.length} Courses
-                </span>
-              </div>
-
-              {/* Course Stats Cards */}
-              <div className="grid grid-cols-3 gap-3">
-                {/* Courses Enrolled */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div 
-                      className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: `${brandTheme.colors.primary}15` }}
-                    >
-                      <svg className="w-5 h-5" style={{ color: brandTheme.colors.primary }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Enrolled</p>
-                      <p className="text-xl font-bold text-gray-900">{studentEnrolledCourses.length}</p>
-                    </div>
+              {/* ── Enrolled Courses Card ── */}
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    <h4 className="text-sm font-semibold text-gray-700">Enrolled Courses</h4>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ backgroundColor: `${brandTheme.colors.primary}12`, color: brandTheme.colors.primary }}>
+                      {studentEnrollTotalCount} Enrolled
+                    </span>
+                    <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-50 text-green-600">
+                      {studentEnrolledCourses.filter(c => c.status === 'completed').length} Done
+                    </span>
                   </div>
                 </div>
-
-                {/* Courses Completed */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-100">
-                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Completed</p>
-                      <p className="text-xl font-bold text-gray-900">{studentEnrolledCourses.filter(c => c.status === 'completed').length}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Average Marks */}
-                <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-purple-100">
-                      <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                      </svg>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">Avg. Marks</p>
-                      <p className="text-xl font-bold text-gray-900">
-                        {Math.round(studentEnrolledCourses.filter(c => c.marks).reduce((sum, c) => sum + (c.marks || 0), 0) / Math.max(studentEnrolledCourses.filter(c => c.marks).length, 1) * 10) / 10}%
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Course Cards */}
+                <div className="p-4 space-y-3">
               {studentEnrolledCourses.map((course) => (
                 <div 
                   key={course.id}
@@ -3410,7 +3438,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                       </svg>
                       <div>
                         <p className="text-xs text-gray-500">Chapters</p>
-                        <p className="font-bold text-gray-900">{course.totalChapters || 0}</p>
+                        <p className="font-bold text-gray-900">{(course as any).totalChapters || 0}</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
@@ -3460,15 +3488,134 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 </div>
               ))}
 
-              {/* End of List Indicator */}
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-3 border-2 border-dashed border-gray-200">
-                  <span className="text-3xl">📚</span>
+              {/* Loading State */}
+              {isLoadingStudentEnrollments && (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: brandTheme.colors.primary }}></div>
+                  <span className="ml-3 text-sm text-gray-500">Loading enrollments...</span>
                 </div>
-                <p className="font-semibold text-gray-700">That's everything!</p>
-                <p className="text-sm text-gray-400">No more enrollments to show</p>
+              )}
+
+              {/* No Enrollments State */}
+              {!isLoadingStudentEnrollments && studentEnrolledCourses.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center mb-3">
+                    <span className="text-2xl">📚</span>
+                  </div>
+                  <p className="text-sm font-medium text-gray-500">No enrollments found</p>
+                  <p className="text-xs text-gray-400 mt-0.5">This student has no active course enrollments</p>
+                </div>
+              )}
+
+              {/* End of List for last page */}
+              {!isLoadingStudentEnrollments && studentEnrolledCourses.length > 0 && studentEnrollCurrentPage === studentEnrollTotalPages && (
+                <div className="flex flex-col items-center justify-center py-6 text-center">
+                  <p className="text-xs text-gray-400">No more enrollments to show</p>
+                </div>
+              )}
+                </div>
               </div>
             </div>
+
+            {/* Pagination Footer */}
+            {!isLoadingStudentEnrollments && studentEnrollTotalPages > 1 && (
+              <div className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-3">
+                <div className="flex items-center justify-between">
+                  {/* Page Info */}
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">{((studentEnrollCurrentPage - 1) * studentEnrollPerPage) + 1}</span>
+                    <span className="mx-1">-</span>
+                    <span className="font-medium">{Math.min(studentEnrollCurrentPage * studentEnrollPerPage, studentEnrollTotalCount)}</span>
+                    <span className="mx-1">of</span>
+                    <span className="font-medium">{studentEnrollTotalCount}</span>
+                    <span className="ml-1 text-gray-400">courses</span>
+                  </div>
+
+                  {/* Pagination Controls */}
+                  <div className="flex items-center gap-2">
+                    {/* First Page Button */}
+                    <button
+                      onClick={() => handleStudentEnrollPageChange(1)}
+                      disabled={studentEnrollCurrentPage === 1}
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 border ${
+                        studentEnrollCurrentPage === 1
+                          ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:shadow-sm'
+                      }`}
+                      title="First page"
+                    >
+                      <FontAwesomeIcon icon={faChevronsLeft} className="text-xs" />
+                    </button>
+
+                    {/* Previous Button */}
+                    <button
+                      onClick={() => handleStudentEnrollPageChange(studentEnrollCurrentPage - 1)}
+                      disabled={studentEnrollCurrentPage === 1}
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 border ${
+                        studentEnrollCurrentPage === 1
+                          ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:shadow-sm'
+                      }`}
+                      title="Previous page"
+                    >
+                      <FontAwesomeIcon icon={faChevronLeft} className="text-xs" />
+                    </button>
+
+                    {/* Page Numbers */}
+                    <div className="flex items-center gap-1 mx-1">
+                      {getStudentEnrollPageNumbers().map((page, index) => (
+                        page === '...' ? (
+                          <span key={`ellipsis-${index}`} className="px-1.5 text-gray-400 text-sm">...</span>
+                        ) : (
+                          <button
+                            key={page}
+                            onClick={() => handleStudentEnrollPageChange(page as number)}
+                            className={`min-w-[32px] h-8 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                              studentEnrollCurrentPage === page
+                                ? 'text-white shadow-lg transform scale-105'
+                                : 'text-gray-600 bg-white border border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900'
+                            }`}
+                            style={studentEnrollCurrentPage === page ? { 
+                              background: brandTheme.gradients.primary 
+                            } : {}}
+                          >
+                            {page}
+                          </button>
+                        )
+                      ))}
+                    </div>
+
+                    {/* Next Button */}
+                    <button
+                      onClick={() => handleStudentEnrollPageChange(studentEnrollCurrentPage + 1)}
+                      disabled={studentEnrollCurrentPage === studentEnrollTotalPages}
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 border ${
+                        studentEnrollCurrentPage === studentEnrollTotalPages
+                          ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:shadow-sm'
+                      }`}
+                      title="Next page"
+                    >
+                      <FontAwesomeIcon icon={faChevronRight} className="text-xs" />
+                    </button>
+
+                    {/* Last Page Button */}
+                    <button
+                      onClick={() => handleStudentEnrollPageChange(studentEnrollTotalPages)}
+                      disabled={studentEnrollCurrentPage === studentEnrollTotalPages}
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-200 border ${
+                        studentEnrollCurrentPage === studentEnrollTotalPages
+                          ? 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:shadow-sm'
+                      }`}
+                      title="Last page"
+                    >
+                      <FontAwesomeIcon icon={faChevronsRight} className="text-xs" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end flex-shrink-0 bg-gray-50">
