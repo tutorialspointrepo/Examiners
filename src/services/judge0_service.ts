@@ -89,11 +89,16 @@ class Judge0Service {
     const encodedSourceCode = btoa(unescape(encodeURIComponent(source_code)));
     const encodedStdin = stdin ? btoa(unescape(encodeURIComponent(stdin))) : '';
     
-    const payload = { 
+    const payload: Record<string, any> = { 
       source_code: encodedSourceCode, 
       language_id, 
       stdin: encodedStdin 
     };
+
+    // Pass -lm for C (50) and C++ (54) so math.h functions (log, pow, sqrt, etc.) link properly
+    if (language_id === 50 || language_id === 54) {
+      payload.compiler_options = '-lm';
+    }
     
     // Use base64_encoded=true to tell Judge0 we're sending base64
     const url = wait 

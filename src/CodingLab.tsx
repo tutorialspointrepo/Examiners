@@ -187,6 +187,76 @@ interface TestResult {
 
 // ==================== HELPER FUNCTIONS ====================
 
+// Firestore stores arrays as maps {0:{...}, 1:{...}} — Array.isArray returns false
+function normalizeSchemas(tableSchema: any): any[] {
+  if (!tableSchema) return [];
+  if (tableSchema.tableName) return [tableSchema]; // Single schema object
+  if (Array.isArray(tableSchema)) return tableSchema;
+  return Object.keys(tableSchema).sort((a: string, b: string) => Number(a) - Number(b)).map((k: string) => tableSchema[k]);
+}
+
+// Quote SQL identifier if it starts with a digit or has special chars
+function quoteSqlId(name: string): string {
+  if (!name) return name;
+  if (/^[0-9]/.test(name) || /[^a-zA-Z0-9_]/.test(name)) return '"' + name + '"';
+  return name;
+}
+
+// Map column type with BIGINT before INT check
+function mapColType(type: string): string {
+  if (!type) return 'TEXT';
+  let t = (type || 'TEXT').toUpperCase();
+  if (t.includes('ENUM')) return 'TEXT';
+  if (t.includes('BIGINT')) return 'BIGINT';
+  if (t.includes('INT')) return 'INTEGER';
+  if (t.includes('VARCHAR')) return 'TEXT';
+  if (t.includes('DECIMAL') || t.includes('FLOAT') || t.includes('DOUBLE') || t.includes('NUMERIC')) return 'NUMERIC';
+  if (t.includes('DATETIME') || t.includes('TIMESTAMP')) return 'TIMESTAMP';
+  if (t.includes('DATE')) return 'DATE';
+  if (t.includes('BOOL')) return 'BOOLEAN';
+  return t;
+}
+
+// Format value for INSERT with boolean casting
+// Normalize value for display — convert Date objects to YYYY-MM-DD
+function displaySqlVal(val: any): string {
+  if (val === null || val === undefined) return 'NULL';
+  if (val instanceof Date) return val.toISOString().split('T')[0];
+  return String(val);
+}
+
+function formatSqlValue(val: any, colType: string | null): string {
+  if (val === null || val === undefined) return 'NULL';
+  if (colType === 'BOOLEAN') {
+    if (val === 1 || val === '1' || val === true || val === 'true') return 'TRUE';
+    if (val === 0 || val === '0' || val === false || val === 'false') return 'FALSE';
+  }
+  if (typeof val === 'string') return "'" + val.replace(/'/g, "''") + "'";
+  return String(val);
+}
+
+// Get column type from schema
+function getSchemaColType(schemas: any[], tableName: string, headerName: string): string | null {
+  const schema = schemas.find((s: any) => s.tableName?.toLowerCase() === tableName?.toLowerCase()) || schemas[0];
+  if (!schema) return null;
+  let columns = schema.columns;
+  if (columns && typeof columns === 'object' && !Array.isArray(columns)) {
+    columns = Object.keys(columns).sort((a: string, b: string) => Number(a) - Number(b)).map((k: string) => columns[k]);
+  }
+  if (!columns) return null;
+  const col = columns.find((c: any) => c.name?.toLowerCase() === headerName?.toLowerCase());
+  if (!col) return null;
+  return mapColType(col.type);
+}
+
+// @ts-ignore - Reserved for future stored procedure support
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function detectProcedureSql(query: string): { isProcedure: boolean; procedureName: string | null } {
+  const match = query.match(/CREATE\s+(?:OR\s+REPLACE\s+)?PROCEDURE\s+(\w+)/i);
+  if (match) return { isProcedure: true, procedureName: match[1] };
+  return { isProcedure: false, procedureName: null };
+}
+
 /**
  * Normalize SQL rows - handles both array and object formats from Firebase
  * Firebase may store rows as {0: {...}, 1: {...}} instead of [{...}, {...}]
@@ -774,8 +844,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
       
       const tableSchema = problemData.tableSchema;
       if (tableSchema) {
-        const isMultiTable = Array.isArray(tableSchema);
-        const schemas = isMultiTable ? tableSchema : [tableSchema];
+        const schemas = normalizeSchemas(tableSchema);
         
         // Create all tables
         for (const schema of schemas) {
@@ -786,14 +855,9 @@ const CodingLab: React.FC<CodingLabProps> = ({
           if (!columns || columns.length === 0) continue;
           
           const tableName = schema.tableName || 'Table';
-          let createSQL = `CREATE TABLE IF NOT EXISTS ${tableName} (`;
+          let createSQL = `CREATE TABLE IF NOT EXISTS ${quoteSqlId(tableName)} (`;
           createSQL += columns.map((col: any) => {
-            let type = (col.type || 'TEXT').toUpperCase();
-            if (type.includes('ENUM')) type = 'TEXT';
-            if (type.includes('INT')) type = 'INTEGER';
-            if (type.includes('VARCHAR')) type = 'TEXT';
-            if (type.includes('DATE')) type = 'TEXT';
-            return `${col.name} ${type}`;
+            return `${quoteSqlId(col.name)} ${mapColType(col.type)}`;
           }).join(', ');
           createSQL += ')';
           
@@ -827,21 +891,28 @@ const CodingLab: React.FC<CodingLabProps> = ({
   const insertSqlTestData = async (input: any, schemas: any[]) => {
     if (!pgliteRef.current || !input) return;
     
-    // Multi-table format: input.tables array
-    if (input.tables && Array.isArray(input.tables)) {
-      for (const tableData of input.tables) {
+    // Multi-table format: input.tables
+    const inputTables = input.tables;
+    if (inputTables) {
+      let tables = inputTables;
+      if (tables && typeof tables === 'object' && !Array.isArray(tables)) {
+        tables = Object.keys(tables).sort((a: string, b: string) => Number(a) - Number(b)).map((k: string) => tables[k]);
+      }
+      for (const tableData of tables) {
         const tableName = tableData.name;
-        const headers = tableData.headers || [];
+        let headers = tableData.headers || [];
+        if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+          headers = Object.keys(headers).sort((a: string, b: string) => Number(a) - Number(b)).map((k: string) => headers[k]);
+        }
         let rows = normalizeRows(tableData.rows);
         
         for (const row of rows) {
-          const vals = headers.map((_header: string, i: number) => {
+          const vals = headers.map((header: string, i: number) => {
             const val = row['i' + i];
-            if (val === null || val === undefined) return 'NULL';
-            if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
-            return val;
+            return formatSqlValue(val, getSchemaColType(schemas, tableName, header));
           });
-          const insertSQL = `INSERT INTO ${tableName} (${headers.join(', ')}) VALUES (${vals.join(', ')})`;
+          const quotedHeaders = headers.map((h: string) => quoteSqlId(h)).join(', ');
+          const insertSQL = `INSERT INTO ${quoteSqlId(tableName)} (${quotedHeaders}) VALUES (${vals.join(', ')})`;
           await pgliteRef.current.query(insertSQL);
         }
       }
@@ -849,17 +920,19 @@ const CodingLab: React.FC<CodingLabProps> = ({
     // Single-table format: input.headers and input.rows
     else if (input.headers && input.rows) {
       const tableName = schemas[0]?.tableName || 'Table';
-      const headers = input.headers;
+      let headers = input.headers;
+      if (headers && typeof headers === 'object' && !Array.isArray(headers)) {
+        headers = Object.keys(headers).sort((a: string, b: string) => Number(a) - Number(b)).map((k: string) => headers[k]);
+      }
       let rows = normalizeRows(input.rows);
       
       for (const row of rows) {
-        const vals = headers.map((_header: string, i: number) => {
+        const vals = headers.map((header: string, i: number) => {
           const val = row['i' + i];
-          if (val === null || val === undefined) return 'NULL';
-          if (typeof val === 'string') return `'${val.replace(/'/g, "''")}'`;
-          return val;
+          return formatSqlValue(val, getSchemaColType(schemas, tableName, header));
         });
-        const insertSQL = `INSERT INTO ${tableName} (${headers.join(', ')}) VALUES (${vals.join(', ')})`;
+        const quotedHeaders = headers.map((h: string) => quoteSqlId(h)).join(', ');
+        const insertSQL = `INSERT INTO ${quoteSqlId(tableName)} (${quotedHeaders}) VALUES (${vals.join(', ')})`;
         await pgliteRef.current.query(insertSQL);
       }
     }
@@ -892,17 +965,23 @@ const CodingLab: React.FC<CodingLabProps> = ({
     return true;
   };
   
-  /** Compare two SQL values (handles null, numeric, string) */
+  /** Compare two SQL values (handles null, numeric, string, Date) */
   const compareSqlValues = (actual: any, expected: any): boolean => {
     if (actual === null && expected === null) return true;
     if (actual === null || expected === null) return false;
     
-    const actualStr = String(actual).trim().toLowerCase();
-    const expectedStr = String(expected).trim().toLowerCase();
+    // Normalize Date objects to YYYY-MM-DD
+    let actualNorm = actual;
+    let expectedNorm = expected;
+    if (actual instanceof Date) actualNorm = actual.toISOString().split('T')[0];
+    if (expected instanceof Date) expectedNorm = expected.toISOString().split('T')[0];
+    
+    const actualStr = String(actualNorm).trim().toLowerCase();
+    const expectedStr = String(expectedNorm).trim().toLowerCase();
     if (actualStr === expectedStr) return true;
     
-    const actualNum = parseFloat(actual);
-    const expectedNum = parseFloat(expected);
+    const actualNum = parseFloat(actualNorm);
+    const expectedNum = parseFloat(expectedNorm);
     if (!isNaN(actualNum) && !isNaN(expectedNum)) {
       return Math.abs(actualNum - expectedNum) < 0.0001;
     }
@@ -1022,13 +1101,12 @@ const CodingLab: React.FC<CodingLabProps> = ({
     
     try {
       const tableSchema = problem.tableSchema;
-      const isMultiTable = Array.isArray(tableSchema);
-      const schemas = isMultiTable ? tableSchema : [tableSchema];
+      const schemas = normalizeSchemas(tableSchema);
       
       // Step 1: Truncate all tables
       for (const schema of schemas) {
         const tableName = schema?.tableName || 'Table';
-        try { await pgliteRef.current.query(`DELETE FROM ${tableName}`); } catch (e) { /* ignore */ }
+        try { await pgliteRef.current.query(`DELETE FROM ${quoteSqlId(tableName)}`); } catch (e) { /* ignore */ }
       }
       
       // Step 2: Insert this test case's data
@@ -1037,9 +1115,53 @@ const CodingLab: React.FC<CodingLabProps> = ({
         await insertSqlTestData(sqlInput, schemas);
       }
       
-      // Step 3: Run user's query
+      // Step 3: Run user's query (handle functions, procedures, or plain SQL)
       const startTime = performance.now();
-      const result = await pgliteRef.current.query(code);
+      let result;
+      
+      const funcMatch = code.match(/CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION\s+(\w+)/i);
+      const procMatch = code.match(/CREATE\s+(?:OR\s+REPLACE\s+)?PROCEDURE\s+(\w+)/i);
+      
+      if (funcMatch) {
+        const funcName = funcMatch[1];
+        try { await pgliteRef.current.query(`DROP FUNCTION IF EXISTS ${funcName} CASCADE`); } catch(e) {}
+        await pgliteRef.current.query(code);
+        // Try to get params from expected output headers
+        const outHeaders = testCase.sqlExpectedOutput?.headers || [];
+        let normHeaders = outHeaders;
+        if (normHeaders && typeof normHeaders === 'object' && !Array.isArray(normHeaders)) {
+          normHeaders = Object.keys(normHeaders).sort((a: string, b: string) => Number(a) - Number(b)).map((k: string) => normHeaders[k]);
+        }
+        let callQuery = `SELECT * FROM ${funcName}()`;
+        if (normHeaders.length > 0) {
+          const hMatch = normHeaders[0].match(/^(\w+)\(([^)]*)\)$/);
+          if (hMatch && hMatch[2].trim()) {
+            const params = hMatch[2].split(',').map((p: string) => p.trim());
+            const paramStr = params.map((p: string) => { const n = Number(p); return isNaN(n) ? `'${p}'` : n; }).join(', ');
+            callQuery = `SELECT * FROM ${funcName}(${paramStr})`;
+          }
+        }
+        result = await pgliteRef.current.query(callQuery);
+      } else if (procMatch) {
+        const procName = procMatch[1];
+        try { await pgliteRef.current.query(`DROP FUNCTION IF EXISTS ${procName} CASCADE`); } catch(e) {}
+        try { await pgliteRef.current.query('DROP VIEW IF EXISTS __pivot_result CASCADE'); } catch(e) {}
+        try { await pgliteRef.current.query('DROP VIEW IF EXISTS unpivoted_products CASCADE'); } catch(e) {}
+        try { await pgliteRef.current.query('DROP VIEW IF EXISTS pivot_result CASCADE'); } catch(e) {}
+        await pgliteRef.current.query(code);
+        await pgliteRef.current.query(`CALL ${procName}()`);
+        result = { rows: [] };
+        for (const src of ['__pivot_result', 'unpivoted_products', 'pivot_result']) {
+          try { result = await pgliteRef.current.query(`SELECT * FROM ${src} ORDER BY 1`); break; } catch(e) {}
+        }
+        if (result.rows.length === 0) {
+          const mainTable = schemas[0]?.tableName || 'Table';
+          try { result = await pgliteRef.current.query(`SELECT * FROM ${quoteSqlId(mainTable)} ORDER BY 1`); } catch(e) {}
+        }
+      } else {
+        result = await pgliteRef.current.query(code);
+      }
+      
       const endTime = performance.now();
       const execTime = (endTime - startTime).toFixed(2);
       
@@ -2246,7 +2368,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
               
               {expandedSections.tableSchema && (
                 <div className="mt-4 space-y-5">
-                  {(Array.isArray(problem.tableSchema) ? problem.tableSchema : [problem.tableSchema]).map((schema: any, si: number) => {
+                  {normalizeSchemas(problem.tableSchema).map((schema: any, si: number) => {
                     const columns = schema.columns 
                       ? (Array.isArray(schema.columns) ? schema.columns : Object.keys(schema.columns).sort((a: string, b: string) => Number(a) - Number(b)).map((key: string) => schema.columns[key]))
                       : [];
@@ -2347,10 +2469,15 @@ const CodingLab: React.FC<CodingLabProps> = ({
                           <FontAwesomeIcon icon={faLayerGroup} className="w-3 h-3" />
                           Input {(example.input as any)?.tables ? 'Tables' : 'Table'}
                         </div>
-                        {(example.input as any)?.tables && Array.isArray((example.input as any).tables) ? (
+                        {(example.input as any)?.tables ? (() => {
+                          let tables = (example.input as any).tables;
+                          if (tables && typeof tables === 'object' && !Array.isArray(tables)) {
+                            tables = Object.keys(tables).sort((a: string, b: string) => Number(a) - Number(b)).map((k: string) => tables[k]);
+                          }
+                          return Array.isArray(tables) && tables.length > 0 ? (
                           /* Multi-table */
                           <div className="space-y-3">
-                            {(example.input as any).tables.map((t: any, ti: number) => (
+                            {tables.map((t: any, ti: number) => (
                               <div key={ti}>
                                 <div className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1.5">
                                   <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
@@ -2370,7 +2497,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
                                         <tr key={ri} className="border-b border-gray-100 last:border-b-0">
                                           {(t.headers || []).map((_: string, ci: number) => {
                                             const val = row['i' + ci];
-                                            return <td key={ci} className="px-3 py-1.5 text-gray-700 font-mono text-xs">{val === null || val === undefined ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>;
+                                            return <td key={ci} className="px-3 py-1.5 text-gray-700 font-mono text-xs">{val === null || val === undefined ? <span className="text-gray-400 italic">NULL</span> : displaySqlVal(val)}</td>;
                                           })}
                                         </tr>
                                       ))}
@@ -2380,7 +2507,8 @@ const CodingLab: React.FC<CodingLabProps> = ({
                               </div>
                             ))}
                           </div>
-                        ) : (example.input as any)?.headers ? (
+                        ) : null;
+                        })() : (example.input as any)?.headers ? (
                           /* Single-table */
                           <div className="overflow-x-auto rounded-lg border border-gray-200">
                             <table className="w-full text-xs">
@@ -2396,7 +2524,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
                                   <tr key={ri} className="border-b border-gray-100 last:border-b-0">
                                     {((example.input as any).headers || []).map((_: string, ci: number) => {
                                       const val = row['i' + ci];
-                                      return <td key={ci} className="px-3 py-1.5 text-gray-700 font-mono text-xs">{val === null || val === undefined ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>;
+                                      return <td key={ci} className="px-3 py-1.5 text-gray-700 font-mono text-xs">{val === null || val === undefined ? <span className="text-gray-400 italic">NULL</span> : displaySqlVal(val)}</td>;
                                     })}
                                   </tr>
                                 ))}
@@ -2426,7 +2554,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
                                 <tr key={ri} className="border-b border-green-100 last:border-b-0">
                                   {((example.output as any)?.headers || []).map((_: string, ci: number) => {
                                     const val = row['i' + ci];
-                                    return <td key={ci} className="px-3 py-1.5 text-gray-700 font-mono text-xs">{val === null || val === undefined ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>;
+                                    return <td key={ci} className="px-3 py-1.5 text-gray-700 font-mono text-xs">{val === null || val === undefined ? <span className="text-gray-400 italic">NULL</span> : displaySqlVal(val)}</td>;
                                   })}
                                 </tr>
                               ))}
@@ -3758,7 +3886,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
     <div 
       ref={editorContainerRef}
       className={`h-full flex flex-col ${
-        editorState === 'maximized' ? 'fixed inset-0 z-[2000]' : ''
+        editorState === 'maximized' ? 'fixed inset-0 z-[10000]' : ''
       }`} 
       style={{ backgroundColor: '#f3f4f6' }}
     >
@@ -5050,23 +5178,29 @@ const CodingLab: React.FC<CodingLabProps> = ({
                           <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
                             Input Tables
                           </div>
-                          {result.sqlInput?.tables && Array.isArray(result.sqlInput.tables) ? (
-                            result.sqlInput.tables.map((t: any, ti: number) => (
+                          {result.sqlInput?.tables ? (() => {
+                            let tables = result.sqlInput.tables;
+                            if (tables && typeof tables === 'object' && !Array.isArray(tables)) {
+                              tables = Object.keys(tables).sort((a: string, b: string) => Number(a) - Number(b)).map((k: string) => tables[k]);
+                            }
+                            return Array.isArray(tables) && tables.length > 0 ? (
+                            tables.map((t: any, ti: number) => (
                               <div key={ti} className="mb-2">
                                 {t.name && <p className="text-[10px] font-semibold mb-1 text-blue-600">📥 {t.name}</p>}
                                 <div className="overflow-x-auto rounded border border-gray-200">
                                   <table className="w-full text-xs font-mono">
                                     <thead><tr className="bg-gray-100">{(t.headers || []).map((h: string, hi: number) => <th key={hi} className="px-2 py-1 text-left text-gray-600 font-semibold border-b border-gray-200">{h}</th>)}</tr></thead>
-                                    <tbody>{normalizeRows(t.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">{(t.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                                    <tbody>{normalizeRows(t.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">{(t.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : displaySqlVal(val)}</td>; })}</tr>)}</tbody>
                                   </table>
                                 </div>
                               </div>
                             ))
-                          ) : (
+                          ) : null;
+                        })() : (
                             <div className="overflow-x-auto rounded border border-gray-200">
                               <table className="w-full text-xs font-mono">
                                 <thead><tr className="bg-gray-100">{(result.sqlInput?.headers || []).map((h: string, hi: number) => <th key={hi} className="px-2 py-1 text-left text-gray-600 font-semibold border-b border-gray-200">{h}</th>)}</tr></thead>
-                                <tbody>{normalizeRows(result.sqlInput?.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">{(result.sqlInput?.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                                <tbody>{normalizeRows(result.sqlInput?.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100 hover:bg-gray-50">{(result.sqlInput?.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : displaySqlVal(val)}</td>; })}</tr>)}</tbody>
                               </table>
                             </div>
                           )}
@@ -5082,7 +5216,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
                           <div className="overflow-x-auto rounded border border-green-200">
                             <table className="w-full text-xs font-mono">
                               <thead><tr className="bg-green-50">{(result.sqlExpectedOutput?.headers || []).map((h: string, hi: number) => <th key={hi} className="px-2 py-1 text-left text-green-700 font-semibold border-b border-green-200">{h}</th>)}</tr></thead>
-                              <tbody>{normalizeRows(result.sqlExpectedOutput?.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-green-100 hover:bg-green-50/50">{(result.sqlExpectedOutput?.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                              <tbody>{normalizeRows(result.sqlExpectedOutput?.rows).map((row: any, ri: number) => <tr key={ri} className="border-b border-green-100 hover:bg-green-50/50">{(result.sqlExpectedOutput?.headers || []).map((_: string, ci: number) => { const val = row['i' + ci]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : displaySqlVal(val)}</td>; })}</tr>)}</tbody>
                             </table>
                           </div>
                         </div>
@@ -5098,7 +5232,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
                                 <thead><tr className={result.passed ? 'bg-green-50' : 'bg-red-50'}>{(result.sqlActualHeaders || []).map((h: string, hi: number) => <th key={hi} className={`px-2 py-1 text-left font-semibold border-b ${result.passed ? 'text-green-700 border-green-200' : 'text-red-700 border-red-200'}`}>{h}</th>)}</tr></thead>
                                 <tbody>{(result.sqlActualRows || []).length === 0 ? (
                                   <tr><td colSpan={(result.sqlActualHeaders || []).length || 1} className="px-2 py-1 text-center text-gray-400 italic">No rows returned</td></tr>
-                                ) : (result.sqlActualRows || []).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100">{(result.sqlActualHeaders || []).map((h: string, ci: number) => { const val = row[h]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : String(val)}</td>; })}</tr>)}</tbody>
+                                ) : (result.sqlActualRows || []).map((row: any, ri: number) => <tr key={ri} className="border-b border-gray-100">{(result.sqlActualHeaders || []).map((h: string, ci: number) => { const val = row[h]; return <td key={ci} className="px-2 py-1 text-gray-700">{val === null ? <span className="text-gray-400 italic">NULL</span> : displaySqlVal(val)}</td>; })}</tr>)}</tbody>
                               </table>
                             </div>
                           </div>
@@ -5218,7 +5352,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
       {/* Slash Command Menu */}
       {showSlashMenu && filteredSlashCommands.length > 0 && (
         <div 
-          className="fixed z-[2002] bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
+          className="fixed z-[10002] bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden"
           style={{ 
             left: slashMenuPosition.x, 
             top: slashMenuPosition.y,
@@ -5279,7 +5413,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
         <>
           {/* Overlay */}
           <div 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2000]"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000]"
             onClick={() => {
               setShowAIResultModal(false);
               setAiResultContent(null);
@@ -5292,7 +5426,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
               ['fix', 'format', 'optimize', 'tests', 'docs'].includes(aiResultContent.operation)
                 ? 'sm:w-[50rem]'  // Wider for code
                 : 'sm:w-[35rem]'  // Normal for explanations
-            } bg-white z-[2001] flex flex-col rounded-2xl shadow-2xl overflow-hidden`}
+            } bg-white z-[10001] flex flex-col rounded-2xl shadow-2xl overflow-hidden`}
             style={{ animation: 'slideInRight 0.3s ease-out' }}
           >
             {/* Panel Header */}

@@ -47,6 +47,7 @@
     "hark": "^1.2.3",
     "katex": "^0.16.25",
     "lucide-react": "^0.546.0",
+    "mammoth": "^1.11.0",
     "monaco-editor": "^0.54.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

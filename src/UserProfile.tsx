@@ -16,6 +16,10 @@ import {
   Users,
   CheckCircle,
   Clock,
+  ExternalLink,
+  Code2,
+  Loader,
+  Flame,
 } from 'lucide-react';
 import { firebaseService } from './services/firebase_service';
 import { useBrand } from './BrandContext';
@@ -25,6 +29,7 @@ interface UserProfileProps {
   onClose: () => void;
   currentUser: any;
   onProfileUpdate?: () => void;
+  initialView?: 'profile' | 'leetcode';
 }
 
 interface ProfileFormData {
@@ -38,6 +43,7 @@ interface ProfileFormData {
   board?: string;
   teacherClasses?: string[];
   teacherSubjects?: string[];
+  leetcodeUsername?: string;
 }
 
 const userRoleConfig = {
@@ -103,7 +109,7 @@ const userRoleConfig = {
   }
 };
 
-export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpdate }: UserProfileProps) {
+export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpdate, initialView }: UserProfileProps) {
   const brandTheme = useBrand();
   const [isEditing, setIsEditing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -113,6 +119,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
   const [profilePictureUrl, setProfilePictureUrl] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const hasLoggedView = useRef(false);
+  const savedLeetcodeUsername = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Student proctoring photos
@@ -133,6 +140,13 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
   const leftInputRef = useRef<HTMLInputElement>(null);
   const rightInputRef = useRef<HTMLInputElement>(null);
   
+  // LeetCode stats
+  const [leetcodeStats, setLeetcodeStats] = useState<any>(null);
+  const [leetcodeLoading, setLeetcodeLoading] = useState(false);
+  const [leetcodeError, setLeetcodeError] = useState<string | null>(null);
+  const [, setShowLeetcodeStats] = useState(false);
+  const [profileView, setProfileView] = useState<'profile' | 'leetcode'>('profile');
+  
   const [formData, setFormData] = useState<ProfileFormData>({
     fullName: '',
     title: '',
@@ -143,7 +157,8 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
     studentClass: '',
     board: '',
     teacherClasses: [],
-    teacherSubjects: []
+    teacherSubjects: [],
+    leetcodeUsername: '',
   });
 
   // Initialize once when modal opens
@@ -161,8 +176,14 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
         studentClass: currentUser.studentClass || '',
         board: currentUser.board || '',
         teacherClasses: currentUser.teacherClasses || [],
-        teacherSubjects: currentUser.teacherSubjects || []
+        teacherSubjects: currentUser.teacherSubjects || [],
+        leetcodeUsername: savedLeetcodeUsername.current || currentUser.leetcodeUsername || '',
       });
+      
+      // Clear the ref once currentUser has caught up
+      if (currentUser.leetcodeUsername && savedLeetcodeUsername.current) {
+        savedLeetcodeUsername.current = null;
+      }
       
       setProfilePictureUrl(currentUser.profilePicture || null);
       
@@ -184,6 +205,11 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
       setError(null);
       setSuccess(null);
       setIsInitialized(true);
+      
+      // Handle initialView prop - auto-open LeetCode profile
+      if (initialView === 'leetcode' && currentUser.leetcodeUsername) {
+        fetchLeetCodeStats(currentUser.leetcodeUsername);
+      }
       
       // Log view activity (non-blocking) - ONLY ONCE
       if (!hasLoggedView.current) {
@@ -232,6 +258,7 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
         setSuccess(null);
         setIsInitialized(false);
         hasLoggedView.current = false;
+        savedLeetcodeUsername.current = null;
         
         // Stop camera if active
         if (cameraStream) {
@@ -240,6 +267,10 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
         }
         setShowCameraModal(false);
         setCameraPosition(null);
+        setProfileView('profile');
+        setShowLeetcodeStats(false);
+        setLeetcodeStats(null);
+        setLeetcodeError(null);
       }, 250);
       
       return () => clearTimeout(timer);
@@ -461,6 +492,63 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
     }
   };
 
+  // Fetch LeetCode stats via Cloud Function (with 6-hour client cache)
+  const fetchLeetCodeStats = async (username: string, forceRefresh = false) => {
+    if (!username.trim()) return;
+    
+    const cacheKey = `leetcode_stats_${username.trim().toLowerCase()}`;
+    const CACHE_DURATION = 6 * 60 * 60 * 1000; // 6 hours
+    
+    // Check localStorage cache first (unless force refresh)
+    if (!forceRefresh) {
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const { data, timestamp } = JSON.parse(cached);
+          if (Date.now() - timestamp < CACHE_DURATION) {
+            console.log('📦 LeetCode stats loaded from cache');
+            setLeetcodeStats({ ...data, fromCache: true });
+            setShowLeetcodeStats(true);
+            setProfileView('leetcode');
+            return;
+          }
+        }
+      } catch (e) {
+        // Cache read failed, continue to fetch
+      }
+    }
+    
+    setLeetcodeLoading(true);
+    setLeetcodeError(null);
+    setShowLeetcodeStats(true);
+    setProfileView('leetcode');
+
+    try {
+      const { getFunctions, httpsCallable } = await import('firebase/functions');
+      const functions = getFunctions();
+      const fetchStats = httpsCallable(functions, 'fetchLeetCodeStats');
+      const result = await fetchStats({ username: username.trim(), forceRefresh });
+      const data = result.data as any;
+      console.log('LeetCode stats response:', data);
+      if (data.error || data.success === false) {
+        setLeetcodeError(data.error || 'Failed to fetch stats');
+      } else {
+        setLeetcodeStats(data);
+        // Save to localStorage cache
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify({ data, timestamp: Date.now() }));
+        } catch (e) {
+          // Cache write failed, ignore
+        }
+      }
+    } catch (err: any) {
+      console.error('LeetCode fetch error:', err);
+      setLeetcodeError('Failed to fetch LeetCode data. Please try again.');
+    } finally {
+      setLeetcodeLoading(false);
+    }
+  };
+
   const handleSaveProfile = async () => {
     setIsSaving(true);
     setError(null);
@@ -508,6 +596,11 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
         updates.title = formData.title.trim();
       }
 
+      // Save leetcode username for students
+      if (currentUser.userType === 'student') {
+        updates.leetcodeUsername = (formData.leetcodeUsername || '').trim();
+      }
+
       console.log('💾 Updating user profile with:', updates);
       
       await firebaseService.updateUserProfile(currentUser.userId, updates, currentUser);
@@ -515,11 +608,16 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
       setSuccess('Profile updated successfully!');
       setIsEditing(false);
       
-      setTimeout(() => {
-        if (onProfileUpdate) {
-          onProfileUpdate();
-        }
-      }, 2000);
+      // Store the saved leetcodeUsername so it survives re-initialization
+      if (currentUser.userType === 'student' && formData.leetcodeUsername) {
+        savedLeetcodeUsername.current = formData.leetcodeUsername.trim();
+      }
+      
+      // Refresh parent immediately and reinitialize modal with fresh data
+      if (onProfileUpdate) {
+        await onProfileUpdate();
+        setIsInitialized(false);
+      }
       
       setTimeout(() => setSuccess(null), 3000);
     } catch (err: any) {
@@ -831,20 +929,427 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
         }`}
       >
         <div className="h-full flex flex-col">
-          {/* Compact Gradient Header */}
+          {profileView === 'leetcode' ? (
+            /* ===== FULL LEETCODE PROFILE VIEW ===== */
+            <>
+              {/* LeetCode Header */}
+              <div className="relative overflow-hidden rounded-t-2xl" style={{ background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)', minHeight: '140px' }}>
+                <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 20% 80%, #ffa116 0%, transparent 50%), radial-gradient(circle at 80% 20%, #ffa116 0%, transparent 50%)' }}></div>
+                <button onClick={() => { setProfileView('profile'); setShowLeetcodeStats(false); }} className="absolute top-4 left-4 flex items-center gap-1.5 text-white/70 hover:text-white text-sm transition-colors z-50">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                  Back
+                </button>
+                <button onClick={onClose} className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all flex items-center justify-center z-50"><X size={18} /></button>
+
+                {leetcodeStats && (
+                  <div className="relative z-10 flex items-center gap-4 px-6 pt-14 pb-5">
+                    {leetcodeStats.avatar ? (
+                      <img 
+                        src={leetcodeStats.avatar} 
+                        alt="" 
+                        className="w-16 h-16 rounded-xl border-2 border-amber-400/30 shadow-lg" 
+                        crossOrigin="anonymous"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden'); }}
+                      />
+                    ) : null}
+                    <div className={`w-16 h-16 rounded-xl border-2 border-amber-400/30 shadow-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center ${leetcodeStats.avatar ? 'hidden' : ''}`}>
+                      <span className="text-2xl font-black text-amber-600">{(leetcodeStats.username || 'L')[0].toUpperCase()}</span>
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="text-xl font-bold text-white">{leetcodeStats.name || leetcodeStats.username}</h2>
+                      <a href={`https://leetcode.com/u/${leetcodeStats.username}`} target="_blank" rel="noopener noreferrer" className="text-amber-400 text-sm hover:text-amber-300 flex items-center gap-1">
+                        @{leetcodeStats.username} <ExternalLink size={11} />
+                      </a>
+                    </div>
+                    <div className="text-right">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Code2 size={16} className="text-amber-400" />
+                        <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">LeetCode</span>
+                      </div>
+                      {leetcodeStats.ranking > 0 && (
+                        <p className="text-xs text-white/50">Rank #{leetcodeStats.ranking.toLocaleString()}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* LeetCode Content */}
+              <div className="flex-1 overflow-y-auto bg-gray-50">
+                {leetcodeLoading ? (
+                  <div className="flex flex-col items-center justify-center py-20">
+                    <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center mb-4">
+                      <Loader size={24} className="animate-spin text-amber-600" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-600">Fetching LeetCode profile...</p>
+                    <p className="text-xs text-gray-400 mt-1">This may take a few seconds</p>
+                  </div>
+                ) : leetcodeError ? (
+                  <div className="flex flex-col items-center justify-center py-16 px-6">
+                    <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mb-4">
+                      <X size={28} className="text-red-400" />
+                    </div>
+                    <p className="text-base font-semibold text-gray-800 mb-1">Could not load profile</p>
+                    <p className="text-sm text-red-500 mb-5 text-center">{leetcodeError}</p>
+                    <div className="flex gap-3">
+                      <button onClick={() => fetchLeetCodeStats(currentUser?.leetcodeUsername || savedLeetcodeUsername.current || formData.leetcodeUsername || '', true)} className="px-4 py-2 text-sm font-medium text-white rounded-lg" style={{ backgroundColor: '#ffa116' }}>Try Again</button>
+                      <button onClick={() => { setProfileView('profile'); setShowLeetcodeStats(false); }} className="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">Go Back</button>
+                    </div>
+                  </div>
+                ) : leetcodeStats ? (
+                  <div className="p-5 space-y-4">
+
+                    {/* Row 1: Problems Donut + Badges */}
+                    <div className="grid grid-cols-5 gap-4">
+                      {/* Problems Solved - Donut Chart */}
+                      <div className="col-span-3 bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                        <div className="flex items-start gap-5">
+                          {/* SVG Donut */}
+                          <div className="relative flex-shrink-0" style={{ width: '120px', height: '120px' }}>
+                            <svg viewBox="0 0 120 120" className="w-full h-full">
+                              <circle cx="60" cy="60" r="48" fill="none" stroke="#f3f4f6" strokeWidth="12" />
+                              {(() => {
+                                const easy = leetcodeStats.easySolved || 0;
+                                const med = leetcodeStats.mediumSolved || 0;
+                                const hard = leetcodeStats.hardSolved || 0;
+                                const total = leetcodeStats.totalQuestions || 1;
+                                const circumference = 2 * Math.PI * 48;
+                                const easyPct = (easy / total) * circumference;
+                                const medPct = (med / total) * circumference;
+                                const hardPct = (hard / total) * circumference;
+                                let offset = circumference * 0.25; // start from top
+                                const segments = [
+                                  { len: easyPct, color: '#22c55e', offset },
+                                  { len: medPct, color: '#f59e0b', offset: offset - easyPct },
+                                  { len: hardPct, color: '#ef4444', offset: offset - easyPct - medPct },
+                                ];
+                                return segments.map((s, i) => (
+                                  <circle key={i} cx="60" cy="60" r="48" fill="none" stroke={s.color} strokeWidth="12" strokeDasharray={`${s.len} ${circumference - s.len}`} strokeDashoffset={s.offset} strokeLinecap="round" className="transition-all duration-700" />
+                                ));
+                              })()}
+                            </svg>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                              <span className="text-2xl font-black text-gray-900">{leetcodeStats.totalSolved}</span>
+                              <span className="text-xs text-gray-400">/{leetcodeStats.totalQuestions}</span>
+                              <span className="text-xs text-green-500 flex items-center gap-0.5 mt-0.5">
+                                <CheckCircle size={10} /> Solved
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Difficulty Breakdown */}
+                          <div className="flex-1 space-y-3 pt-1">
+                            {[
+                              { label: 'Easy', count: leetcodeStats.easySolved || 0, total: leetcodeStats.totalEasy || 0, color: '#22c55e', bg: '#dcfce7' },
+                              { label: 'Med.', count: leetcodeStats.mediumSolved || 0, total: leetcodeStats.totalMedium || 0, color: '#f59e0b', bg: '#fef3c7' },
+                              { label: 'Hard', count: leetcodeStats.hardSolved || 0, total: leetcodeStats.totalHard || 0, color: '#ef4444', bg: '#fee2e2' },
+                            ].map(d => (
+                              <div key={d.label}>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-bold" style={{ color: d.color }}>{d.label}</span>
+                                  <span className="text-xs text-gray-600 font-semibold">{d.count}<span className="text-gray-400">/{d.total}</span></span>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-2">
+                                  <div className="h-2 rounded-full transition-all duration-500" style={{ width: `${d.total > 0 ? (d.count / d.total) * 100 : 0}%`, backgroundColor: d.color }} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Badges Card */}
+                      <div className="col-span-2 bg-white rounded-2xl p-5 border border-gray-100 shadow-sm flex flex-col">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-xs font-bold text-gray-500 uppercase">Badges</p>
+                          <span className="text-lg font-black text-gray-800">{leetcodeStats.badges?.length || 0}</span>
+                        </div>
+                        {leetcodeStats.badges && leetcodeStats.badges.length > 0 ? (
+                          <div className="flex-1 flex flex-col items-center justify-center">
+                            {leetcodeStats.badges[0]?.icon && (
+                              <img src={leetcodeStats.badges[0].icon} alt="" className="w-14 h-14 mb-2" crossOrigin="anonymous" onError={(e) => (e.target as HTMLImageElement).style.display = 'none'} />
+                            )}
+                            <p className="text-xs text-gray-400">Most Recent Badge</p>
+                            <p className="text-sm font-bold text-gray-800">{leetcodeStats.badges[0]?.name}</p>
+                          </div>
+                        ) : (
+                          <div className="flex-1 flex items-center justify-center text-gray-300">
+                            <Award size={32} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Row 2: Contest Rating Card - Full Width with Line Graph */}
+                    {(leetcodeStats.contestRating > 0 || leetcodeStats.contestsAttended > 0) && (
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                        {/* Header stats row */}
+                        <div className="flex items-center gap-5 mb-1">
+                          <div>
+                            <p className="text-xs text-gray-400 mb-0.5">Contest Rating</p>
+                            <p className="text-3xl font-black text-gray-900">{leetcodeStats.contestRating.toLocaleString()}</p>
+                          </div>
+                          {leetcodeStats.badges?.[0] && (
+                            <div className="flex items-center gap-2 pl-3 border-l border-gray-100">
+                              {leetcodeStats.badges[0].icon && <img src={leetcodeStats.badges[0].icon} alt="" className="w-8 h-8" crossOrigin="anonymous" onError={(e) => (e.target as HTMLImageElement).style.display = 'none'} />}
+                              <div>
+                                <p className="text-xs text-gray-400">Level</p>
+                                <p className="text-sm font-bold text-blue-600">{leetcodeStats.badges[0].name}</p>
+                              </div>
+                            </div>
+                          )}
+                          <div className="ml-auto flex items-center gap-5">
+                            <div className="text-center">
+                              <p className="text-xs text-gray-400">Global Ranking</p>
+                              <p className="text-sm font-bold text-gray-800">{leetcodeStats.contestGlobalRanking > 0 ? `${leetcodeStats.contestGlobalRanking.toLocaleString()}` : '—'}</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="text-xs text-gray-400">Attended</p>
+                              <p className="text-sm font-bold text-gray-800">{leetcodeStats.contestsAttended}</p>
+                            </div>
+                            {leetcodeStats.contestTopPercentage > 0 && (
+                              <div className="text-center">
+                                <p className="text-xs text-gray-400">Top</p>
+                                <p className="text-sm font-bold text-green-600">{leetcodeStats.contestTopPercentage}%</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Contest Rating Line Chart - Interactive */}
+                        {leetcodeStats.contestHistory && leetcodeStats.contestHistory.length > 1 ? (
+                          <div 
+                            className="relative mt-2 cursor-crosshair" 
+                            style={{ height: '130px' }}
+                            onMouseMove={(e) => {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const x = (e.clientX - rect.left) / rect.width;
+                              const idx = Math.round(x * (leetcodeStats.contestHistory.length - 1));
+                              const clamped = Math.max(0, Math.min(leetcodeStats.contestHistory.length - 1, idx));
+                              const el = e.currentTarget.querySelector('[data-tooltip]') as HTMLElement;
+                              const dot = e.currentTarget.querySelector('[data-dot]') as HTMLElement;
+                              const line = e.currentTarget.querySelector('[data-vline]') as HTMLElement;
+                              if (el && dot && line) {
+                                const h = leetcodeStats.contestHistory[clamped];
+                                const ratings = leetcodeStats.contestHistory.map((r: any) => r.rating);
+                                const minR = Math.min(...ratings) - 100;
+                                const maxR = Math.max(...ratings) + 100;
+                                const range = maxR - minR || 1;
+                                const px = (clamped / (leetcodeStats.contestHistory.length - 1)) * 100;
+                                const py = 100 - ((h.rating - minR) / range) * 85;
+                                dot.style.left = `${px}%`;
+                                dot.style.top = `${py}%`;
+                                dot.style.display = 'block';
+                                line.style.left = `${px}%`;
+                                line.style.display = 'block';
+                                el.style.left = `${Math.min(Math.max(px, 15), 85)}%`;
+                                el.style.display = 'block';
+                                el.innerHTML = `<div class="text-xs font-bold text-gray-800">${h.rating.toLocaleString()}</div><div class="text-xs text-gray-400">${h.title || ''}</div>${h.timestamp ? `<div class="text-xs text-gray-400">${new Date(h.timestamp * 1000).toLocaleDateString()}</div>` : ''}`;
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              const el = e.currentTarget.querySelector('[data-tooltip]') as HTMLElement;
+                              const dot = e.currentTarget.querySelector('[data-dot]') as HTMLElement;
+                              const line = e.currentTarget.querySelector('[data-vline]') as HTMLElement;
+                              if (el) el.style.display = 'none';
+                              if (dot) dot.style.display = 'none';
+                              if (line) line.style.display = 'none';
+                            }}
+                          >
+                            {/* SVG Chart */}
+                            <svg viewBox="0 0 500 130" className="w-full h-full" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0 }}>
+                              {(() => {
+                                const history = leetcodeStats.contestHistory;
+                                const ratings = history.map((h: any) => h.rating);
+                                const minR = Math.min(...ratings) - 100;
+                                const maxR = Math.max(...ratings) + 100;
+                                const range = maxR - minR || 1;
+                                const pts = history.map((h: any, i: number) => {
+                                  const x = (i / (history.length - 1)) * 480 + 10;
+                                  const y = 115 - ((h.rating - minR) / range) * 95;
+                                  return `${x},${y}`;
+                                });
+                                const line = pts.join(' ');
+                                const firstYear = history[0]?.timestamp ? new Date(history[0].timestamp * 1000).getFullYear() : '';
+                                const lastYear = history[history.length - 1]?.timestamp ? new Date(history[history.length - 1].timestamp * 1000).getFullYear() : '';
+                                return (
+                                  <>
+                                    <defs>
+                                      <linearGradient id="lcRatingGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.25" />
+                                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.02" />
+                                      </linearGradient>
+                                    </defs>
+                                    <polygon points={`10,118 ${line} 490,118`} fill="url(#lcRatingGrad)" />
+                                    <polyline points={line} fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                                    {firstYear && <text x="12" y="128" fill="#9ca3af" fontSize="10">{firstYear}</text>}
+                                    {lastYear && <text x="488" y="128" fill="#9ca3af" fontSize="10" textAnchor="end">{lastYear}</text>}
+                                  </>
+                                );
+                              })()}
+                            </svg>
+                            {/* Hover vertical line */}
+                            <div data-vline="" className="absolute top-0 bottom-4 w-px bg-amber-300/50 pointer-events-none" style={{ display: 'none', transform: 'translateX(-50%)' }}></div>
+                            {/* Hover dot */}
+                            <div data-dot="" className="absolute w-3 h-3 rounded-full bg-white border-2 border-amber-500 pointer-events-none shadow-sm" style={{ display: 'none', transform: 'translate(-50%, -50%)' }}></div>
+                            {/* Tooltip */}
+                            <div data-tooltip="" className="absolute pointer-events-none bg-white rounded-lg shadow-lg border border-gray-100 px-3 py-2 -top-2" style={{ display: 'none', transform: 'translate(-50%, -100%)', zIndex: 10 }}></div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-400 text-center py-6">Not enough contest data for chart</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Row 3: Top Percentile Card - Full Width */}
+                    {leetcodeStats.contestHistory && leetcodeStats.contestHistory.length > 0 && (
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                        <div className="flex items-start justify-between mb-3">
+                          <div>
+                            <p className="text-xs text-gray-400">Top</p>
+                            <p className="text-3xl font-black text-gray-900">{leetcodeStats.contestTopPercentage > 0 ? `${leetcodeStats.contestTopPercentage}%` : '—'}</p>
+                          </div>
+                          <div className="flex items-center gap-4 text-right">
+                            <div>
+                              <p className="text-xs text-gray-400">Rating Range</p>
+                              <p className="text-xs font-semibold text-gray-600">
+                                {(() => {
+                                  const ratings = leetcodeStats.contestHistory.map((h: any) => h.rating);
+                                  return `${Math.min(...ratings).toLocaleString()} – ${Math.max(...ratings).toLocaleString()}`;
+                                })()}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        {/* Rating Distribution Histogram - Interactive */}
+                        <div className="relative flex items-end gap-0.5" style={{ height: '80px' }}>
+                          {(() => {
+                            const history = leetcodeStats.contestHistory;
+                            const ratings = history.map((h: any) => h.rating);
+                            const minR = Math.floor(Math.min(...ratings) / 100) * 100;
+                            const maxR = Math.ceil(Math.max(...ratings) / 100) * 100;
+                            const bucketSize = Math.max(50, Math.round((maxR - minR) / 20));
+                            const bucketRanges: { from: number; to: number; count: number }[] = [];
+                            for (let b = minR; b <= maxR; b += bucketSize) {
+                              bucketRanges.push({
+                                from: b,
+                                to: b + bucketSize,
+                                count: ratings.filter((r: number) => r >= b && r < b + bucketSize).length
+                              });
+                            }
+                            const maxCount = Math.max(...bucketRanges.map(b => b.count), 1);
+                            const currentBucket = Math.floor((ratings[ratings.length - 1] - minR) / bucketSize);
+                            return bucketRanges.map((bucket, i) => (
+                              <div
+                                key={i}
+                                className="flex-1 relative group cursor-pointer"
+                                style={{ height: '100%', display: 'flex', alignItems: 'flex-end' }}
+                              >
+                                <div
+                                  className="w-full rounded-t-sm transition-all group-hover:opacity-80"
+                                  style={{
+                                    height: `${Math.max(3, (bucket.count / maxCount) * 100)}%`,
+                                    backgroundColor: i === currentBucket ? '#f59e0b' : '#d1d5db',
+                                  }}
+                                />
+                                {/* Tooltip */}
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-20 pointer-events-none">
+                                  <div className="bg-gray-800 text-white rounded-lg px-2.5 py-1.5 text-xs whitespace-nowrap shadow-lg">
+                                    <p className="font-semibold">{bucket.from.toLocaleString()} – {bucket.to.toLocaleString()}</p>
+                                    <p className="text-gray-300">{bucket.count} contest{bucket.count !== 1 ? 's' : ''}</p>
+                                  </div>
+                                  <div className="w-2 h-2 bg-gray-800 rotate-45 mx-auto -mt-1"></div>
+                                </div>
+                              </div>
+                            ));
+                          })()}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Row 3: Stats Grid */}
+                    <div className="grid grid-cols-4 gap-3">
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm text-center">
+                        <Flame size={18} className="text-orange-500 mx-auto mb-1.5" />
+                        <p className="text-xl font-black text-gray-900">{leetcodeStats.currentStreak ?? leetcodeStats.streak ?? 0}</p>
+                        <p className="text-xs text-gray-400">Streak</p>
+                      </div>
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm text-center">
+                        <Flame size={18} className="text-red-500 mx-auto mb-1.5" />
+                        <p className="text-xl font-black text-gray-900">{leetcodeStats.maxStreak || 0}</p>
+                        <p className="text-xs text-gray-400">Max Streak</p>
+                      </div>
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm text-center">
+                        <Calendar size={18} className="text-indigo-500 mx-auto mb-1.5" />
+                        <p className="text-xl font-black text-gray-900">{leetcodeStats.totalActiveDays || 0}</p>
+                        <p className="text-xs text-gray-400">Active Days</p>
+                      </div>
+                      <div className="bg-white rounded-xl p-4 border border-gray-100 shadow-sm text-center">
+                        <CheckCircle size={18} className="text-green-500 mx-auto mb-1.5" />
+                        <p className="text-xl font-black text-gray-900">{leetcodeStats.acceptanceRate || 0}%</p>
+                        <p className="text-xs text-gray-400">Acceptance</p>
+                      </div>
+                    </div>
+
+                    {/* Row 4: Recent Submissions */}
+                    {leetcodeStats.recentSubmissions && leetcodeStats.recentSubmissions.length > 0 && (
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Recent Submissions</h4>
+                        <div className="space-y-1.5">
+                          {leetcodeStats.recentSubmissions.map((sub: any, i: number) => (
+                            <a key={i} href={`https://leetcode.com/problems/${sub.slug}`} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition-colors group">
+                              <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${(sub.status || sub.statusDisplay) === 'Accepted' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                                  {(sub.status || sub.statusDisplay) === 'Accepted' ? '✓' : '✗'}
+                                </span>
+                                <span className="text-sm text-gray-700 truncate group-hover:text-gray-900">{sub.title}</span>
+                              </div>
+                              <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                                <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded font-mono">{sub.lang}</span>
+                                {sub.timestamp && <span className="text-xs text-gray-300">{new Date(sub.timestamp * 1000).toLocaleDateString()}</span>}
+                              </div>
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* All Badges */}
+                    {leetcodeStats.badges && leetcodeStats.badges.length > 1 && (
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">All Badges</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {leetcodeStats.badges.map((badge: any, i: number) => (
+                            <div key={i} className="flex items-center gap-2 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/50 rounded-full px-3 py-1.5">
+                              {badge.icon && <img src={badge.icon} alt="" className="w-5 h-5" crossOrigin="anonymous" onError={(e) => (e.target as HTMLImageElement).style.display = 'none'} />}
+                              <span className="text-xs font-semibold text-amber-800">{badge.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Cache Info */}
+                    {leetcodeStats.fromCache && (
+                      <p className="text-xs text-gray-400 text-center flex items-center justify-center gap-1">
+                        <Clock size={10} /> Cached data • <button onClick={() => fetchLeetCodeStats(currentUser?.leetcodeUsername || savedLeetcodeUsername.current || formData.leetcodeUsername || '', true)} className="underline hover:text-gray-600">Refresh</button>
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </>
+          ) : (
+          <>
+          {/* Compact Header - Profile pic left, name/role right */}
           <div 
             className="relative overflow-hidden rounded-t-2xl"
             style={{ 
               background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,
-              minHeight: '200px'
             }}
           >
-            {/* Decorative elements */}
             <div className="absolute inset-0 opacity-20" style={{ background: roleConfig.pattern }}></div>
-            <div className="absolute top-4 left-8 w-20 h-20 bg-white/10 rounded-full blur-xl animate-pulse"></div>
-            <div className="absolute bottom-4 right-8 w-24 h-24 bg-white/10 rounded-full blur-xl animate-pulse" style={{ animationDelay: '1s' }}></div>
 
-            {/* Close button */}
             <button
               onClick={onClose}
               className="absolute top-4 right-4 w-8 h-8 rounded-lg bg-white/20 hover:bg-white/30 backdrop-blur-md text-white transition-all flex items-center justify-center z-50"
@@ -853,41 +1358,33 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
               <X size={18} />
             </button>
 
-            {/* Profile content - more compact */}
-            <div className="relative z-10 flex flex-col items-center justify-center h-full pt-6 pb-4">
-              {/* Profile Picture - smaller */}
-              <div className="relative group mb-3">
-                <div 
-                  className="absolute -inset-1 rounded-full blur-md opacity-50 group-hover:opacity-75 transition-opacity"
-                  style={{ background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)` }}
-                ></div>
-                
-                <div className="relative w-24 h-24 rounded-full border-4 border-white shadow-xl overflow-hidden bg-white">
+            <div className="relative z-10 flex items-center gap-4 px-6 py-5">
+              <div className="relative group flex-shrink-0">
+                <div className="relative w-16 h-16 rounded-full border-3 border-white shadow-xl overflow-hidden bg-white">
                   {profilePictureUrl ? (
                     <img 
                       src={profilePictureUrl} 
-                      alt={currentUser.fullName}
+                      alt={currentUser?.fullName || 'Profile'}
                       className="w-full h-full object-cover"
                       key={profilePictureUrl}
                     />
                   ) : (
-                    <div className={`w-full h-full flex items-center justify-center text-4xl bg-gradient-to-br ${roleConfig.gradient}`}>
+                    <div className={`w-full h-full flex items-center justify-center text-2xl bg-gradient-to-br ${roleConfig.gradient}`}>
                       <span className="drop-shadow-lg">{roleConfig.icon}</span>
                     </div>
                   )}
                   
-                  {/* Camera and upload buttons */}
                   {isEditing && (
-                    <div className="absolute inset-0 bg-black/50 hover:bg-black/70 transition-all flex items-center justify-center gap-2">
+                    <div className="absolute inset-0 bg-black/50 hover:bg-black/70 transition-all flex items-center justify-center gap-1">
                       <label 
                         htmlFor="profile-picture-upload"
-                        className="cursor-pointer p-2 bg-white/20 rounded-full hover:bg-white/30 transition-all"
+                        className="cursor-pointer p-1.5 bg-white/20 rounded-full hover:bg-white/30 transition-all"
                         title="Upload from computer"
                       >
                         {isUploading ? (
-                          <Clock size={16} className="text-white animate-spin" />
+                          <Clock size={12} className="text-white animate-spin" />
                         ) : (
-                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                           </svg>
                         )}
@@ -896,11 +1393,11 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                       <button
                         type="button"
                         onClick={() => startCamera('profile')}
-                        className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition-all"
+                        className="p-1.5 bg-white/20 rounded-full hover:bg-white/30 transition-all"
                         title="Take photo with camera"
                         disabled={isUploading}
                       >
-                        <Camera size={16} className="text-white" />
+                        <Camera size={12} className="text-white" />
                       </button>
                     </div>
                   )}
@@ -917,21 +1414,18 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                 />
               </div>
 
-              {/* Name - smaller font */}
-              <h2 className="text-xl font-bold text-white mb-1 text-center px-4">
-                {formData.fullName || currentUser?.fullName || 'User'}
-              </h2>
-              
-              {/* Role badge - more compact */}
-              <div className="flex items-center space-x-1.5 text-white/90 text-sm">
-                <span className="text-lg">{roleConfig.icon}</span>
-                <span className="font-semibold">{roleConfig.label}</span>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-lg font-bold text-white truncate">
+                  {formData.fullName || currentUser?.fullName || 'User'}
+                </h2>
+                <div className="flex items-center space-x-1.5 text-white/90 text-sm mt-0.5">
+                  <span className="text-base">{roleConfig.icon}</span>
+                  <span className="font-semibold">{roleConfig.label}</span>
+                </div>
+                {currentUser?.userType !== 'student' && formData.title && (
+                  <p className="text-white/70 text-xs mt-0.5 truncate">{formData.title}</p>
+                )}
               </div>
-
-              {/* Title/Designation - smaller */}
-              {currentUser?.userType !== 'student' && formData.title && (
-                <p className="text-white/70 text-xs mt-1 px-4 text-center line-clamp-1">{formData.title}</p>
-              )}
             </div>
           </div>
 
@@ -1305,6 +1799,61 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
               </div>
             )}
 
+            {/* Coding Profiles (Students) */}
+            {currentUser?.userType === 'student' && (
+              <div className="mb-6">
+                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+                  Coding Profiles
+                </h3>
+                {isEditing ? (
+                  <div className="border border-dashed border-gray-200 rounded-xl p-4 bg-white">
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                        <Code2 size={16} className="text-amber-600" />
+                      </div>
+                      <p className="text-sm font-semibold text-gray-700">LeetCode Username</p>
+                    </div>
+                    <input
+                      type="text"
+                      value={formData.leetcodeUsername || ''}
+                      onChange={(e) => setFormData({...formData, leetcodeUsername: e.target.value})}
+                      placeholder="e.g. neal_wu"
+                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:border-transparent"
+                    />
+                  </div>
+                ) : (currentUser.leetcodeUsername || savedLeetcodeUsername.current || formData.leetcodeUsername) ? (
+                  <button
+                    onClick={() => fetchLeetCodeStats(currentUser.leetcodeUsername || savedLeetcodeUsername.current || formData.leetcodeUsername || '')}
+                    className="w-full group"
+                  >
+                    <div className="relative overflow-hidden rounded-xl border border-dashed border-gray-200 bg-white p-4 transition-all hover:shadow-lg hover:scale-[1.01]">
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center flex-shrink-0">
+                          <Code2 size={20} className="text-amber-600" />
+                        </div>
+                        <div className="flex-1 text-left">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-gray-900">LeetCode</span>
+                            <span className="text-xs text-amber-600 font-medium">@{currentUser.leetcodeUsername || savedLeetcodeUsername.current || formData.leetcodeUsername}</span>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-0.5">Tap to view full profile & stats</p>
+                        </div>
+                        <div className="w-8 h-8 rounded-full bg-amber-50 flex items-center justify-center group-hover:bg-amber-100 transition-colors flex-shrink-0">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                ) : (
+                  <div className="border border-dashed border-gray-200 rounded-xl p-4 bg-white text-center">
+                    <Code2 size={24} className="text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-400">No coding profiles linked</p>
+                    <p className="text-xs text-gray-300 mt-1">Edit profile to add your LeetCode username</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Teaching Information (Teachers) */}
             {currentUser?.userType === 'teacher' && (
               <div className="mb-6">
@@ -1475,7 +2024,8 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                       studentClass: currentUser?.studentClass || '',
                       board: currentUser?.board || '',
                       teacherClasses: currentUser?.teacherClasses || [],
-                      teacherSubjects: currentUser?.teacherSubjects || []
+                      teacherSubjects: currentUser?.teacherSubjects || [],
+                      leetcodeUsername: currentUser?.leetcodeUsername || ''
                     });
                     setError(null);
                   }}
@@ -1504,7 +2054,9 @@ export default function UserProfile({ isOpen, onClose, currentUser, onProfileUpd
                 </button>
               </div>
             )}
-          </div>
+            </div>
+          </>
+          )}
         </div>
       </div>
 

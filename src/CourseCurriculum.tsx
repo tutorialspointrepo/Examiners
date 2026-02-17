@@ -52,6 +52,7 @@ import {
   faClipboardList,
   faCheckCircle,
   faTimesCircle,
+  faBookOpen,
 } from '@fortawesome/sharp-light-svg-icons';
 import videojs from 'video.js';
 import Editor from '@monaco-editor/react';
@@ -63,6 +64,8 @@ import htmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker';
 // PGlite is imported dynamically in handleRunExerciseCode
 import { useBrand } from './BrandContext';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ProfileDropdown from './ProfileDropdown';
 import AILearningAssistant from './AILearningAssistant';
 import SQLHelpModal from './SQLHelpModal';
@@ -139,6 +142,7 @@ interface CourseCurriculumProps {
   collegeName?: string;
   brandTheme?: any;
   enrollmentId?: string; // Only for enrolled students
+  initialLectureId?: number; // Auto-select this lecture on load
   // ProfileDropdown callbacks
   onEditProfile?: () => void;
   onDownloadBrowser?: () => void;
@@ -152,7 +156,7 @@ interface CourseCurriculumProps {
 }
 
 // Nuevo Plugin License Key
-const NUEVO_LICENSE_KEY = "1012455c160e505f17175e5a0a131f500b0a";
+const NUEVO_LICENSE_KEY = "011f505e0d0954411749504314";
 
 // Logo Component
 function Logo({ size = 'medium', showText = true, brand, collegeName }: { size?: 'small' | 'medium' | 'large', showText?: boolean, brand: any, collegeName?: string }) {
@@ -245,6 +249,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
   currentUser,
   collegeName,
   enrollmentId,
+  initialLectureId,
   onEditProfile,
   onDownloadBrowser,
   onViewLoginDetails,
@@ -322,6 +327,45 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
   const [pgliteReady, setPgliteReady] = useState(false);
   const [pgliteLoading, setPgliteLoading] = useState(false);
   const [showSQLHelpModal, setShowSQLHelpModal] = useState(false);
+
+  // ===== Lecture Progress Tracking =====
+  const [courseProgress, setCourseProgress] = useState<any>({ completedLectures: [], lectures: {}, percentage: 0, totalTimeSpent: 0 });
+  const [readingElapsed, setReadingElapsed] = useState(0);
+  const [readingTotalTime, setReadingTotalTime] = useState(0);
+  const [readingCompleted, setReadingCompleted] = useState(false);
+  const readingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const readingElapsedRef = useRef(0);
+  const readingCompletedSavedRef = useRef(false);
+  const readingSaveCounterRef = useRef(0);
+  const progressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const contentScrollRef = useRef<HTMLDivElement>(null);
+  const lectureStartTimeRef = useRef<number>(0);
+  const lastProgressSaveRef = useRef<number>(0);
+  const [videoWatchPercent, setVideoWatchPercent] = useState(0); // 0-100
+  const [videoCompleted, setVideoCompleted] = useState(false);
+  const videoProgressSaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const videoMaxReachedRef = useRef<number>(0); // max percentage reached during this session
+  const videoSaveCounterRef = useRef(0); // seconds since last periodic video save
+  const videoIsPlayingRef = useRef(false); // tracks if video is actually playing
+
+  // Count total lectures across all sections/chapters
+  const totalLectures = curriculumData.reduce((acc: number, sec: any) => 
+    acc + (sec.chapters || []).reduce((a: number, ch: any) => a + (ch.items || []).length, 0), 0);
+
+  // ===== Student Learning Detail helper =====
+  const getUserId = () => currentUser?.userId || currentUser?.uid || '';
+  const getCollegeId = () => currentUser?.collegeId || '';
+  const isStudentEnrolled = () => !!(enrollmentId && currentUser?.userType === 'student' && getUserId() && getCollegeId());
+
+  const updateLearningDetail = useCallback((data: {
+    timeSpent?: number;
+    lastLectureId?: string;
+    lastLectureTitle?: string;
+    lastChapterName?: string;
+  }) => {
+    if (!isStudentEnrolled()) return;
+    firebaseService.updateLearningDetailProgress(getUserId(), getCollegeId(), courseSlug, data);
+  }, [enrollmentId, currentUser?.userId, currentUser?.uid, currentUser?.collegeId, currentUser?.userType, courseSlug]);
 
   // Exercise submission state
   const [isSubmittingExercise, setIsSubmittingExercise] = useState(false);
@@ -505,6 +549,407 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
     };
   }, [quizStage, quizStartTime]);
 
+  // ===== Load enrollment progress on mount =====
+  useEffect(() => {
+    if (!enrollmentId) {
+      console.log('⚠️ No enrollmentId — progress tracking disabled');
+      return;
+    }
+    console.log('🔵 Loading progress for enrollmentId:', enrollmentId);
+    firebaseService.getEnrollmentProgress(enrollmentId).then(progress => {
+      const data = progress || { completedLectures: [], lectures: {}, percentage: 0, totalTimeSpent: 0 };
+      setCourseProgress(data);
+      console.log('📊 Loaded course progress:', JSON.stringify({
+        enrollmentId,
+        completedLectures: data.completedLectures,
+        lecturesTracked: data.lectures ? Object.keys(data.lectures) : [],
+        percentage: data.percentage,
+      }));
+    }).catch(err => {
+      console.error('🔴 Error loading progress:', err);
+      setCourseProgress({ completedLectures: [], lectures: {}, percentage: 0, totalTimeSpent: 0 });
+    });
+  }, [enrollmentId]);
+
+  // ===== Per-minute progress saver (for ALL lecture types) =====
+  useEffect(() => {
+    // Clear previous timer
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+
+    if (!enrollmentId || !selectedLecture) {
+      console.log('⚠️ Progress tracker skipped:', { enrollmentId: enrollmentId || 'MISSING', selectedLecture: selectedLecture?.title || 'NONE' });
+      return;
+    }
+
+    const lectureId = selectedLecture.id.toString();
+    const lectureType = selectedLecture.type?.toLowerCase();
+    lectureStartTimeRef.current = Date.now();
+    lastProgressSaveRef.current = Date.now();
+
+    console.log('🟢 PROGRESS TRACKER STARTED', {
+      enrollmentId,
+      lectureId,
+      lectureType,
+      lectureTitle: selectedLecture.title,
+    });
+
+    // Update lastLectureId immediately when lecture is selected
+    firebaseService.updateLectureProgress(enrollmentId, lectureId, {
+      lectureType: lectureType,
+      lectureTitle: selectedLecture.title,
+      status: 'in-progress',
+    }).then(result => {
+      console.log('🟢 Initial progress save result:', result, '| enrollmentId:', enrollmentId, '| lectureId:', lectureId);
+    }).catch(err => {
+      console.error('🔴 Initial progress save FAILED:', err);
+    });
+
+    // Update student learning detail with current lecture info
+    updateLearningDetail({
+      lastLectureId: lectureId,
+      lastLectureTitle: selectedLecture.title,
+      lastChapterName: currentChapterName,
+    });
+
+    // Save progress every 60 seconds (text/video lectures have their own dedicated timers for timeSpent)
+    progressTimerRef.current = setInterval(() => {
+      if (lectureType === 'text' || lectureType === 'video') return;
+      const now = Date.now();
+      const secondsSinceLastSave = Math.floor((now - lastProgressSaveRef.current) / 1000);
+      lastProgressSaveRef.current = now;
+
+      firebaseService.updateLectureProgress(enrollmentId, lectureId, {
+        timeSpent: secondsSinceLastSave,
+        lectureType: lectureType,
+      });
+      console.log(`⏱️ Progress saved: +${secondsSinceLastSave}s for "${selectedLecture.title}"`);
+    }, 60000);
+
+    // Save on unmount/switch
+    return () => {
+      if (progressTimerRef.current) {
+        clearInterval(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+      if (lectureType === 'text' || lectureType === 'video') return;
+      const secondsSinceLastSave = Math.floor((Date.now() - lastProgressSaveRef.current) / 1000);
+      if (secondsSinceLastSave > 5 && enrollmentId) {
+        firebaseService.updateLectureProgress(enrollmentId, lectureId, {
+          timeSpent: secondsSinceLastSave,
+          lectureType: lectureType,
+        });
+      }
+    };
+  }, [selectedLecture?.id, enrollmentId, currentUser?.userType]);
+
+  // Ref to always have latest courseProgress without triggering effects
+  const courseProgressRef = useRef(courseProgress);
+  courseProgressRef.current = courseProgress;
+  readingElapsedRef.current = readingElapsed;
+
+  // ===== Pause timers when browser tab is hidden =====
+  const [isTabVisible, setIsTabVisible] = useState(true);
+  const isTabVisibleRef = useRef(true);
+  isTabVisibleRef.current = isTabVisible;
+  useEffect(() => {
+    const handleVisibility = () => {
+      const visible = !document.hidden;
+      setIsTabVisible(visible);
+      console.log(`👁️ Tab ${visible ? 'visible' : 'hidden'}`);
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
+  // ===== Reading Timer (text lectures) — scroll-aware =====
+  // Timer ticks only when there are unread visible words.
+  // wordsReadPercent (timer) must not exceed contentSeenPercent (scroll).
+  // When user scrolls to reveal new words, timer resumes.
+  useEffect(() => {
+    if (readingTimerRef.current) {
+      clearInterval(readingTimerRef.current);
+      readingTimerRef.current = null;
+    }
+
+    const type = selectedLecture?.type?.toLowerCase();
+    if (type !== 'text' || !selectedLecture?.isContentLoaded || !selectedLecture?.textContent) {
+      setReadingElapsed(0);
+      setReadingTotalTime(0);
+      setReadingCompleted(false);
+      return;
+    }
+
+    const lectureId = selectedLecture.id.toString();
+    const completedList = courseProgressRef.current?.completedLectures || [];
+    const localLectureProgress = courseProgressRef.current?.lectures?.[lectureId];
+    const isAlreadyCompleted = localLectureProgress?.status === 'completed' || 
+      completedList.some((id: any) => id?.toString() === lectureId);
+
+    if (isAlreadyCompleted) {
+      setReadingCompleted(true);
+      setReadingElapsed(1);
+      setReadingTotalTime(1);
+      return;
+    }
+
+    // Total time = words / 80 wpm
+    const textOnly = selectedLecture.textContent.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+    const wordCount = textOnly ? textOnly.split(/\s+/).length : 0;
+    const totalSeconds = Math.max(30, Math.ceil(wordCount / 80) * 60);
+
+    // Fetch fresh timeSpent from Firestore then start timer
+    let cancelled = false;
+    const startTimer = (savedTimeSpent: number) => {
+      if (cancelled) return;
+
+      // Already fully read — mark completed immediately
+      if (savedTimeSpent >= totalSeconds) {
+        setReadingTotalTime(totalSeconds);
+        setReadingElapsed(totalSeconds);
+        setReadingCompleted(true);
+        readingElapsedRef.current = totalSeconds;
+        readingCompletedSavedRef.current = true;
+        readingSaveCounterRef.current = 0;
+        console.log('📖 Already fully read, marking completed:', { lectureId, savedTimeSpent, totalSeconds });
+
+        if (enrollmentId) {
+          firebaseService.updateLectureProgress(enrollmentId, lectureId, {
+            status: 'completed',
+            timeSpent: 0,
+            lectureType: 'text',
+            lectureTitle: selectedLecture.title,
+          }, totalLectures).then(success => {
+            if (success) {
+              setCourseProgress((prev: any) => ({
+                ...prev,
+                completedLectures: [...(prev?.completedLectures || []), lectureId],
+                lectures: {
+                  ...prev?.lectures,
+                  [lectureId]: { ...prev?.lectures?.[lectureId], status: 'completed' },
+                },
+              }));
+              // Update student learning detail
+              if (isStudentEnrolled()) {
+                const pct = Math.round(((courseProgressRef.current?.completedLectures?.length || 0) + 1) / totalLectures * 100);
+                firebaseService.markLectureCompletedInLearningDetail(getUserId(), getCollegeId(), courseSlug, {
+                  courseName, lectureTitle: selectedLecture.title, lectureType: 'text', percentage: pct,
+                });
+              }
+            }
+          });
+        }
+        return;
+      }
+
+      const resumeElapsed = Math.min(savedTimeSpent, totalSeconds);
+
+      setReadingTotalTime(totalSeconds);
+      setReadingElapsed(resumeElapsed);
+      setReadingCompleted(false);
+      readingElapsedRef.current = resumeElapsed;
+      readingCompletedSavedRef.current = false;
+      readingSaveCounterRef.current = 0;
+
+      console.log('📖 Reading started:', { 
+        lectureId,
+        wordCount, 
+        totalSeconds, 
+        savedTimeSpent,
+        resumeElapsed,
+      });
+
+      // Helper: get % of content user has seen (scroll position + viewport)
+      const getContentSeenPercent = () => {
+        const container = contentScrollRef.current;
+        if (!container) return 100;
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        if (scrollHeight <= clientHeight) return 100; // All content fits
+        return Math.min(Math.round(((scrollTop + clientHeight) / scrollHeight) * 100), 100);
+      };
+
+      let saveCounter = 0;
+      readingTimerRef.current = setInterval(() => {
+        if (!isTabVisibleRef.current) return; // Pause when tab hidden
+
+        setReadingElapsed(prev => {
+          // What % of words have been "read" by timer so far
+          const wordsReadPercent = Math.round((prev / totalSeconds) * 100);
+          // What % of content user has scrolled to see
+          const contentSeenPercent = getContentSeenPercent();
+
+          // Pause if timer has caught up with visible content
+          // (user needs to scroll to reveal more words)
+          if (wordsReadPercent >= contentSeenPercent) {
+            return prev; // Don't advance
+          }
+
+          const next = prev + 1;
+          readingElapsedRef.current = next;
+
+          // Auto-complete when timer finishes (guard prevents duplicate saves)
+          if (next >= totalSeconds && !readingCompletedSavedRef.current) {
+            readingCompletedSavedRef.current = true;
+            clearInterval(readingTimerRef.current!);
+            readingTimerRef.current = null;
+            setReadingCompleted(true);
+
+            if (enrollmentId) {
+              const remainingTime = saveCounter > 0 ? saveCounter : 0;
+              firebaseService.updateLectureProgress(enrollmentId, lectureId, {
+                status: 'completed',
+                timeSpent: remainingTime,
+                lectureType: 'text',
+                lectureTitle: selectedLecture.title,
+              }, totalLectures).then(success => {
+                if (success) {
+                  console.log('✅ Reading completed:', selectedLecture.title);
+                  setCourseProgress((prev: any) => ({
+                    ...prev,
+                    completedLectures: [...(prev?.completedLectures || []), lectureId],
+                    lectures: {
+                      ...prev?.lectures,
+                      [lectureId]: { ...prev?.lectures?.[lectureId], status: 'completed' },
+                    },
+                  }));
+                  // Update student learning detail
+                  if (isStudentEnrolled()) {
+                    const pct = Math.round(((courseProgressRef.current?.completedLectures?.length || 0) + 1) / totalLectures * 100);
+                    firebaseService.markLectureCompletedInLearningDetail(getUserId(), getCollegeId(), courseSlug, {
+                      courseName, lectureTitle: selectedLecture.title, lectureType: 'text', percentage: pct,
+                    });
+                  }
+                }
+              });
+            }
+          }
+
+          // Save reading progress every 30 seconds
+          saveCounter++;
+          readingSaveCounterRef.current = saveCounter;
+          if (saveCounter >= 30 && enrollmentId) {
+            saveCounter = 0;
+            readingSaveCounterRef.current = 0;
+            console.log('💾 Periodic reading save: +30s', { lectureId, elapsed: next, totalSeconds });
+            firebaseService.updateLectureProgress(enrollmentId, lectureId, {
+              timeSpent: 30,
+              lectureType: 'text',
+            });
+            // Update student learning detail
+            updateLearningDetail({ timeSpent: 30 });
+            // Update local state so resume works when switching lectures
+            setCourseProgress((prev: any) => ({
+              ...prev,
+              lectures: {
+                ...prev?.lectures,
+                [lectureId]: { ...prev?.lectures?.[lectureId], timeSpent: next },
+              },
+            }));
+          }
+
+          return next;
+        });
+      }, 1000);
+    };
+
+    // Fetch fresh progress from DB to get accurate timeSpent
+    if (enrollmentId) {
+      firebaseService.getEnrollmentProgress(enrollmentId).then(progress => {
+        const dbTimeSpent = progress?.lectures?.[lectureId]?.timeSpent || 0;
+        // Also update local state with fresh data
+        if (progress?.lectures?.[lectureId]) {
+          setCourseProgress((prev: any) => ({
+            ...prev,
+            lectures: {
+              ...prev?.lectures,
+              [lectureId]: { ...prev?.lectures?.[lectureId], ...progress.lectures[lectureId] },
+            },
+          }));
+        }
+        startTimer(dbTimeSpent);
+      }).catch(() => {
+        startTimer(0);
+      });
+    } else {
+      startTimer(0);
+    }
+
+    return () => {
+      cancelled = true;
+      if (readingTimerRef.current) {
+        clearInterval(readingTimerRef.current);
+        readingTimerRef.current = null;
+      }
+      if (enrollmentId && !readingCompletedSavedRef.current) {
+        const currentElapsed = readingElapsedRef.current;
+        const unsavedSeconds = readingSaveCounterRef.current;
+        console.log('📖 Cleanup: saving reading timeSpent', { lectureId, currentElapsed, totalSeconds, unsavedSeconds });
+        if (unsavedSeconds > 0) {
+          firebaseService.updateLectureProgress(enrollmentId, lectureId, {
+            timeSpent: unsavedSeconds,
+            lectureType: 'text',
+          });
+          // Update student learning detail
+          updateLearningDetail({ timeSpent: unsavedSeconds });
+        }
+        setCourseProgress((prev: any) => ({
+          ...prev,
+          lectures: {
+            ...prev?.lectures,
+            [lectureId]: { ...prev?.lectures?.[lectureId], timeSpent: currentElapsed },
+          },
+        }));
+      }
+      readingCompletedSavedRef.current = false;
+      readingSaveCounterRef.current = 0;
+    };
+  }, [selectedLecture?.id, selectedLecture?.isContentLoaded, selectedLecture?.type]);
+
+  // ===== Mark video as completed when watched >= 90% or ended =====
+  useEffect(() => {
+    if (!videoCompleted || !enrollmentId || !selectedLecture) return;
+    if (selectedLecture.type?.toLowerCase() !== 'video') return;
+
+    const lectureId = selectedLecture.id.toString();
+    // Check if already saved
+    const completedList = courseProgressRef.current?.completedLectures || [];
+    if (completedList.some((id: any) => id?.toString() === lectureId)) return;
+
+    firebaseService.updateLectureProgress(enrollmentId, lectureId, {
+      status: 'completed',
+      lectureType: 'video',
+      lectureTitle: selectedLecture.title,
+    }, totalLectures).then(success => {
+      if (success) {
+        console.log('✅ Video completed:', selectedLecture.title);
+        setCourseProgress((prev: any) => ({
+          ...prev,
+          completedLectures: [...(prev?.completedLectures || []), lectureId],
+          lectures: {
+            ...prev?.lectures,
+            [lectureId]: { ...prev?.lectures?.[lectureId], status: 'completed' },
+          },
+        }));
+        // Update student learning detail
+        if (isStudentEnrolled()) {
+          const pct = Math.round(((courseProgressRef.current?.completedLectures?.length || 0) + 1) / totalLectures * 100);
+          firebaseService.markLectureCompletedInLearningDetail(getUserId(), getCollegeId(), courseSlug, {
+            courseName, lectureTitle: selectedLecture.title, lectureType: 'video', percentage: pct,
+          });
+        }
+      }
+    });
+  }, [videoCompleted, enrollmentId, selectedLecture, totalLectures]);
+
+  // ===== Auto-detect 90% threshold for video completion =====
+  useEffect(() => {
+    if (videoWatchPercent >= 90 && !videoCompleted && selectedLecture?.type?.toLowerCase() === 'video') {
+      setVideoCompleted(true);
+    }
+  }, [videoWatchPercent, videoCompleted, selectedLecture?.type]);
+
   // Watch for logout - if currentUser becomes null, go back
   useEffect(() => {
     if (!currentUser) {
@@ -519,6 +964,46 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
       setExpandedChapters(curriculumData.flatMap((section: any) => 
         (section.chapters || []).map((chapter: any) => chapter.id)
       ));
+      
+      // If initialLectureId provided, find and select that lecture
+      if (initialLectureId) {
+        for (const section of curriculumData) {
+          for (const chapter of (section.chapters || [])) {
+            const foundItem = (chapter.items || []).find((item: any) => item.id === initialLectureId);
+            if (foundItem) {
+              const lectureData: LectureItem = {
+                id: foundItem.id,
+                type: foundItem.type,
+                title: foundItem.title,
+                duration: foundItem.duration,
+                videoUrl: foundItem.videoUrl,
+                isContentLoaded: false,
+              };
+              setSelectedLecture(lectureData);
+              setCurrentChapterName(chapter.title || '');
+              
+              // Load heavy content for non-video lectures
+              const lectureType = (foundItem.type || 'video').toLowerCase();
+              if (lectureType !== 'video') {
+                loadLectureContent(foundItem.id).then(content => {
+                  if (content) {
+                    setSelectedLecture(prev => prev && prev.id === foundItem.id ? {
+                      ...prev,
+                      textContent: content.textContent,
+                      quizQuestions: content.quizQuestions,
+                      exerciseQuestions: content.exerciseQuestions,
+                      assessmentQuestions: content.assessmentQuestions,
+                      attachments: content.attachments as Attachment[] | undefined,
+                      isContentLoaded: true,
+                    } : prev);
+                  }
+                });
+              }
+              return;
+            }
+          }
+        }
+      }
       
       // Auto-select first lecture (light data only)
       const firstSection = curriculumData[0];
@@ -588,11 +1073,26 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
 
     // Check if video URL exists
     if (!selectedLecture.videoUrl) {
+      console.log('⚠️ No videoUrl for lecture:', selectedLecture.title, selectedLecture);
       setVideoError('No video URL available for this lecture.');
       return;
     }
+    console.log('✅ Lecture selected:', selectedLecture.title, '| videoUrl:', selectedLecture.videoUrl);
 
-    const initTimeout = setTimeout(() => {
+    // Pause video on tab switch — defined outside setTimeout so cleanup can access it
+    const handleTabVisibility = () => {
+      if (document.hidden) {
+        try {
+          if (playerRef.current && !playerRef.current.isDisposed() && typeof playerRef.current.paused === 'function' && !playerRef.current.paused()) {
+            playerRef.current.pause();
+            console.log('⏸️ Video paused on tab switch');
+          }
+        } catch (_e) {}
+      }
+    };
+    document.addEventListener('visibilitychange', handleTabVisibility);
+
+    const initTimeout = setTimeout(async () => {
       if (!videoRef.current) return;
 
       // Dispose existing player
@@ -610,6 +1110,19 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
       const videoUrl = selectedLecture.videoUrl;
       if (!videoUrl) return;
       
+      console.log('🎬 Video URL for lecture:', selectedLecture.title);
+      console.log('🔗 Raw videoUrl:', videoUrl);
+
+      // Set CloudFront signed cookies for cdn.examiners.app
+      if (videoUrl.includes('cdn.examiners.app')) {
+        try {
+          await firebaseService.setVideoSignedCookies();
+          console.log('🍪 CloudFront signed cookies set');
+        } catch (err) {
+          console.error('⚠️ Failed to set signed cookies:', err);
+        }
+      }
+      
       // Determine video type based on URL
       let videoType = 'video/mp4';
       if (videoUrl.includes('.m3u8')) {
@@ -626,20 +1139,20 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
         const player = videojs(videoRef.current, {
           license: NUEVO_LICENSE_KEY,
           controls: true,
-          autoplay: false,
+          autoplay: true,
           preload: 'auto',
           fluid: true,
           responsive: true,
           bigPlayButton: true,
           html5: {
             vhs: {
-              withCredentials: false
+              withCredentials: true
             }
           },
           sources: [{
             src: videoUrl,
             type: videoType,
-            withCredentials: false
+            withCredentials: true
           }]
         });
 
@@ -674,6 +1187,15 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
         // Also stop on loadeddata
         player.on('loadeddata', () => {
           setIsVideoLoading(false);
+          // Resume from last saved position
+          const resumeLectureId = selectedLecture.id.toString();
+          const resumeProgress = courseProgressRef.current?.lectures?.[resumeLectureId];
+          if (resumeProgress?.lastPosition && resumeProgress.lastPosition > 0 && resumeProgress.status !== 'completed') {
+            try {
+              player.currentTime(resumeProgress.lastPosition);
+              console.log(`▶️ Resuming video from ${resumeProgress.lastPosition}s`);
+            } catch (_e) { /* ignore seek errors */ }
+          }
         });
         
         // Show loading when waiting/buffering
@@ -685,6 +1207,104 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
         player.on('playing', () => {
           setIsVideoLoading(false);
         });
+
+        // ===== Video Progress Tracking =====
+        // Reset state for new video
+        setVideoWatchPercent(0);
+        setVideoCompleted(false);
+        videoMaxReachedRef.current = 0;
+
+        // Check if already completed or has prior progress
+        const vidLectureId = selectedLecture.id.toString();
+        const vidLectureProgress = courseProgressRef.current?.lectures?.[vidLectureId];
+        const vidCompletedList = courseProgressRef.current?.completedLectures || [];
+        if (vidLectureProgress?.status === 'completed' || vidCompletedList.some((id: any) => id?.toString() === vidLectureId)) {
+          setVideoCompleted(true);
+          setVideoWatchPercent(100);
+          videoMaxReachedRef.current = 100;
+        } else if (vidLectureProgress?.watchPercent) {
+          // Restore previous watch progress
+          setVideoWatchPercent(vidLectureProgress.watchPercent);
+          videoMaxReachedRef.current = vidLectureProgress.watchPercent;
+        }
+
+        // Track video watch progress
+        player.on('timeupdate', () => {
+          try {
+            const current = player.currentTime() || 0;
+            const duration = player.duration() || 0;
+            if (duration > 0) {
+              const percent = Math.round((current / duration) * 100);
+              setVideoWatchPercent(percent);
+              if (percent > videoMaxReachedRef.current) {
+                videoMaxReachedRef.current = percent;
+              }
+            }
+          } catch (_e) { /* player might be disposed */ }
+        });
+
+        // Track playing/paused state
+        videoIsPlayingRef.current = false;
+        videoSaveCounterRef.current = 0;
+
+        player.on('playing', () => {
+          videoIsPlayingRef.current = true;
+        });
+        player.on('pause', () => {
+          videoIsPlayingRef.current = false;
+        });
+        player.on('waiting', () => {
+          videoIsPlayingRef.current = false;
+        });
+
+        // Video ended — mark as completed
+        player.on('ended', () => {
+          setVideoWatchPercent(100);
+          videoMaxReachedRef.current = 100;
+          setVideoCompleted(true);
+          videoIsPlayingRef.current = false;
+          // Save final position + unsaved seconds
+          if (enrollmentId) {
+            const vId = selectedLecture.id.toString();
+            let duration = 0;
+            try { duration = Math.floor(player.duration() || 0); } catch (_e) {}
+            const unsavedSeconds = videoSaveCounterRef.current;
+            videoSaveCounterRef.current = 0;
+            firebaseService.updateLectureProgress(enrollmentId, vId, {
+              watchPercent: 100,
+              lastPosition: duration,
+              lectureType: 'video',
+              status: 'completed',
+              lectureTitle: selectedLecture.title,
+              timeSpent: unsavedSeconds > 0 ? unsavedSeconds : 0,
+            }, totalLectures);
+          }
+        });
+
+        // Save video progress every 30 seconds of actual play time
+        if (videoProgressSaveRef.current) clearInterval(videoProgressSaveRef.current);
+        videoProgressSaveRef.current = setInterval(() => {
+          if (!videoIsPlayingRef.current) return; // Don't count when paused/buffering
+
+          videoSaveCounterRef.current++;
+
+          if (videoSaveCounterRef.current >= 30 && enrollmentId && selectedLecture && playerRef.current && !playerRef.current.isDisposed()) {
+            const vId = selectedLecture.id.toString();
+            const maxReached = videoMaxReachedRef.current;
+            let currentPos = 0;
+            try { currentPos = Math.floor(playerRef.current.currentTime() || 0); } catch (_e) {}
+            videoSaveCounterRef.current = 0;
+            firebaseService.updateLectureProgress(enrollmentId, vId, {
+              watchPercent: maxReached,
+              lastPosition: currentPos,
+              lectureType: 'video',
+              timeSpent: 30,
+            });
+            // Update student learning detail
+            updateLearningDetail({ timeSpent: 30 });
+            console.log(`⏱️ Video progress saved: ${maxReached}% at ${currentPos}s (+30s actual watch time)`);
+          }
+        }, 1000);
 
         player.on('error', () => {
           setIsVideoLoading(false);
@@ -710,12 +1330,45 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
 
     return () => {
       clearTimeout(initTimeout);
+      document.removeEventListener('visibilitychange', handleTabVisibility);
+      if (videoProgressSaveRef.current) {
+        clearInterval(videoProgressSaveRef.current);
+        videoProgressSaveRef.current = null;
+      }
+      // Save last position + unsaved seconds when switching away from video
+      if (enrollmentId && selectedLecture && playerRef.current) {
+        try {
+          if (!playerRef.current.isDisposed()) {
+            const currentPos = Math.floor(playerRef.current.currentTime() || 0);
+            const maxWatched = videoMaxReachedRef.current;
+            const unsavedSeconds = videoSaveCounterRef.current;
+            videoSaveCounterRef.current = 0;
+            videoIsPlayingRef.current = false;
+            if (currentPos > 0) {
+              const vId = selectedLecture.id.toString();
+              firebaseService.updateLectureProgress(enrollmentId, vId, {
+                lastPosition: currentPos,
+                watchPercent: maxWatched,
+                lectureType: 'video',
+                timeSpent: unsavedSeconds > 0 ? unsavedSeconds : 0,
+              });
+              // Update student learning detail
+              if (unsavedSeconds > 0) updateLearningDetail({ timeSpent: unsavedSeconds });
+              console.log(`💾 Video saved on switch: ${currentPos}s (${maxWatched}%) +${unsavedSeconds}s watch time`);
+            }
+          }
+        } catch (_e) { /* player disposed */ }
+      }
     };
   }, [selectedLecture?.id, pluginsLoaded]);
 
   // Cleanup player on unmount
   useEffect(() => {
     return () => {
+      if (videoProgressSaveRef.current) {
+        clearInterval(videoProgressSaveRef.current);
+        videoProgressSaveRef.current = null;
+      }
       if (playerRef.current && !playerRef.current.isDisposed()) {
         playerRef.current.dispose();
         playerRef.current = null;
@@ -913,6 +1566,8 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
   };
 
   const handleLectureClick = async (item: any, chapterTitle?: string) => {
+    console.log('👆 handleLectureClick:', item.title, '| videoUrl:', item.videoUrl, '| type:', item.type);
+    console.log('👆 Full item:', JSON.stringify(item, null, 2));
     // Check if quiz is in progress (not submitted)
     if (quizStage === 'quiz' && !quizSubmitted) {
       // Store pending lecture switch and show warning
@@ -1129,8 +1784,18 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
             </div>
             {/* Video Title */}
             <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-              <h3 className="text-lg font-semibold text-gray-900">{selectedLecture.title}</h3>
-              <p className="text-sm text-gray-500 mt-1">Duration: {selectedLecture.duration}</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">{selectedLecture.title}</h3>
+                  <p className="text-sm text-gray-500 mt-1">Duration: {selectedLecture.duration}</p>
+                </div>
+                {videoCompleted && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-100 rounded-full">
+                    <FontAwesomeIcon icon={faCircleCheck} className="text-green-600 text-sm" />
+                    <span className="text-green-700 text-xs font-semibold">Completed</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         );
@@ -1146,23 +1811,180 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
           );
         }
         
-        return (
-          <div>
-            <div className="p-4 bg-gray-50 rounded-lg mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">{selectedLecture.title}</h3>
-              <span className="text-xs px-2 py-0.5 rounded-full mt-2 inline-block" style={{ backgroundColor: `${getItemColor(type)}15`, color: getItemColor(type) }}>
-                {getTypeLabel(type)}
-              </span>
+        {
+          const textOnly = selectedLecture.textContent ? selectedLecture.textContent.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '';
+          const wordCount = textOnly ? textOnly.split(/\s+/).length : 0;
+          const readingTime = Math.max(1, Math.ceil(wordCount / 80));
+
+          // Circular progress = elapsed / total
+          const timerProgress = readingCompleted ? 1 : (readingTotalTime > 0 ? Math.min(readingElapsed / readingTotalTime, 1) : 0);
+          const circumference = 2 * Math.PI * 24;
+          const strokeDashoffset = circumference - (timerProgress * circumference);
+          const remainingSeconds = Math.max(0, readingTotalTime - readingElapsed);
+          const remainingMin = Math.floor(remainingSeconds / 60);
+          const remainingSec = remainingSeconds % 60;
+
+          return (
+            <div className="relative">
+              {/* Sticky Circular Reading Timer - floats on top right while scrolling */}
+              <div className="sticky top-5 z-20 flex justify-end pr-4 pointer-events-none" style={{ height: 0 }}>
+                <div className="pointer-events-auto">
+                  <div className="relative w-16 h-16 flex items-center justify-center rounded-full shadow-lg bg-gray-100 border border-gray-200">
+                    <svg className="w-16 h-16 -rotate-90" viewBox="0 0 56 56">
+                      <circle cx="28" cy="28" r="24" fill="none" stroke="#e5e7eb" strokeWidth="3" />
+                      <circle
+                        cx="28" cy="28" r="24" fill="none"
+                        stroke={readingCompleted ? '#22c55e' : '#6366f1'}
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s ease' }}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      {readingCompleted ? (
+                        <FontAwesomeIcon icon={faCircleCheck} className="text-green-500 text-xl" />
+                      ) : (
+                        <>
+                          <span className="text-gray-700 font-bold text-xs leading-none">
+                            {remainingMin}:{remainingSec.toString().padStart(2, '0')}
+                          </span>
+                          <span className="text-gray-400 text-[8px] mt-0.5">left</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Article Header */}
+              <div className="relative overflow-hidden rounded-t-2xl" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+                <div className="absolute inset-0 opacity-10">
+                  <div className="absolute top-4 right-8 w-32 h-32 border border-white/30 rounded-full"></div>
+                  <div className="absolute bottom-2 right-24 w-20 h-20 border border-white/20 rounded-full"></div>
+                  <div className="absolute top-8 left-12 w-16 h-16 border border-white/20 rounded-full"></div>
+                </div>
+                <div className="relative px-6 py-6 pr-24">
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-bold text-white leading-snug mb-2">{selectedLecture.title}</h2>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-white/20 text-white backdrop-blur-sm">
+                        <FontAwesomeIcon icon={faBookOpen} className="text-[10px]" />
+                        Reading
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-white/15 text-white/90 backdrop-blur-sm">
+                        <FontAwesomeIcon icon={faClock} className="text-[10px]" />
+                        {readingTime} min read
+                      </span>
+                      {wordCount > 0 && (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-white/10 text-white/80 backdrop-blur-sm">
+                          {wordCount.toLocaleString()} words
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {readingCompleted && (
+                  <div className="px-6 pb-3">
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
+                      <FontAwesomeIcon icon={faCircleCheck} className="text-white text-xs" />
+                      <span className="text-white text-xs font-medium">Reading completed — marked as done!</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Article Body */}
+              <div className="bg-white rounded-b-2xl border border-t-0 border-gray-200 shadow-sm">
+                <div className="px-6 py-6">
+                  {selectedLecture.textContent ? (
+                    (() => {
+                      const htmlContent = selectedLecture.textContent;
+                      // Split HTML by <pre> blocks to render code with SyntaxHighlighter
+                      const parts = htmlContent.split(/(<pre[^>]*>[\s\S]*?<\/pre>)/gi);
+                      
+                      const detectLanguage = (code: string): string => {
+                        if (code.includes('System.out.println') || code.includes('public class') || code.includes('static void')) return 'java';
+                        if (code.includes('print(') || code.includes('def ') || code.includes('import ')) return 'python';
+                        if (code.includes('console.log') || code.includes('const ') || code.includes('let ') || code.includes('function')) return 'javascript';
+                        if (code.includes('#include') || code.includes('cout')) return 'cpp';
+                        if (code.includes('printf') || code.includes('scanf')) return 'c';
+                        if (code.includes('SELECT') || code.includes('FROM') || code.includes('WHERE')) return 'sql';
+                        return 'python';
+                      };
+
+                      return (
+                        <div className="reading-content prose prose-sm sm:prose sm:max-w-none max-w-none
+                          prose-headings:font-bold prose-headings:text-gray-900
+                          prose-h1:text-2xl prose-h1:mt-8 prose-h1:mb-4 prose-h1:pb-2 prose-h1:border-b prose-h1:border-gray-200
+                          prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-3 prose-h2:text-gray-800
+                          prose-h3:text-lg prose-h3:mt-6 prose-h3:mb-2 prose-h3:text-gray-700
+                          prose-p:text-gray-600 prose-p:leading-7 prose-p:mb-4
+                          prose-strong:text-gray-900 prose-strong:font-semibold
+                          prose-a:text-blue-600 prose-a:font-medium prose-a:no-underline hover:prose-a:underline
+                          prose-code:bg-gray-100 prose-code:text-purple-700 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono prose-code:before:content-none prose-code:after:content-none
+                          prose-ul:my-4 prose-ol:my-4
+                          prose-li:text-gray-600 prose-li:leading-7 prose-li:marker:text-purple-400
+                          prose-blockquote:border-l-4 prose-blockquote:border-purple-400 prose-blockquote:bg-purple-50/50 prose-blockquote:rounded-r-lg prose-blockquote:py-1 prose-blockquote:px-4 prose-blockquote:italic prose-blockquote:text-gray-600
+                          prose-img:rounded-xl prose-img:shadow-md
+                          prose-table:border-collapse prose-table:overflow-hidden prose-table:rounded-lg
+                          prose-th:bg-gray-100 prose-th:text-gray-700 prose-th:font-semibold prose-th:px-4 prose-th:py-2.5
+                          prose-td:px-4 prose-td:py-2.5 prose-td:border-t prose-td:border-gray-100
+                          prose-hr:border-gray-200 prose-hr:my-8
+                        ">
+                          {parts.map((part, idx) => {
+                            if (part.match(/^<pre[^>]*>/i)) {
+                              // Extract text content from pre/code block
+                              const textContent = part.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+                              const language = detectLanguage(textContent);
+                              
+                              return (
+                                <div key={idx} className="relative rounded-xl overflow-hidden my-4 not-prose">
+                                  <div className="absolute top-0 left-0 right-0 h-9 bg-gray-800/90 z-10 flex items-center px-4">
+                                    <div className="flex items-center space-x-2">
+                                      <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                                      <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                                      <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                                    </div>
+                                  </div>
+                                  <SyntaxHighlighter
+                                    language={language}
+                                    style={vscDarkPlus}
+                                    customStyle={{
+                                      margin: 0,
+                                      borderRadius: '0.75rem',
+                                      fontSize: '0.875rem',
+                                      padding: '1rem',
+                                      paddingTop: '3rem',
+                                    }}
+                                    showLineNumbers={false}
+                                  >
+                                    {textContent}
+                                  </SyntaxHighlighter>
+                                </div>
+                              );
+                            }
+                            // Regular HTML content
+                            return <div key={idx} dangerouslySetInnerHTML={{ __html: part }} />;
+                          })}
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-16 text-center">
+                      <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+                        <FontAwesomeIcon icon={faBookOpen} className="text-2xl text-gray-400" />
+                      </div>
+                      <p className="text-gray-500 font-medium">No content available</p>
+                      <p className="text-gray-400 text-sm mt-1">This reading hasn't been published yet</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="prose prose-sm max-w-none p-4 bg-white rounded-lg border border-gray-200">
-              {selectedLecture.textContent ? (
-                <div dangerouslySetInnerHTML={{ __html: selectedLecture.textContent }} />
-              ) : (
-                <p className="text-gray-500 italic">No content available</p>
-              )}
-            </div>
-          </div>
-        );
+          );
+        }
 
       case 'pdf':
         return (
@@ -1265,6 +2087,13 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
               
               await firebaseService.saveQuizResult(enrollmentId, quizData);
               console.log('✅ Quiz result saved successfully');
+              
+              // Update student learning detail
+              if (isStudentEnrolled()) {
+                firebaseService.markQuizCompletedInLearningDetail(getUserId(), getCollegeId(), courseSlug, {
+                  courseName, quizTitle: selectedLecture.title, score: percentage,
+                });
+              }
               
               // Update previousQuizResult so it shows on retake
               setPreviousQuizResult({
@@ -2213,6 +3042,14 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
             }));
 
             setExerciseOutput('✅ Exercise submitted successfully!\n\n⏳ Your solution is being evaluated by AI...\nYou will see the "Evaluation" button once ready.');
+
+            // Update daily learning log for exercise completion (first attempt only)
+            if (submissionData.attempts === 1 && isStudentEnrolled()) {
+              firebaseService.updateDailyLearningLog(getUserId(), getCollegeId(), {
+                exercisesCompleted: 1,
+                courseSlug,
+              });
+            }
 
             // Call Cloud Function to evaluate (fire and forget - don't wait)
             firebaseService.evaluateExercise({
@@ -3740,21 +4577,27 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
             </div>
             
             {/* Progress Bar */}
-            <div className="px-5 py-2 bg-white border-b border-gray-100 flex-shrink-0">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] text-gray-500 font-medium">Course Progress</span>
-                <span className="text-[10px] font-semibold" style={{ color: brand.colors.primary }}>35%</span>
+            {(() => {
+              const completedCount = courseProgress?.completedLectures?.length || 0;
+              const progressPercent = totalLectures > 0 ? Math.round((completedCount / totalLectures) * 100) : 0;
+              return (
+              <div className="px-5 py-2 bg-white border-b border-gray-100 flex-shrink-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-gray-500 font-medium">Course Progress</span>
+                  <span className="text-[10px] font-semibold" style={{ color: brand.colors.primary }}>{completedCount}/{totalLectures} · {progressPercent}%</span>
+                </div>
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ 
+                      width: `${progressPercent}%`,
+                      background: brand.gradients.primary
+                    }}
+                  />
+                </div>
               </div>
-              <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full rounded-full transition-all duration-500"
-                  style={{ 
-                    width: '35%',
-                    background: brand.gradients.primary
-                  }}
-                />
-              </div>
-            </div>
+              );
+            })()}
           
           {/* Curriculum Content */}
           <div className="flex-1 overflow-y-auto p-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -3828,6 +4671,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                             <div className="mt-1 rounded-lg overflow-hidden" style={{ backgroundColor: '#fafbfc' }}>
                               {(chapter.items || []).map((item: any, itemIdx: number) => {
                                 const isSelected = selectedLecture?.id === item.id;
+                                const isLectureCompleted = (courseProgress?.completedLectures || []).some((id: any) => id?.toString() === item.id.toString());
                                 return (
                                   <div 
                                     key={item.id}
@@ -3835,11 +4679,19 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                                     className={`flex items-center gap-3 p-2 pl-4 transition-all cursor-pointer group ${itemIdx !== (chapter.items || []).length - 1 ? 'border-b border-dashed border-gray-200' : ''} ${isSelected ? 'rounded-lg' : 'hover:bg-gray-100'}`}
                                     style={isSelected ? { background: brand.gradients.primary } : {}}
                                   >
-                                    <FontAwesomeIcon 
-                                      icon={getItemIcon(item.type)} 
-                                      className="w-4 flex-shrink-0"
-                                      style={{ color: isSelected ? 'white' : getItemColor(item.type) }}
-                                    />
+                                    {isLectureCompleted ? (
+                                      <FontAwesomeIcon 
+                                        icon={faCircleCheck} 
+                                        className="w-4 flex-shrink-0"
+                                        style={{ color: isSelected ? 'white' : '#10B981' }}
+                                      />
+                                    ) : (
+                                      <FontAwesomeIcon 
+                                        icon={getItemIcon(item.type)} 
+                                        className="w-4 flex-shrink-0"
+                                        style={{ color: isSelected ? 'white' : getItemColor(item.type) }}
+                                      />
+                                    )}
                                     <div className="flex-1 text-left">
                                       <div className={`text-sm ${isSelected ? 'text-white font-medium' : 'text-gray-700 group-hover:text-gray-900'}`}>{item.title}</div>
                                     </div>
@@ -3874,7 +4726,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
         ))}
 
         {/* Right - Content Viewer (Video Player) */}
-        <div className="flex-1 p-[5px] pb-5 mb-5 overflow-y-auto bg-gray-50 flex flex-col">
+        <div ref={contentScrollRef} className="flex-1 p-[5px] pb-5 mb-5 overflow-y-auto bg-gray-50 flex flex-col">
           {isLoading ? (
             <div className="flex-1 flex items-center justify-center h-full">
               <div className="text-center">
@@ -3890,7 +4742,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
               {renderContent()}
               {/* Only show tabs for video/text when content is loaded and not loading */}
               {selectedLecture && 
-               ['video', 'text'].includes(selectedLecture.type?.toLowerCase()) && 
+               ['video'].includes(selectedLecture.type?.toLowerCase()) && 
                !isLoadingContent && 
                (selectedLecture.type?.toLowerCase() === 'video' || selectedLecture.isContentLoaded) && 
                renderTabs()}

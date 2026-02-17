@@ -480,6 +480,7 @@ export const COLLECTIONS = {
   PASSWORD_RESET_REQUESTS: 'passwordResetRequests',
   CODING_LANGUAGES: 'CodingLanguages',
   COURSES: 'courses',
+  LEARNING_PATHS: 'learningPaths',
 } as const;
 
 // ==================== SPECIAL IDENTIFIERS ====================

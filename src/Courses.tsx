@@ -384,6 +384,9 @@ const Courses: React.FC<CoursesProps> = ({
               const courseData = course as any;
               const enrollment = enrollmentMap.get(String(course.courseId));
               const progress = enrollment?.progress || {};
+              const completedLectures = progress.completedLectures?.length || 0;
+              const totalLectures = course.totalLectures || 0;
+              const calculatedProgress = progress.percentage || (totalLectures > 0 && completedLectures > 0 ? Math.max(1, Math.round((completedLectures / totalLectures) * 100)) : 0);
               
               return {
                 id: course.slug,
@@ -395,7 +398,7 @@ const Courses: React.FC<CoursesProps> = ({
                 duration: formatDuration(course.totalDuration || 0),
                 quizzes: courseData.totalQuizzes || 0,
                 exercises: courseData.totalExercises || 0,
-                progress: progress.percentage || 0,
+                progress: calculatedProgress,
                 isEnrolled: true,
                 totalChapters: course.totalChapters || 0,
                 assessments: course.totalUnits || 0,
@@ -732,15 +735,14 @@ const Courses: React.FC<CoursesProps> = ({
                       <h3 className="text-lg font-semibold text-gray-900 mb-1">
                         {course.name}
                       </h3>
-                      <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md ml-2 flex-shrink-0">
-                        {course.id.substring(0, 15)}...
-                      </span>
                     </div>
                     <p className="text-xs text-gray-600 flex items-center gap-3">
+                      {!isStudent && (
                       <span className="flex items-center">
                         <FontAwesomeIcon icon={faVideo} style={{ fontSize: '12px' }} className="mr-1" />
                         <span className="font-medium">{course.lectures} Lectures</span>
                       </span>
+                      )}
                       <span className="flex items-center">
                         <FontAwesomeIcon icon={faClock} style={{ fontSize: '12px' }} className="mr-1" />
                         <span>{course.duration}</span>
@@ -763,17 +765,17 @@ const Courses: React.FC<CoursesProps> = ({
                   } : {}}
                 >
                   <div className="flex items-center space-x-2">
-                    <FontAwesomeIcon icon={faCode} style={{ fontSize: '16px' }} className="text-gray-500" />
+                    <FontAwesomeIcon icon={isStudent ? faBooks : faCode} style={{ fontSize: '16px' }} className="text-gray-500" />
                     <div>
-                      <p className="text-xs text-gray-500">Exercises</p>
-                      <p className="text-sm font-medium text-gray-900">{course.exercises}</p>
+                      <p className="text-xs text-gray-500">{isStudent ? 'Lectures' : 'Exercises'}</p>
+                      <p className="text-sm font-medium text-gray-900">{isStudent ? course.lectures : course.exercises}</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <FontAwesomeIcon icon={faFileAlt} style={{ fontSize: '16px' }} className="text-gray-500" />
+                    <FontAwesomeIcon icon={isStudent ? faCode : faFileAlt} style={{ fontSize: '16px' }} className="text-gray-500" />
                     <div>
-                      <p className="text-xs text-gray-500">Chapters</p>
-                      <p className="text-sm font-medium text-gray-900">{course.totalChapters || 0}</p>
+                      <p className="text-xs text-gray-500">{isStudent ? 'Exercises' : 'Chapters'}</p>
+                      <p className="text-sm font-medium text-gray-900">{isStudent ? course.exercises : (course.totalChapters || 0)}</p>
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
@@ -794,18 +796,30 @@ const Courses: React.FC<CoursesProps> = ({
 
                 {/* Footer - Stats & Buttons */}
                 <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                  {isStudent ? (
+                    <div className="flex items-center gap-3">
+                      <span className={`inline-flex items-center text-xs font-medium px-2.5 py-1 rounded-full ${
+                        course.progress === 100 
+                          ? 'bg-green-100 text-green-700' 
+                          : course.progress > 0 
+                            ? 'bg-blue-100 text-blue-700' 
+                            : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {course.progress === 100 ? '✓ Completed' : course.progress > 0 ? `${course.progress}% Complete` : 'Not Started'}
+                      </span>
+                    </div>
+                  ) : (
                   <div className="flex items-center gap-4">
-                    {/* Enrolments Count */}
                     <div className="flex items-center text-xs">
                       <span className="text-gray-500">Enrolments:</span>
                       <span className="font-semibold text-gray-700 ml-1">{course.enrollmentCount || 0}</span>
                     </div>
-                    {/* Completed Count */}
                     <div className="flex items-center text-xs">
                       <span className="text-gray-500">Completed:</span>
                       <span className="font-semibold text-green-600 ml-1">{course.completedCount || 0}</span>
                     </div>
                   </div>
+                  )}
                   
                   {/* Buttons */}
                   <div className="flex items-center gap-2">

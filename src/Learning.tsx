@@ -5,6 +5,7 @@ import {
   faGraduationCap,
   faUsers,
   faChartLine,
+  faRoute,
   faListCheck,
   faComments,
   faFileLines,
@@ -24,15 +25,23 @@ import {
   faClipboardList,
   faWrench,
   faBrain,
+  faRotateRight,
+  faRobot,
 } from '@fortawesome/sharp-light-svg-icons';
 import Courses from './Courses';
 import LearningHome from './LearningHome';
+import AISupportAssistant from './AISupportAssistant';
 import Classes from './Classes';
 import UserList from './UserList';
 import CodingLab from './CodingLab';
 import ResumeBuilderApp from './ResumeBuilderApp';
 import LogicBuilder from './LogicBuilder';
+import AIInterviewPractice from './AIInterviewPractice';
+import JobListing from './JobListing';
+import LearningPaths from './LearningPaths';
+import type { Job } from './JobListing';
 import { firebaseService } from './services/firebase_service';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 // Course interface
 export interface Course {
@@ -80,7 +89,7 @@ interface LearningProps {
   selectedCollege?: { id: string; name: string } | null;
   onActiveMenuChange?: (menuItem: string) => void;
   selectedProblemSlug?: string;
-  onOpenCurriculum?: (data: { courseName: string; courseSlug: string; curriculumData: any[]; isLoading: boolean; enrollmentId?: string }) => void;
+  onOpenCurriculum?: (data: { courseName: string; courseSlug: string; curriculumData: any[]; isLoading: boolean; enrollmentId?: string; initialLectureId?: number }) => void;
 }
 
 // Helper function to decode HTML entities and render HTML
@@ -238,9 +247,17 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
   const [activeMenuItem, setActiveMenuItem] = useState('progress');
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(window.innerWidth < 1400);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+  const isSystemAdmin = currentUser?.userType === 'system_admin';
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const [pendingCourseOpen, setPendingCourseOpen] = useState<{ lectureId?: number; trigger: number } | null>(null);
   const [isCoursesCollapsed, setIsCoursesCollapsed] = useState(false);
-  const [isToolsCollapsed, setIsToolsCollapsed] = useState(true); // Tools section collapsed by default
+  const [isLearningPathsCollapsed, setIsLearningPathsCollapsed] = useState(false);
+  const [isJobsCollapsed, setIsJobsCollapsed] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [isToolsCollapsed, setIsToolsCollapsed] = useState(false); // Tools section expanded by default
+  const [showAISupportFromSidebar, setShowAISupportFromSidebar] = useState(false);
   
   // Check if current user is a student
   const isStudent = currentUser?.userType === 'student';
@@ -290,7 +307,8 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               type: (lecture.lectureType || lecture.type || 'video').toLowerCase(),
               duration: lecture.durationInSeconds 
                 ? `${Math.floor(lecture.durationInSeconds / 60)}:${String(lecture.durationInSeconds % 60).padStart(2, '0')}` 
-                : (lecture.duration || '')
+                : (lecture.duration || ''),
+              videoUrl: lecture.videoUrl || '',
             }))
           }))
         }));
@@ -399,8 +417,29 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
       return;
     }
     
-    // enrollmentCount now comes from college_courses and is already college-specific
-    setCollegeEnrollmentCount(selectedCourse.enrollmentCount || 0);
+    // If enrollmentCount already available, use it
+    if (selectedCourse.enrollmentCount && selectedCourse.enrollmentCount > 0) {
+      setCollegeEnrollmentCount(selectedCourse.enrollmentCount);
+      return;
+    }
+
+    // Otherwise fetch from college_courses or course_enrollments
+    const fetchCount = async () => {
+      try {
+        const collegeId = currentUser?.userType === 'system_admin' 
+          ? (selectedCollege?.id || '') 
+          : (currentUser?.collegeId || '');
+        if (collegeId && selectedCourse.courseId) {
+          const count = await firebaseService.getCourseEnrollmentCountByCollege(
+            String(selectedCourse.courseId), collegeId, selectedCourse.id
+          );
+          setCollegeEnrollmentCount(count);
+        }
+      } catch (err) {
+        console.error('Error fetching enrollment count:', err);
+      }
+    };
+    fetchCount();
   }, [selectedCourse]);
   
   // Users/Classes States
@@ -725,8 +764,16 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     }
   };
 
+  // Auto-open curriculum when triggered from LearningHome play button
+  useEffect(() => {
+    if (pendingCourseOpen && selectedCourse) {
+      openCurriculumPage(pendingCourseOpen.lectureId);
+      setPendingCourseOpen(null);
+    }
+  }, [pendingCourseOpen, selectedCourse]);
+
   // Fetch curriculum when Curriculum page opens
-  const openCurriculumPage = async () => {
+  const openCurriculumPage = async (initialLectureId?: number) => {
     // Call App.tsx callback to show curriculum page (this unmounts Learning)
     if (onOpenCurriculum) {
       // Use enrollmentId from selectedCourse if available (already fetched for students)
@@ -746,6 +793,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               type: lecture.type,
               title: lecture.title,
               duration: lecture.duration,
+              videoUrl: lecture.videoUrl || '',
             }))
           }))
         }));
@@ -755,7 +803,8 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
           courseSlug: selectedCourse?.id || '',
           curriculumData: transformedCurriculum,
           isLoading: false,
-          enrollmentId
+          enrollmentId,
+          initialLectureId
         });
         return;
       }
@@ -765,7 +814,8 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
         courseSlug: selectedCourse?.id || '',
         curriculumData: [],
         isLoading: true,
-        enrollmentId
+        enrollmentId,
+        initialLectureId
       });
       
       try {
@@ -796,7 +846,8 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
           courseSlug: selectedCourse?.id || '',
           curriculumData: transformedCurriculum,
           isLoading: false,
-          enrollmentId
+          enrollmentId,
+          initialLectureId
         });
       } catch (error) {
         console.error('Error fetching curriculum:', error);
@@ -1183,13 +1234,33 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     }
   };
 
+  // ===== Manual Sync Handler (system_admin only) =====
+  const handleManualSync = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    setSyncResult(null);
+    try {
+      const fns = getFunctions(undefined, 'us-central1');
+      const syncFn = httpsCallable(fns, 'syncStudentLearningDetailsManual');
+      const result: any = await syncFn();
+      setSyncResult(result.data?.message || 'Sync complete');
+      setTimeout(() => setSyncResult(null), 5000);
+    } catch (err: any) {
+      console.error('❌ Sync failed:', err);
+      setSyncResult(`Error: ${err.message || 'Sync failed'}`);
+      setTimeout(() => setSyncResult(null), 5000);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Menu items - filter based on user type
   const allMenuItems = [
     { id: 'progress', name: 'Study Progress', icon: faChartLine, description: 'Track learning progress' },
     { id: 'courses', name: 'Courses', icon: faBooks, description: 'Browse all available courses' },
+    { id: 'learningpaths', name: 'Learning Paths', icon: faRoute, description: 'Guided course roadmaps' },
     { id: 'students', name: 'Users', icon: faUsers, description: 'View and manage students', hideForStudent: true },
     { id: 'interviews', name: 'AI Interview', icon: faComments, description: 'AI-powered interview preparation' },
-    { id: 'marksheet', name: 'Marksheet', icon: faFileLines, description: 'View marksheets' },
     { id: 'jobs', name: 'Job Listing', icon: faBriefcase, description: 'Browse job opportunities' },
   ];
   
@@ -1199,7 +1270,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
     : allMenuItems;
 
   return (
-    <div className="flex flex-1 h-full w-full overflow-hidden">
+    <div className="flex flex-1 h-full w-full overflow-y-hidden overflow-x-auto">
       {/* Left Sidebar - Collapsible */}
       <aside 
         className="h-full bg-gray-50 border-r border-gray-200 transition-all duration-300 flex flex-col overflow-visible relative flex-shrink-0"
@@ -1357,6 +1428,42 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               {/* Tools Menu Items - Only show when not collapsed */}
               {!isToolsCollapsed && (
               <div className="space-y-1">
+                {/* 24x7 AI Support */}
+                <div className="relative mb-1">
+                  <button
+                    onClick={() => setShowAISupportFromSidebar(true)}
+                    onMouseEnter={() => setHoveredItem('tool-aisupport')}
+                    onMouseLeave={() => setHoveredItem(null)}
+                    className={`w-full flex items-center ${isLeftCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-3 rounded-lg transition-all relative hover:bg-gray-100`}
+                  >
+                    {isLeftCollapsed ? (
+                      <FontAwesomeIcon 
+                        icon={faRobot} 
+                        className="text-gray-600"
+                      />
+                    ) : (
+                      <div className="flex items-center space-x-3 flex-1">
+                        <FontAwesomeIcon 
+                          icon={faRobot} 
+                          className="text-gray-600"
+                        />
+                        <span className="text-sm text-gray-900">
+                          AI Support
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                  {isLeftCollapsed && hoveredItem === 'tool-aisupport' && (
+                    <div 
+                      className="absolute left-full top-0 ml-2 bg-gray-900 text-white px-3 py-2.5 rounded-lg shadow-lg pointer-events-none min-w-[200px]"
+                      style={{ zIndex: 1000 }}
+                    >
+                      <div className="font-semibold text-sm mb-0.5">24x7 AI Support</div>
+                      <div className="text-xs text-gray-300 opacity-90">Get help with courses, study tips & career</div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Coding Lab */}
                 {collegeFeatures.includes('CodingLab') && (
                   <div className="relative mb-1">
@@ -1523,6 +1630,49 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
             </>
           )}
         </nav>
+
+        {/* Sync Button - system_admin only */}
+        {isSystemAdmin && (
+          <div className="mt-auto p-3 border-t border-gray-200 flex-shrink-0 relative">
+            {syncResult && !isLeftCollapsed && (
+              <div className={`mb-2 px-3 py-1.5 rounded-lg text-xs font-medium ${
+                syncResult.startsWith('Error') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'
+              }`}>
+                {syncResult}
+              </div>
+            )}
+            <button
+              onClick={handleManualSync}
+              disabled={isSyncing}
+              onMouseEnter={() => setHoveredItem('sync')}
+              onMouseLeave={() => setHoveredItem(null)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all disabled:opacity-50 hover:bg-gray-100 ${
+                isLeftCollapsed ? 'justify-center' : ''
+              }`}
+              title="Sync Student Learning Data"
+            >
+              <FontAwesomeIcon 
+                icon={faRotateRight} 
+                className={`text-gray-500 ${isSyncing ? 'animate-spin' : ''}`}
+                style={isSyncing ? { color: brandTheme.colors.primary } : {}}
+              />
+              {!isLeftCollapsed && (
+                <span className="text-sm text-gray-600">
+                  {isSyncing ? 'Syncing...' : 'Sync Learning Data'}
+                </span>
+              )}
+            </button>
+            {isLeftCollapsed && hoveredItem === 'sync' && (
+              <div 
+                className="absolute left-full bottom-0 ml-2 bg-gray-900 text-white px-3 py-2.5 rounded-lg shadow-lg pointer-events-none min-w-[200px]"
+                style={{ zIndex: 1000 }}
+              >
+                <div className="font-semibold text-sm mb-0.5">Sync Learning Data</div>
+                <div className="text-xs text-gray-300 opacity-90">Recalculate all student progress</div>
+              </div>
+            )}
+          </div>
+        )}
       </aside>
 
       {/* Middle Panel - Courses List (collapsible) */}
@@ -1548,7 +1698,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
           </div>
         ) : (
           <div 
-            className="h-full overflow-hidden bg-white border-r border-gray-200"
+            className="h-full overflow-hidden bg-white border-r border-gray-200 flex-shrink-0"
             style={{ minWidth: '600px', maxWidth: '600px', width: '600px' }}
           >
             <Courses
@@ -1583,7 +1733,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
       {activeMenuItem === 'courses' && (
         selectedCourse ? (
           // Course Detail View
-          <div className="flex-1 overflow-y-auto bg-gray-50 p-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="flex-1 min-w-[500px] overflow-y-auto bg-gray-50 p-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {/* Course Header Card */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
               {/* Header */}
@@ -1599,7 +1749,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                     <span className="hidden 2xl:inline">Back</span>
                   </button>
                   <button
-                    onClick={openCurriculumPage}
+                    onClick={() => openCurriculumPage()}
                     className="h-10 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2"
                     style={{ backgroundColor: `${brandTheme.colors.primary}15`, color: brandTheme.colors.primary }}
                     title="Curriculum"
@@ -1888,7 +2038,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                                               <div 
                                                 key={lecture.id}
                                                 className="flex items-center gap-3 px-4 py-3 border-t border-dashed border-gray-200 hover:bg-purple-50 cursor-pointer transition-colors"
-                                                onClick={() => openCurriculumPage()}
+                                                onClick={() => openCurriculumPage(lecture.id)}
                                               >
                                                 <div 
                                                   className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
@@ -2068,7 +2218,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
           </div>
         ) : (
           // No Course Selected - Show appropriate message
-          <div className="flex-1 overflow-y-auto bg-gray-50 p-6 flex items-center justify-center">
+          <div className="flex-1 min-w-[500px] overflow-y-auto bg-gray-50 p-6 flex items-center justify-center">
             <div className="text-center">
               <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-pink-100 via-purple-100 to-blue-100 flex items-center justify-center">
                 <FontAwesomeIcon icon={faBooks} className="text-3xl text-purple-500" />
@@ -2080,10 +2230,577 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
         )
       )}
 
+      {/* Middle Panel - Job Listing (collapsible) */}
+      {activeMenuItem === 'jobs' && (
+        isJobsCollapsed ? (
+          <div className="w-16 h-full bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+            <div className="p-4 flex items-center justify-center">
+              <button 
+                onClick={() => setIsJobsCollapsed(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Expand"
+              >
+                <FontAwesomeIcon icon={faChevronLeft} className="rotate-180" />
+              </button>
+            </div>
+            <div className="flex-1 flex flex-col items-center pt-4">
+              <FontAwesomeIcon icon={faBriefcase} className="text-gray-600 mb-2" />
+              <div className="text-gray-600 font-semibold text-sm tracking-wider"
+                   style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
+                Jobs
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div 
+            className="h-full overflow-hidden bg-white border-r border-gray-200 flex-shrink-0"
+            style={{ minWidth: '600px', maxWidth: '600px', width: '600px' }}
+          >
+            <JobListing
+              brandTheme={brandTheme}
+              onJobSelect={(job) => {
+                setSelectedJob(job);
+                if (job && !isLeftCollapsed && window.innerWidth <= 1400) {
+                  setIsLeftCollapsed(true);
+                }
+              }}
+              selectedJob={selectedJob}
+              onCollapse={() => setIsJobsCollapsed(true)}
+              currentUser={currentUser}
+            />
+          </div>
+        )
+      )}
+
+      {/* Right Panel - Job Details */}
+      {activeMenuItem === 'jobs' && (
+        selectedJob ? (
+          <div className="flex-1 min-w-[500px] overflow-y-auto bg-gray-50 p-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            {/* Job Header Card */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+              <div className="relative px-6 py-6 border-b border-gray-100">
+                {/* Back + Apply Buttons */}
+                <div className="absolute top-4 right-4 flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedJob(null)}
+                    className="h-10 px-3 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all flex items-center justify-center gap-2"
+                  >
+                    <span>←</span>
+                    <span className="hidden 2xl:inline">Back</span>
+                  </button>
+                  {selectedJob.applyOptions?.[0]?.link && (() => {
+                    const companyName = (selectedJob.company || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const directLink = selectedJob.applyOptions.find((opt: any) => {
+                      const source = (opt.source || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                      const link = (opt.link || '').toLowerCase();
+                      return (source && companyName && (source.includes(companyName) || companyName.includes(source))) ||
+                        (link && !link.includes('indeed.') && !link.includes('linkedin.') && !link.includes('glassdoor.') &&
+                         !link.includes('naukri.') && !link.includes('shine.') && !link.includes('simplyhired.') &&
+                         !link.includes('talent.com') && !link.includes('bebee.') && !link.includes('jobrapido.') &&
+                         !link.includes('whatjobs.') && !link.includes('jooble.') && !link.includes('adzuna.') &&
+                         !link.includes('ziprecruiter.') && !link.includes('monster.') && !link.includes('internshala.') &&
+                         !link.includes('foundit.') && !link.includes('apnajobs.') && !link.includes('freshersworld.') &&
+                         !link.includes('pangian.') && !link.includes('freelancejobs.'));
+                    });
+                    const bestLink = directLink?.link || selectedJob.applyOptions[0].link;
+                    return (
+                      <a
+                        href={bestLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="h-10 px-4 rounded-lg text-sm font-medium text-white transition-all flex items-center justify-center gap-2"
+                        style={{ background: brandTheme.gradients.primary }}
+                      >
+                        Apply Now
+                      </a>
+                    );
+                  })()}
+                </div>
+
+                <div className="flex items-start gap-5">
+                  {/* Company Logo/Initial */}
+                  <div 
+                    className="w-20 h-20 rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden"
+                    style={{ backgroundColor: `${brandTheme.colors.primary}15` }}
+                  >
+                    {selectedJob.thumbnail ? (
+                      <img src={selectedJob.thumbnail} alt={selectedJob.company} className="w-full h-full object-contain" />
+                    ) : (
+                      <span className="text-3xl font-bold" style={{ color: brandTheme.colors.primary }}>
+                        {selectedJob.company?.charAt(0)?.toUpperCase() || '?'}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0 pr-32">
+                    {/* Category + Schedule badges */}
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold" 
+                        style={{ backgroundColor: `${brandTheme.colors.primary}15`, color: brandTheme.colors.primary }}>
+                        {selectedJob.category}
+                      </span>
+                      {selectedJob.scheduleType && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                          {selectedJob.scheduleType}
+                        </span>
+                      )}
+                      {selectedJob.isRemote && (
+                        <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-600">
+                          Remote
+                        </span>
+                      )}
+                    </div>
+
+                    <h1 className="text-xl font-bold text-gray-900 mb-1">{selectedJob.title.replace(/\b\w/g, c => c.toUpperCase())}</h1>
+                    <p className="text-sm text-gray-600 mb-1">{selectedJob.company}</p>
+                    <p className="text-xs text-gray-400">{selectedJob.location}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Stats Row */}
+              <div className="grid grid-cols-4 divide-x divide-gray-100">
+                <div className="px-4 py-4 text-center">
+                  <div className="text-lg font-bold text-gray-900">{selectedJob.salary || 'N/A'}</div>
+                  <div className="text-xs text-gray-500">Salary</div>
+                </div>
+                <div className="px-4 py-4 text-center">
+                  <div className="text-lg font-bold text-gray-900">{selectedJob.scheduleType || 'N/A'}</div>
+                  <div className="text-xs text-gray-500">Type</div>
+                </div>
+                <div className="px-4 py-4 text-center">
+                  <div className="text-lg font-bold text-gray-900">{selectedJob.via?.replace('via ', '') || 'Direct'}</div>
+                  <div className="text-xs text-gray-500">Source</div>
+                </div>
+                <div className="px-4 py-4 text-center">
+                  <div className="text-lg font-bold text-gray-900">{(() => {
+                    const ts = selectedJob.postedTimestamp || selectedJob.firstSeen;
+                    if (!ts) return selectedJob.postedAt || 'Recent';
+                    try {
+                      const date = ts?.toDate ? ts.toDate() : new Date(ts.seconds ? ts.seconds * 1000 : ts);
+                      const diffMs = Date.now() - date.getTime();
+                      const mins = Math.floor(diffMs / 60000);
+                      if (mins < 1) return 'Just now';
+                      if (mins < 60) return `${mins} min ago`;
+                      const hrs = Math.floor(mins / 60);
+                      if (hrs < 24) return `${hrs} hr${hrs > 1 ? 's' : ''} ago`;
+                      const days = Math.floor(hrs / 24);
+                      if (days < 30) return `${days} day${days > 1 ? 's' : ''} ago`;
+                      return `${Math.floor(days / 30)} mo ago`;
+                    } catch { return selectedJob.postedAt || 'Recent'; }
+                  })()}</div>
+                  <div className="text-xs text-gray-500">Posted</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Job Description */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <FontAwesomeIcon icon={faFileLines} style={{ color: brandTheme.colors.primary }} />
+                Job Description
+              </h2>
+              <div className="text-sm text-gray-700 leading-relaxed">
+                {(() => {
+                  const desc = selectedJob.description || 'No description available.';
+                  // Split by newlines and process
+                  const lines = desc.split('\n');
+                  const elements: React.ReactNode[] = [];
+                  let bulletBuffer: string[] = [];
+                  
+                  const flushBullets = () => {
+                    if (bulletBuffer.length > 0) {
+                      elements.push(
+                        <ul key={`bullets-${elements.length}`} className="space-y-2 my-3 ml-1">
+                          {bulletBuffer.map((item, i) => (
+                            <li key={i} className="flex items-start gap-2.5">
+                              <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: brandTheme.colors.primary }}></span>
+                              <span className="text-gray-600">{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                      bulletBuffer = [];
+                    }
+                  };
+                  
+                  lines.forEach((line, idx) => {
+                    const trimmed = line.trim();
+                    if (!trimmed) {
+                      flushBullets();
+                      return;
+                    }
+                    
+                    // Detect bullet points (•, -, *, ·)
+                    const bulletMatch = trimmed.match(/^[•\-\*·]\s*(.*)/);
+                    if (bulletMatch) {
+                      bulletBuffer.push(bulletMatch[1]);
+                      return;
+                    }
+                    
+                    flushBullets();
+                    
+                    // Detect section headings (short lines ending with : or all bold-like text)
+                    const isHeading = (
+                      (trimmed.endsWith(':') && trimmed.length < 80) ||
+                      (trimmed.length < 60 && !trimmed.includes('.') && idx > 0 && !lines[idx - 1]?.trim())
+                    );
+                    
+                    if (isHeading) {
+                      elements.push(
+                        <h3 key={`heading-${idx}`} className="font-semibold text-gray-900 mt-5 mb-2 text-[13px] uppercase tracking-wide" style={{ color: brandTheme.colors.primary }}>
+                          {trimmed}
+                        </h3>
+                      );
+                    } else {
+                      elements.push(
+                        <p key={`para-${idx}`} className="text-gray-600 mb-2 leading-relaxed">
+                          {trimmed}
+                        </p>
+                      );
+                    }
+                  });
+                  
+                  flushBullets();
+                  return elements;
+                })()}
+              </div>
+            </div>
+
+            {/* Qualifications */}
+            {selectedJob.qualifications && (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <FontAwesomeIcon icon={faListCheck} style={{ color: brandTheme.colors.primary }} />
+                  Qualifications
+                </h2>
+                <div className="text-sm text-gray-700 leading-relaxed">
+                  {(() => {
+                    const qual = selectedJob.qualifications || '';
+                    const lines = qual.split('\n');
+                    const elements: React.ReactNode[] = [];
+                    let bulletBuffer: string[] = [];
+                    
+                    const flushBullets = () => {
+                      if (bulletBuffer.length > 0) {
+                        elements.push(
+                          <ul key={`qbullets-${elements.length}`} className="space-y-2 my-3 ml-1">
+                            {bulletBuffer.map((item, i) => (
+                              <li key={i} className="flex items-start gap-2.5">
+                                <span className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style={{ backgroundColor: brandTheme.colors.primary }}></span>
+                                <span className="text-gray-600">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        );
+                        bulletBuffer = [];
+                      }
+                    };
+                    
+                    lines.forEach((line, idx) => {
+                      const trimmed = line.trim();
+                      if (!trimmed) { flushBullets(); return; }
+                      const bulletMatch = trimmed.match(/^[•\-\*·]\s*(.*)/);
+                      if (bulletMatch) { bulletBuffer.push(bulletMatch[1]); return; }
+                      flushBullets();
+                      const isHeading = (trimmed.endsWith(':') && trimmed.length < 80) || (trimmed.length < 60 && !trimmed.includes('.') && idx > 0 && !lines[idx - 1]?.trim());
+                      if (isHeading) {
+                        elements.push(<h3 key={`qh-${idx}`} className="font-semibold text-gray-900 mt-5 mb-2 text-[13px] uppercase tracking-wide" style={{ color: brandTheme.colors.primary }}>{trimmed}</h3>);
+                      } else {
+                        elements.push(<p key={`qp-${idx}`} className="text-gray-600 mb-2 leading-relaxed">{trimmed}</p>);
+                      }
+                    });
+                    flushBullets();
+                    return elements;
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* Highlights */}
+            {selectedJob.highlights && selectedJob.highlights.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <FontAwesomeIcon icon={faChartLine} style={{ color: brandTheme.colors.primary }} />
+                  Highlights
+                </h2>
+                {selectedJob.highlights.map((highlight: any, idx: number) => (
+                  <div key={idx} className="mb-4">
+                    {highlight.title && (
+                      <h3 className="text-sm font-semibold text-gray-800 mb-2">{highlight.title}</h3>
+                    )}
+                    {highlight.items && (
+                      <ul className="list-disc list-inside space-y-1">
+                        {highlight.items.map((item: string, i: number) => (
+                          <li key={i} className="text-sm text-gray-600">{item}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Apply Options */}
+            {selectedJob.applyOptions && selectedJob.applyOptions.length > 0 && (() => {
+              const companyName = (selectedJob.company || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+              const directOption = selectedJob.applyOptions.find((opt: any) => {
+                const source = (opt.source || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const link = (opt.link || '').toLowerCase();
+                // Match if source contains company name or vice versa
+                return (source && companyName && (source.includes(companyName) || companyName.includes(source))) ||
+                  // Or if the URL domain looks like a company career page (not a job board)
+                  (link && !link.includes('indeed.') && !link.includes('linkedin.') && !link.includes('glassdoor.') && 
+                   !link.includes('naukri.') && !link.includes('shine.') && !link.includes('simplyhired.') &&
+                   !link.includes('talent.com') && !link.includes('bebee.') && !link.includes('jobrapido.') &&
+                   !link.includes('whatjobs.') && !link.includes('jooble.') && !link.includes('adzuna.') &&
+                   !link.includes('ziprecruiter.') && !link.includes('monster.') && !link.includes('internshala.') &&
+                   !link.includes('foundit.') && !link.includes('apnajobs.') && !link.includes('freshersworld.') &&
+                   !link.includes('pangian.') && !link.includes('freelancejobs.'));
+              });
+              const otherOptions = selectedJob.applyOptions.filter((opt: any) => opt !== directOption);
+
+              return (
+                <>
+                  {/* Direct Company Apply Card */}
+                  {directOption && (
+                    <div className="rounded-2xl shadow-sm border-2 p-5 mb-4" style={{ borderColor: `${brandTheme.colors.primary}40`, background: `linear-gradient(135deg, ${brandTheme.colors.primary}08, ${brandTheme.colors.primary}03)` }}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: brandTheme.gradients.primary }}>
+                          <FontAwesomeIcon icon={faBriefcase} className="text-white text-xs" />
+                        </div>
+                        <div>
+                          <h2 className="text-sm font-bold text-gray-900">Apply on Company Website</h2>
+                          <p className="text-[11px] text-gray-500">Apply directly to {selectedJob.company}</p>
+                        </div>
+                      </div>
+                      <a
+                        href={directOption.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between p-3.5 rounded-xl bg-white border-2 hover:shadow-md transition-all group"
+                        style={{ borderColor: `${brandTheme.colors.primary}30` }}
+                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = brandTheme.colors.primary; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = `${brandTheme.colors.primary}30`; }}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold text-white" style={{ background: brandTheme.gradients.primary }}>
+                            {(directOption.source || selectedJob.company || 'C')[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <span className="text-sm font-semibold text-gray-800">{directOption.source || selectedJob.company}</span>
+                            <p className="text-[10px] text-gray-400 mt-0.5">Direct application • Recommended</p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-bold px-5 py-2 rounded-full text-white shadow-sm"
+                          style={{ background: brandTheme.gradients.primary }}>
+                          Apply ↗
+                        </span>
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Other Sources Card */}
+                  {otherOptions.length > 0 && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 mb-6">
+                      <h2 className="text-sm font-semibold text-gray-600 mb-3">{directOption ? 'Also Available On' : 'Apply Through'}</h2>
+                      <div className="space-y-2">
+                        {otherOptions.map((option: any, idx: number) => (
+                          <a
+                            key={idx}
+                            href={option.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:shadow-sm transition-all group"
+                            style={{ borderColor: `${brandTheme.colors.primary}20` }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${brandTheme.colors.primary}40`; e.currentTarget.style.backgroundColor = `${brandTheme.colors.primary}05`; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = `${brandTheme.colors.primary}20`; e.currentTarget.style.backgroundColor = ''; }}
+                          >
+                            <span className="text-sm font-medium text-gray-700">{option.source || `Source ${idx + 1}`}</span>
+                            <span className="text-xs font-medium px-4 py-1.5 rounded-full text-white shadow-sm"
+                              style={{ background: brandTheme.gradients.primary }}>
+                              Apply
+                            </span>
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        ) : (
+          <div className="flex-1 min-w-[500px] overflow-y-auto bg-gray-50 p-6 flex items-center justify-center">
+            <div className="text-center">
+              <div className="w-56 h-56 mx-auto mb-6">
+                <svg viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  {/* Ground shadow */}
+                  <ellipse cx="120" cy="210" rx="85" ry="12" fill="#e5e7eb" opacity="0.5" />
+                  
+                  {/* Newspaper - JOBS */}
+                  <g transform="translate(20, 70)">
+                    <rect x="0" y="0" rx="3" width="90" height="110" fill="white" stroke="#d1d5db" strokeWidth="1" />
+                    <rect x="6" y="8" rx="1" width="22" height="10" fill={brandTheme.colors.primary} />
+                    <text x="8" y="16" fontSize="7" fontWeight="bold" fill="white">JOBS</text>
+                    <rect x="32" y="8" rx="1" width="50" height="3" fill={`${brandTheme.colors.primary}40`} />
+                    <rect x="32" y="14" rx="1" width="40" height="2" fill="#e5e7eb" />
+                    {/* Column lines */}
+                    <rect x="6" y="24" rx="1" width="36" height="20" fill="#f3f4f6" />
+                    <rect x="46" y="24" rx="1" width="36" height="20" fill="#f3f4f6" />
+                    <rect x="6" y="48" rx="1" width="76" height="2" fill="#e5e7eb" />
+                    <rect x="6" y="54" rx="1" width="76" height="2" fill="#e5e7eb" />
+                    <rect x="6" y="60" rx="1" width="60" height="2" fill="#e5e7eb" />
+                    <rect x="6" y="70" rx="1" width="36" height="16" fill="#f3f4f6" />
+                    <rect x="46" y="70" rx="1" width="36" height="16" fill="#f3f4f6" />
+                    <rect x="6" y="92" rx="1" width="76" height="2" fill="#e5e7eb" />
+                    <rect x="6" y="98" rx="1" width="50" height="2" fill="#e5e7eb" />
+                  </g>
+                  
+                  {/* Tablet/Phone with job cards popping out */}
+                  <g transform="translate(85, 45)">
+                    {/* Device body */}
+                    <rect x="0" y="20" rx="8" width="80" height="120" fill="#1f2937" />
+                    <rect x="4" y="26" rx="4" width="72" height="105" fill="white" />
+                    {/* Screen header bar */}
+                    <rect x="4" y="26" rx="4" width="72" height="14" fill={brandTheme.colors.primary} />
+                    <rect x="10" y="30" rx="1" width="30" height="3" fill="white" opacity="0.7" />
+                    <circle cx="68" cy="33" r="3" fill="white" opacity="0.5" />
+                    
+                    {/* Job cards on screen */}
+                    <rect x="8" y="44" rx="2" width="64" height="18" fill="#f9fafb" stroke="#e5e7eb" strokeWidth="0.5" />
+                    <rect x="12" y="48" rx="1" width="24" height="2.5" fill={`${brandTheme.colors.primary}60`} />
+                    <rect x="12" y="53" rx="1" width="40" height="2" fill="#d1d5db" />
+                    <circle cx="64" cy="53" r="4" fill="#FCD34D" />
+                    <path d="M62.5 53L63.5 54L65.5 52" stroke="#92400E" strokeWidth="0.8" strokeLinecap="round" fill="none" />
+                    
+                    <rect x="8" y="66" rx="2" width="64" height="18" fill="#f9fafb" stroke="#e5e7eb" strokeWidth="0.5" />
+                    <rect x="12" y="70" rx="1" width="30" height="2.5" fill={`${brandTheme.colors.primary}60`} />
+                    <rect x="12" y="75" rx="1" width="36" height="2" fill="#d1d5db" />
+                    <circle cx="64" cy="75" r="4" fill="#FCA5A5" />
+                    
+                    <rect x="8" y="88" rx="2" width="64" height="18" fill="#f9fafb" stroke="#e5e7eb" strokeWidth="0.5" />
+                    <rect x="12" y="92" rx="1" width="28" height="2.5" fill={`${brandTheme.colors.primary}60`} />
+                    <rect x="12" y="97" rx="1" width="44" height="2" fill="#d1d5db" />
+                    <circle cx="64" cy="97" r="4" fill="#86EFAC" />
+                    <path d="M62.5 97L63.5 98L65.5 96" stroke="#166534" strokeWidth="0.8" strokeLinecap="round" fill="none" />
+                    
+                    {/* Floating card popping out */}
+                    <g transform="translate(-8, -10)">
+                      <rect x="12" y="0" rx="4" width="72" height="28" fill="white" stroke={brandTheme.colors.primary} strokeWidth="1.5" filter="url(#cardShadow)" />
+                      <rect x="18" y="6" rx="2" width="10" height="10" fill={`${brandTheme.colors.primary}20`} />
+                      <rect x="20" y="9" rx="0.5" width="6" height="4" fill={brandTheme.colors.primary} opacity="0.5" />
+                      <rect x="32" y="7" rx="1" width="28" height="3" fill={brandTheme.colors.primary} opacity="0.7" />
+                      <rect x="32" y="13" rx="1" width="40" height="2" fill="#9ca3af" />
+                      <rect x="32" y="18" rx="1" width="20" height="2" fill="#d1d5db" />
+                      <rect x="62" y="17" rx="2" width="16" height="7" fill="#EF4444" />
+                      <text x="65" y="22.5" fontSize="4.5" fontWeight="bold" fill="white">Apply</text>
+                    </g>
+                  </g>
+                  
+                  {/* Person standing */}
+                  <g transform="translate(175, 95)">
+                    {/* Head */}
+                    <circle cx="12" cy="0" r="10" fill="#FBBF24" />
+                    {/* Hair */}
+                    <path d="M3 -2 Q3 -10 12 -11 Q21 -10 21 -2 Q18 -5 12 -5 Q6 -5 3 -2Z" fill="#1f2937" />
+                    {/* Body - shirt */}
+                    <path d="M2 10 Q2 14 4 20 L4 50 L20 50 L20 20 Q22 14 22 10 Q12 7 2 10Z" fill={brandTheme.colors.primary} opacity="0.8" />
+                    {/* Collar */}
+                    <path d="M8 10 L12 16 L16 10" fill="white" opacity="0.6" />
+                    {/* Arm pointing at tablet */}
+                    <path d="M2 18 Q-8 22 -18 28" stroke={brandTheme.colors.primary} strokeWidth="4" strokeLinecap="round" fill="none" opacity="0.7" />
+                    {/* Hand */}
+                    <circle cx="-18" cy="28" r="3" fill="#FBBF24" />
+                    {/* Other arm */}
+                    <path d="M22 18 Q26 28 24 38" stroke={brandTheme.colors.primary} strokeWidth="4" strokeLinecap="round" fill="none" opacity="0.7" />
+                    {/* Pants */}
+                    <rect x="4" y="50" rx="2" width="6" height="30" fill="#4B5563" />
+                    <rect x="14" y="50" rx="2" width="6" height="30" fill="#374151" />
+                    {/* Shoes */}
+                    <rect x="2" y="78" rx="2" width="10" height="5" fill="#1f2937" />
+                    <rect x="13" y="78" rx="2" width="10" height="5" fill="#1f2937" />
+                  </g>
+                  
+                  {/* Magnifying glass */}
+                  <g transform="translate(30, 175)">
+                    <line x1="18" y1="18" x2="38" y2="38" stroke="#4B5563" strokeWidth="6" strokeLinecap="round" />
+                    <circle cx="12" cy="12" r="18" fill={`${brandTheme.colors.primary}15`} stroke={brandTheme.colors.primary} strokeWidth="3" />
+                    <circle cx="12" cy="12" r="12" fill="white" opacity="0.6" />
+                    <path d="M4 8 Q8 2 18 6" stroke="white" strokeWidth="2" strokeLinecap="round" fill="none" opacity="0.8" />
+                  </g>
+                  
+                  {/* Floating icons - money, people, briefcase */}
+                  <g transform="translate(195, 50)">
+                    <circle cx="0" cy="0" r="10" fill="#FCD34D" />
+                    <text x="-3.5" y="4" fontSize="10" fontWeight="bold" fill="#92400E">$</text>
+                  </g>
+                  <g transform="translate(200, 75)">
+                    <circle cx="0" cy="0" r="9" fill="#FCA5A5" />
+                    <circle cx="0" cy="-2" r="3" fill="#991B1B" opacity="0.5" />
+                    <path d="M-5 5 Q0 2 5 5" stroke="#991B1B" strokeWidth="1.2" fill="none" opacity="0.5" />
+                  </g>
+                  <g transform="translate(205, 102)">
+                    <circle cx="0" cy="0" r="8" fill={`${brandTheme.colors.primary}30`} />
+                    <rect x="-4" y="-3" rx="1" width="8" height="6" fill={brandTheme.colors.primary} opacity="0.5" />
+                    <rect x="-2" y="-5" rx="0.5" width="4" height="2.5" fill="none" stroke={brandTheme.colors.primary} strokeWidth="0.8" opacity="0.5" />
+                  </g>
+                  
+                  {/* Decorative plants */}
+                  <g transform="translate(10, 190)" opacity="0.6">
+                    <path d="M5 15 Q2 8 5 2 Q8 8 5 15Z" fill={brandTheme.colors.primary} opacity="0.4" />
+                    <path d="M5 15 Q9 10 12 4 Q8 10 5 15Z" fill={brandTheme.colors.primary} opacity="0.3" />
+                    <path d="M5 15 Q1 10 -2 5 Q2 10 5 15Z" fill={brandTheme.colors.primary} opacity="0.3" />
+                  </g>
+                  <g transform="translate(210, 195)" opacity="0.6">
+                    <path d="M5 12 Q2 6 5 0 Q8 6 5 12Z" fill="#EF4444" opacity="0.3" />
+                    <path d="M5 12 Q8 7 11 2 Q7 7 5 12Z" fill="#EF4444" opacity="0.25" />
+                    <path d="M5 12 Q2 7 -1 3 Q3 7 5 12Z" fill="#EF4444" opacity="0.25" />
+                  </g>
+                  
+                  {/* Shadow filter */}
+                  <defs>
+                    <filter id="cardShadow" x="-4" y="-4" width="108%" height="120%">
+                      <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.15" />
+                    </filter>
+                  </defs>
+                </svg>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-800 mb-2">Select a Job</h3>
+              <p className="text-gray-500 max-w-sm">Choose a job from the list to view details, qualifications, and apply.</p>
+            </div>
+          </div>
+        )
+      )}
+
       {/* Study Progress Section - LearningHome */}
       {activeMenuItem === 'progress' && (
-        <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <LearningHome brandTheme={brandTheme} currentUser={currentUser} selectedCollege={selectedCollege} />
+        <div className="flex-1 min-w-[500px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <LearningHome brandTheme={brandTheme} currentUser={currentUser} selectedCollege={selectedCollege} onViewAllCourses={() => setActiveMenuItem('courses')} onNavigate={(menuId) => { setActiveMenuItem(menuId); if (onActiveMenuChange) onActiveMenuChange(menuId); }} onOpenCourse={async (courseId, lectureId) => {
+            try {
+              const courses = await firebaseService.getCoursesByCourseId([parseInt(courseId, 10)]);
+              if (courses && courses.length > 0) {
+                const c = courses[0] as any;
+                const courseObj = {
+                  id: c.slug,
+                  courseId: String(c.courseId),
+                  name: c.courseName,
+                  thumbnail: c.thumbnailUrl || '',
+                  category: c.courseCategories?.[0] || '',
+                  lectures: c.totalLectures || 0,
+                  duration: '',
+                  quizzes: 0,
+                  exercises: 0,
+                  progress: 0,
+                  isEnrolled: true,
+                };
+                setSelectedCourse(courseObj as any);
+                setPendingCourseOpen({ lectureId: lectureId || undefined, trigger: Date.now() });
+              }
+            } catch (err) {
+              console.error('Failed to open course from LearningHome:', err);
+            }
+          }} />
         </div>
       )}
 
@@ -2092,7 +2809,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
         <>
           {/* Main Content - Classes */}
           <main 
-            className="h-full overflow-y-auto transition-all duration-300 bg-white border-r border-gray-200 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+            className="h-full overflow-y-auto transition-all duration-300 bg-white border-r border-gray-200 flex-shrink-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
             style={{ minWidth: '600px', maxWidth: '600px', width: '600px' }}
           >
             <Classes
@@ -2111,7 +2828,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
           {selectedClassForUsers && (
             <aside 
               className="h-full bg-white border-l border-gray-200 transition-all duration-300 flex flex-col overflow-hidden relative"
-              style={{ flex: 1, minWidth: 0 }}
+              style={{ flex: 1, minWidth: '500px' }}
             >
               <UserList
                 selectedClass={selectedClassForUsers}
@@ -2131,7 +2848,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
 
       {/* Coding Lab Section */}
       {activeMenuItem === 'codinglab' && (
-        <div className="flex-1 overflow-hidden bg-gray-100">
+        <div className="flex-1 min-w-[500px] overflow-hidden bg-gray-100">
           <CodingLab
             brandTheme={brandTheme}
             currentUser={currentUser}
@@ -2147,7 +2864,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
 
       {/* Resume Builder Section - Always mounted to preserve state */}
       <div 
-        className="flex-1 overflow-hidden bg-gray-50" 
+        className="flex-1 min-w-[500px] overflow-hidden bg-gray-50" 
         style={{ 
           display: activeMenuItem === 'resumebuilder' ? 'flex' : 'none', 
           flexDirection: 'column' 
@@ -2164,9 +2881,30 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
         />
       </div>
 
+      {/* AI Interview Practice */}
+      {activeMenuItem === 'interviews' && (
+        <AIInterviewPractice
+          brandTheme={brandTheme}
+          currentUser={currentUser}
+        />
+      )}
+
+      {/* Learning Paths */}
+      {activeMenuItem === 'learningpaths' && (
+        <LearningPaths
+          brandTheme={brandTheme}
+          currentUser={currentUser}
+          selectedCollege={selectedCollege}
+          availableCourses={[]}
+          isCollapsed={isLearningPathsCollapsed}
+          onCollapse={() => setIsLearningPathsCollapsed(true)}
+          onExpand={() => setIsLearningPathsCollapsed(false)}
+        />
+      )}
+
       {/* Other menu items - placeholder */}
-      {activeMenuItem !== 'courses' && activeMenuItem !== 'students' && activeMenuItem !== 'codinglab' && activeMenuItem !== 'resumebuilder' && activeMenuItem !== 'logicbuilder' && activeMenuItem !== 'progress' && (
-        <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
+      {activeMenuItem !== 'courses' && activeMenuItem !== 'jobs' && activeMenuItem !== 'students' && activeMenuItem !== 'codinglab' && activeMenuItem !== 'resumebuilder' && activeMenuItem !== 'logicbuilder' && activeMenuItem !== 'progress' && activeMenuItem !== 'interviews' && activeMenuItem !== 'learningpaths' && (
+        <div className="flex-1 min-w-[500px] overflow-y-auto bg-gray-50 p-6">
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
             <FontAwesomeIcon 
               icon={menuItems.find(m => m.id === activeMenuItem)?.icon || faBookOpen} 
@@ -2183,7 +2921,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
 
       {/* Logic Builder */}
       {activeMenuItem === 'logicbuilder' && (
-        <div className="flex-1 overflow-hidden bg-gray-100">
+        <div className="flex-1 min-w-[500px] overflow-hidden bg-gray-100">
           <LogicBuilder />
         </div>
       )}
@@ -3631,6 +4369,13 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
         </>,
         document.body
       )}
+
+      {/* AI Support Assistant - Sidebar trigger */}
+      <AISupportAssistant
+        isOpen={showAISupportFromSidebar}
+        onClose={() => setShowAISupportFromSidebar(false)}
+        userName={currentUser?.displayName?.split(' ')[0] || ''}
+      />
     </div>
   );
 };

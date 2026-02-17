@@ -42,6 +42,287 @@ interface ExamData {
   collegeName?: string;
   [key: string]: any;
 }
+
+// ============================================
+// 🎓 GENERATE LEARNING PATH FROM JOB DESCRIPTION
+// Uses GPT-4o-mini to analyze JD, extract skills, map to course catalog
+// ============================================
+
+const LEARNING_PATH_SYSTEM_PROMPT = `You are an expert career coach and curriculum designer. Given a job description and a catalog of available courses, you must:
+
+1. Extract key skills from the job description and classify each as "must_have", "should_have", or "nice_to_have"
+2. Assign a weight (1-10) to each skill based on how critical it is for the role
+3. Map those skills to the most relevant courses from the provided catalog
+4. Organize courses into logical learning phases with a recommended sequence
+5. Generate a learning path name, description, target role, difficulty, and estimated duration
+
+SKILL CLASSIFICATION:
+- "must_have": Explicitly required skills, core technical requirements, non-negotiable qualifications (weight 7-10)
+- "should_have": Strongly preferred skills, important but not dealbreakers (weight 4-7)
+- "nice_to_have": Bonus skills, supplementary knowledge, soft skills mentioned (weight 1-4)
+
+CRITICAL RULES FOR SKILL EXTRACTION:
+- Read the JD carefully. If it says "X or Y" (e.g. "MongoDB or PostgreSQL"), list BOTH as separate skills with the same weight and category. Add an "altGroup" field with the same group name (e.g. "database") so the student can choose which one to learn. Do NOT remove either one.
+- If the JD says "experience with X preferred" or "X is a plus", classify as "should_have" or "nice_to_have", NOT "must_have".
+- Combine closely related skills into one (e.g. "HTML5" and "CSS3" → "HTML/CSS") instead of listing separately. But do NOT combine genuinely different alternatives (MongoDB vs PostgreSQL are different technologies — keep separate).
+- Extract 8-15 distinct skills. Avoid padding with generic skills like "problem solving" or "communication" unless the JD specifically emphasizes them.
+
+CRITICAL RULES FOR COURSE MAPPING:
+- ONLY use courses from the provided catalog. Never invent course IDs or names.
+- Use the EXACT courseId (number) and courseName from the catalog.
+- ONLY match a course to a skill if the course ACTUALLY teaches that skill. Check the courseName, categories, and tagLine carefully. For example, a Laravel/PHP course does NOT match "Node.js". A MySQL course does NOT match "MongoDB". If unsure, leave the skill unmatched — a wrong match is worse than no match.
+- It is BETTER to leave a skill as matched=false than to map it to an irrelevant course.
+- Each skill should map to a DIFFERENT course when possible. If two skills would map to the same course, that's OK only if the course genuinely covers both topics.
+- If a skill has no matching course, set matched=false and matchedCourseId=null.
+- Organize into phases: "Foundations"(1) → "Core Skills"(2) → "Advanced"(3) → "Specialization"(4)
+- sequenceOrder: continuous number starting from 1 across all phases.
+- Select 4-10 most relevant, UNIQUE courses. Quality over quantity. No duplicate courseIds.
+- estimatedWeeks: realistic based on course count (assume ~10h/week study).
+- Sort extractedSkills by weight descending (highest weight first).
+
+Respond ONLY with valid JSON. No markdown, no backticks, no explanation.`;
+
+export const generateLearningPathAI = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 120,
+    memory: '512MB'
+  })
+  .https.onCall(async (data, context) => {
+    console.log('🚀 GenerateLearningPathAI called');
+    
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { jdText, fileBase64, fileName } = data;
+    const hasFile = fileBase64 && fileName;
+    const hasText = jdText && jdText.trim().length >= 30;
+
+    if (!hasFile && !hasText) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'Please provide job description text (min 30 chars) or upload a PDF/DOCX file'
+      );
+    }
+
+    if (hasFile) {
+      console.log(`📄 File received: ${fileName} (${(Buffer.from(fileBase64, 'base64').length / 1024).toFixed(1)} KB)`);
+    }
+    if (hasText) {
+      console.log(`📄 JD text length: ${jdText.trim().length}`);
+    }
+
+    // Get Gemini API key and model from Firestore settings
+    const db = admin.firestore();
+    const [geminiKeyDoc, geminiModelDoc] = await Promise.all([
+      db.collection('settings').doc('GEMINI_API_KEY').get(),
+      db.collection('settings').doc('GEMINI_MODEL').get(),
+    ]);
+    const geminiKey = geminiKeyDoc.data()?.GEMINI_API_KEY || '';
+    const geminiModel = geminiModelDoc.data()?.GEMINI_MODEL || 'gemini-2.0-flash';
+
+    if (!geminiKey) {
+      throw new functions.https.HttpsError('failed-precondition', 'Gemini API key not configured in Firestore settings');
+    }
+
+    try {
+      console.log('📦 Fetching courses...');
+
+      // 1. Fetch all courses and filter in code (avoids needing composite index)
+      const coursesSnapshot = await db.collection('courses').get();
+
+      // Build catalog map for enrichment later + compact list for AI
+      const courseMap = new Map<number, any>();
+      const catalogLines: string[] = [];
+
+      coursesSnapshot.docs.forEach(doc => {
+        const d = doc.data();
+        if (!d.courseName || !d.courseId) return;
+        // Filter: only active published courses
+        if (d.isPublished !== true || d.status !== 'active') return;
+
+        const cid = Number(d.courseId);
+        const durationH = d.totalDuration ? Math.round(d.totalDuration / 3600) : 0;
+
+        courseMap.set(cid, {
+          courseId: cid,
+          courseName: d.courseName,
+          courseCategories: d.courseCategories || [],
+          tagLine: d.tagLine || '',
+          slug: d.slug || doc.id,
+          thumbnailUrl: d.thumbnailUrl || '',
+          totalLectures: d.totalLectures || 0,
+          totalChapters: d.totalChapters || 0,
+          totalDuration: d.totalDuration || 0,
+          durationHours: durationH,
+          courseAuthor: d.courseAuthor || '',
+          complexityLevel: d.complexityLevel || 1,
+        });
+
+        // Compact line for AI prompt — only what AI needs for matching
+        catalogLines.push(
+          `[${cid}] "${d.courseName}" | ${(d.courseCategories || []).join(', ')} | "${d.tagLine || ''}"`
+        );
+      });
+
+      if (courseMap.size === 0) {
+        throw new functions.https.HttpsError('not-found', 'No active courses found in catalog');
+      }
+
+      console.log(`📚 Learning Path: ${courseMap.size} courses in catalog for matching`);
+
+      const catalogText = `COURSE CATALOG (${courseMap.size} courses):\n${catalogLines.join('\n')}`;
+
+      const jsonTemplate = `{
+  "pathName": "string",
+  "description": "2-3 sentence description",
+  "targetRole": "string",
+  "estimatedWeeks": number,
+  "difficulty": "beginner"|"intermediate"|"advanced",
+  "extractedSkills": [
+    {"name":"string","category":"must_have"|"should_have"|"nice_to_have","weight":number_1_to_10,"matched":boolean,"matchedCourseId":number|null,"altGroup":string|null}
+  ],
+  "mappedCourses": [
+    {"courseId":number,"courseName":"string","category":"string","matchedSkills":["string"],"phase":"string","phaseNumber":number,"sequenceOrder":number,"isRequired":boolean}
+  ]
+}`;
+
+      // 2. Build Gemini request parts
+      const parts: any[] = [];
+
+      if (hasFile) {
+        const ext = fileName.split('.').pop()?.toLowerCase();
+        const mimeMap: Record<string, string> = {
+          'pdf': 'application/pdf',
+          'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'txt': 'text/plain',
+        };
+        const mimeType = mimeMap[ext || ''] || 'application/octet-stream';
+
+        parts.push({
+          inlineData: {
+            mimeType,
+            data: fileBase64,
+          }
+        });
+        parts.push({
+          text: `${LEARNING_PATH_SYSTEM_PROMPT}\n\n---\nThe above file is a Job Description. Extract skills from it and map to the course catalog.\n\n${catalogText}\n\nReturn JSON:\n${jsonTemplate}`
+        });
+      } else {
+        parts.push({
+          text: `${LEARNING_PATH_SYSTEM_PROMPT}\n\nJOB DESCRIPTION:\n${jdText.substring(0, 6000)}\n---\n\n${catalogText}\n\nReturn JSON:\n${jsonTemplate}`
+        });
+      }
+
+      // 3. Call Gemini via REST API
+      console.log('🤖 Calling Gemini model:', geminiModel);
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts }],
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 15000,
+              responseMimeType: 'application/json',
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('❌ Gemini API error:', response.status, errText);
+        throw new functions.https.HttpsError('internal', `Gemini API error: ${response.status}`);
+      }
+
+      const geminiResult = await response.json();
+      let rawResult = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      console.log(`🤖 Learning Path AI (Gemini ${geminiModel}) — Response length: ${rawResult.length}`);
+
+      // 4. Parse JSON response
+      let cleanResult = rawResult.trim();
+      cleanResult = cleanResult.replace(/^```json?\s*/, '').replace(/\s*```$/, '');
+
+      let parsed: any;
+      try {
+        parsed = JSON.parse(cleanResult);
+      } catch (parseErr) {
+        console.error('❌ Failed to parse AI response:', cleanResult.substring(0, 500));
+        throw new functions.https.HttpsError('internal', 'AI returned invalid response. Please try again.');
+      }
+
+      // 5. Validate & enrich mappedCourses with real Firestore data
+      const validatedCourses: any[] = [];
+      const aiCourses = parsed.mappedCourses || [];
+
+      for (const aiCourse of aiCourses) {
+        const realCourse = courseMap.get(Number(aiCourse.courseId));
+        if (!realCourse) {
+          console.warn(`⚠️ AI suggested courseId ${aiCourse.courseId} not found in catalog — skipping`);
+          continue;
+        }
+
+        validatedCourses.push({
+          courseId: realCourse.courseId,
+          courseName: realCourse.courseName,
+          category: (realCourse.courseCategories || []).join(', '),
+          duration: `${realCourse.durationHours}h`,
+          lectures: realCourse.totalLectures,
+          totalChapters: realCourse.totalChapters,
+          slug: realCourse.slug,
+          thumbnailUrl: realCourse.thumbnailUrl,
+          courseAuthor: realCourse.courseAuthor,
+          complexityLevel: realCourse.complexityLevel,
+          // AI-determined fields
+          matchedSkills: aiCourse.matchedSkills || [],
+          phase: aiCourse.phase || 'Core Skills',
+          phaseNumber: aiCourse.phaseNumber || 2,
+          sequenceOrder: aiCourse.sequenceOrder || 1,
+          isRequired: aiCourse.isRequired !== false,
+        });
+      }
+
+      // 6. Validate extractedSkills — ensure matchedCourseIds exist
+      const validatedSkills = (parsed.extractedSkills || []).map((skill: any) => ({
+        name: skill.name,
+        category: ['must_have', 'should_have', 'nice_to_have'].includes(skill.category) ? skill.category : 'must_have',
+        weight: Math.min(10, Math.max(1, Number(skill.weight) || 5)),
+        matched: skill.matched && courseMap.has(Number(skill.matchedCourseId)),
+        matchedCourseId: courseMap.has(Number(skill.matchedCourseId)) ? Number(skill.matchedCourseId) : null,
+        altGroup: skill.altGroup || null,
+      }));
+
+      console.log(`✅ Learning Path: ${validatedSkills.length} skills extracted, ${validatedCourses.length} courses mapped`);
+
+      return {
+        success: true,
+        pathName: parsed.pathName || 'Learning Path',
+        description: parsed.description || '',
+        targetRole: parsed.targetRole || '',
+        estimatedWeeks: parsed.estimatedWeeks || 8,
+        difficulty: parsed.difficulty || 'intermediate',
+        extractedSkills: validatedSkills,
+        mappedCourses: validatedCourses,
+        metadata: {
+          model: geminiModel,
+          totalCoursesInCatalog: courseMap.size,
+          tokensUsed: 0,
+          timestamp: new Date().toISOString(),
+        }
+      };
+
+    } catch (error: any) {
+      console.error('❌ Learning Path generation failed:', error.message);
+      if (error instanceof functions.https.HttpsError) throw error;
+      throw new functions.https.HttpsError('internal', 'Failed to generate learning path', error.message);
+    }
+  });
 /**
  * 🧠 Generate Logic Analysis for Custom Problem
  * Uses ChatGPT to generate algorithm, pseudocode, flowchart, approach, and complexity analysis
@@ -1647,6 +1928,33 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
   
   const gradedResponses = [];
   
+  // Helper: Track performance metrics (byType, byComplexity, byChapter, totalScore, correctAnswers)
+  // Called before every continue in CODE/SQL blocks to ensure no question is skipped
+  function trackPerformance(question: any, response: any, questionMaxMarks: number, marksAwarded: number, isAttempted: boolean, isCorrect: boolean) {
+    totalScore += marksAwarded;
+    if (isCorrect) correctAnswers++;
+    
+    const qType = question.type;
+    if (!byType[qType]) byType[qType] = { attempted: 0, score: 0, maxScore: 0 };
+    byType[qType].maxScore += questionMaxMarks;
+    if (isAttempted) { byType[qType].attempted++; byType[qType].score += marksAwarded; }
+    
+    if (question.complexity) {
+      const complexity = question.complexity.toLowerCase() as 'easy' | 'medium' | 'hard';
+      if (byComplexity[complexity]) {
+        byComplexity[complexity].maxScore += questionMaxMarks;
+        if (isAttempted) { byComplexity[complexity].attempted++; byComplexity[complexity].score += marksAwarded; }
+      }
+    }
+    
+    const chapterName = question.chapter || response.chapter;
+    if (chapterName) {
+      if (!byChapter[chapterName]) byChapter[chapterName] = { attempted: 0, score: 0, maxScore: 0 };
+      byChapter[chapterName].maxScore += questionMaxMarks;
+      if (isAttempted) { byChapter[chapterName].attempted++; byChapter[chapterName].score += marksAwarded; }
+    }
+  }
+  
   // Grade each response
   for (const response of responses) {
     const question = allQuestions.find((q: any) => q.id === response.questionId);
@@ -1797,6 +2105,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
           evaluationError: 'No code submitted'
         });
         
+        trackPerformance(question, response, questionMaxMarks, 0, false, false);
         continue;
       }
       
@@ -1874,6 +2183,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
           evaluatedAt: new Date()
         });
         
+        trackPerformance(question, response, questionMaxMarks, 0, isAttempted, false);
         continue;
       }
       
@@ -1978,6 +2288,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
           evaluatedAt: new Date()
         });
         
+        trackPerformance(question, response, questionMaxMarks, 0, isAttempted, false);
         continue;
       }
       
@@ -2044,6 +2355,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
         evaluatedAt: new Date()
       });
       
+      trackPerformance(question, response, questionMaxMarks, marksAwarded, isAttempted, isCorrect);
       continue;
     }
     
@@ -2073,6 +2385,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
           evaluationError: 'No SQL query submitted'
         });
         
+        trackPerformance(question, response, questionMaxMarks, 0, false, false);
         continue;
       }
       
@@ -2101,6 +2414,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
           evaluatedAt: new Date()
         });
         
+        trackPerformance(question, response, questionMaxMarks, 0, isAttempted, false);
         continue;
       }
       
@@ -2141,6 +2455,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
           evaluatedAt: new Date()
         });
         
+        trackPerformance(question, response, questionMaxMarks, marksAwarded, isAttempted, isCorrect);
         continue;
         
       } catch (sqlError: any) {
@@ -2168,6 +2483,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
           evaluatedAt: new Date()
         });
         
+        trackPerformance(question, response, questionMaxMarks, 0, isAttempted, false);
         continue;
       }
     }
@@ -2208,14 +2524,15 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
     }
     
     // Track by chapter
-    if (question.chapter) {
-      if (!byChapter[question.chapter]) {
-        byChapter[question.chapter] = { attempted: 0, score: 0, maxScore: 0 };
+    const chapterName = question.chapter || response.chapter;
+    if (chapterName) {
+      if (!byChapter[chapterName]) {
+        byChapter[chapterName] = { attempted: 0, score: 0, maxScore: 0 };
       }
-      byChapter[question.chapter].maxScore += questionMaxMarks;
+      byChapter[chapterName].maxScore += questionMaxMarks;
       if (isAttempted) {
-        byChapter[question.chapter].attempted++;
-        byChapter[question.chapter].score += marksAwarded;
+        byChapter[chapterName].attempted++;
+        byChapter[chapterName].score += marksAwarded;
       }
     }
     
@@ -2260,9 +2577,11 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       }
       
       // byChapter
-      if (question.chapter) {
-        if (!byChapter[question.chapter]) byChapter[question.chapter] = { attempted: 0, score: 0, maxScore: 0 };
-        byChapter[question.chapter].maxScore += qMaxMarks;
+      const unattemptedChapter = question.chapter || 
+        responses.find((r: any) => r.questionId === question.id)?.chapter;
+      if (unattemptedChapter) {
+        if (!byChapter[unattemptedChapter]) byChapter[unattemptedChapter] = { attempted: 0, score: 0, maxScore: 0 };
+        byChapter[unattemptedChapter].maxScore += qMaxMarks;
       }
     }
   }
@@ -3688,7 +4007,7 @@ function generateWelcomeEmailHTML(data: {
     <div class="content">
       <h2 style="color: #667eea; margin-top: 0;">Hello ${name}! 👋</h2>
       <p>Welcome to <strong>EXAMINERS</strong> at <strong>${collegeName}</strong>!</p>
-      <p>Your account has been created as a <strong>${userType}</strong>. We're excited to have you join our AI-powered secure exams management platform.</p>
+      <p>Your account has been created as a <strong>${userType}</strong>. We're excited to have you join our AI-powered secure exams & learning management platform.</p>
       
       <div class="credentials-box">
         <h3>🔐 Your Login Credentials</h3>
@@ -3731,13 +4050,13 @@ function generateWelcomeEmailHTML(data: {
       <h3 style="color: #667eea;">Need Help? 🆘</h3>
       <p>If you have any questions or need assistance getting started:</p>
       <ul>
-        <li>📧 Email: <a href="mailto:support@examiners.app" style="color: #667eea;">support@examiners.app</a></li>
+        <li>📧 Email: <a href="mailto:contact@tutorialspoint.com" style="color: #667eea;">contact@tutorialspoint.com</a></li>
         <li>💬 Contact your system administrator</li>
       </ul>
     </div>
     
     <div class="footer">
-      <p><strong>EXAMINERS</strong> - AI-Powered Secure Exams Management Application</p>
+      <p><strong>EXAMINERS</strong> - AI-Powered Secure Exams &amp; Learning Management Application</p>
       <p>© ${new Date().getFullYear()} ${collegeName}. All rights reserved.</p>
       <p style="margin-top: 15px; font-size: 11px; color: #999;">
         This is an automated email. Please do not reply to this message.
@@ -3897,10 +4216,10 @@ export const sendPasswordResetEmail = functions
       <div class="divider"></div>
       <h3 style="color: #667eea;">Need Help? 🆘</h3>
       <p>If you're having trouble resetting your password or need assistance:</p>
-      <ul><li>📧 Email: <a href="mailto:support@examiners.app" style="color: #667eea;">support@examiners.app</a></li><li>💬 Contact your system administrator</li></ul>
+      <ul><li>📧 Email: <a href="mailto:contact@tutorialspoint.com" style="color: #667eea;">contact@tutorialspoint.com</a></li><li>💬 Contact your system administrator</li></ul>
     </div>
     <div class="footer">
-      <p><strong>EXAMINERS</strong> - AI-Powered Secure Exams Management Application</p>
+      <p><strong>EXAMINERS</strong> - AI-Powered Secure Exams &amp; Learning Management Application</p>
       <p>© ${new Date().getFullYear()} EXAMINERS. All rights reserved.</p>
       <p style="margin-top: 15px; font-size: 11px; color: #999;">This is an automated email. Please do not reply to this message.</p>
     </div>
@@ -5887,3 +6206,1310 @@ export const getProblemsList = functions
       });
     }
   });
+
+// ============================================
+// CloudFront Signed Cookies for Video Playback
+// ============================================
+
+import * as crypto from 'crypto';
+
+const CF_KEY_PAIR_ID = 'APKAJ33FA7J7QU642EBA';
+const CF_CDN_URL = 'https://cdn.examiners.app';
+
+/**
+ * Sign a CloudFront policy using RSA-SHA1
+ */
+function cfSign(policy: string, privateKey: string): string {
+  const sign = crypto.createSign('RSA-SHA1');
+  sign.update(policy);
+  return sign.sign(privateKey, 'base64')
+    .replace(/\+/g, '-')
+    .replace(/=/g, '_')
+    .replace(/\//g, '~');
+}
+
+/**
+ * Generate CloudFront signed cookies for video playback
+ * Requires CF_PRIVATE_KEY secret to be set in Firebase
+ */
+export const getVideoSignedCookies = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 10,
+    memory: '128MB',
+    secrets: ['CF_PRIVATE_KEY'],
+  })
+  .https.onCall(async (_data, context) => {
+    // Auth check
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const privateKey = process.env.CF_PRIVATE_KEY;
+    if (!privateKey) {
+      console.error('CF_PRIVATE_KEY secret not configured');
+      throw new functions.https.HttpsError('internal', 'Signing key not configured');
+    }
+
+    const expiresAt = Math.floor(Date.now() / 1000) + 7200; // 2 hours
+
+    const policy = JSON.stringify({
+      Statement: [{
+        Resource: `${CF_CDN_URL}/video_tutorials/*`,
+        Condition: {
+          DateLessThan: { 'AWS:EpochTime': expiresAt }
+        }
+      }]
+    });
+
+    const encodedPolicy = Buffer.from(policy).toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/=/g, '_')
+      .replace(/\//g, '~');
+
+    const signature = cfSign(policy, privateKey);
+
+    return {
+      'CloudFront-Policy': encodedPolicy,
+      'CloudFront-Signature': signature,
+      'CloudFront-Key-Pair-Id': CF_KEY_PAIR_ID,
+      expiresAt,
+    };
+  });
+
+// ============================================
+// STUDENT LEARNING DETAIL - NIGHTLY SYNC + MANUAL TRIGGER
+// ============================================
+
+/**
+ * Core sync logic — recalculates studentLearningDetail for all enrolled students
+ */
+async function syncAllStudentLearningDetails(): Promise<{ synced: number; errors: number }> {
+  const db = admin.firestore();
+  let synced = 0;
+  let errors = 0;
+
+  const enrollmentsSnap = await db.collection('course_enrollments')
+    .where('status', 'in', ['active', 'completed'])
+    .get();
+
+  // Group by userId_collegeId
+  const studentMap = new Map<string, { userId: string; collegeId: string; enrollments: any[] }>();
+
+  enrollmentsSnap.docs.forEach(doc => {
+    const data = doc.data();
+    const userId = data.userId || '';
+    const collegeId = data.collegeId || '';
+    if (!userId || !collegeId) return;
+
+    const key = `${userId}_${collegeId}`;
+    if (!studentMap.has(key)) {
+      studentMap.set(key, { userId, collegeId, enrollments: [] });
+    }
+    studentMap.get(key)!.enrollments.push({ id: doc.id, ...data });
+  });
+
+  console.log(`📊 Found ${studentMap.size} student-college pairs to sync`);
+
+  // Build course info cache keyed by courseId (number→string)
+  const courseInfoCache = new Map<string, any>();
+  try {
+    const allCourses = await db.collection('courses').get();
+    allCourses.docs.forEach(d => {
+      const data = d.data();
+      const cid = String(data.courseId || '');
+      if (cid) {
+        courseInfoCache.set(cid, {
+          courseName: data.courseName || '',
+          slug: data.slug || d.id,
+          thumbnailUrl: data.thumbnailUrl || '',
+          totalLectures: data.totalLectures || 0,
+          totalChapters: data.totalChapters || 0,
+          totalExercises: data.totalExercises || 0,
+          totalQuizzes: data.totalQuizzes || 0,
+          totalUnits: data.totalUnits || 0,
+        });
+      }
+    });
+    console.log(`📚 Cached ${courseInfoCache.size} courses by courseId`);
+  } catch (err) {
+    console.warn('⚠️ Failed to fetch courses:', err);
+  }
+
+  for (const [docId, { userId, collegeId, enrollments }] of studentMap) {
+    try {
+      // Fetch user info from users collection
+      let userName = '';
+      let userEmail = '';
+      try {
+        const userDoc = await db.collection('users').doc(userId).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          userName = userData?.fullName || userData?.displayName || userData?.name || '';
+          userEmail = userData?.email || '';
+        }
+      } catch (_e) { /* skip */ }
+
+      let totalTimeSpent = 0;
+      let totalCoursesEnrolled = 0;
+      let totalCoursesCompleted = 0;
+      let totalLecturesCompleted = 0;
+      let totalQuizzesCompleted = 0;
+      const courses: any = {};
+
+      for (const enrollment of enrollments) {
+        const progress = enrollment.progress || {};
+        const courseId = String(enrollment.courseId || '');
+
+        totalCoursesEnrolled++;
+        if (enrollment.status === 'completed') totalCoursesCompleted++;
+
+        const completedLectures = progress.completedLectures || [];
+        totalLecturesCompleted += completedLectures.length;
+        totalTimeSpent += progress.totalTimeSpent || 0;
+
+        const quizResults = progress.quizResults || {};
+        totalQuizzesCompleted += Object.keys(quizResults).length;
+
+        // Get course info from cache by courseId
+        const courseInfo = courseInfoCache.get(courseId);
+
+          const courseTotalLectures = courseInfo?.totalLectures || enrollment.totalLectures || 0;
+          const calculatedPercentage = courseTotalLectures > 0 
+            ? Math.max(completedLectures.length > 0 ? 1 : 0, Math.round((completedLectures.length / courseTotalLectures) * 100))
+            : 0;
+
+          courses[courseId] = {
+          courseName: courseInfo?.courseName || courseId,
+          slug: courseInfo?.slug || '',
+          thumbnailUrl: courseInfo?.thumbnailUrl || '',
+          enrollmentId: enrollment.id,
+          totalLectures: courseTotalLectures,
+          totalChapters: courseInfo?.totalChapters || 0,
+          totalExercises: courseInfo?.totalExercises || 0,
+          totalQuizzes: courseInfo?.totalQuizzes || 0,
+          totalUnits: courseInfo?.totalUnits || 0,
+          percentage: progress.percentage || calculatedPercentage,
+          timeSpent: progress.totalTimeSpent || 0,
+          lecturesCompleted: completedLectures.length,
+          lastLectureId: progress.lastLectureId || '',
+          lastLectureTitle: progress.lectures?.[progress.lastLectureId]?.title || '',
+          lastChapterName: '',
+          lastAccessedAt: progress.lastAccessedAt || null,
+          status: enrollment.status || 'active',
+        };
+      }
+
+      const docRef = db.collection('studentLearningDetail').doc(docId);
+      const existingDoc = await docRef.get();
+      const existingData = existingDoc.exists ? existingDoc.data() : {} as any;
+
+      await docRef.set({
+        userId,
+        collegeId,
+        userName: userName || existingData?.userName || '',
+        userEmail: userEmail || existingData?.userEmail || '',
+        totalCoursesEnrolled,
+        totalCoursesCompleted,
+        totalTimeSpent,
+        totalLecturesCompleted,
+        totalQuizzesCompleted,
+        totalAssessmentsCompleted: existingData?.totalAssessmentsCompleted || 0,
+        courses,
+        recentActivity: existingData?.recentActivity || [],
+        lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastSyncedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      synced++;
+
+      // Ensure dailyLearningLog docs exist for today and yesterday
+      // (handles case where last night's cron failed)
+      const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const dates = [today, yesterday].map(d => 
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      );
+
+      for (const dateStr of dates) {
+        const dailyLogRef = db.collection('dailyLearningLog').doc(`${userId}_${dateStr}`);
+        const dailyLogSnap = await dailyLogRef.get();
+        if (!dailyLogSnap.exists) {
+          await dailyLogRef.set({
+            userId,
+            collegeId,
+            date: dateStr,
+            timeSpent: 0,
+            lecturesCompleted: 0,
+            quizzesCompleted: 0,
+            exercisesCompleted: 0,
+            assessmentsCompleted: 0,
+            coursesAccessed: [],
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      }
+    } catch (err) {
+      console.error(`❌ Error syncing ${docId}:`, err);
+      errors++;
+    }
+  }
+
+  return { synced, errors };
+}
+
+/**
+ * 🕛 Nightly Cron - Sync Student Learning Details
+ * Runs at 12:00 AM IST every night
+ */
+export const syncStudentLearningDetailsCron = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .pubsub.schedule('0 0 * * *')
+  .timeZone('Asia/Kolkata')
+  .onRun(async () => {
+    console.log('🕛 Starting nightly student learning detail sync...');
+    const result = await syncAllStudentLearningDetails();
+    console.log(`✅ Nightly sync complete: ${result.synced} synced, ${result.errors} errors`);
+    return null;
+  });
+
+/**
+ * 🔄 Manual Sync - Callable by system_admin only
+ */
+export const syncStudentLearningDetailsManual = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const db = admin.firestore();
+    const userDoc = await db.collection('users').doc(context.auth.uid).get();
+    const userType = userDoc.data()?.userType || '';
+
+    if (userType !== 'system_admin') {
+      throw new functions.https.HttpsError('permission-denied', 'Only system_admin can trigger manual sync');
+    }
+
+    console.log(`🔄 Manual sync triggered by ${context.auth.uid}`);
+    const result = await syncAllStudentLearningDetails();
+    console.log(`✅ Manual sync complete: ${result.synced} synced, ${result.errors} errors`);
+
+    return {
+      success: true,
+      synced: result.synced,
+      errors: result.errors,
+      message: `Synced ${result.synced} students, ${result.errors} errors`,
+    };
+  });
+// ==================== LeetCode Stats ====================
+
+export const fetchLeetCodeStats = functions.https.onCall(async (data, context) => {
+  const rawUsername = data.username;
+  const forceRefresh = data.forceRefresh === true;
+  const userId = data.userId; // optional: to cache per-user
+
+  if (!rawUsername || typeof rawUsername !== 'string') {
+    return { success: false, error: 'Username is required', errorCode: 'INVALID_INPUT' };
+  }
+
+  // Sanitize username: only alphanumeric, underscore, hyphen allowed
+  const username = rawUsername.trim().replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!username || username.length < 1 || username.length > 30) {
+    return { success: false, error: 'Invalid LeetCode username format', errorCode: 'INVALID_USERNAME' };
+  }
+
+  const db = admin.firestore();
+  const cacheDocId = `leetcode_${username.toLowerCase()}`;
+  const cacheRef = db.collection('externalProfileCache').doc(cacheDocId);
+
+  // Check cache first (unless force refresh)
+  if (!forceRefresh) {
+    try {
+      const cached = await cacheRef.get();
+      if (cached.exists) {
+        const cachedData = cached.data();
+        const cachedAt = cachedData?.cachedAt?.toDate?.() || new Date(0);
+        const hoursSinceCached = (Date.now() - cachedAt.getTime()) / (1000 * 60 * 60);
+        // Return cache if less than 6 hours old
+        if (hoursSinceCached < 6 && cachedData?.stats) {
+          return { success: true, ...cachedData.stats, fromCache: true, cachedAt: cachedAt.toISOString() };
+        }
+      }
+    } catch (cacheErr) {
+      console.warn('Cache read error:', cacheErr);
+    }
+  }
+
+  try {
+    const fetch = (await import('node-fetch')).default;
+    const AbortController = (await import('abort-controller')).default;
+
+    // Timeout: 10 seconds
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    // Query: User profile + problem stats + contest + recent submissions
+    const profileQuery = {
+      query: `
+        query getUserProfile($username: String!) {
+          matchedUser(username: $username) {
+            username
+            profile {
+              realName
+              userAvatar
+              ranking
+              reputation
+              starRating
+            }
+            submitStats: submitStatsGlobal {
+              acSubmissionNum {
+                difficulty
+                count
+                submissions
+              }
+            }
+            badges {
+              id
+              displayName
+              icon
+            }
+            submissionCalendar
+          }
+          userContestRanking(username: $username) {
+            attendedContestsCount
+            rating
+            globalRanking
+            topPercentage
+          }
+          userContestRankingHistory(username: $username) {
+            attended
+            rating
+            ranking
+            contest {
+              title
+              startTime
+            }
+          }
+          recentSubmissionList(username: $username, limit: 10) {
+            title
+            titleSlug
+            statusDisplay
+            lang
+            timestamp
+          }
+          allQuestionsCount {
+            difficulty
+            count
+          }
+        }
+      `,
+      variables: { username }
+    };
+
+    const response = await fetch('https://leetcode.com/graphql', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Referer': 'https://leetcode.com',
+        'User-Agent': 'Mozilla/5.0',
+      },
+      body: JSON.stringify(profileQuery),
+      signal: controller.signal as any,
+    });
+
+    clearTimeout(timeout);
+
+    if (response.status === 429) {
+      return { success: false, error: 'LeetCode rate limit reached. Please try again in a few minutes.', errorCode: 'RATE_LIMITED' };
+    }
+
+    if (response.status === 403) {
+      return { success: false, error: 'LeetCode blocked the request. The profile may be private.', errorCode: 'FORBIDDEN' };
+    }
+
+    if (!response.ok) {
+      return { success: false, error: `LeetCode returned status ${response.status}`, errorCode: 'API_ERROR' };
+    }
+
+    const result: any = await response.json();
+
+    // Check for GraphQL errors
+    if (result.errors && result.errors.length > 0) {
+      const errMsg = result.errors[0]?.message || 'Unknown GraphQL error';
+      return { success: false, error: `LeetCode error: ${errMsg}`, errorCode: 'GRAPHQL_ERROR' };
+    }
+
+    const user = result.data?.matchedUser;
+
+    if (!user) {
+      // Cache the "not found" result too to avoid repeated lookups
+      await cacheRef.set({
+        username,
+        stats: null,
+        error: 'User not found',
+        cachedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }).catch(() => {});
+      return { success: false, error: `User "${username}" not found on LeetCode. Please check the username.`, errorCode: 'USER_NOT_FOUND' };
+    }
+
+    const acStats = user.submitStats?.acSubmissionNum || [];
+    const allQuestions = result.data?.allQuestionsCount || [];
+    const contest = result.data?.userContestRanking;
+    const contestHistory = (result.data?.userContestRankingHistory || [])
+      .filter((h: any) => h.attended)
+      .map((h: any) => ({
+        rating: Math.round(h.rating),
+        ranking: h.ranking,
+        title: h.contest?.title || '',
+        timestamp: h.contest?.startTime || 0,
+      }));
+    const recentSubs = result.data?.recentSubmissionList || [];
+
+    const getStat = (diff: string) => acStats.find((s: any) => s.difficulty === diff)?.count || 0;
+    const getTotal = (diff: string) => allQuestions.find((q: any) => q.difficulty === diff)?.count || 0;
+    const totalSubmissions = acStats.find((s: any) => s.difficulty === 'All')?.submissions || 0;
+    const totalAccepted = acStats.find((s: any) => s.difficulty === 'All')?.count || 0;
+
+    // Parse submission calendar for streak
+    let currentStreak = 0;
+    let maxStreak = 0;
+    let totalActiveDays = 0;
+    if (user.submissionCalendar) {
+      try {
+        const cal = JSON.parse(user.submissionCalendar);
+        const timestamps = Object.keys(cal).map(Number).sort((a, b) => a - b);
+        totalActiveDays = timestamps.length;
+
+        // Calculate current streak (counting backwards from today)
+        const todayStart = Math.floor(Date.now() / 1000 / 86400) * 86400;
+        const activeDays = new Set(timestamps.map(ts => Math.floor(ts / 86400) * 86400));
+        
+        let checkDay = todayStart;
+        // Allow starting from today or yesterday
+        if (!activeDays.has(checkDay)) {
+          checkDay -= 86400;
+        }
+        while (activeDays.has(checkDay)) {
+          currentStreak++;
+          checkDay -= 86400;
+        }
+
+        // Calculate max streak
+        let tempStreak = 1;
+        for (let i = 1; i < timestamps.length; i++) {
+          const prevDay = Math.floor(timestamps[i - 1] / 86400);
+          const currDay = Math.floor(timestamps[i] / 86400);
+          if (currDay - prevDay === 1) {
+            tempStreak++;
+          } else if (currDay - prevDay > 1) {
+            maxStreak = Math.max(maxStreak, tempStreak);
+            tempStreak = 1;
+          }
+        }
+        maxStreak = Math.max(maxStreak, tempStreak);
+      } catch (e) {
+        // ignore parse errors
+      }
+    }
+
+    const stats = {
+      username: user.username,
+      name: user.profile?.realName || '',
+      avatar: user.profile?.userAvatar || '',
+      ranking: user.profile?.ranking || 0,
+      reputation: user.profile?.reputation || 0,
+      totalSolved: getStat('All'),
+      easySolved: getStat('Easy'),
+      mediumSolved: getStat('Medium'),
+      hardSolved: getStat('Hard'),
+      totalQuestions: getTotal('All'),
+      totalEasy: getTotal('Easy'),
+      totalMedium: getTotal('Medium'),
+      totalHard: getTotal('Hard'),
+      acceptanceRate: totalSubmissions > 0 ? Math.round((totalAccepted / totalSubmissions) * 100 * 10) / 10 : 0,
+      currentStreak,
+      maxStreak,
+      totalActiveDays,
+      contestRating: contest?.rating ? Math.round(contest.rating) : 0,
+      contestsAttended: contest?.attendedContestsCount || 0,
+      contestGlobalRanking: contest?.globalRanking || 0,
+      contestTopPercentage: contest?.topPercentage ? Math.round(contest.topPercentage * 10) / 10 : 0,
+      contestHistory: contestHistory.slice(-50),
+      badges: (user.badges || []).slice(0, 10).map((b: any) => ({
+        name: b.displayName || b.id,
+        icon: b.icon,
+      })),
+      recentSubmissions: recentSubs.slice(0, 5).map((s: any) => ({
+        title: s.title,
+        slug: s.titleSlug,
+        status: s.statusDisplay,
+        lang: s.lang,
+        timestamp: Number(s.timestamp),
+      })),
+    };
+
+    // Cache the result
+    try {
+      await cacheRef.set({
+        username,
+        userId: userId || null,
+        stats,
+        cachedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    } catch (cacheErr) {
+      console.warn('Cache write error:', cacheErr);
+    }
+
+    return { success: true, ...stats, fromCache: false };
+
+  } catch (err: any) {
+    console.error('LeetCode fetch error:', err);
+
+    if (err.name === 'AbortError' || err.type === 'aborted') {
+      return { success: false, error: 'Request timed out. LeetCode may be slow or unavailable.', errorCode: 'TIMEOUT' };
+    }
+
+    if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
+      return { success: false, error: 'Could not connect to LeetCode. Please check your network.', errorCode: 'NETWORK_ERROR' };
+    }
+
+    return { success: false, error: 'Failed to fetch LeetCode stats. Please try again later.', errorCode: 'UNKNOWN_ERROR' };
+  }
+});
+
+// ============================================
+// AI INTERVIEW PRACTICE - Cloud Function
+// ============================================
+
+const AI_INTERVIEW_FEEDBACK_PROMPT = `You are generating a detailed performance report for a candidate after a technical interview. Be constructive, encouraging, and specific.
+
+IMPORTANT: Return ONLY valid JSON, no markdown code blocks, no extra text.
+Response format:
+{
+  "overallSummary": "2-3 sentence overall assessment",
+  "strengths": ["strength 1", "strength 2", ...],
+  "weaknesses": ["area to improve 1", "area to improve 2", ...],
+  "motivationalMessage": "An encouraging message tailored to their performance level",
+  "topicsToReview": ["topic 1", "topic 2", ...]
+}
+
+Guidelines:
+- If score >= 80%: Praise strongly, mention advanced areas to explore
+- If score 60-79%: Balanced feedback, clear improvement path
+- If score 40-59%: Encouraging tone, specific study recommendations
+- If score < 40%: Very encouraging, focus on fundamentals, don't discourage
+- Strengths/weaknesses should be specific to the topics tested, not generic
+- motivationalMessage should feel personal and genuine, not corporate
+- topicsToReview should be actionable concepts they can study`;
+
+export const aiInterviewChat = functions
+  .region('us-central1')
+  .runWith({
+    timeoutSeconds: 60,
+    memory: '512MB'
+  })
+  .https.onCall(async (data, context) => {
+    try {
+      const { purpose } = data || {};
+
+      if (!purpose) {
+        throw new functions.https.HttpsError('invalid-argument', 'purpose is required');
+      }
+
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        throw new functions.https.HttpsError('failed-precondition', 'OpenAI API key not configured');
+      }
+
+      const client = new OpenAI({ apiKey });
+
+      // ─── INTERACTIVE CHAT (single conversational flow) ──────
+      if (purpose === 'chat') {
+        const {
+          courseName = 'Programming',
+          topicsContext = [],
+          userName = 'Candidate',
+          conversationHistory = [],
+          maxQuestions = 12,
+          lastQuestionNumber = 0,
+        } = data;
+
+        const topicsList = topicsContext.length > 0
+          ? topicsContext.join(', ')
+          : courseName;
+
+        const systemPrompt = `You are a ${courseName} Interviewer, Your name is Mac, who is going to take the user's interview professionally. Ask ${courseName} related questions interactively starting with a warm welcome of your interviewee, wait for their response to start the interview and tell them that you are going to interview them focusing on these topics: ${topicsList}. Then follow these rules:
+
+GREETING (your very first message when conversation history is empty):
+- Greet the candidate warmly by name with a 👋 emoji.
+- Welcome them to the **AI Interview Practice** for **${courseName}**.
+- Tell them you'll be asking questions based on the topics they've studied and that the interview works in stages — answer well and they'll progress to more challenging questions.
+- Ask if they are ready to begin and tell them to say **"Yes"** or **"Let's start"** when ready.
+- Do NOT ask any question in the greeting. Just welcome and wait.
+
+INTERVIEW RULES:
+1. You will ask questions related to concepts in: ${topicsList}.
+2. Use **Question-1**, **Question-2**....etc as bold headings for different questions.
+3. Wait for the user's answer. NEVER ask two questions in one message.
+4. Provide feedback on the user's response, and explain the correct answer in a very crisp way in 1-2 lines, only if necessary — not always. If they got it right, a quick acknowledgment is enough.
+5. Ask the next question interactively with natural transitions.
+6. Please make it interactive with a real human touch as much as possible. Use transitions like "Great!", "Interesting!", "Let's try something different...", "Hmm, not quite..." etc.
+7. Tailor the next question based on the user's answer. If they struggled, try something related but approachable. If they aced it, raise the bar.
+8. Avoid repeating similar type of questions. Mix: conceptual, practical, code-based, scenario-based, compare/contrast, debugging, output prediction.
+9. NEVER reference lecture names, chapter names, course modules, or any learning platform. Ask as if this is a real job interview.
+10. The interview has a maximum of ${maxQuestions} questions. Track which question number you are on.
+11. The candidate's name is ${userName}. Use their name naturally once or twice, not every message.`;
+
+        // Build messages array with conversation history
+        const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+          { role: 'system', content: systemPrompt }
+        ];
+
+        // Add conversation history (limit to last 30 messages to stay within token limits)
+        const recentHistory = conversationHistory.slice(-30);
+        for (const msg of recentHistory) {
+          messages.push({
+            role: msg.role === 'assistant' ? 'assistant' as const : 'user' as const,
+            content: msg.content,
+          });
+        }
+
+        const completion = await client.chat.completions.create({
+          model: AI_MODELS.GPT_4O_MINI,
+          temperature: 0.7,
+          max_tokens: 600,
+          messages
+        });
+
+        const responseText = completion.choices?.[0]?.message?.content?.trim() || '';
+
+        // ─── Detect question number from AI response ─────────
+        const qNumMatch = responseText.match(/\*\*Question[-\s]?(\d+)/i);
+        const detectedQuestionNum = qNumMatch ? parseInt(qNumMatch[1], 10) : 0;
+
+        // ─── Separate evaluation call if user was answering a question ─────
+        let evaluationMeta: { isCorrect: boolean | null; topic: string } = { isCorrect: null, topic: '' };
+
+        if (lastQuestionNumber > 0) {
+          // The user's last message was an answer — do a quick evaluation
+          const lastUserMsg = recentHistory.filter((m: any) => m.role === 'user').slice(-1)[0];
+          // Find the question text from history
+          const lastAiMsgs = recentHistory.filter((m: any) => m.role === 'assistant');
+          const lastAiMsg = lastAiMsgs.slice(-1)[0]?.content || '';
+
+          if (lastUserMsg?.content) {
+            try {
+              const evalCompletion = await client.chat.completions.create({
+                model: AI_MODELS.GPT_4O_MINI,
+                temperature: 0.1,
+                max_tokens: 150,
+                messages: [
+                  {
+                    role: 'system',
+                    content: `You evaluate interview answers. Return ONLY valid JSON:
+{"isCorrect":false,"topic":"concept name"}
+
+isCorrect = true ONLY if the answer shows understanding of the concept.
+isCorrect = false for wrong answers, vague answers, "I don't know", irrelevant responses, or refusals to answer.
+topic = the technical concept being tested.`
+                  },
+                  {
+                    role: 'user',
+                    content: `Question: ${lastAiMsg}\n\nAnswer: ${lastUserMsg.content}`
+                  }
+                ]
+              });
+
+              const evalText = evalCompletion.choices?.[0]?.message?.content?.trim() || '';
+              const cleanedEval = evalText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+              const evalParsed = JSON.parse(cleanedEval);
+              evaluationMeta = {
+                isCorrect: evalParsed.isCorrect === true,
+                topic: evalParsed.topic || '',
+              };
+            } catch (evalErr) {
+              console.warn('Evaluation call failed, defaulting to incorrect:', evalErr);
+              // If eval fails, default to incorrect — never leave as null
+              evaluationMeta = {
+                isCorrect: false,
+                topic: '',
+              };
+            }
+          } else {
+            // No user message content — treat as incorrect
+            evaluationMeta = { isCorrect: false, topic: '' };
+          }
+        }
+
+        console.log(`🎤 AI Interview chat - Q:${detectedQuestionNum} correct:${evaluationMeta.isCorrect} for user: ${context.auth?.uid || 'anonymous'}`);
+
+        return {
+          success: true,
+          response: responseText,
+          meta: {
+            questionNumber: detectedQuestionNum,
+            isCorrect: evaluationMeta.isCorrect,
+            topic: evaluationMeta.topic,
+            isEnded: false,
+          }
+        };
+      }
+
+      // ─── GENERATE FEEDBACK (kept as separate call) ─────────
+      if (purpose === 'generate_feedback') {
+        const {
+          courseName,
+          questions = [],
+          score,
+          totalCorrect,
+          totalAsked,
+          terminatedAtGate,
+        } = data;
+
+        const questionsSummary = questions.map((q: any, i: number) =>
+          `Q${i + 1}: ${q.question}\nAnswer: ${q.answer}\nResult: ${q.isCorrect ? 'Correct' : 'Incorrect'}${q.topic ? ` | Topic: ${q.topic}` : ''}`
+        ).join('\n\n');
+
+        const terminationNote = terminatedAtGate
+          ? `\nNote: The interview ended at gate ${terminatedAtGate} because the candidate did not meet the minimum correct answers threshold to continue.`
+          : '\nThe candidate completed the full interview.';
+
+        const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+          { role: 'system', content: AI_INTERVIEW_FEEDBACK_PROMPT },
+          {
+            role: 'user',
+            content: `Interview Results:
+- Subject Area: ${courseName || 'Programming'}
+- Score: ${score}% (${totalCorrect}/${totalAsked} correct)${terminationNote}
+
+Question-by-Question Breakdown:
+${questionsSummary}
+
+Generate a detailed performance feedback report in the JSON format specified.`
+          }
+        ];
+
+        const completion = await client.chat.completions.create({
+          model: AI_MODELS.GPT_4O_MINI,
+          temperature: 0.7,
+          max_tokens: 800,
+          messages
+        });
+
+        const responseText = completion.choices?.[0]?.message?.content?.trim() || '';
+
+        let parsed;
+        try {
+          const cleaned = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+          parsed = JSON.parse(cleaned);
+        } catch (parseErr) {
+          console.warn('Failed to parse feedback JSON, using fallback:', responseText);
+          parsed = {
+            overallSummary: `You scored ${score}% answering ${totalCorrect} out of ${totalAsked} questions correctly.`,
+            strengths: [],
+            weaknesses: [],
+            motivationalMessage: 'Keep practicing and you will improve!',
+            topicsToReview: [],
+          };
+        }
+
+        console.log(`🎤 AI Interview feedback generated: ${score}% for user: ${context.auth?.uid || 'anonymous'}`);
+
+        return {
+          success: true,
+          overallSummary: parsed.overallSummary || '',
+          strengths: parsed.strengths || [],
+          weaknesses: parsed.weaknesses || [],
+          motivationalMessage: parsed.motivationalMessage || '',
+          topicsToReview: parsed.topicsToReview || [],
+        };
+      }
+
+      throw new functions.https.HttpsError('invalid-argument', `Unknown purpose: ${purpose}`);
+
+    } catch (err: any) {
+      console.error('AI Interview Error:', err);
+      throw new functions.https.HttpsError('internal', 'Failed to process AI interview request', err.message);
+    }
+  });
+
+// ============================================
+// JOB SCRAPER - Google Jobs via SerpAPI
+// Fetches jobs posted today across all industries
+// Stores in Firestore with deduplication
+// ============================================
+
+const JOB_SCRAPER_QUERIES: { query: string; category: string }[] = [
+  // IT & Software
+  { query: 'software engineer', category: 'IT & Software' },
+  { query: 'developer', category: 'IT & Software' },
+  { query: 'IT support', category: 'IT & Software' },
+  { query: 'cloud computing', category: 'IT & Software' },
+  { query: 'cybersecurity', category: 'IT & Software' },
+  // Data Science & AI
+  { query: 'data engineer', category: 'Data Science & AI' },
+  { query: 'data scientist', category: 'Data Science & AI' },
+  { query: 'machine learning', category: 'Data Science & AI' },
+  { query: 'artificial intelligence', category: 'Data Science & AI' },
+  // Finance & Accounting
+  { query: 'accountant', category: 'Finance & Accounting' },
+  { query: 'finance', category: 'Finance & Accounting' },
+  { query: 'banking', category: 'Finance & Accounting' },
+  { query: 'auditor', category: 'Finance & Accounting' },
+  // Marketing & Sales
+  { query: 'marketing', category: 'Marketing & Sales' },
+  { query: 'sales executive', category: 'Marketing & Sales' },
+  { query: 'digital marketing', category: 'Marketing & Sales' },
+  // HR & Admin
+  { query: 'human resources', category: 'HR & Admin' },
+  { query: 'recruitment', category: 'HR & Admin' },
+  // Operations & Management
+  { query: 'operations manager', category: 'Operations & Management' },
+  { query: 'business analyst', category: 'Operations & Management' },
+  // Engineering
+  { query: 'civil engineer', category: 'Engineering' },
+  { query: 'mechanical engineer', category: 'Engineering' },
+  { query: 'electrical engineer', category: 'Engineering' },
+  // Management & Consulting
+  { query: 'manager', category: 'Management & Consulting' },
+  { query: 'analyst', category: 'Management & Consulting' },
+  { query: 'consultant', category: 'Management & Consulting' },
+  { query: 'executive', category: 'Management & Consulting' },
+  // Special Categories
+  { query: 'fresher jobs', category: 'Fresher Jobs' },
+  { query: 'work from home', category: 'Work From Home' },
+  { query: 'internship', category: 'Internship' },
+];
+
+const JOB_SCRAPER_CONFIG = {
+  maxPagesPerQuery: 5,
+  location: 'India',
+  delayBetweenRequests: 600,
+  delayBetweenQueries: 500,
+};
+
+// Helper: Fetch jobs from SerpAPI
+async function fetchJobsFromSerpAPI(
+  apiKey: string,
+  query: string,
+  nextPageToken: string | null = null
+): Promise<{jobs_results?: any[]; serpapi_pagination?: {next_page_token?: string}; error?: string}> {
+  const https = require('https') as typeof import('https');
+
+  const params = new URLSearchParams({
+    engine: 'google_jobs',
+    q: query,
+    api_key: apiKey,
+    chips: 'date_posted:today',
+    location: JOB_SCRAPER_CONFIG.location,
+  });
+  if (nextPageToken) params.set('next_page_token', nextPageToken);
+
+  const url = `https://serpapi.com/search.json?${params.toString()}`;
+
+  return new Promise((resolve, reject) => {
+    https.get(url, (res: any) => {
+      let data = '';
+      res.on('data', (chunk: string) => data += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) reject(new Error(parsed.error));
+          else resolve(parsed);
+        } catch (e) {
+          reject(new Error('Failed to parse SerpAPI response'));
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+// Helper: Run the full scrape and return jobs array
+async function runJobScraper(apiKey: string): Promise<{
+  jobs: any[];
+  stats: { totalApiCalls: number; duplicatesSkipped: number; queriesRun: number };
+}> {
+  const allJobs: any[] = [];
+  const seenJobIds = new Set<string>();
+  let totalApiCalls = 0;
+  let totalDuplicates = 0;
+
+  for (const { query, category } of JOB_SCRAPER_QUERIES) {
+    let nextPageToken: string | null = null;
+
+    for (let page = 0; page < JOB_SCRAPER_CONFIG.maxPagesPerQuery; page++) {
+      totalApiCalls++;
+
+      try {
+        const result: {jobs_results?: any[]; serpapi_pagination?: {next_page_token?: string}} = await fetchJobsFromSerpAPI(apiKey, query, nextPageToken);
+        const jobs = result.jobs_results || [];
+
+        if (jobs.length === 0) break;
+
+        for (const job of jobs) {
+          if (job.job_id && seenJobIds.has(job.job_id)) {
+            totalDuplicates++;
+          } else {
+            if (job.job_id) seenJobIds.add(job.job_id);
+            // Attach category
+            allJobs.push({ ...job, _category: category });
+          }
+        }
+
+        nextPageToken = result.serpapi_pagination?.next_page_token || null;
+        if (!nextPageToken) break;
+
+        await new Promise(r => setTimeout(r, JOB_SCRAPER_CONFIG.delayBetweenRequests));
+      } catch (error: any) {
+      console.warn(`Job scraper error for "${query}" page ${page}:`, error.message);
+        break;
+      }
+    }
+
+    await new Promise(r => setTimeout(r, JOB_SCRAPER_CONFIG.delayBetweenQueries));
+  }
+
+  return {
+    jobs: allJobs,
+    stats: {
+      totalApiCalls,
+      duplicatesSkipped: totalDuplicates,
+      queriesRun: JOB_SCRAPER_QUERIES.length,
+    },
+  };
+}
+
+// Helper: Write jobs to Firestore with dedup
+async function writeJobsToFirestore(jobs: any[]): Promise<{ newJobs: number; updatedJobs: number }> {
+  const db = admin.firestore();
+  const now = admin.firestore.Timestamp.now();
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  let newJobs = 0;
+  let updatedJobs = 0;
+
+  // Process in batches of 400 (Firestore limit is 500 per batch, using 400 for safety — 2 ops per doc possible)
+  const batchSize = 400;
+  for (let i = 0; i < jobs.length; i += batchSize) {
+    const chunk = jobs.slice(i, i + batchSize);
+    const batch = db.batch();
+
+    for (const job of chunk) {
+      if (!job.job_id) continue;
+
+      // Use base64 job_id as doc ID (Google's job_id can be very long)
+      const docId = Buffer.from(job.job_id).toString('base64').replace(/[/+=]/g, '_').substring(0, 128);
+      const docRef = db.collection('jobs').doc(docId);
+
+      // Check if exists
+      const existing = await docRef.get();
+
+      if (existing.exists) {
+        // Update lastSeen + backfill postedTimestamp if missing
+        const existingData = existing.data();
+        const updateData: any = {
+          lastSeen: now,
+          status: 'active',
+        };
+        if (!existingData?.postedTimestamp) {
+          const postedAtStr = existingData?.postedAt || job.detected_extensions?.posted_at || '';
+          if (postedAtStr) {
+            const nowMs = Date.now();
+            const normalized = postedAtStr.replace(/[٠-٩]/g, (d: string) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+            const lower = normalized.toLowerCase();
+            const numMatch = lower.match(/(\d+)/);
+            const num = numMatch ? parseInt(numMatch[1], 10) : 0;
+            if (num > 0) {
+              const refMs = existingData?.firstSeen?.toMillis ? existingData.firstSeen.toMillis() : nowMs;
+              let msAgo = 0;
+              if (/minute|minuto|دقيق/.test(lower)) msAgo = num * 60 * 1000;
+              else if (/hour|hora|ساع/.test(lower)) msAgo = num * 3600 * 1000;
+              else if (/day|dia|día|يوم/.test(lower)) msAgo = num * 86400 * 1000;
+              else if (/week|semana|أسبوع/.test(lower)) msAgo = num * 7 * 86400 * 1000;
+              else if (/month|mes|mês|شهر/.test(lower)) msAgo = num * 30 * 86400 * 1000;
+              if (msAgo > 0) {
+                updateData.postedTimestamp = admin.firestore.Timestamp.fromMillis(refMs - msAgo);
+              }
+            }
+          }
+        }
+        batch.update(docRef, updateData);
+        updatedJobs++;
+      } else {
+        // New job — full write
+        // Convert relative postedAt string to actual timestamp
+        const postedAtStr = job.detected_extensions?.posted_at || '';
+        let postedTimestamp = now;
+        if (postedAtStr) {
+          try {
+            const nowMs = Date.now();
+            // Normalize Arabic/Eastern digits to Western
+            const normalized = postedAtStr.replace(/[٠-٩]/g, (d: string) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+            const lower = normalized.toLowerCase();
+            const numMatch = lower.match(/(\d+)/);
+            const num = numMatch ? parseInt(numMatch[1], 10) : 0;
+            if (num > 0) {
+              let msAgo = 0;
+              if (lower.match(/minute|minuto|دقيق/)) msAgo = num * 60 * 1000;
+              else if (lower.match(/hour|hora|ساع/)) msAgo = num * 3600 * 1000;
+              else if (lower.match(/day|dia|día|يوم/)) msAgo = num * 86400 * 1000;
+              else if (lower.match(/week|semana|أسبوع/)) msAgo = num * 7 * 86400 * 1000;
+              else if (lower.match(/month|mes|mês|شهر/)) msAgo = num * 30 * 86400 * 1000;
+              if (msAgo > 0) {
+                postedTimestamp = admin.firestore.Timestamp.fromMillis(nowMs - msAgo);
+              }
+            }
+          } catch (_e) {
+            // fallback to now
+          }
+        }
+
+        batch.set(docRef, {
+          jobId: job.job_id,
+          title: job.title || '',
+          company: job.company_name || '',
+          location: job.location || '',
+          description: job.description || '',
+          via: job.via || '',
+          scheduleType: job.detected_extensions?.schedule_type || '',
+          isRemote: job.detected_extensions?.work_from_home || false,
+          category: job._category || '',
+          salary: job.detected_extensions?.salary || null,
+          postedAt: postedAtStr,
+          postedTimestamp,
+          firstSeen: now,
+          lastSeen: now,
+          scrapedDate: todayStr,
+          status: 'active',
+          applyOptions: (job.apply_options || []).map((o: any) => ({
+            source: o.title || '',
+            link: o.link || '',
+          })),
+          shareLink: job.share_link || '',
+          qualifications: job.detected_extensions?.qualifications || '',
+          highlights: job.job_highlights || [],
+          thumbnail: job.thumbnail || null,
+        });
+        newJobs++;
+      }
+    }
+
+    await batch.commit();
+    console.log(`📦 Batch committed: ${chunk.length} jobs (index ${i}-${i + chunk.length - 1})`);
+  }
+
+  return { newJobs, updatedJobs };
+}
+
+// Helper: Backfill postedTimestamp for existing jobs that don't have it
+async function backfillPostedTimestamp(): Promise<number> {
+  const db = admin.firestore();
+  const nowMs = Date.now();
+  let updated = 0;
+
+  // Get active jobs without postedTimestamp (they'll have firstSeen but not postedTimestamp)
+  const snapshot = await db.collection('jobs')
+    .where('status', '==', 'active')
+    .limit(500)
+    .get();
+
+  if (snapshot.empty) return 0;
+
+  const batchSize = 400;
+  for (let i = 0; i < snapshot.docs.length; i += batchSize) {
+    const chunk = snapshot.docs.slice(i, i + batchSize);
+    const batch = db.batch();
+
+    for (const docSnap of chunk) {
+      const data = docSnap.data();
+      if (data.postedTimestamp) continue; // Already has it
+
+      let postedTimestamp = data.firstSeen || admin.firestore.Timestamp.now();
+      const postedAtStr = data.postedAt || '';
+      if (postedAtStr) {
+        try {
+          // Normalize Arabic/Eastern digits to Western
+          const normalized = postedAtStr.replace(/[٠-٩]/g, (d: string) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+          const lower = normalized.toLowerCase();
+          const numMatch = lower.match(/(\d+)/);
+          const num = numMatch ? parseInt(numMatch[1], 10) : 0;
+          if (num > 0) {
+            const refMs = data.firstSeen?.toMillis ? data.firstSeen.toMillis() : nowMs;
+            let msAgo = 0;
+            if (lower.match(/minute|minuto|دقيق/)) msAgo = num * 60 * 1000;
+            else if (lower.match(/hour|hora|ساع/)) msAgo = num * 3600 * 1000;
+            else if (lower.match(/day|dia|día|يوم/)) msAgo = num * 86400 * 1000;
+            else if (lower.match(/week|semana|أسبوع/)) msAgo = num * 7 * 86400 * 1000;
+            else if (lower.match(/month|mes|mês|شهر/)) msAgo = num * 30 * 86400 * 1000;
+            if (msAgo > 0) {
+              postedTimestamp = admin.firestore.Timestamp.fromMillis(refMs - msAgo);
+            }
+          }
+        } catch (_e) { /* fallback */ }
+      }
+
+      batch.update(docSnap.ref, { postedTimestamp });
+      updated++;
+    }
+
+    await batch.commit();
+  }
+
+  return updated;
+}
+
+// Helper: Mark jobs not seen today as expired
+async function markExpiredJobs(): Promise<number> {
+  const db = admin.firestore();
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Get active jobs NOT seen today
+  const snapshot = await db.collection('jobs')
+    .where('status', '==', 'active')
+    .where('scrapedDate', '<', todayStr)
+    .limit(500)
+    .get();
+
+  if (snapshot.empty) return 0;
+
+  const batch = db.batch();
+  snapshot.docs.forEach(doc => {
+    batch.update(doc.ref, { status: 'expired' });
+  });
+  await batch.commit();
+
+  return snapshot.size;
+}
+
+/**
+ * 🕐 Scheduled Job Scraper — runs daily at 8 PM IST (2:30 PM UTC)
+ */
+export const scheduledJobScraper = functions
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .pubsub.schedule('30 14 * * *')   // 2:30 PM UTC = 8:00 PM IST
+  .timeZone('Asia/Kolkata')
+  .onRun(async () => {
+    console.log('🔍 Starting scheduled job scraper...');
+
+    // Read SerpAPI key from Firestore settings
+    const settingsDoc = await admin.firestore().collection('settings').doc('google_serpapi_key').get();
+    const apiKey = settingsDoc.data()?.google_serpapi_key;
+    if (!apiKey) {
+      console.error('❌ SerpAPI key not found in settings/google_serpapi_key');
+      return;
+    }
+
+    try {
+      // 1. Scrape jobs
+      const { jobs, stats } = await runJobScraper(apiKey);
+      console.log(`✅ Scraped ${jobs.length} unique jobs (${stats.totalApiCalls} API calls, ${stats.duplicatesSkipped} dupes)`);
+
+      if (jobs.length === 0) {
+        console.log('⚠️ No jobs found today');
+        return;
+      }
+
+      // 2. Write to Firestore
+      const { newJobs, updatedJobs } = await writeJobsToFirestore(jobs);
+      console.log(`📊 Firestore: ${newJobs} new, ${updatedJobs} updated`);
+
+      // 3. Backfill postedTimestamp for older jobs missing it
+      const backfilled = await backfillPostedTimestamp();
+      if (backfilled > 0) console.log(`🔄 Backfilled postedTimestamp for ${backfilled} existing jobs`);
+
+      // 4. Mark old jobs as expired
+      const expired = await markExpiredJobs();
+      console.log(`🗑️ Marked ${expired} jobs as expired`);
+
+      // 5. Log scrape run
+      await admin.firestore().collection('jobScrapeLog').add({
+        date: new Date().toISOString().split('T')[0],
+        timestamp: admin.firestore.Timestamp.now(),
+        totalScraped: jobs.length,
+        newJobs,
+        updatedJobs,
+        expired,
+        apiCalls: stats.totalApiCalls,
+        duplicatesSkipped: stats.duplicatesSkipped,
+      });
+
+      console.log('✅ Job scraper completed successfully');
+    } catch (error: any) {
+      console.error('❌ Job scraper failed:', error.message);
+    }
+  });
+
+/**
+ * 🔧 Manual Job Scraper Trigger — callable from admin UI
+ */
+export const triggerJobScraper = functions
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .https.onCall(async (_data, context) => {
+    // Optional: restrict to admin
+    // if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+
+    // Read SerpAPI key from Firestore settings
+    const settingsDoc = await admin.firestore().collection('settings').doc('google_serpapi_key').get();
+    const apiKey = settingsDoc.data()?.google_serpapi_key;
+    if (!apiKey) {
+      throw new functions.https.HttpsError('failed-precondition', 'SerpAPI key not found in settings/google_serpapi_key');
+    }
+
+    try {
+      const startTime = Date.now();
+
+      // 1. Scrape
+      const { jobs, stats } = await runJobScraper(apiKey);
+
+      if (jobs.length === 0) {
+        return { success: true, message: 'No jobs found today', stats };
+      }
+
+      // 2. Write to Firestore
+      const { newJobs, updatedJobs } = await writeJobsToFirestore(jobs);
+
+      // 3. Backfill postedTimestamp for older jobs missing it
+      await backfillPostedTimestamp();
+
+      // 4. Mark expired
+      const expired = await markExpiredJobs();
+
+      // 4. Log
+      await admin.firestore().collection('jobScrapeLog').add({
+        date: new Date().toISOString().split('T')[0],
+        timestamp: admin.firestore.Timestamp.now(),
+        totalScraped: jobs.length,
+        newJobs,
+        updatedJobs,
+        expired,
+        apiCalls: stats.totalApiCalls,
+        duplicatesSkipped: stats.duplicatesSkipped,
+        triggeredBy: context.auth?.uid || 'manual',
+      });
+
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      return {
+        success: true,
+        totalScraped: jobs.length,
+        newJobs,
+        updatedJobs,
+        expired,
+        apiCalls: stats.totalApiCalls,
+        duplicatesSkipped: stats.duplicatesSkipped,
+        timeTaken: `${elapsed}s`,
+      };
+    } catch (error: any) {
+      console.error('❌ Manual job scraper failed:', error.message);
+      throw new functions.https.HttpsError('internal', 'Job scraper failed', error.message);
+    }
+  });
+
+  PIBYYQUAdGg6SKnqh2YBrCMthei2
+
+  RyIDJMC8PVcju4ADd7i5lB3ROGq1

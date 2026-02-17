@@ -157,6 +157,11 @@ interface MergedQuestion {
   evaluationRetries?: number;
   lastEvaluationAttempt?: any;
   chapter?: string;
+  // SQL-specific fields
+  sqlSchema?: any[];
+  sqlTestResults?: any[];
+  sqlPassedTests?: number;
+  sqlTotalTests?: number;
 }
 
 interface ChapterPerformance {
@@ -487,6 +492,18 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
             correctAnswers: response.correctAnswers || question.correctAnswers,
             correctAnswer: response.correctAnswers || question.correctAnswers,
             codeAIFeedback: response.codeAIFeedback || response.aiFeedback || null,
+          };
+          break;
+        case 'sql':
+          typeSpecific = {
+            codeSubmitted: response.studentAnswer,
+            correctAnswers: response.correctAnswers || question.correctAnswers,
+            correctAnswer: response.correctAnswers || question.correctAnswers,
+            hint: question.hint,
+            sqlSchema: question.sqlSchema || question.sql_schema || [],
+            sqlTestResults: response.testResults || [],
+            sqlPassedTests: response.passedTests ?? 0,
+            sqlTotalTests: response.totalTests ?? 0,
           };
           break;
         default:
@@ -1768,7 +1785,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                   Score
                 </span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">{stats.obtainedMarks.toFixed(2)}/{stats.totalMarks}</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.obtainedMarks.toFixed(2)}/{stats.totalMarks.toFixed(2)}</p>
               <p className="text-xs text-gray-500 mt-1">Marks</p>
             </div>
             
@@ -2182,7 +2199,9 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                       {/* Only show student answer section for non-MCQ questions since MCQ already shows it in options */}
                       {!isQuestionType(question.questionType, QUESTION_TYPES.MCQ) && (
                       <div>
-                      <p className="text-sm font-semibold text-gray-700 mb-2">Student's Answer:</p>
+                      {!isQuestionType(question.questionType, 'sql') && (
+                        <p className="text-sm font-semibold text-gray-700 mb-2">Student's Answer:</p>
+                      )}
 
                         {isQuestionType(question.questionType, QUESTION_TYPES.FITB) && (
                           <div className="flex flex-wrap gap-2">
@@ -2651,17 +2670,56 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
 
                         {isQuestionType(question.questionType, 'sql') && (
                           <div>
-                            <div className="relative rounded-lg overflow-hidden isolate">
-                              {/* Terminal-style header with dots and copy button */}
+                            {/* 1. Table Schema */}
+                            {question.sqlSchema && question.sqlSchema.length > 0 && (
+                              <div className="mb-4">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Table Schema</p>
+                                <div className="space-y-3">
+                                  {question.sqlSchema.map((schema: any, sIdx: number) => {
+                                    const tableName = schema.tableName || schema.table_name || `Table ${sIdx + 1}`;
+                                    let columns = schema.columns;
+                                    if (columns && typeof columns === 'object' && !Array.isArray(columns)) {
+                                      columns = Object.keys(columns).sort((a, b) => Number(a) - Number(b)).map((key) => columns[key]);
+                                    }
+                                    return (
+                                      <div key={sIdx} className="bg-gray-50 rounded-lg border border-gray-200 overflow-hidden">
+                                        <div className="bg-gray-100 px-3 py-1.5 border-b border-gray-200">
+                                          <span className="text-sm font-semibold text-gray-700">{tableName}</span>
+                                        </div>
+                                        {columns && columns.length > 0 && (
+                                          <table className="w-full text-sm">
+                                            <thead>
+                                              <tr className="border-b border-gray-200">
+                                                <th className="text-left px-3 py-1.5 text-xs font-medium text-gray-500">Column</th>
+                                                <th className="text-left px-3 py-1.5 text-xs font-medium text-gray-500">Type</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {columns.map((col: any, cIdx: number) => (
+                                                <tr key={cIdx} className={cIdx < columns.length - 1 ? 'border-b border-gray-100' : ''}>
+                                                  <td className="px-3 py-1 font-mono text-xs text-gray-800">{col.name}</td>
+                                                  <td className="px-3 py-1 font-mono text-xs text-gray-500">{col.type}</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 2. Student's SQL Answer */}
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Student's Solution</p>
+                            <div className="relative rounded-lg overflow-hidden isolate mb-4">
                               <div className="absolute top-0 left-0 right-0 h-10 bg-gray-800/95 backdrop-blur-sm z-10 flex items-center justify-between px-3 rounded-t-lg">
-                                {/* macOS-style dots */}
                                 <div className="flex items-center space-x-2">
                                   <div className="w-3 h-3 rounded-full bg-red-500"></div>
                                   <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
                                   <div className="w-3 h-3 rounded-full bg-green-500"></div>
                                 </div>
-                                
-                                {/* Copy button */}
                                 <button
                                   onClick={() => copyToClipboard(question.studentAnswer || '', `sql-answer-${question.questionNo}`)}
                                   className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-all"
@@ -2674,8 +2732,6 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                                   )}
                                 </button>
                               </div>
-                              
-                              {/* Code content with top padding for header */}
                               <div className="pt-10">
                                 <SyntaxHighlighter
                                   language="sql"
@@ -2695,6 +2751,30 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                                 </SyntaxHighlighter>
                               </div>
                             </div>
+
+                            {/* 3. SQL Test Results */}
+                            {question.sqlTestResults && question.sqlTestResults.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                                  Test Results: {question.sqlPassedTests || 0}/{question.sqlTotalTests || 0} passed
+                                </p>
+                                <div className="flex gap-1.5">
+                                  {question.sqlTestResults.map((tr: any, tIdx: number) => (
+                                    <div
+                                      key={tIdx}
+                                      className={`w-7 h-7 rounded flex items-center justify-center text-xs font-medium ${
+                                        tr.passed
+                                          ? 'bg-green-100 text-green-700'
+                                          : 'bg-red-100 text-red-700'
+                                      }`}
+                                      title={tr.passed ? `Test ${tIdx + 1}: Passed` : `Test ${tIdx + 1}: Failed`}
+                                    >
+                                      {tr.passed ? '✓' : '✗'}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -3256,7 +3336,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                         <p className="text-xs text-gray-500 mb-2">Marks</p>
                         <p className="text-lg font-bold text-gray-900">
                           <span style={{ color: brandTheme.colors.primary }}>{(question.scoredMarks || 0).toFixed(2)}</span>
-                          <span className="text-gray-400"> / {question.maxMarks}</span>
+                          <span className="text-gray-400"> / {(question.maxMarks || 0).toFixed(2)}</span>
                         </p>
                       </div>
                       

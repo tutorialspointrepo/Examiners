@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions';
 export { processReportInstance } from './reports';
+export declare const generateLearningPathAI: functions.HttpsFunction & functions.Runnable<any>;
 export declare const generateLogicAnalysis: functions.HttpsFunction & functions.Runnable<any>;
 export declare const chatWithLearningAI: functions.HttpsFunction & functions.Runnable<any>;
 /**
@@ -81,4 +82,28 @@ export declare const getProblemNavigation: functions.HttpsFunction;
  * Useful for sidebar or problem list page
  */
 export declare const getProblemsList: functions.HttpsFunction;
+/**
+ * Generate CloudFront signed cookies for video playback
+ * Requires CF_PRIVATE_KEY secret to be set in Firebase
+ */
+export declare const getVideoSignedCookies: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * 🕛 Nightly Cron - Sync Student Learning Details
+ * Runs at 12:00 AM IST every night
+ */
+export declare const syncStudentLearningDetailsCron: functions.CloudFunction<unknown>;
+/**
+ * 🔄 Manual Sync - Callable by system_admin only
+ */
+export declare const syncStudentLearningDetailsManual: functions.HttpsFunction & functions.Runnable<any>;
+export declare const fetchLeetCodeStats: functions.HttpsFunction & functions.Runnable<any>;
+export declare const aiInterviewChat: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * 🕐 Scheduled Job Scraper — runs daily at 8 PM IST (2:30 PM UTC)
+ */
+export declare const scheduledJobScraper: functions.CloudFunction<unknown>;
+/**
+ * 🔧 Manual Job Scraper Trigger — callable from admin UI
+ */
+export declare const triggerJobScraper: functions.HttpsFunction & functions.Runnable<any>;
 //# sourceMappingURL=index.d.ts.map

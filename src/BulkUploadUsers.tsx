@@ -389,8 +389,16 @@ export default function BulkUploadUsers({
           return;
         }
         
-        console.log(`📊 Parsed ${users.length} users from Excel`);
-        setParsedUsers(users);
+        // Convert numeric fields to strings (Excel may parse roll numbers as numbers)
+        const sanitizedUsers = users.map(u => ({
+          ...u,
+          student_roll: u.student_roll != null ? String(u.student_roll).replace(/\.0$/, '') : u.student_roll,
+          phone: u.phone != null ? String(u.phone) : u.phone,
+          college_id: u.college_id != null ? String(u.college_id) : u.college_id,
+        }));
+
+        console.log(`📊 Parsed ${sanitizedUsers.length} users from Excel`);
+        setParsedUsers(sanitizedUsers);
         setPreviewPage(1); // Reset preview pagination
         setUploadStep('preview');
         

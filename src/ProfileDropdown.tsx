@@ -4,7 +4,6 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faUser, 
   faShield,
-  faUsers, 
   faXmark, 
   faMapMarkerAlt,
   faCrown,
@@ -19,7 +18,10 @@ import {
   faSpinner,
   faCircleExclamation,
   faBuilding,
-  faClipboardCheck
+  faClipboardCheck,
+  faCode,
+  faBookOpen,
+  faChevronRight,
 } from '@fortawesome/sharp-light-svg-icons';
 import { useBrand } from './BrandContext';
 import { type UserType } from './constants';
@@ -34,11 +36,13 @@ interface ProfileDropdownProps {
     avatar?: string;
     organization?: string;
     organizationId?: string;
+    leetcodeUsername?: string;
   };
   onEditProfile?: () => void;
   onDownloadBrowser?: () => void;
   onManageUsers?: () => void;
   onViewLoginDetails?: () => void;
+  onViewLeetCode?: () => void;
   onProfileClick?: () => void;
   onAddUniversity?: () => void;
   onSignOut: () => void;
@@ -51,16 +55,16 @@ export default function ProfileDropdown({
   user,
   onEditProfile,
   onDownloadBrowser,
-  onManageUsers,
   onViewLoginDetails,
+  onViewLeetCode,
   onAddUniversity,
   onSignOut,
   onSwitchMode,
   currentMode,
-  isSecureBrowser = false
 }: ProfileDropdownProps) {
   const brand = useBrand();
   const [isOpen, setIsOpen] = useState(false);
+  const [isAnimatedIn, setIsAnimatedIn] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
   // Change Password modal state
@@ -75,21 +79,13 @@ export default function ProfileDropdown({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
 
-  // Close dropdown when clicking outside
+  // Slide-in animation
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      requestAnimationFrame(() => { requestAnimationFrame(() => setIsAnimatedIn(true)); });
+    } else {
+      setIsAnimatedIn(false);
     }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
   }, [isOpen]);
 
   const getInitials = (name: string) => {
@@ -124,30 +120,7 @@ export default function ProfileDropdown({
     return roleIcons[user.role] || faUserCircle;
   };
 
-  const getRoleStyle = () => {
-    const styles: Record<string, { bg: string; text: string }> = {
-      super_admin: { bg: 'bg-purple-100', text: 'text-purple-700' },
-      admin: { bg: 'bg-blue-100', text: 'text-blue-700' },
-      principal: { bg: 'bg-indigo-100', text: 'text-indigo-700' },
-      teacher: { bg: 'bg-green-100', text: 'text-green-700' },
-      student: { bg: 'bg-gray-100', text: 'text-gray-700' }
-    };
-    return styles[user.role] || styles.student;
-  };
-
-  const canManageUsers = ['super_admin', 'system_admin', 'admin', 'principal'].includes(user.role);
   const canAddUniversity = user.role === 'system_admin';
-
-  // Handle change password modal open
-  const handleOpenChangePassword = () => {
-    setOldPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setPasswordError(null);
-    setPasswordSuccess(null);
-    setShowChangePasswordModal(true);
-    setIsOpen(false);
-  };
 
   // Handle change password modal close
   const handleCloseChangePassword = () => {
@@ -235,258 +208,281 @@ export default function ProfileDropdown({
         </div>
       </button>
 
-      {/* Dropdown Menu */}
-      {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-[10000]">
-          {/* User Info Header */}
-          <div className="p-4 border-b border-gray-100">
-            <div className="flex items-center space-x-3">
-              <div
-                className="w-12 h-12 rounded-full flex items-center justify-center text-white font-semibold text-base shadow-sm flex-shrink-0 border"
-                style={{ 
-                  background: brand.gradients.primary,
-                  borderColor: brand.colors.primary
-                }}
-              >
-                {user.avatar ? (
-                  <img src={user.avatar} alt={user.name} className="w-full h-full rounded-full object-cover" />
-                ) : (
-                  getInitials(user.name)
+      {/* Profile Panel - Slide from right */}
+      {isOpen && createPortal(
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] transition-opacity duration-300"
+            style={{ opacity: isAnimatedIn ? 1 : 0 }}
+            onClick={() => setIsOpen(false)}
+          />
+
+          {/* Panel */}
+          <div
+            className="fixed right-2 top-2 bottom-2 z-[10000] w-[calc(100%-16px)] max-w-[35rem] bg-white shadow-2xl overflow-hidden rounded-2xl flex flex-col transition-all duration-300 ease-out"
+            style={{
+              transform: isAnimatedIn ? 'translateX(0)' : 'translateX(100%)',
+              opacity: isAnimatedIn ? 1 : 0,
+            }}
+          >
+            {/* Header */}
+            <div
+              className="px-5 py-4 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
+              style={{ background: brand.gradients.primary }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-semibold text-base shadow-sm flex-shrink-0 border border-white/20 overflow-hidden"
+                  style={{ background: 'rgba(255,255,255,0.2)' }}
+                >
+                  {user.avatar ? (
+                    <img src={user.avatar} alt={user.name} className="w-full h-full rounded-xl object-cover" />
+                  ) : (
+                    getInitials(user.name)
+                  )}
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-white">{user.name.replace(/\b\w/g, c => c.toUpperCase())}</h2>
+                  <p className="text-[11px] text-white/70">{user.email}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-white/80 bg-white/15 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                  <FontAwesomeIcon icon={getRoleIcon()} className="mr-1" />
+                  {getRoleDisplayName()}
+                </span>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors"
+                >
+                  <FontAwesomeIcon icon={faXmark} className="text-white" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="p-3">
+                {/* Menu Items */}
+                <div className="space-y-1">
+                  {/* Edit Profile */}
+                  <button
+                    onClick={() => {
+                      if (onEditProfile) onEditProfile();
+                      setIsOpen(false);
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-xl transition-colors"
+                  >
+                    <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <FontAwesomeIcon icon={faUser} className="text-blue-500 text-sm" />
+                    </div>
+                    <div className="flex-1 text-left">
+                      <div className="font-medium text-[13px]">Edit Profile</div>
+                      <div className="text-[11px] text-gray-400">Update your information</div>
+                    </div>
+                    <FontAwesomeIcon icon={faChevronRight} className="text-xs text-gray-500" />
+                  </button>
+
+                  {/* Change Password */}
+                  <button
+                    onClick={() => {
+                      setShowChangePasswordModal(true);
+                      setIsOpen(false);
+                    }}
+                    className="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-xl transition-colors"
+                  >
+                    <div className="w-9 h-9 bg-indigo-100 rounded-lg flex items-center justify-center">
+                      <FontAwesomeIcon icon={faKey} className="text-indigo-500 text-sm" />
+                    </div>
+                    <div className="flex-1 text-left">
+                      <div className="font-medium text-[13px]">Change Password</div>
+                      <div className="text-[11px] text-gray-400">Update your password</div>
+                    </div>
+                    <FontAwesomeIcon icon={faChevronRight} className="text-xs text-gray-500" />
+                  </button>
+
+                  {/* Download Secure Browser */}
+                  {onDownloadBrowser && (
+                    <button
+                      onClick={() => {
+                        onDownloadBrowser();
+                        setIsOpen(false);
+                      }}
+                      className="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-xl transition-colors"
+                    >
+                      <div className="w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center">
+                        <FontAwesomeIcon icon={faShield} className="text-green-500 text-sm" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="font-medium text-[13px]">Download Secure Browser</div>
+                        <div className="text-[11px] text-gray-400">Get Examiners Secure Browser</div>
+                      </div>
+                      <FontAwesomeIcon icon={faChevronRight} className="text-xs text-gray-500" />
+                    </button>
+                  )}
+
+                  {/* Login Details */}
+                  {onViewLoginDetails && (
+                    <button
+                      onClick={() => {
+                        onViewLoginDetails();
+                        setIsOpen(false);
+                      }}
+                      className="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-xl transition-colors"
+                    >
+                      <div className="w-9 h-9 bg-teal-100 rounded-lg flex items-center justify-center">
+                        <FontAwesomeIcon icon={faMapMarkerAlt} className="text-teal-500 text-sm" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="font-medium text-[13px]">Login Details</div>
+                        <div className="text-[11px] text-gray-400">View your login information</div>
+                      </div>
+                      <FontAwesomeIcon icon={faChevronRight} className="text-xs text-gray-500" />
+                    </button>
+                  )}
+
+                  {/* LeetCode Profile */}
+                  {user.role === 'student' && user.leetcodeUsername && (
+                    <button
+                      onClick={() => {
+                        if (onViewLeetCode) onViewLeetCode();
+                        setIsOpen(false);
+                      }}
+                      className="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-xl transition-colors"
+                    >
+                      <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center">
+                        <FontAwesomeIcon icon={faCode} className="text-amber-500 text-sm" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="font-medium text-[13px]">LeetCode Profile</div>
+                        <div className="text-[11px] text-gray-400">@{user.leetcodeUsername}</div>
+                      </div>
+                      <FontAwesomeIcon icon={faChevronRight} className="text-xs text-gray-500" />
+                    </button>
+                  )}
+
+                  {/* Add University (System Admin Only) */}
+                  {canAddUniversity && onAddUniversity && (
+                    <button
+                      onClick={() => {
+                        onAddUniversity();
+                        setIsOpen(false);
+                      }}
+                      className="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-xl transition-colors"
+                    >
+                      <div className="w-9 h-9 bg-purple-100 rounded-lg flex items-center justify-center">
+                        <FontAwesomeIcon icon={faBuilding} className="text-purple-500 text-sm" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="font-medium text-[13px]">Add University</div>
+                        <div className="text-[11px] text-gray-400">Register a new institution</div>
+                      </div>
+                      <FontAwesomeIcon icon={faChevronRight} className="text-xs text-gray-500" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Switch Module */}
+                {onSwitchMode && (
+                <>
+                <div className="border-t border-gray-100 my-3"></div>
+                <div className="px-4">
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">Switch Module</div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => {
+                        onSwitchMode('learning');
+                        setIsOpen(false);
+                      }}
+                      className="flex flex-col items-center py-4 px-3 rounded-xl border-2 transition-all"
+                      style={{
+                        borderColor: currentMode === 'learning' ? brand.colors.primary : '#e5e7eb',
+                        background: currentMode === 'learning' ? `${brand.colors.primary}08` : 'white',
+                      }}
+                    >
+                      <div
+                        className="w-11 h-11 rounded-xl flex items-center justify-center mb-2"
+                        style={{ background: currentMode === 'learning' ? brand.gradients.primary : '#f3f4f6' }}
+                      >
+                        <FontAwesomeIcon
+                          icon={faBookOpen}
+                          className={currentMode === 'learning' ? 'text-white' : 'text-gray-400'}
+                        />
+                      </div>
+                      <span
+                        className="text-xs font-semibold"
+                        style={{ color: currentMode === 'learning' ? brand.colors.primary : '#6b7280' }}
+                      >
+                        Learning
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        onSwitchMode('assessment');
+                        setIsOpen(false);
+                      }}
+                      className="flex flex-col items-center py-4 px-3 rounded-xl border-2 transition-all"
+                      style={{
+                        borderColor: currentMode === 'assessment' ? brand.colors.primary : '#e5e7eb',
+                        background: currentMode === 'assessment' ? `${brand.colors.primary}08` : 'white',
+                      }}
+                    >
+                      <div
+                        className="w-11 h-11 rounded-xl flex items-center justify-center mb-2"
+                        style={{ background: currentMode === 'assessment' ? brand.gradients.primary : '#f3f4f6' }}
+                      >
+                        <FontAwesomeIcon
+                          icon={faClipboardCheck}
+                          className={currentMode === 'assessment' ? 'text-white' : 'text-gray-400'}
+                        />
+                      </div>
+                      <span
+                        className="text-xs font-semibold"
+                        style={{ color: currentMode === 'assessment' ? brand.colors.primary : '#6b7280' }}
+                      >
+                        Assessment
+                      </span>
+                    </button>
+                  </div>
+                </div>
+                </>
                 )}
               </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-gray-900 truncate">{user.name}</div>
-                <div className="text-sm text-gray-500 truncate">{user.email}</div>
-                <div className="flex items-center space-x-2 mt-1">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getRoleStyle().bg} ${getRoleStyle().text}`}>
-                    <FontAwesomeIcon icon={getRoleIcon()} className="mr-1" />
-                    <span>{getRoleDisplayName()}</span>
-                  </span>
+            </div>
+
+            {/* Footer */}
+            <div className="flex-shrink-0 border-t border-gray-100">
+              {/* Sign Out */}
+              <button
+                onClick={() => {
+                  onSignOut();
+                  setIsOpen(false);
+                }}
+                className="w-full flex items-center space-x-3 px-7 py-3.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center">
+                  <FontAwesomeIcon icon={faXmark} className="text-red-500 text-sm" />
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="font-medium text-[13px]">Sign Out</div>
+                  <div className="text-[11px] text-red-400">Return to login page</div>
+                </div>
+              </button>
+
+              {/* Branding */}
+              <div className="border-t border-gray-100 px-5 py-3 text-center">
+                <div className="text-[10px] text-gray-300 uppercase tracking-wider">
+                  EXAMINERS • ❤️
+                </div>
+                <div className="text-[10px] text-gray-300 mt-0.5">
+                  {user.organization || brand.collegeName}
                 </div>
               </div>
             </div>
           </div>
-
-          {/* Menu Items */}
-          <div className="py-2">
-            {!isSecureBrowser && onEditProfile && (
-              <button
-                onClick={() => {
-                  onEditProfile();
-                  setIsOpen(false);
-                }}
-                className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <FontAwesomeIcon icon={faUser} className="text-blue-600" />
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="font-medium">Edit Profile</div>
-                  <div className="text-xs text-gray-500">Update your information</div>
-                </div>
-              </button>
-            )}
-
-            {/* Change Password Option */}
-            {!isSecureBrowser && (
-              <button
-                onClick={handleOpenChangePassword}
-                className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-                  <FontAwesomeIcon icon={faKey} className="text-indigo-600" />
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="font-medium">Change Password</div>
-                  <div className="text-xs text-gray-500">Update your password</div>
-                </div>
-              </button>
-            )}
-
-            {!isSecureBrowser && onDownloadBrowser && (
-              <button
-                onClick={() => {
-                  onDownloadBrowser();
-                  setIsOpen(false);
-                }}
-                className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                  <FontAwesomeIcon icon={faShield} className="text-green-600" />
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="font-medium">Download Secure Browser</div>
-                  <div className="text-xs text-gray-500">Get Examiners Secure Browser</div>
-                </div>
-              </button>
-            )}
-
-            {canManageUsers && onManageUsers && (
-              <button
-                onClick={() => {
-                  onManageUsers();
-                  setIsOpen(false);
-                }}
-                className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <FontAwesomeIcon icon={faUsers} className="text-purple-600" />
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="font-medium">Manage Users</div>
-                  <div className="text-xs text-gray-500">
-                    {user.role === 'super_admin' ? 'Manage all user accounts' :
-                     user.role === 'admin' ? 'Add and manage users' :
-                     'Add students and staff'}
-                  </div>
-                </div>
-              </button>
-            )}
-
-            {/* Add University/College Option - Only for system_admin */}
-            {canAddUniversity && onAddUniversity && (
-              <button
-                onClick={() => {
-                  onAddUniversity();
-                  setIsOpen(false);
-                }}
-                className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                  <FontAwesomeIcon icon={faBuilding} className="text-orange-600" />
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="font-medium">Add University/College</div>
-                  <div className="text-xs text-gray-500">Bulk upload colleges via Excel</div>
-                </div>
-              </button>
-            )}
-
-            {onViewLoginDetails && (
-              <button
-                onClick={() => {
-                  onViewLoginDetails();
-                  setIsOpen(false);
-                }}
-                className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
-                  <FontAwesomeIcon icon={faMapMarkerAlt} className="text-teal-600" />
-                </div>
-                <div className="flex-1 text-left">
-                  <div className="font-medium">Login Details</div>
-                  <div className="text-xs text-gray-500">View your login information</div>
-                </div>
-              </button>
-            )}
-
-            {/* Divider */}
-            <div className="border-t border-gray-100 my-2"></div>
-            
-            {/* Mode Switch - Learning / Assessment (All users) */}
-            <>
-            <div className="px-4 py-3">
-              <div className="text-xs font-medium text-gray-500 mb-2">Switch Module</div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    if (onSwitchMode) onSwitchMode('learning');
-                    setIsOpen(false);
-                  }}
-                  className={`flex-1 flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all hover:shadow-md ${
-                    currentMode === 'learning' ? '' : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                  style={currentMode === 'learning' ? {
-                    borderColor: brand.colors.primary,
-                    background: `linear-gradient(135deg, ${brand.colors.primary}15 0%, ${brand.colors.primary}05 100%)`
-                  } : {
-                    background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)'
-                  }}
-                >
-                  <div 
-                    className="w-10 h-10 rounded-lg flex items-center justify-center mb-1.5 text-white"
-                    style={currentMode === 'learning' ? { 
-                      background: brand.gradients.primary 
-                    } : {
-                      background: 'linear-gradient(135deg, #d1d5db 0%, #9ca3af 100%)'
-                    }}
-                  >
-                    <FontAwesomeIcon icon={faBooks} className="text-lg" />
-                  </div>
-                  <span 
-                    className="text-xs font-semibold"
-                    style={{ color: currentMode === 'learning' ? brand.colors.primary : '#6b7280' }}
-                  >
-                    Learning
-                  </span>
-                </button>
-                <button
-                  onClick={() => {
-                    if (onSwitchMode) onSwitchMode('assessment');
-                    setIsOpen(false);
-                  }}
-                  className={`flex-1 flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all hover:shadow-md ${
-                    currentMode === 'assessment' ? '' : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                  style={currentMode === 'assessment' ? {
-                    borderColor: brand.colors.primary,
-                    background: `linear-gradient(135deg, ${brand.colors.primary}15 0%, ${brand.colors.primary}05 100%)`
-                  } : {
-                    background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)'
-                  }}
-                >
-                  <div 
-                    className="w-10 h-10 rounded-lg flex items-center justify-center mb-1.5 text-white"
-                    style={currentMode === 'assessment' ? { 
-                      background: brand.gradients.primary 
-                    } : {
-                      background: 'linear-gradient(135deg, #d1d5db 0%, #9ca3af 100%)'
-                    }}
-                  >
-                    <FontAwesomeIcon icon={faClipboardCheck} className="text-lg" />
-                  </div>
-                  <span 
-                    className="text-xs font-semibold"
-                    style={{ color: currentMode === 'assessment' ? brand.colors.primary : '#6b7280' }}
-                  >
-                    Assessment
-                  </span>
-                </button>
-              </div>
-            </div>
-            <div className="border-t border-gray-100 my-2"></div>
-            </>
-
-            {/* Sign Out Button */}
-            <button
-              onClick={() => {
-                onSignOut();
-                setIsOpen(false);
-              }}
-              className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
-            >
-              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-                <FontAwesomeIcon icon={faXmark} className="text-red-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <div className="font-medium">Sign Out</div>
-                <div className="text-xs text-red-500">Return to login page</div>
-              </div>
-            </button>
-          </div>
-
-          {/* Footer */}
-          <div className="border-t border-gray-100 p-3">
-            <div className="text-center">
-              <div className="text-xs text-gray-500">
-                EXAMINERS • ❤️
-              </div>
-              <div className="text-xs text-gray-500 leading-tight mt-0.5">
-                {user.organization || brand.collegeName}
-              </div>
-            </div>
-          </div>
-        </div>
+        </>,
+        document.body
       )}
 
       {/* Change Password Modal - rendered via portal to escape stacking context */}

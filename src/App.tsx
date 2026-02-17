@@ -1,8 +1,8 @@
 /// <reference types="react" />
 
 import { useState, useEffect, useRef, useMemo, useCallback, type ReactElement } from 'react';
+import { createPortal } from 'react-dom';
 import CreateExamModal from './CreateExamModal';
-import EnhancedSearch from './EnhancedSearch';
 import Login from './Login';
 import ForgotPassword from './ForgotPassword';
 import ChangePassword from './ChangePassword';
@@ -34,7 +34,6 @@ import {
   NOTICE_FILTER,
   ACTIVE_ITEMS,
   SECTION_CATEGORIES,
-  SEARCH_RESULT_TYPES,
   
 } from './constants';
 import { firebaseConfig, firestoreDbName } from './config/firebase_config';
@@ -43,6 +42,7 @@ import QuestionList from './QuestionList';
 import CreateQuestionModal from './CreateQuestionModal';
 import BulkUploadQuestions from './BulkUploadQuestions';
 import CreateUserModal from './CreateUserModal';
+import CreateLearningPathModal from './CreateLearningPathModal';
 import { LoadingSpinner } from './LoadingSpinner';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -53,6 +53,7 @@ import ProfileDropdown from './ProfileDropdown';
 import { BrandProvider } from './BrandContext';
 import { getThemeFromSubdomain, getSubdomain } from './themeUtils';
 import AIAssistant from './AIAssistant';
+import AISupportAssistant from './AISupportAssistant';
 import Questions from './Questions';
 import Classes from './Classes';
 import UserList from './UserList';
@@ -115,6 +116,7 @@ import {
   faGear,
   faChalkboardUser,
   faLock,
+  faShieldCheck,
   faPenToSquare,
   faCircle,
   faUserTie,
@@ -1727,11 +1729,13 @@ const academicYears = ['all', '2025-26', '2026-27', '2027-28', '2028-29', '2029-
 
 function App() {
   const [showUserProfile, setShowUserProfile] = useState(false);
+  const [profileInitialView, setProfileInitialView] = useState<'profile' | 'leetcode'>('profile');
   const [presentStudents, setPresentStudents] = useState<any[]>([]);
   const [absentStudents, setAbsentStudents] = useState<any[]>([]);
   const [totalStudents, setTotalStudents] = useState<number>(0);
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<any>(null);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const [showAISupportAssistant, setShowAISupportAssistant] = useState(false);
   const [showLearning, setShowLearning] = useState(false);
   const [learningActiveMenu, setLearningActiveMenu] = useState<string>('courses');
   
@@ -1743,6 +1747,7 @@ function App() {
     curriculumData: any[];
     isLoading: boolean;
     enrollmentId?: string;
+    initialLectureId?: number;
   }>({ courseName: '', courseSlug: '', curriculumData: [], isLoading: false });
   const [showProblemsListModal, setShowProblemsListModal] = useState(false);
   const [selectedProblemSlug, setSelectedProblemSlug] = useState<string>('two-sum');
@@ -1759,7 +1764,8 @@ function App() {
   const [isCreateQuestionModalOpen, setIsCreateQuestionModalOpen] = useState(false);
   const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
   const [isCreateUserModalOpen, setIsCreateUserModalOpen] = useState(false);
-  const [highlightUserId, setHighlightUserId] = useState<string | null>(null);
+  const [isCreateLearningPathModalOpen, setIsCreateLearningPathModalOpen] = useState(false);
+  const [highlightUserId, _setHighlightUserId] = useState<string | null>(null);
   const [isBulkUploadUsersOpen, setIsBulkUploadUsersOpen] = useState(false);
 
   const [selectedHallTicket, setSelectedHallTicket] = useState<any>(null);
@@ -1834,7 +1840,7 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   const [activeItem, setActiveItem] = useState('exams');
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
     management: false, // Always expanded
-    tools: true,       // Collapsed by default
+    tools: false,       // Expanded by default
   });
   
   const [_rightPanelWidth, setRightPanelWidth] = useState(380); // Default 380px
@@ -1855,6 +1861,7 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   // Notices state
   const [notices, setNotices] = useState<any[]>([]);
   const [isNoticesDropdownOpen, setIsNoticesDropdownOpen] = useState(false);
+  const [noticesAnimatedIn, setNoticesAnimatedIn] = useState(false);
   const [noticesFilter, setNoticesFilter] = useState<'all' | 'unread'>('all');
   const [isLoadingNotices, setIsLoadingNotices] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState<any | null>(null);
@@ -1886,9 +1893,27 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   // Login Details Dialog
    // Login Details Dialog
   const [showLoginDetailsDialog, setShowLoginDetailsDialog] = useState(false);
+  const [loginDetailsAnimatedIn, setLoginDetailsAnimatedIn] = useState(false);
+
+  useEffect(() => {
+    if (showLoginDetailsDialog) {
+      requestAnimationFrame(() => { requestAnimationFrame(() => setLoginDetailsAnimatedIn(true)); });
+    } else {
+      setLoginDetailsAnimatedIn(false);
+    }
+  }, [showLoginDetailsDialog]);
   
   // Secure Browser Download Modal
   const [showSecureBrowserModal, setShowSecureBrowserModal] = useState(false);
+  const [secureBrowserAnimatedIn, setSecureBrowserAnimatedIn] = useState(false);
+
+  useEffect(() => {
+    if (showSecureBrowserModal) {
+      requestAnimationFrame(() => { requestAnimationFrame(() => setSecureBrowserAnimatedIn(true)); });
+    } else {
+      setSecureBrowserAnimatedIn(false);
+    }
+  }, [showSecureBrowserModal]);
 
   
   // Exam Interface States
@@ -2124,131 +2149,6 @@ const handleReportRefresh = useCallback(() => {
   setReportRefreshTrigger(prev => prev + 1);
 }, []);
 
-  const handleSearchResultSelect = (result: any) => {
-    console.log('📍 [SEARCH_RESULT_SELECT] General handler called:', result.type);
-    
-    // For users and exams, navigate immediately
-    if (result.type === SEARCH_RESULT_TYPES.USER) {
-      console.log('📍 [SEARCH_RESULT_SELECT] Navigating to Users page');
-      setActiveItem('users');
-    } else if (result.type === SEARCH_RESULT_TYPES.EXAM) {
-      console.log('📍 [SEARCH_RESULT_SELECT] Navigating to Exams page');
-      setActiveItem('exams');
-    }
-    // For questions, do NOT navigate here - let handleQuestionSelect do it
-    // after fetching question details and setting the correct subject
-    else if (result.type === SEARCH_RESULT_TYPES.QUESTION) {
-      console.log('📍 [SEARCH_RESULT_SELECT] Question type - navigation will be handled by handleQuestionSelect');
-    }
-  };
-
-const handleUserSelect = async (userId: string, userType?: string, studentClass?: string) => {
-  console.log('👤 [USER_SELECT] User clicked:', userId, 'type:', userType, 'class:', studentClass);
-  
-  // Navigate to users section first
-  setActiveItem('users');
-  
-  // If userType and studentClass are not provided, try to fetch user data
-  if (!userType || (userType === USER_TYPES.STUDENT && !studentClass)) {
-    console.log('⚠️ [USER_SELECT] Missing user info, fetching from Firebase...');
-    try {
-      const userData = await firebaseService.getUserProfile(userId);
-      if (userData) {
-        console.log('✅ [USER_SELECT] Fetched user data:', userData.fullName || userData.email);
-        userType = userData.userType;
-        studentClass = userData.studentClass;
-      } else {
-        console.error('❌ [USER_SELECT] Could not fetch user data');
-      }
-    } catch (error) {
-      console.error('❌ [USER_SELECT] Error fetching user:', error);
-    }
-  }
-  
-  // Determine which class to open
-  let classToOpen = '_administrative'; // Default for admins/teachers
-  
-  if (userType === USER_TYPES.STUDENT && studentClass) {
-    classToOpen = studentClass;
-  }
-  
-  console.log('📂 [USER_SELECT] Opening class:', classToOpen);
-  
-  // Set the class first
-  setSelectedClassForUsers(classToOpen);
-  
-  // Then highlight the user
-  setHighlightUserId(userId);
-  
-  // Clear highlight after 3 seconds
-  setTimeout(() => setHighlightUserId(null), 3000);
-};
-  const handleExamSelect = (examId: string) => {
-    console.log('🎯 [EXAM_SELECT] Navigating to exam:', examId);
-    
-    // First switch to exams section
-    setActiveItem('exams');
-    
-    // Try to find and select the exam from the current list
-    const exam = currentExamsList.find((e: Exam) => e.id === examId);
-    if (exam) {
-      console.log('✅ [EXAM_SELECT] Found exam in current list:', exam.title);
-      setSelectedExam(exam);
-      setIsViewingLiveStats(false);
-      setIsViewingAttendance(false);
-      setShowStudentPreview(false);
-    } else {
-      console.log('⚠️ [EXAM_SELECT] Exam not in current list, will be selected when list loads');
-      // Set the newly created exam ID so the Exams component can auto-select it when it loads
-      setNewlyCreatedExamId(examId);
-    }
-  };
-  
-  const handleQuestionSelect = async (questionId: string) => {
-    console.log('📍 [QUESTION_SELECT] Question selected from search:', questionId);
-    console.log('📍 [QUESTION_SELECT] Fetching question details...');
-    
-    try {
-      // Fetch the question details to get its subject, class, and board
-      const questionDoc = await firebaseService.getQuestionById(questionId);
-      
-      if (questionDoc) {
-        console.log('📍 [QUESTION_SELECT] Question details:', {
-          subject: questionDoc.subject,
-          class: questionDoc.class,
-          board: questionDoc.board
-        });
-        
-        // STEP 1: Set the subject FIRST (before navigation)
-        const subjectData = {
-          subject: questionDoc.subject || 'Unknown',
-          class: questionDoc.class || 'Unknown',
-          board: questionDoc.board || getActiveCollegeId() || 'LPU',
-          questionType: 'all'
-        };
-        
-        console.log('📍 [QUESTION_SELECT] Setting selected subject:', subjectData);
-        setSelectedSubject(subjectData);
-        
-        // STEP 2: Set the selected question ID for scrolling/highlighting
-        setSelectedQuestionId(questionId);
-        
-        // STEP 3: Navigate to Questions page (after subject is set)
-        console.log('📍 [QUESTION_SELECT] Navigating to Questions page...');
-        setActiveItem('questions');
-        
-        console.log('✅ [QUESTION_SELECT] Will scroll to question:', questionId);
-      } else {
-        console.warn('⚠️ [QUESTION_SELECT] Question not found:', questionId);
-        // Fallback - just navigate to Questions page
-        setActiveItem('questions');
-      }
-    } catch (error) {
-      console.error('❌ [QUESTION_SELECT] Error fetching question:', error);
-      // Fallback - just navigate to Questions page
-      setActiveItem('questions');
-    }
-  };
 
   const handleExamCreated = (exam?: any) => {
     console.log('🔥 Exam created:', exam);
@@ -2406,7 +2306,7 @@ const fetchCounts = async () => {
     { id: 'reports', label: 'Reports', icon: faFileLines, count: reportsCount, description: 'Performance analytics and reports' },
     
     // ===== TOOLS SECTION (Collapsed by default) =====
-    { id: 'tools', label: 'Tools', icon: faGear, count: 0, section: 'tools', isHeader: true, defaultExpanded: false },
+    { id: 'tools', label: 'Tools', icon: faGear, count: 0, section: 'tools', isHeader: true, defaultExpanded: true },
     { id: 'calendar', label: 'Calendar', icon: faCalendarDays, count: calendarEventsCount, description: 'View and manage academic schedule', alwaysShow: true, onClick: () => setActiveItem(ACTIVE_ITEMS.CALENDAR) },
     { id: 'rooms', label: 'Rooms', icon: faDoorOpen, count: roomsCount, description: 'Manage college rooms and schedules' },
     { id: 'halltickets', label: 'Hall Tickets', icon: faIdCard, count: hallTicketsCount, description: 'Manage Students Hall Tickets' },
@@ -2616,22 +2516,13 @@ const fetchCounts = async () => {
     });
   }, [notices, noticesFilter, currentUser?.userId]);
   
-  // Close notices dropdown when clicking outside
+  // Notices panel animation
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      if (isNoticesDropdownOpen && !target.closest('.notices-dropdown-container')) {
-        setIsNoticesDropdownOpen(false);
-      }
-    };
-
     if (isNoticesDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      requestAnimationFrame(() => { requestAnimationFrame(() => setNoticesAnimatedIn(true)); });
+    } else {
+      setNoticesAnimatedIn(false);
     }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
   }, [isNoticesDropdownOpen]);
   
   // Notice Dialog States
@@ -3268,6 +3159,7 @@ const fetchCounts = async () => {
           curriculumData={courseCurriculumData.curriculumData}
           isLoading={courseCurriculumData.isLoading}
           enrollmentId={courseCurriculumData.enrollmentId}
+          initialLectureId={courseCurriculumData.initialLectureId}
           onBack={() => {
             setShowCourseCurriculum(false);
             setCourseCurriculumData({ courseName: '', courseSlug: '', curriculumData: [], isLoading: false });
@@ -3276,7 +3168,7 @@ const fetchCounts = async () => {
           currentUser={currentUser}
           collegeName={selectedCollege?.name || brandTheme.collegeName}
           brandTheme={brandTheme}
-          onEditProfile={() => setShowUserProfile(true)}
+          onEditProfile={() => { setProfileInitialView('profile'); setShowUserProfile(true); }}
           onDownloadBrowser={() => setShowSecureBrowserModal(true)}
           onViewLoginDetails={() => setShowLoginDetailsDialog(true)}
           onAddUniversity={() => setIsBulkUploadUniversityOpen(true)}
@@ -3542,6 +3434,8 @@ const fetchCounts = async () => {
                     if (showLearning) {
                       if (learningActiveMenu === 'students') {
                         setIsCreateUserModalOpen(true);
+                      } else if (learningActiveMenu === 'learningpaths') {
+                        setIsCreateLearningPathModalOpen(true);
                       } else {
                         // TODO: Open Create Course Modal
                         console.log('Create Course clicked');
@@ -3570,7 +3464,8 @@ const fetchCounts = async () => {
                   <div className="text-left">
                     <p className="text-sm font-semibold text-gray-900">
                       {showLearning ? (
-                        learningActiveMenu === 'students' ? 'Create User' : 'Create Course'
+                        learningActiveMenu === 'students' ? 'Create User' : 
+                        learningActiveMenu === 'learningpaths' ? 'Create Learning Path' : 'Create Course'
                       ) :
                       activeItem === ACTIVE_ITEMS.QUESTIONS ? 'Create Questions' : 
                       activeItem === ACTIVE_ITEMS.USERS ? 'Create User' : 
@@ -3580,7 +3475,8 @@ const fetchCounts = async () => {
                     </p>
                     <p className="text-xs text-gray-500">
                       {showLearning ? (
-                        learningActiveMenu === 'students' ? 'Add new user' : 'Add new course'
+                        learningActiveMenu === 'students' ? 'Add new user' : 
+                        learningActiveMenu === 'learningpaths' ? 'Add new learning path' : 'Add new course'
                       ) :
                       activeItem === ACTIVE_ITEMS.QUESTIONS ? 'Add new questions' : 
                       activeItem === ACTIVE_ITEMS.USERS ? 'Add new user' : 
@@ -3625,20 +3521,6 @@ const fetchCounts = async () => {
               </>
             )}
             </div>
-          <div className="flex-1 max-w-xl mx-4">
-            <EnhancedSearch
-              onResultSelect={handleSearchResultSelect}
-              onUserSelect={handleUserSelect}
-              onExamSelect={handleExamSelect}
-              onQuestionSelect={handleQuestionSelect}
-              activeCollegeId={getActiveCollegeId() ?? ''}
-              canSearchAllColleges={currentUser ? firebaseService.isSystemAdmin(currentUser) : false}
-              brandColors={{
-                primary: brandTheme.colors.primary,
-                secondary: brandTheme.colors.secondary
-              }}
-            />
-          </div>
           <div className="flex items-center space-x-2">
             {/* College Dropdown (System Admin Only) */}
             {currentUser && firebaseService.isSystemAdmin(currentUser) && colleges.length > 0 ? (
@@ -3735,73 +3617,77 @@ const fetchCounts = async () => {
               )}
             </div>
             )}
-            {/* AI Assistant Button - Only for teachers and admins */}
-            {currentUser?.userType !== 'student' && (
-              <button
-                onClick={() => setShowAIAssistant(true)}
-                className="relative p-2.5 hover:bg-gray-100 rounded-lg transition-colors"
-                title="AI Teaching Assistant"
-              >
-               <FontAwesomeIcon icon={faRobot} className="text-gray-700" />
-                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 animate-pulse"></span>
-              </button>
-            )}
             
             {/* Notices Dropdown */}
-            <div className="relative notices-dropdown-container">
+            <div className="relative group notices-dropdown-container">
               <button 
                 onClick={() => setIsNoticesDropdownOpen(!isNoticesDropdownOpen)}
-                className={`relative p-2.5 hover:bg-gray-100 rounded-lg transition-all ${
+                className={`relative flex flex-col items-center justify-center w-[46px] h-[46px] bg-gray-50 hover:bg-gray-100 rounded-xl transition-all ${
                   bellAnimation ? 'bell-shake' : ''
                 }`}
                 style={{ 
-                  color: unreadNoticesCount > 0 ? '#EF4444' : '#4B5563' // Red when unread, gray otherwise
+                  color: unreadNoticesCount > 0 ? '#EF4444' : '#4B5563'
                 }}
               >
                 <FontAwesomeIcon 
                   icon={faBell}
-                  className="transition-colors"
+                  className="transition-colors text-base"
                 />
                 {unreadNoticesCount > 0 && (
                   <span 
-                    className="absolute top-1 right-1 w-4 h-4 text-white text-xs rounded-full flex items-center justify-center font-semibold animate-pulse"
+                    className="absolute top-0.5 right-1 w-4 h-4 text-white text-[9px] rounded-full flex items-center justify-center font-semibold animate-pulse"
                     style={{ backgroundColor: '#EF4444' }}
                   >
                     {unreadNoticesCount > 9 ? '9+' : unreadNoticesCount}
                   </span>
                 )}
               </button>
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2.5 py-1 text-white text-[10px] rounded-md opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none whitespace-nowrap z-50 shadow-lg" style={{ background: brandTheme.gradients.primary }}>
+                Notices
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent" style={{ borderBottomColor: brandTheme.colors.primary }}></div>
+              </div>
               
-              {/* Notices Dropdown Menu */}
-              {isNoticesDropdownOpen && (
-                <div className="absolute top-full right-0 mt-2 w-[420px] bg-white rounded-xl shadow-2xl border border-gray-200 z-[100] overflow-hidden">
+              {/* Notices Panel - Slide from right */}
+              {isNoticesDropdownOpen && createPortal(
+                <>
+                <div
+                  className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] transition-opacity duration-300"
+                  style={{ opacity: noticesAnimatedIn ? 1 : 0 }}
+                  onClick={() => setIsNoticesDropdownOpen(false)}
+                />
+                <div
+                  className="fixed right-2 top-2 bottom-2 z-[10000] w-[calc(100%-16px)] max-w-[35rem] bg-white shadow-2xl overflow-hidden rounded-2xl flex flex-col transition-all duration-300 ease-out"
+                  style={{
+                    transform: noticesAnimatedIn ? 'translateX(0)' : 'translateX(100%)',
+                    opacity: noticesAnimatedIn ? 1 : 0,
+                  }}
+                >
                   {/* Header */}
-                  <div 
-                    className="px-4 py-3 border-b border-gray-200 flex items-center justify-between"
-                    style={{ background: `linear-gradient(135deg, ${brandTheme.colors.primary}10 0%, ${brandTheme.colors.secondary}10 100%)` }}
+                  <div
+                    className="px-5 py-4 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
+                    style={{ background: brandTheme.gradients.primary }}
                   >
-                    <div className="flex items-center space-x-2">
-                      <FontAwesomeIcon icon={faBell} style={{ color: brandTheme.colors.primary }} />
-                      <h3 className="font-semibold text-gray-900">Notices</h3>
-                      {unreadNoticesCount > 0 && (
-                        <span 
-                          className="text-xs font-semibold px-2 py-0.5 rounded-full text-white"
-                          style={{ backgroundColor: brandTheme.colors.primary }}
-                        >
-                          {unreadNoticesCount} new
-                        </span>
-                      )}
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+                        <FontAwesomeIcon icon={faBell} className="text-white text-sm" />
+                      </div>
+                      <div>
+                        <h2 className="text-base font-bold text-white">Notices</h2>
+                        {unreadNoticesCount > 0 && (
+                          <p className="text-[11px] text-white/70">{unreadNoticesCount} unread</p>
+                        )}
+                      </div>
                     </div>
                     <button
                       onClick={() => setIsNoticesDropdownOpen(false)}
-                      className="p-1 hover:bg-gray-200 rounded-md transition-colors"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors"
                     >
-                      <FontAwesomeIcon icon={faXmark} className="text-gray-600" />
+                      <FontAwesomeIcon icon={faXmark} className="text-white" />
                     </button>
                   </div>
-                  
+
                   {/* Filter Tabs */}
-                  <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex space-x-2">
+                  <div className="px-5 py-2.5 bg-gray-50 border-b border-gray-100 flex space-x-2">
                     <button
                       onClick={() => setNoticesFilter('all')}
                       className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -3825,11 +3711,11 @@ const fetchCounts = async () => {
                       Unread ({unreadNoticesCount})
                     </button>
                   </div>
-                  
+
                   {/* Notices List */}
-                  <div className="max-h-[400px] overflow-y-auto">
+                  <div className="flex-1 overflow-y-auto">
                     {isLoadingNotices ? (
-                      <div className="flex items-center justify-center py-8">
+                      <div className="flex items-center justify-center py-16">
                         <div className="w-8 h-8 border-3 rounded-full animate-spin"
                           style={{ 
                             borderColor: brandTheme.colors.primary + '20',
@@ -3838,12 +3724,12 @@ const fetchCounts = async () => {
                         />
                       </div>
                     ) : filteredNotices.length === 0 ? (
-                      <div className="py-12 text-center">
-                        <FontAwesomeIcon icon={faBell} className="text-gray-300 mx-auto mb-3" />
-                        <p className="text-gray-600 font-medium mb-1">
+                      <div className="py-20 text-center">
+                        <FontAwesomeIcon icon={faBell} className="text-gray-200 text-3xl mb-3" />
+                        <p className="text-gray-500 font-medium text-sm mb-1">
                           {noticesFilter === NOTICE_FILTER.UNREAD ? 'No unread notices' : 'No notices yet'}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-[11px] text-gray-400">
                           {noticesFilter === NOTICE_FILTER.UNREAD ? 'You\'re all caught up!' : 'New notices will appear here'}
                         </p>
                       </div>
@@ -3868,7 +3754,7 @@ const fetchCounts = async () => {
                           return (
                             <div
                               key={notice.id}
-                              className={`px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer ${
+                              className={`px-5 py-3.5 hover:bg-gray-50 transition-colors cursor-pointer ${
                                 isUnread ? 'bg-blue-50/30' : ''
                               }`}
                               onClick={() => {
@@ -3880,40 +3766,33 @@ const fetchCounts = async () => {
                               }}
                             >
                               <div className="flex items-start space-x-3">
-                                {/* Priority Dot */}
                                 <div className="flex-shrink-0 mt-1.5">
                                   <div className={`w-2.5 h-2.5 rounded-full ${colors.dot} ${isUnread ? 'animate-pulse' : ''}`} />
                                 </div>
-                                
-                                {/* Notice Content */}
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-start justify-between mb-1">
-                                    <h4 className={`text-sm font-semibold ${isUnread ? 'text-gray-900' : 'text-gray-700'} line-clamp-1`}>
+                                    <h4 className={`text-[13px] font-semibold ${isUnread ? 'text-gray-900' : 'text-gray-700'} line-clamp-1`}>
                                       {notice.title}
                                     </h4>
-                                    <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                                    <span className="text-[11px] text-gray-400 ml-2 flex-shrink-0">
                                       {new Date(notice.createdAt).toLocaleDateString('en-IN', { 
                                         month: 'short', 
                                         day: 'numeric' 
                                       })}
                                     </span>
                                   </div>
-                                  
-                                  <p className="text-xs text-gray-600 line-clamp-2 mb-2">
+                                  <p className="text-[11px] text-gray-500 line-clamp-2 mb-2">
                                     {notice.content}
                                   </p>
-                                  
                                   <div className="flex items-center space-x-2">
-                                    <span className={`text-xs font-medium px-2 py-0.5 rounded ${colors.bg} ${colors.text}`}>
+                                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded ${colors.bg} ${colors.text}`}>
                                       <FontAwesomeIcon icon={categoryIcon[notice.category as keyof typeof categoryIcon]} className="mr-1" /> {notice.priority.toUpperCase()}
                                     </span>
-                                    <span className="text-xs text-gray-500">
+                                    <span className="text-[10px] text-gray-400">
                                       by {notice.createdByName}
                                     </span>
                                   </div>
                                 </div>
-                                
-                                {/* Actions */}
                                 {['admin', 'principal', 'system_admin'].includes(currentUser?.userType || '') && (
                                   <button
                                     onClick={(e) => {
@@ -3924,7 +3803,7 @@ const fetchCounts = async () => {
                                     className="flex-shrink-0 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
                                     title="Delete notice"
                                   >
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                       <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                     </svg>
                                   </button>
@@ -3936,10 +3815,10 @@ const fetchCounts = async () => {
                       </div>
                     )}
                   </div>
-                  
+
                   {/* Footer */}
                   {filteredNotices.length > 0 && (
-                    <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                    <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between flex-shrink-0">
                       <button
                         onClick={() => {
                           filteredNotices.forEach(notice => {
@@ -3948,19 +3827,48 @@ const fetchCounts = async () => {
                             }
                           });
                         }}
-                        className="text-xs font-medium transition-colors"
+                        className="text-[11px] font-semibold transition-colors"
                         style={{ color: brandTheme.colors.primary }}
                       >
                         Mark all as read
                       </button>
-                      <span className="text-xs text-gray-500">
+                      <span className="text-[11px] text-gray-400">
                         {filteredNotices.length} notice{filteredNotices.length !== 1 ? 's' : ''}
                       </span>
                     </div>
                   )}
                 </div>
+                </>,
+                document.body
               )}
             </div>
+
+            {/* AI Assistant Button - Support Assistant for students on Learning page, Teaching Assistant for non-students */}
+            {currentUser?.userType === 'student' && showLearning ? (
+              <button
+                onClick={() => setShowAISupportAssistant(true)}
+                className="relative group flex flex-col items-center justify-center w-[46px] h-[46px] bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+               <FontAwesomeIcon icon={faRobot} className="text-gray-700 text-base" />
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 animate-pulse"></span>
+                <div className="absolute top-full mt-2 px-2.5 py-1 text-white text-[10px] rounded-md opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none whitespace-nowrap z-50 shadow-lg" style={{ background: brandTheme.gradients.primary }}>
+                  AI Support
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent" style={{ borderBottomColor: brandTheme.colors.primary }}></div>
+                </div>
+              </button>
+            ) : currentUser?.userType !== 'student' && (
+              <button
+                onClick={() => setShowAIAssistant(true)}
+                className="relative group flex flex-col items-center justify-center w-[46px] h-[46px] bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors"
+              >
+               <FontAwesomeIcon icon={faRobot} className="text-gray-700 text-base" />
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 animate-pulse"></span>
+                <div className="absolute top-full mt-2 px-2.5 py-1 text-white text-[10px] rounded-md opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none whitespace-nowrap z-50 shadow-lg" style={{ background: brandTheme.gradients.primary }}>
+                  AI Assistant
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent" style={{ borderBottomColor: brandTheme.colors.primary }}></div>
+                </div>
+              </button>
+            )}
 
             
             
@@ -3974,22 +3882,15 @@ const fetchCounts = async () => {
                     console.log('Setting showNoticeDialog to true');
                     setShowNoticeDialog(true);
                   }}
-                  className="p-2.5 hover:bg-gray-100 rounded-lg transition-all duration-200"
-                  title="Create Campus Notice"
+                  className="flex flex-col items-center justify-center w-[46px] h-[46px] bg-gray-50 hover:bg-gray-100 rounded-xl transition-all duration-200"
                 >
                   <FontAwesomeIcon icon={faBullhorn} 
-                    size="lg" 
-                    className="text-gray-600 group-hover:text-blue-600 transition-all duration-200"
+                    className="text-gray-600 group-hover:text-blue-600 transition-all duration-200 text-base"
                   />
                 </button>
-                
-                {/* Tooltip */}
-                <div className="absolute top-1/2 right-full transform -translate-y-1/2 mr-3 px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none whitespace-nowrap z-50 shadow-lg">
-                  <div className="flex items-center space-x-1">
-                    <FontAwesomeIcon icon={faPlus} />
-                    <span>Create Campus Notice</span>
-                  </div>
-                  <div className="absolute top-1/2 left-full transform -translate-y-1/2 border-4 border-transparent border-l-gray-900"></div>
+                <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2.5 py-1 text-white text-[10px] rounded-md opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none whitespace-nowrap z-50 shadow-lg" style={{ background: brandTheme.gradients.primary }}>
+                  Create Notice
+                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent" style={{ borderBottomColor: brandTheme.colors.primary }}></div>
                 </div>
               </div>
             )}
@@ -4003,14 +3904,16 @@ const fetchCounts = async () => {
                   role: currentUser?.userType || 'student',
                   roleName: currentUser?.userType ? firebaseService.getUserTypeDisplayName(currentUser.userType) : 'User',
                   organization: selectedCollege?.name || brandTheme.collegeName,
-                  avatar: currentUser?.profilePicture || undefined  // ✅ ADDED: Profile picture
+                  avatar: currentUser?.profilePicture || undefined,
+                  leetcodeUsername: currentUser?.leetcodeUsername || undefined
                 }}
-                onEditProfile={() => setShowUserProfile(true)}
+                onEditProfile={() => { setProfileInitialView('profile'); setShowUserProfile(true); }}
                 onDownloadBrowser={() => setShowSecureBrowserModal(true)}
                 onViewLoginDetails={() => setShowLoginDetailsDialog(true)}
+                onViewLeetCode={() => { setProfileInitialView('leetcode'); setShowUserProfile(true); }}
                 onAddUniversity={() => setIsBulkUploadUniversityOpen(true)}
                 onSignOut={handleLogout}
-                onProfileClick={() => setShowUserProfile(true)}
+                onProfileClick={() => { setProfileInitialView('profile'); setShowUserProfile(true); }}
                 onSwitchMode={(mode) => setShowLearning(mode === 'learning')}
                 currentMode={showLearning ? 'learning' : 'assessment'}
               />
@@ -7207,19 +7110,25 @@ const fetchCounts = async () => {
                                           </div>
                                           <div className="p-3 space-y-3">
                                             {/* Input Tables */}
-                                            {Object.entries(tc.table_data || {}).map(([tableName, rows]: [string, any]) => (
+                                            {Object.entries(tc.table_data || {}).map(([tableName, rows]: [string, any]) => {
+                                              const schemaColumns = (sqlSchema.find((t: any) => t.table_name === tableName)?.columns || []).filter((c: any) => c.name).map((c: any) => c.name);
+                                              const firstRow = Array.isArray(rows) && rows.length > 0 ? rows[0] : [];
+                                              const isHeaderRow = schemaColumns.length > 0 && firstRow.length === schemaColumns.length && firstRow.every((cell: string, i: number) => cell === schemaColumns[i]);
+                                              const dataRows = isHeaderRow ? (rows as string[][]).slice(1) : (rows as string[][]);
+                                              return (
                                               <div key={tableName} className="border border-blue-100 rounded overflow-hidden">
                                                 <div className="px-2 py-1 bg-blue-50 border-b border-blue-100">
                                                   <span className="text-[10px] font-bold text-blue-600">📥 Input: {tableName}</span>
                                                 </div>
                                                 <div className="overflow-x-auto">
                                                   <table className="w-full text-xs">
-                                                    <thead><tr className="bg-gray-50">{(sqlSchema.find((t: any) => t.table_name === tableName)?.columns || []).filter((c: any) => c.name).map((col: any, ci: number) => (<th key={ci} className="px-2 py-1 text-left font-semibold text-gray-600 border-b">{col.name}</th>))}</tr></thead>
-                                                    <tbody>{(rows as string[][]).map((row: string[], rIdx: number) => (<tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>{row.map((cell: string, ci: number) => (<td key={ci} className="px-2 py-1 font-mono border-b border-gray-100">{cell}</td>))}</tr>))}</tbody>
+                                                    <thead><tr className="bg-gray-50">{schemaColumns.map((colName: string, ci: number) => (<th key={ci} className="px-2 py-1 text-left font-semibold text-gray-600 border-b">{colName}</th>))}</tr></thead>
+                                                    <tbody>{dataRows.map((row: string[], rIdx: number) => (<tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>{row.map((cell: string, ci: number) => (<td key={ci} className="px-2 py-1 font-mono border-b border-gray-100">{cell}</td>))}</tr>))}</tbody>
                                                   </table>
                                                 </div>
                                               </div>
-                                            ))}
+                                              );
+                                            })}
                                             {/* Expected Output */}
                                             {tc.expected_output && tc.expected_output.columns?.length > 0 && (
                                               <div className="border border-green-200 rounded overflow-hidden">
@@ -8374,10 +8283,17 @@ const fetchCounts = async () => {
           </div>
         </>
       )}
-    {/* AI Assistant Dialog */}
+    {/* AI Assistant Dialog - Teaching Assistant for non-students */}
     <AIAssistant 
       isOpen={showAIAssistant}
       onClose={() => setShowAIAssistant(false)}
+    />
+
+    {/* AI Support Assistant - Generic support for students */}
+    <AISupportAssistant
+      isOpen={showAISupportAssistant}
+      onClose={() => setShowAISupportAssistant(false)}
+      userName={currentUser?.fullName?.split(' ')[0] || ''}
     />
 
     {/* Create Question Modal */}
@@ -8430,6 +8346,19 @@ const fetchCounts = async () => {
         refreshCounts();
         // Trigger Classes component refresh
         setUsersRefreshTrigger(prev => prev + 1);
+      }}
+    />
+
+    {/* Create Learning Path Modal */}
+    <CreateLearningPathModal
+      isOpen={isCreateLearningPathModalOpen}
+      onClose={() => setIsCreateLearningPathModalOpen(false)}
+      brandTheme={brandTheme}
+      currentUser={currentUser}
+      selectedCollege={selectedCollege}
+      onPathCreated={() => {
+        console.log('✅ Learning path created');
+        setIsCreateLearningPathModalOpen(false);
       }}
     />
 
@@ -8882,42 +8811,51 @@ const fetchCounts = async () => {
 
     {/* Login Details Dialog */}
     {showLoginDetailsDialog && loginIPInfo && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000] p-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-auto overflow-hidden">
+      <>
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] transition-opacity duration-300"
+        style={{ opacity: loginDetailsAnimatedIn ? 1 : 0 }}
+        onClick={() => setShowLoginDetailsDialog(false)}
+      />
+      <div
+        className="fixed right-2 top-2 bottom-2 z-[10000] w-[calc(100%-16px)] max-w-[35rem] bg-white shadow-2xl overflow-hidden rounded-2xl flex flex-col transition-all duration-300 ease-out"
+        style={{
+          transform: loginDetailsAnimatedIn ? 'translateX(0)' : 'translateX(100%)',
+          opacity: loginDetailsAnimatedIn ? 1 : 0,
+        }}
+      >
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-50 to-purple-50 px-6 py-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div 
-                  className="w-10 h-10 rounded-full flex items-center justify-center"
-                  style={{ background: brandTheme.gradients.primary }}
-                >
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                </div>
-                <h2 className="text-xl font-bold text-gray-900">Login Details</h2>
+          <div
+            className="px-5 py-4 flex items-center justify-between flex-shrink-0 rounded-t-2xl"
+            style={{ background: brandTheme.gradients.primary }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+                <svg className="w-4.5 h-4.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
               </div>
-              <button
-                onClick={() => setShowLoginDetailsDialog(false)}
-                className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                <FontAwesomeIcon icon={faXmark} className="text-gray-500" />
-              </button>
+              <h2 className="text-base font-bold text-white">Login Details</h2>
             </div>
+            <button
+              onClick={() => setShowLoginDetailsDialog(false)}
+              className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors"
+            >
+              <FontAwesomeIcon icon={faXmark} className="text-white" />
+            </button>
           </div>
 
           {/* Content */}
-          <div className="px-6 py-6 space-y-4">
+          <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
             {/* Location */}
             <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-                <FontAwesomeIcon icon={faMapMarkerAlt} className="text-red-600" />
+              <div className="flex-shrink-0 w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center">
+                <FontAwesomeIcon icon={faMapMarkerAlt} className="text-red-500 text-sm" />
               </div>
               <div className="flex-1">
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Location:</div>
-                <div className="text-base text-gray-900 font-medium">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Location</div>
+                <div className="text-sm text-gray-900 font-medium">
                   {loginIPInfo.city}, {loginIPInfo.region}, {loginIPInfo.country}
                 </div>
               </div>
@@ -8925,56 +8863,56 @@ const fetchCounts = async () => {
 
             {/* IP Address */}
             <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                <FontAwesomeIcon icon={faGlobe} className="text-blue-600" />
+              <div className="flex-shrink-0 w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center">
+                <FontAwesomeIcon icon={faGlobe} className="text-blue-500 text-sm" />
               </div>
               <div className="flex-1">
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">IP:</div>
-                <div className="text-base text-blue-600 font-semibold">{loginIPInfo.ip}</div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">IP Address</div>
+                <div className="text-sm text-blue-600 font-semibold">{loginIPInfo.ip}</div>
               </div>
             </div>
 
             {/* ISP */}
             <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                <FontAwesomeIcon icon={faTowerBroadcast} className="text-purple-600" />
+              <div className="flex-shrink-0 w-9 h-9 bg-purple-100 rounded-lg flex items-center justify-center">
+                <FontAwesomeIcon icon={faTowerBroadcast} className="text-purple-500 text-sm" />
               </div>
               <div className="flex-1">
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">ISP:</div>
-                <div className="text-base text-gray-900">{loginIPInfo.isp}</div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">ISP</div>
+                <div className="text-sm text-gray-900">{loginIPInfo.isp}</div>
               </div>
             </div>
 
             {/* Device */}
             <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
-                <FontAwesomeIcon icon={faLaptop} className="text-gray-600" />
+              <div className="flex-shrink-0 w-9 h-9 bg-gray-100 rounded-lg flex items-center justify-center">
+                <FontAwesomeIcon icon={faLaptop} className="text-gray-500 text-sm" />
               </div>
               <div className="flex-1">
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Device:</div>
-                <div className="text-base text-gray-900 capitalize">{loginIPInfo.deviceType}</div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Device</div>
+                <div className="text-sm text-gray-900 capitalize">{loginIPInfo.deviceType}</div>
               </div>
             </div>
 
             {/* Timezone */}
             <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                <FontAwesomeIcon icon={faEarthAmericas} className="text-green-600" />
+              <div className="flex-shrink-0 w-9 h-9 bg-green-100 rounded-lg flex items-center justify-center">
+                <FontAwesomeIcon icon={faEarthAmericas} className="text-green-500 text-sm" />
               </div>
               <div className="flex-1">
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Zone:</div>
-                <div className="text-base text-gray-900">{loginIPInfo.timezone}</div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Zone</div>
+                <div className="text-sm text-gray-900">{loginIPInfo.timezone}</div>
               </div>
             </div>
 
             {/* Login Time */}
             <div className="flex items-start space-x-3">
-              <div className="flex-shrink-0 w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
-                <FontAwesomeIcon icon={faClock} className="text-amber-600" />
+              <div className="flex-shrink-0 w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center">
+                <FontAwesomeIcon icon={faClock} className="text-amber-500 text-sm" />
               </div>
               <div className="flex-1">
-                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Time:</div>
-                <div className="text-base text-gray-900">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Login Time</div>
+                <div className="text-sm text-gray-900">
                   {new Date(loginIPInfo.loginTimestamp).toLocaleString('en-IN', {
                     day: '2-digit',
                     month: 'short',
@@ -8989,12 +8927,12 @@ const fetchCounts = async () => {
             </div>
 
             {/* Security Notice */}
-            <div className="mt-6 pt-4 border-t border-gray-200">
-              <div className="flex items-start space-x-2 bg-green-50 p-3 rounded-lg border border-green-200">
-                <svg className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="flex items-start space-x-2 bg-green-50 p-3 rounded-xl border border-green-100">
+                <svg className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                 </svg>
-                <p className="text-xs text-gray-700">
+                <p className="text-[11px] text-gray-600 leading-relaxed">
                   Login activity recorded for security. Contact admin if this wasn't you.
                 </p>
               </div>
@@ -9002,8 +8940,8 @@ const fetchCounts = async () => {
 
             {/* Coordinates */}
             {loginIPInfo.latitude !== 0 && loginIPInfo.longitude !== 0 && (
-              <div className="text-center pt-2">
-                <div className="text-xs text-gray-400 flex items-center justify-center">
+              <div className="text-center pt-1">
+                <div className="text-[11px] text-gray-300 flex items-center justify-center">
                   <FontAwesomeIcon icon={faChartLine} className="mr-2" /> {loginIPInfo.latitude.toFixed(4)}, {loginIPInfo.longitude.toFixed(4)}
                 </div>
               </div>
@@ -9011,136 +8949,144 @@ const fetchCounts = async () => {
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end">
+          <div className="px-5 py-4 border-t border-gray-100 flex-shrink-0">
             <button
               onClick={() => setShowLoginDetailsDialog(false)}
-              className="px-6 py-2.5 text-white rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
+              className="w-full px-4 py-2.5 text-white rounded-xl text-sm font-semibold shadow-md hover:shadow-lg transition-all"
               style={{ background: brandTheme.gradients.primary }}
             >
               Close
             </button>
           </div>
-        </div>
       </div>
+      </>
     )}
 
     {/* Secure Browser Download Modal */}
     {showSecureBrowserModal && (
-      <div 
-        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      <>
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9999] transition-opacity duration-300"
+        style={{ opacity: secureBrowserAnimatedIn ? 1 : 0 }}
         onClick={() => setShowSecureBrowserModal(false)}
+      />
+      <div
+        className="fixed right-2 top-2 bottom-2 z-[10000] w-[calc(100%-16px)] max-w-[35rem] bg-white shadow-2xl overflow-hidden rounded-2xl flex flex-col transition-all duration-300 ease-out"
+        style={{
+          transform: secureBrowserAnimatedIn ? 'translateX(0)' : 'translateX(100%)',
+          opacity: secureBrowserAnimatedIn ? 1 : 0,
+        }}
       >
-        <div 
-          className="relative bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 overflow-hidden"
-          onClick={(e) => e.stopPropagation()}
-        >
           {/* Header */}
-          <div 
-            className="px-6 py-5 text-white relative overflow-hidden"
+          <div
+            className="px-5 py-4 flex items-center justify-between flex-shrink-0 rounded-t-2xl relative overflow-hidden"
             style={{ background: brandTheme.gradients.primary }}
           >
             <div className="absolute inset-0 opacity-10">
-              <div className="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-32 translate-x-32"></div>
-              <div className="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full translate-y-24 -translate-x-24"></div>
+              <div className="absolute top-0 right-0 w-48 h-48 bg-white rounded-full -translate-y-24 translate-x-24"></div>
+              <div className="absolute bottom-0 left-0 w-32 h-32 bg-white rounded-full translate-y-16 -translate-x-16"></div>
             </div>
-            <div className="relative z-10 flex items-center justify-between">
-              <div>
-                <h3 className="text-2xl font-bold mb-1">Download Secure Browser</h3>
-                <p className="text-white/90 text-sm">Choose your platform to download</p>
+            <div className="relative z-10 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
+                <FontAwesomeIcon icon={faShieldCheck} className="text-white text-sm" />
               </div>
-              <button
-                onClick={() => setShowSecureBrowserModal(false)}
-                className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center transition-all"
-              >
-                <FontAwesomeIcon icon={faXmark} size="lg" />
-              </button>
+              <div>
+                <h2 className="text-base font-bold text-white">Download Secure Browser</h2>
+                <p className="text-[11px] text-white/70">Choose your platform to download</p>
+              </div>
             </div>
+            <button
+              onClick={() => setShowSecureBrowserModal(false)}
+              className="relative z-10 w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 transition-colors"
+            >
+              <FontAwesomeIcon icon={faXmark} className="text-white" />
+            </button>
           </div>
 
           {/* Content */}
-          <div className="p-8">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="flex-1 overflow-y-auto p-5 flex flex-col justify-center">
+            <div className="grid grid-cols-3 gap-4">
               {/* Windows */}
               <div
                 onClick={() => handleDownload('windows')}
-                className="group relative bg-gradient-to-br from-blue-50 to-cyan-50 hover:from-blue-100 hover:to-cyan-100 rounded-2xl p-6 border-2 border-blue-200 hover:border-blue-400 transition-all duration-300 hover:shadow-xl hover:scale-105 cursor-pointer"
+                className="group relative bg-gradient-to-br from-blue-50 to-cyan-50 hover:from-blue-100 hover:to-cyan-100 rounded-xl p-5 border-2 border-blue-200 hover:border-blue-400 transition-all duration-300 hover:shadow-lg cursor-pointer"
               >
                 <div className="text-center">
-                  <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                    <FontAwesomeIcon icon={faWindows} className="text-white text-3xl" />
+                  <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl mb-3 group-hover:scale-110 transition-transform duration-300 shadow-md">
+                    <FontAwesomeIcon icon={faWindows} className="text-white text-xl" />
                   </div>
-                  <h4 className="text-xl font-bold text-gray-900 mb-2">Windows</h4>
-                  <p className="text-sm text-gray-600 mb-4">For Windows 10 & 11</p>
-                  <div className="inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-sm font-semibold shadow-md group-hover:shadow-lg transition-all">
+                  <h4 className="text-sm font-bold text-gray-900 mb-1">Windows</h4>
+                  <p className="text-[11px] text-gray-500 mb-3">For Windows 10 & 11</p>
+                  <div className="inline-flex items-center justify-center px-3 py-1.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-[11px] font-semibold shadow-sm">
                     <span>Download</span>
-                    <svg className="w-4 h-4 ml-2 group-hover:translate-y-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 ml-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
                   </div>
                 </div>
-                <div className="absolute top-3 right-3 w-8 h-8 bg-blue-500/20 rounded-full flex items-center justify-center">
-                  <FontAwesomeIcon icon={faCheckCircle} className="text-blue-600" />
+                <div className="absolute top-2 right-2 w-6 h-6 bg-blue-500/20 rounded-full flex items-center justify-center">
+                  <FontAwesomeIcon icon={faCheckCircle} className="text-blue-600 text-[10px]" />
                 </div>
               </div>
 
               {/* Mac */}
               <div
                 onClick={() => handleDownload('mac')}
-                className="group relative bg-gradient-to-br from-slate-50 to-gray-50 hover:from-slate-100 hover:to-gray-100 rounded-2xl p-6 border-2 border-gray-300 hover:border-gray-500 transition-all duration-300 hover:shadow-xl hover:scale-105 cursor-pointer"
+                className="group relative bg-gradient-to-br from-slate-50 to-gray-50 hover:from-slate-100 hover:to-gray-100 rounded-xl p-5 border-2 border-gray-300 hover:border-gray-500 transition-all duration-300 hover:shadow-lg cursor-pointer"
               >
                 <div className="text-center">
-                  <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-slate-600 to-gray-700 rounded-2xl mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                    <FontAwesomeIcon icon={faApple} className="text-white text-3xl" />
+                  <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-slate-600 to-gray-700 rounded-xl mb-3 group-hover:scale-110 transition-transform duration-300 shadow-md">
+                    <FontAwesomeIcon icon={faApple} className="text-white text-xl" />
                   </div>
-                  <h4 className="text-xl font-bold text-gray-900 mb-2">macOS</h4>
-                  <p className="text-sm text-gray-600 mb-4">For macOS 11 & later</p>
-                  <div className="inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-slate-600 to-gray-700 text-white rounded-lg text-sm font-semibold shadow-md group-hover:shadow-lg transition-all">
+                  <h4 className="text-sm font-bold text-gray-900 mb-1">macOS</h4>
+                  <p className="text-[11px] text-gray-500 mb-3">For macOS 11 & later</p>
+                  <div className="inline-flex items-center justify-center px-3 py-1.5 bg-gradient-to-r from-slate-600 to-gray-700 text-white rounded-lg text-[11px] font-semibold shadow-sm">
                     <span>Download</span>
-                    <svg className="w-4 h-4 ml-2 group-hover:translate-y-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 ml-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
                   </div>
                 </div>
-                <div className="absolute top-3 right-3 w-8 h-8 bg-gray-500/20 rounded-full flex items-center justify-center">
-                  <FontAwesomeIcon icon={faCheckCircle} className="text-gray-700" />
+                <div className="absolute top-2 right-2 w-6 h-6 bg-gray-500/20 rounded-full flex items-center justify-center">
+                  <FontAwesomeIcon icon={faCheckCircle} className="text-gray-700 text-[10px]" />
                 </div>
               </div>
 
               {/* Linux */}
               <div
                 onClick={() => handleDownload('linux')}
-                className="group relative bg-gradient-to-br from-orange-50 to-amber-50 hover:from-orange-100 hover:to-amber-100 rounded-2xl p-6 border-2 border-orange-200 hover:border-orange-400 transition-all duration-300 hover:shadow-xl hover:scale-105 cursor-pointer"
+                className="group relative bg-gradient-to-br from-orange-50 to-amber-50 hover:from-orange-100 hover:to-amber-100 rounded-xl p-5 border-2 border-orange-200 hover:border-orange-400 transition-all duration-300 hover:shadow-lg cursor-pointer"
               >
                 <div className="text-center">
-                  <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-orange-500 to-amber-500 rounded-2xl mb-4 group-hover:scale-110 transition-transform duration-300 shadow-lg">
-                    <FontAwesomeIcon icon={faLinux} className="text-white text-3xl" />
+                  <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-br from-orange-500 to-amber-500 rounded-xl mb-3 group-hover:scale-110 transition-transform duration-300 shadow-md">
+                    <FontAwesomeIcon icon={faLinux} className="text-white text-xl" />
                   </div>
-                  <h4 className="text-xl font-bold text-gray-900 mb-2">Linux</h4>
-                  <p className="text-sm text-gray-600 mb-4">For Ubuntu & Debian</p>
-                  <div className="inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-lg text-sm font-semibold shadow-md group-hover:shadow-lg transition-all">
+                  <h4 className="text-sm font-bold text-gray-900 mb-1">Linux</h4>
+                  <p className="text-[11px] text-gray-500 mb-3">For Ubuntu & Debian</p>
+                  <div className="inline-flex items-center justify-center px-3 py-1.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white rounded-lg text-[11px] font-semibold shadow-sm">
                     <span>Download</span>
-                    <svg className="w-4 h-4 ml-2 group-hover:translate-y-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-3 h-3 ml-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                     </svg>
                   </div>
                 </div>
-                <div className="absolute top-3 right-3 w-8 h-8 bg-orange-500/20 rounded-full flex items-center justify-center">
-                  <FontAwesomeIcon icon={faCheckCircle} className="text-orange-600" />
+                <div className="absolute top-2 right-2 w-6 h-6 bg-orange-500/20 rounded-full flex items-center justify-center">
+                  <FontAwesomeIcon icon={faCheckCircle} className="text-orange-600 text-[10px]" />
                 </div>
               </div>
             </div>
 
             {/* Installation Note */}
-            <div className="mt-8 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-200">
+            <div className="mt-5 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl border border-blue-100">
               <div className="flex items-start space-x-3">
                 <div className="flex-shrink-0 w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h5 className="text-sm font-semibold text-gray-900 mb-1">Installation Instructions</h5>
-                  <p className="text-xs text-gray-700 leading-relaxed">
+                  <h5 className="text-[12px] font-semibold text-gray-900 mb-0.5">Installation Instructions</h5>
+                  <p className="text-[11px] text-gray-600 leading-relaxed">
                     After downloading, run the installer and follow the on-screen instructions. 
                     Once installed, log in with your credentials to access secure exams.
                   </p>
@@ -9150,21 +9096,21 @@ const fetchCounts = async () => {
           </div>
 
           {/* Footer */}
-          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-            <p className="text-xs text-gray-500">
+          <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between flex-shrink-0">
+            <p className="text-[11px] text-gray-400">
               <FontAwesomeIcon icon={faLock} className="mr-1" /> 
               Secure & Verified Software
             </p>
             <button
               onClick={() => setShowSecureBrowserModal(false)}
-              className="px-6 py-2.5 text-white rounded-lg font-semibold shadow-md hover:shadow-lg transition-all"
+              className="px-5 py-2.5 text-white rounded-xl text-sm font-semibold shadow-md hover:shadow-lg transition-all"
               style={{ background: brandTheme.gradients.primary }}
             >
               Close
             </button>
           </div>
-        </div>
       </div>
+      </>
     )}
 
     {/* Image Carousel Modal */}
@@ -9268,8 +9214,9 @@ const fetchCounts = async () => {
     {/* User Profile Modal */}
     <UserProfile
       isOpen={showUserProfile}
-      onClose={() => setShowUserProfile(false)}
+      onClose={() => { setShowUserProfile(false); setProfileInitialView('profile'); }}
       currentUser={currentUser}
+      initialView={profileInitialView}
       onProfileUpdate={async () => {
         // Reload user data after profile update
         if (currentUser?.userId) {
