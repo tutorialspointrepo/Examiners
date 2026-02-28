@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
 
 export interface BrandColors {
   primary: string;      // Main brand color (e.g., '#4F46E5' for indigo)
@@ -17,15 +17,21 @@ export interface BrandTheme {
   };
   collegeName: string;
   collegeId: string;
+  instituteLogo?: string;  // Logo URL from Firestore
 }
 
-// Helper function to generate theme from primary color
-export const generateBrandTheme = (primaryColor: string, collegeName: string, collegeId: string): BrandTheme => {
-  // Parse the primary color to generate variants
-  const getColorVariants = (baseColor: string) => {
-    // This is a simplified version - in production you might use a color manipulation library
-    // For now, we'll provide common color schemes
-    
+// Helper function to generate theme from brand colors
+// If secondaryColor/accentColor provided (from Firestore), use them directly.
+// Otherwise fall back to hardcoded colorSchemes lookup.
+export const generateBrandTheme = (
+  primaryColor: string,
+  collegeName: string,
+  collegeId: string,
+  secondaryColor?: string,
+  accentColor?: string
+): BrandTheme => {
+  // Hardcoded fallback schemes (used when Firestore brand profile is not set)
+  const getColorVariants = (baseColor: string): BrandColors => {
     const colorSchemes: { [key: string]: BrandColors } = {
     // Indigo/Purple (Default EXAMINERS)
     '#4F46E5': {
@@ -53,15 +59,15 @@ export const generateBrandTheme = (primaryColor: string, collegeName: string, co
     },
     // LPU Orange
     '#FF6B35': {
-      primary: '#FF6B35',    // 🧡 Vibrant Orange
-      secondary: '#FB923C',  // Deep Orange for contrast
-      accent: '#FBBF24'      // 💛 Golden Yellow for highlight
+      primary: '#FF6B35',
+      secondary: '#FB923C',
+      accent: '#FBBF24'
     },
-    // SGT University Navy Blue 🆕
+    // SGT University Navy Blue
     '#4d9beaff': {
       primary: '#1382f0ff',
       secondary: '#0671dcff',
-      accent: '#ec9448ff'     // 💛 Golden Yellow (from APPLY NOW button)
+      accent: '#ec9448ff'
     },
     // Red
     '#EF4444': {
@@ -92,7 +98,11 @@ export const generateBrandTheme = (primaryColor: string, collegeName: string, co
     return colorSchemes[baseColor] || colorSchemes['#4F46E5'];
   };
 
-  const colors = getColorVariants(primaryColor);
+  // If all 3 colors provided from Firestore, use them directly
+  // Otherwise fall back to hardcoded lookup
+  const colors: BrandColors = (secondaryColor && accentColor)
+    ? { primary: primaryColor, secondary: secondaryColor, accent: accentColor }
+    : getColorVariants(primaryColor);
 
   return {
     colors,
@@ -127,6 +137,14 @@ interface BrandProviderProps {
 }
 
 export const BrandProvider = ({ children, theme }: BrandProviderProps) => {
+  useEffect(() => {
+    console.log('🎨 [BrandProvider] Theme updated:', {
+      primary: theme.colors.primary,
+      collegeName: theme.collegeName,
+      collegeId: theme.collegeId
+    });
+  }, [theme]);
+  
   return (
     <BrandContext.Provider value={theme}>
       {children}
@@ -135,7 +153,7 @@ export const BrandProvider = ({ children, theme }: BrandProviderProps) => {
 };
 
 // Updated college themes with SGT University
-export const collegeThemes: { [key: string]: { color: string; name: string } } = {
+export const collegeThemes: { [key: string]: { color: string; name: string; secondary?: string; accent?: string } } = {
   'default': { color: '#4F46E5', name: 'EXAMINERS' },
   'lpu': { color: '#FF6B35', name: 'Lovely Professional University' },
   'sgt': { color: '#4d9beaff', name: 'SGT University' }, // 🆕 Deep Navy Blue with Orange/Yellow accents

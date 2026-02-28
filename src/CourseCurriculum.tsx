@@ -2088,10 +2088,17 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
               await firebaseService.saveQuizResult(enrollmentId, quizData);
               console.log('✅ Quiz result saved successfully');
               
-              // Update student learning detail
+              // Update student learning detail with marks tracking
               if (isStudentEnrolled()) {
+                const isRetake = !!previousQuizResult;
                 firebaseService.markQuizCompletedInLearningDetail(getUserId(), getCollegeId(), courseSlug, {
-                  courseName, quizTitle: selectedLecture.title, score: percentage,
+                  courseName,
+                  quizTitle: selectedLecture.title,
+                  score: percentage,
+                  marksObtained: score,
+                  maxMarks: totalQuestions,
+                  isRetake,
+                  ...(isRetake ? { previousMarksObtained: previousQuizResult?.score ?? 0 } : {}),
                 });
               }
               
@@ -2429,7 +2436,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                   <span className="text-white/80 text-sm">{selectedLecture.title}</span>
                 </div>
 
-                <div className="p-6">
+                <div className="p-6 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 200px)' }}>
                   {/* Score Circle */}
                   <div className="text-center mb-6">
                     <div className="w-24 h-24 mx-auto rounded-full bg-gradient-to-r from-violet-600 to-pink-500 flex items-center justify-center mb-4">

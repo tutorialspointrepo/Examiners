@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import AttendanceListModal from './AttendanceListModal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faClipboardList,
   faCalendar,
   faUsers,
-  faGraduationCap,
   faChevronLeft,
   faChevronRight,
   faUserCheck,
@@ -84,6 +84,9 @@ interface Question {
     correctAnswer?: number;
     blanks?: string[];  // ✅ FITB specific
     correctSequence?: string[];  // ✅ Jumbled specific
+    // Likert specific
+    likertTrait?: string;  // ✅ Likert - trait this question maps to
+    likertDirection?: 'positive' | 'reverse';  // ✅ Likert - scoring direction
     jumbledOptions?: string[];
     hint?: string;
     solution?: string;
@@ -172,6 +175,7 @@ interface LiveStatsProps {
 
 export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: LiveStatsProps) {
   const [students, setStudents] = useState<Student[]>([]);
+  const [enrollmentCount, setEnrollmentCount] = useState<number>(0); // ✅ Total enrolled from examEnrollments collection
   const [isLoading, setIsLoading] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [examStartTime, setExamStartTime] = useState<Date | null>(null);
@@ -182,13 +186,13 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
   const [autoSubmitStatus, setAutoSubmitStatus] = useState<string | null>(null); // ✅ Status message
 
   // ✅ NEW: Connectivity data state
-  const [connectivityData, setConnectivityData] = useState<Map<string, { disconnections: number, duration: number, history: any[], lastDisconnectionTime: Date | null }>>(new Map());
-  const [lastConnectivityFetch, setLastConnectivityFetch] = useState<Date | null>(null);
-  const CONNECTIVITY_REFRESH_INTERVAL = 60000; // 60 seconds
+
   
   // Modal states
   const [selectedStudentForViolations, setSelectedStudentForViolations] = useState<Student | null>(null);
   const [selectedStudentForActivities, setSelectedStudentForActivities] = useState<Student | null>(null);
+  const [attendanceModalOpen, setAttendanceModalOpen] = useState(false);
+  const [attendanceModalFilter, setAttendanceModalFilter] = useState<'present' | 'absent'>('present');
   const [violationsCurrentPage, setViolationsCurrentPage] = useState(1);
   const [activitiesCurrentPage, setActivitiesCurrentPage] = useState(1);
   const [evidenceModal, setEvidenceModal] = useState<{ url: string; type: 'video' | 'image' } | null>(null);
@@ -199,12 +203,59 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
   const GRACE_PERIOD_MINUTES = 5; // ✅ Continue monitoring for 5 minutes after exam ends
   const VIOLATIONS_PER_PAGE = 25;
 
-  // Helper function to format date in IST timezone
-  const formatISTTime = (date: Date, options: { timeOnly?: boolean; dateOnly?: boolean } = {}): string => {
-    if (isNaN(date.getTime())) {
-      console.error('❌ Invalid date:', date);
-      return 'Invalid Date';
+  // ✅ Server-side pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [serverPagination, setServerPagination] = useState<{ totalStudents: number; totalPages: number; hasMore: boolean }>({ totalStudents: 0, totalPages: 0, hasMore: false });
+  const [serverSummary, setServerSummary] = useState<any>(null);
+  const PAGE_SIZE = 20;
+  const isServerMode = useRef(false); // tracks whether server fetch succeeded
+
+  // ✅ Smart date parser — handles ALL timestamp formats from Firebase/app
+  const toSafeDate = (value: any): Date => {
+    if (!value) return new Date(0);
+    
+    // Already a valid Date
+    if (value instanceof Date) return isNaN(value.getTime()) ? new Date(0) : value;
+    
+    // Firestore Timestamp (.toDate method)
+    if (typeof value?.toDate === 'function') return value.toDate();
+    
+    // Firestore-like object { seconds, nanoseconds }
+    if (typeof value?.seconds === 'number') return new Date(value.seconds * 1000 + (value.nanoseconds || 0) / 1e6);
+    
+    // { __time__: "ISO string" } format from Firestore REST/export
+    if (typeof value?.__time__ === 'string') return new Date(value.__time__);
+    
+    // Number (epoch ms or seconds)
+    if (typeof value === 'number') return new Date(value > 1e12 ? value : value * 1000);
+    
+    // String formats
+    if (typeof value === 'string') {
+      // IST format: "2026-02-25 15:30:00 IST"
+      if (value.includes(' IST')) {
+        const cleaned = value.replace(' IST', '').trim();
+        const [datePart, timePart] = cleaned.split(' ');
+        if (datePart && timePart) {
+          const [year, month, day] = datePart.split('-').map(Number);
+          const [hours, minutes, seconds] = timePart.split(':').map(Number);
+          const istOffset = 5.5 * 60 * 60 * 1000;
+          return new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds || 0) - istOffset);
+        }
+      }
+      // ISO string, RFC 2822, or any other standard format
+      const parsed = new Date(value);
+      if (!isNaN(parsed.getTime())) return parsed;
     }
+    
+    // Last resort
+    const fallback = new Date(value);
+    return isNaN(fallback.getTime()) ? new Date(0) : fallback;
+  };
+
+  // Helper function to format date in IST timezone
+  const formatISTTime = (date: Date | any, options: { timeOnly?: boolean; dateOnly?: boolean } = {}): string => {
+    const safeDate = date instanceof Date ? date : toSafeDate(date);
+    if (safeDate.getTime() === 0) return '-';
     
     // Use toLocaleString with IST timezone
     if (options.timeOnly) {
@@ -366,6 +417,63 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
    * Auto-submit all in_progress attempts when exam time expires
    * This runs as part of the LiveStats auto-refresh cycle
    */
+  // ✅ SERVER-SIDE FETCH: Single Cloud Function call replaces heavy client-side fetching
+  const fetchFromServer = async (page: number = 1, silent: boolean = false): Promise<boolean> => {
+    try {
+      const collegeId = exam.collegeId || userCollegeId;
+      if (!collegeId) return false;
+
+      if (!silent) setIsLoading(true);
+
+      const result = await firebaseService.getLiveExamStats(exam.id, collegeId, page, PAGE_SIZE);
+
+      // Map server summary to state
+      setServerSummary(result.summary);
+      setEnrollmentCount(result.summary.totalEnrolled);
+      setServerPagination(result.pagination);
+
+      // Map server students to existing Student interface (so ALL rendering stays intact)
+      const mappedStudents: Student[] = result.students.map((s: any) => ({
+        userId: s.userId,
+        fullName: s.fullName,
+        studentRoll: s.studentRoll,
+        email: '',
+        isPresent: true,
+        markedAt: s.markedAt,
+        questionsSubmitted: s.questionsAnswered,
+        lastActivity: s.exitTime || s.entryTime || 'No activity',
+        violations: (s.violations || []).map((v: any) => ({
+          ...v,
+          timestamp: v.timestamp ? new Date(v.timestamp) : new Date(),
+        })),
+        activities: [],
+        progress: s.progressPercent,
+        status: s.status as StudentStatus,
+        entryTime: undefined, // formatted string used via markedAt/lastActivity
+        exitTime: undefined,
+        ipAddress: s.ipAddress,
+        initialIP: s.ipAddress,
+        hasMultipleIPs: s.hasMultipleIPs,
+        totalDuration: s.duration,
+        activityLogId: s.attemptId,
+        totalDisconnections: s.disconnections,
+        totalInternetUnavailableDuration: s.disconnectionDuration,
+        connectivityHistory: [],
+        lastDisconnectionTime: null,
+      }));
+
+      setStudents(mappedStudents);
+      setLastRefresh(new Date());
+      if (!silent) setIsLoading(false);
+      isServerMode.current = true;
+      return true;
+    } catch (error) {
+      console.error('❌ Server fetch failed, will fall back to client-side:', error);
+      if (!silent) setIsLoading(false);
+      return false;
+    }
+  };
+
   const autoSubmitExpiredAttempts = async () => {
     // ✅ CRITICAL: Check if already processing/completed
     if (hasAutoSubmittedRef.current) {
@@ -437,7 +545,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
       setTimeout(() => setAutoSubmitStatus(null), 5000);
       
       // Reload student data to show updated statuses
-      await loadStudentData();
+      await fetchFromServer(currentPage, true);
       
     } catch (error) {
       console.error('❌ Error during auto-submit:', error);
@@ -452,631 +560,85 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
     }
   };
 
-  // ✅ NEW: Function to fetch connectivity data for ALL students in the exam
-  const fetchConnectivityData = async () => {
-    try {
-      const now = new Date();
-      
-      // Skip if we fetched recently (within CONNECTIVITY_REFRESH_INTERVAL)
-      if (lastConnectivityFetch) {
-        const timeSinceLastFetch = now.getTime() - lastConnectivityFetch.getTime();
-        if (timeSinceLastFetch < CONNECTIVITY_REFRESH_INTERVAL) {
-          console.log(`⏭️ Skipping connectivity fetch - last fetched ${Math.round(timeSinceLastFetch / 1000)}s ago`);
-          return;
-        }
-      }
-      
-      console.log('🔥🔥🔥 FETCHING CONNECTIVITY DATA 🔥🔥🔥');
-      console.log('📡 Exam ID:', exam.id);
-      
-      // Get ALL connectivity records for this exam at once (more efficient than per-student)
-      const allConnectivityRecords = await firebaseService.getAllExamConnectivityRecords(exam.id);
-      console.log(`📡 Retrieved ${allConnectivityRecords.length} total connectivity records`);
-      
-      if (allConnectivityRecords.length > 0) {
-        console.log('📡 Sample connectivity record:', allConnectivityRecords[0]);
-      }
-      
-      // Group by userId
-      const connectivityByUser = new Map<string, { disconnections: number, duration: number, history: any[], lastDisconnectionTime: Date | null }>();
-      
-      allConnectivityRecords.forEach((record: any, idx: number) => {
-        console.log(`  Record ${idx + 1}: userId="${record.userId}", duration=${record.internetUnavailableDuration}s`);
-        
-        const userId = record.userId;
-        const existing = connectivityByUser.get(userId) || { 
-          disconnections: 0, 
-          duration: 0, 
-          history: [],
-          lastDisconnectionTime: null // ✅ NEW
-        };
-        
-        existing.disconnections++;
-        existing.duration += record.internetUnavailableDuration || 0;
-        existing.history.push(record);
-        
-        // ✅ NEW: Track most recent disconnection time
-        const recordTime = record.timestamp?.toDate ? record.timestamp.toDate() : new Date(record.timestamp);
-        if (!existing.lastDisconnectionTime || recordTime > existing.lastDisconnectionTime) {
-          existing.lastDisconnectionTime = recordTime;
-        }
-        
-        connectivityByUser.set(userId, existing);
-      });
-      
-      console.log(`📡 Processed connectivity data for ${connectivityByUser.size} unique users`);
-      console.log('📡 User IDs with connectivity data:', Array.from(connectivityByUser.keys()));
-      
-      // Log summary
-      const studentsWithIssues = Array.from(connectivityByUser.entries())
-        .filter(([_, data]) => data.disconnections > 0);
-      
-      if (studentsWithIssues.length > 0) {
-        console.log(`📡 CONNECTIVITY SUMMARY:`, {
-          totalUsers: connectivityByUser.size,
-          usersWithIssues: studentsWithIssues.length,
-          totalDisconnections: Array.from(connectivityByUser.values())
-            .reduce((sum, data) => sum + data.disconnections, 0),
-          totalDuration: Array.from(connectivityByUser.values())
-            .reduce((sum, data) => sum + data.duration, 0)
-        });
-        studentsWithIssues.forEach(([userId, data]) => {
-          console.log(`  📶 ${userId}: ${data.disconnections} disconnections, ${data.duration}s total`);
-        });
-      } else {
-        console.log('⚠️ No connectivity issues found for any user');
-      }
-      
-      // Update state
-      console.log('📡 Updating connectivityData state...');
-      setConnectivityData(connectivityByUser);
-      setLastConnectivityFetch(now);
-      console.log('✅ Connectivity data state updated!');
-      
-      // Return the fresh data so it can be used immediately
-      return connectivityByUser;
-      
-    } catch (error) {
-      console.error('❌ Error fetching connectivity data:', error);
-      // Return empty map on error
-      return new Map();
-    }
-  };
-
-  // Function to load/refresh student data
-   const loadStudentData = async (freshConnectivityData?: Map<string, { disconnections: number, duration: number, history: any[], lastDisconnectionTime: Date | null }>) => {
-    try {
-      setIsLoading(true);
-      
-      // Guard: Check if required fields exist
-      const collegeId = exam.collegeId || userCollegeId;
-      if (!collegeId) {
-        console.error('❌ Cannot load student data: missing collegeId', exam);
-        setIsLoading(false);
-        return;
-      }
-      
-      console.log('📚 Total students (from Exams table):', exam.totalStudents || 0);
-      
-      // STEP 1: Get attendance records from attendance table for this exam
-      const attendanceRecords = await firebaseService.getExamAttendance(exam.id);
-      console.log(`📝 Total attendance records:`, attendanceRecords.length);
-      
-      // Count present students (status = 'present')
-      const presentAttendanceRecords = attendanceRecords.filter(record => record.status === 'present');
-      console.log(`✅ Present students from attendance:`, presentAttendanceRecords.length);
-
-      // STEP 2: Get exam attempts for present students
-      const attempts = await firebaseService.getExamAttempts(exam.id);
-      
-      // 🔥 FIX: If there are multiple attempts per student, keep only the latest one
-      const attemptsMap = new Map<string, any>();
-      attempts.forEach(attempt => {
-        const existingAttempt = attemptsMap.get(attempt.studentId);
-        
-        // If no existing attempt or this one is newer, use it
-        if (!existingAttempt) {
-          attemptsMap.set(attempt.studentId, attempt);
-        } else {
-          // Compare timestamps to get the latest attempt
-          const existingStartTime = existingAttempt.startTime instanceof Date 
-            ? existingAttempt.startTime 
-            : new Date(existingAttempt.startTime);
-          const currentStartTime = attempt.startTime instanceof Date 
-            ? attempt.startTime 
-            : new Date(attempt.startTime);
-          
-          // Keep the attempt with the most recent start time
-          if (currentStartTime > existingStartTime) {
-            console.log(`⚠️ Multiple attempts for ${attempt.studentId}, using latest (${attempt.attemptId})`);
-            attemptsMap.set(attempt.studentId, attempt);
-          }
-        }
-      });
-      
-      console.log(`✅ Exam attempts:`, attempts.length, '(unique students:', attemptsMap.size, ')');
-      
-      // STEP 4: Create student data array (connectivity data will be added separately)      // Debug: Log if there are duplicate attempts
-      if (attempts.length > attemptsMap.size) {
-        console.warn(`⚠️ Found ${attempts.length - attemptsMap.size} duplicate attempts!`);
-      }
-      
-      // Debug: Log first attempt to see structure
-      if (attempts.length > 0) {
-        console.log('📊 Sample attempt structure:', {
-          studentId: attempts[0].studentId,
-          attemptedQuestions: attempts[0].attemptedQuestions,
-          responsesCount: attempts[0].responses?.length || 0,
-          timeSpent: attempts[0].timeSpent,
-          duration: attempts[0].duration,
-          activities: attempts[0].activities?.length || 0
-        });
-        
-        // Log first response to see structure including violations
-        if (attempts[0].responses && attempts[0].responses.length > 0) {
-          console.log('📝 Sample response structure:', {
-            questionId: attempts[0].responses[0].questionId,
-            questionNo: attempts[0].responses[0].questionNo,
-            isAnswered: attempts[0].responses[0].isAnswered,
-            answeredAt: attempts[0].responses[0].answeredAt,
-            violations: attempts[0].responses[0].violations?.length || 0
-          });
-        }
-      }
-      
-      // STEP 3: Create student data array using attendance record data directly
-      const studentsData: Student[] = presentAttendanceRecords.map(attendanceRecord => {
-        const studentId = attendanceRecord.studentId || attendanceRecord.userId;
-        const attempt = attemptsMap.get(studentId);
-        
-        console.log(`\n${'='.repeat(60)}`);
-        console.log(`Processing: ${attendanceRecord.studentName} (${studentId})`);
-        console.log(`Attempt ID: ${attempt?.attemptId || 'NO ATTEMPT'}`);
-        console.log(`${'='.repeat(60)}`);
-        
-        // Extract entry/exit times from activities array (if attempt exists)
-        const activities = attempt?.activities || [];
-        
-        console.log(`📋 Activities for ${attendanceRecord.studentName}:`, {
-          activitiesCount: activities.length,
-          activities: activities.map((a: any) => ({
-            type: a.type,
-            timestamp: a.timestamp?.toDate ? a.timestamp.toDate().toISOString() : a.timestamp,
-            ipAddress: a.ipAddress
-          }))
-        });
-        
-        // Find first entry to get initial IP
-        const entryActivities = activities.filter((a: any) => a.type === 'enter');
-        const initialEntry = entryActivities[0];
-        const initialIP = initialEntry?.ipAddress || '';
-        
-        // Check if there are multiple different IPs
-        const uniqueIPs = new Set(
-          entryActivities
-            .map((a: any) => a.ipAddress)
-            .filter((ip: string) => ip)
-        );
-        const hasMultipleIPs = uniqueIPs.size > 1;
-        
-        const entryActivity = activities.find((a: any) => a.type === 'enter');
-        const exitActivity = [...activities].reverse().find((a: any) => a.type === 'exit');
-        
-        console.log(`🚪 Entry/Exit for ${attendanceRecord.studentName}:`, {
-          hasEntryActivity: !!entryActivity,
-          hasExitActivity: !!exitActivity,
-          entryTimestamp: entryActivity?.timestamp,
-          exitTimestamp: exitActivity?.timestamp
-        });
-        
-        // Convert Firestore Timestamp to Date
-        const entryTime = entryActivity?.timestamp 
-          ? (entryActivity.timestamp?.toDate ? entryActivity.timestamp.toDate() : new Date(entryActivity.timestamp))
-          : undefined;
-        const exitTime = exitActivity?.timestamp 
-          ? (exitActivity.timestamp?.toDate ? exitActivity.timestamp.toDate() : new Date(exitActivity.timestamp))
-          : undefined;
-        const ipAddress = initialIP;
-        
-        // ✅ Count questions that are actually answered
-        // Check: isAnswered=true OR has studentAnswer (for compatibility)
-        const questionsAnswered = attempt?.responses 
-          ? attempt.responses.filter((r: any) => {
-              // Primary check: isAnswered flag
-              if (r.isAnswered === true) return true;
-              
-              // Fallback: has actual answer content
-              if (r.studentAnswer) {
-                if (typeof r.studentAnswer === 'string' && r.studentAnswer.trim().length > 0) return true;
-                if (Array.isArray(r.studentAnswer) && r.studentAnswer.length > 0) return true;
-              }
-              
-              return false;
-            }).length
-          : 0;
-        
-        console.log(`📝 Responses for ${attendanceRecord.studentName}:`, {
-          totalResponses: attempt?.responses?.length || 0,
-          answeredCount: questionsAnswered,
-          sampleResponses: attempt?.responses?.slice(0, 3).map((r: any) => ({
-            questionId: r.questionId,
-            questionNo: r.questionNo,
-            isAnswered: r.isAnswered,
-            isSkipped: r.isSkipped,
-            hasAnswer: !!r.studentAnswer,
-            answerType: typeof r.studentAnswer,
-            answerContent: Array.isArray(r.studentAnswer) ? `Array[${r.studentAnswer.length}]` : 
-                          typeof r.studentAnswer === 'string' ? `String(${r.studentAnswer.length} chars)` : 
-                          r.studentAnswer
-          }))
-        });
-        
-        // Calculate progress
-        const progress = exam.totalQuestions > 0 
-          ? Math.round((questionsAnswered / exam.totalQuestions) * 100) 
-          : 0;
-        
-        // Determine status - map database status to UI status
-        // Database: "in_progress" | "submitted" | "auto_submitted" | "expired"
-        // UI: "active" | "submitted" | "expired" | "not_started"
-        let status: StudentStatus = STUDENT_STATUS.ACTIVE;
-        
-        // ✅ CRITICAL FIX: Check if attempt exists first
-        if (!attempt) {
-          // Student marked attendance but never started exam - NO ATTEMPT
-          status = 'not_started' as StudentStatus;
-          console.log(`⚠️ ${attendanceRecord.studentName}: Marked present but no attempt created`);
-        } else if (attempt.status === 'submitted' || attempt.status === 'auto_submitted') {
-          status = STUDENT_STATUS.SUBMITTED;
-        } else if (attempt.status === 'expired' || attempt.status === 'timeout') {
-          status = 'expired' as StudentStatus;
-        } else if (attempt.status === 'in_progress') {
-          // ✅ Check if exam time has expired for active attempts
-          const examEndTime = new Date(exam.examDate);
-          if (exam.examTime) {
-            const [hours, minutes] = exam.examTime.split(':').map(Number);
-            examEndTime.setHours(hours, minutes, 0, 0);
-          }
-          examEndTime.setMinutes(examEndTime.getMinutes() + parseInt(exam.duration));
-          
-          if (new Date() > examEndTime) {
-            status = 'expired' as StudentStatus; // ✅ Show as expired if time passed
-          } else {
-            status = STUDENT_STATUS.ACTIVE;
-          }
-        } else {
-          // Unknown status - treat as not started
-          status = 'not_started' as StudentStatus;
-        }
-        
-        // ✅ Collect violations from response level
-        const allViolations: any[] = [];
-        if (attempt?.responses && Array.isArray(attempt.responses)) {
-          attempt.responses.forEach((response: any) => {
-            if (response.violations && Array.isArray(response.violations)) {
-              response.violations.forEach((violation: any) => {
-                allViolations.push({
-                  ...violation,
-                  questionNo: response.questionNo,
-                  questionId: response.questionId
-                });
-              });
-            }
-          });
-        }
-        
-        console.log(`👤 ${attendanceRecord.studentName} (${studentId}):`, {
-          responsesCount: attempt?.responses?.length || 0,
-          answeredCount: questionsAnswered,
-          attemptedQuestions: attempt?.attemptedQuestions,
-          timeSpent: attempt?.timeSpent,
-          violationsCount: allViolations.length,
-          dbStatus: attempt?.status,
-          uiStatus: status
-        });
-        
-        // Format marked at time
-        const markedAtFormatted = attendanceRecord?.markedAt
-          ? (attendanceRecord.markedAt instanceof Date 
-              ? attendanceRecord.markedAt 
-              : new Date(attendanceRecord.markedAt)
-            ).toLocaleTimeString('en-US', { 
-              hour: '2-digit', 
-              minute: '2-digit',
-              hour12: true 
-            })
-          : undefined;
-        
-        // Helper function to parse IST timestamp strings
-        const parseISTTimestamp = (timestampStr: string): Date => {
-          console.log(`🔍 Parsing IST string: "${timestampStr}"`);
-          
-          // Expected format: "YYYY-MM-DD HH:mm:ss IST"
-          if (!timestampStr.includes(' IST')) {
-            console.error('❌ Not IST format:', timestampStr);
-            return new Date('INVALID');
-          }
-          
-          // Remove " IST" and parse
-          const dateTimeStr = timestampStr.replace(' IST', '').trim();
-          const [datePart, timePart] = dateTimeStr.split(' ');
-          const [year, month, day] = datePart.split('-').map(Number);
-          const [hours, minutes, seconds] = timePart.split(':').map(Number);
-          
-          // Create Date in IST (subtract 5:30 to get UTC)
-          const istOffset = 5.5 * 60 * 60 * 1000;
-          const utcTime = Date.UTC(year, month - 1, day, hours, minutes, seconds) - istOffset;
-          const date = new Date(utcTime);
-          
-          console.log(`✅ Parsed:`, {
-            input: timestampStr,
-            utc: date.toISOString(),
-            ist: date.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
-          });
-          
-          return date;
-        };
-
-        // Convert violations timestamps - ONLY handles IST strings now
-        const violationsWithConvertedTimestamps = allViolations.map((violation: any, idx: number) => {
-          console.log(`🔍 Violation ${idx + 1}:`, violation.type, violation.timestamp);
-          
-          let timestamp: Date;
-          
-          // Only expect string format now
-          if (typeof violation.timestamp === 'string') {
-            timestamp = parseISTTimestamp(violation.timestamp);
-          } else {
-            console.error(`❌ Unexpected timestamp format:`, typeof violation.timestamp, violation.timestamp);
-            timestamp = new Date('INVALID');
-          }
-          
-          // ❌ DON'T validate or use fallback - let invalid dates show as "Invalid Date" in UI
-          // This helps us identify the real parsing issue
-          
-          // Normalize severity: map database values to UI values
-          let severity = violation.severity;
-          if (severity === 'moderate') {
-            severity = 'high';
-          } else if (severity === 'minor') {
-            severity = 'low';
-          }
-          
-          return {
-            ...violation,
-            timestamp,
-            severity: severity || 'low'
-          };
-        });
-        
-        // Convert activities timestamps
-        const activitiesWithConvertedTimestamps = (activities || []).map((activity: any, idx: number) => {
-          let timestamp: Date;
-          
-          if (!activity.timestamp) {
-            timestamp = new Date();
-          } else if (typeof activity.timestamp === 'string') {
-            // ISO string format - most common
-            timestamp = new Date(activity.timestamp);
-          } else if (activity.timestamp instanceof Date) {
-            // Already a Date object
-            timestamp = activity.timestamp;
-          } else if (typeof activity.timestamp === 'object') {
-            // Handle various object formats
-            if (activity.timestamp.__time__) {
-              timestamp = new Date(activity.timestamp.__time__);
-            } else if (activity.timestamp.seconds !== undefined) {
-              const ms = activity.timestamp.seconds * 1000 + (activity.timestamp.nanoseconds || 0) / 1000000;
-              timestamp = new Date(ms);
-            } else if (activity.timestamp?.toDate && typeof activity.timestamp.toDate === 'function') {
-              timestamp = activity.timestamp.toDate();
-            } else if (Object.keys(activity.timestamp).length === 0) {
-              timestamp = new Date();
-            } else {
-              timestamp = new Date();
-            }
-          } else if (typeof activity.timestamp === 'number') {
-            timestamp = new Date(activity.timestamp);
-          } else {
-            timestamp = new Date();
-          }
-          
-          // Verify timestamp is valid
-          if (isNaN(timestamp.getTime())) {
-            console.error(`❌ Invalid activity timestamp at index ${idx}:`, activity.timestamp);
-            timestamp = new Date();
-          }
-          
-          return {
-            ...activity,
-            timestamp
-          };
-        });
-        
-        // Calculate duration from attempt.timeSpent or from activities
-        let calculatedDuration = attempt?.timeSpent || 0;
-        
-        // If no timeSpent in attempt but we have entry/exit times, calculate from activities
-        if (calculatedDuration === 0 && entryTime) {
-          const endTimeForDuration = exitTime || new Date();
-          calculatedDuration = Math.floor((endTimeForDuration.getTime() - entryTime.getTime()) / 1000); // in seconds
-        }
-        
-        console.log(`⏱️ ${attendanceRecord.studentName} duration:`, {
-          timeSpent: attempt?.timeSpent,
-          calculated: calculatedDuration,
-          entryTime: entryTime?.toLocaleTimeString(),
-          exitTime: exitTime?.toLocaleTimeString()
-        });
-        
-        console.log(`✅ FINAL DATA for ${attendanceRecord.studentName}:`, {
-          questionsSubmitted: questionsAnswered,
-          progress: progress,
-          status: status,
-          totalDuration: calculatedDuration,
-          activitiesCount: activitiesWithConvertedTimestamps.length,
-          violationsCount: violationsWithConvertedTimestamps.length,
-          ipAddress: ipAddress,
-          hasMultipleIPs: hasMultipleIPs
-        });
-        
-        // Get connectivity data for this student from parameter or state
-        const dataSource = freshConnectivityData || connectivityData;
-        const studentConnectivity = dataSource.get(studentId) || { disconnections: 0, duration: 0, history: [], lastDisconnectionTime: null };
-        
-        // ✅ DEBUG: Log connectivity data lookup
-        console.log(`👤 Student ${attendanceRecord.studentName}:`);
-        console.log(`   studentId being used: "${studentId}"`);
-        console.log(`   Using ${freshConnectivityData ? 'FRESH' : 'STATE'} connectivity data`);
-        console.log(`   Data source size: ${dataSource.size}`);
-        console.log(`   Connectivity lookup result:`, {
-          disconnections: studentConnectivity.disconnections,
-          duration: studentConnectivity.duration,
-          historyCount: studentConnectivity.history.length,
-          found: studentConnectivity.disconnections > 0
-        });
-        
-        if (studentConnectivity.disconnections > 0) {
-          console.log(`   ✅ HAS CONNECTIVITY DATA!`);
-        } else {
-          console.log(`   ⚠️ No connectivity data for this student`);
-        }
-        
-        // ✅ USE DATA DIRECTLY FROM ATTENDANCE RECORD
-        return {
-          userId: studentId,
-          fullName: attendanceRecord.studentName || 'Unknown',  // From attendance table
-          studentRoll: attendanceRecord.studentRollNumber || 'N/A',  // From attendance table
-          email: '',  // Not stored in attendance, leave empty
-          isPresent: true,
-          markedAt: markedAtFormatted,
-          questionsSubmitted: questionsAnswered,
-          lastActivity: exitTime
-            ? exitTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-            : entryTime
-            ? entryTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-            : 'No activity',
-          violations: violationsWithConvertedTimestamps,
-          activities: activitiesWithConvertedTimestamps,
-          progress,
-          status,
-          entryTime,
-          exitTime,
-          ipAddress,
-          initialIP,
-          hasMultipleIPs,
-          totalDuration: calculatedDuration,
-          activityLogId: attempt?.attemptId,
-          // Connectivity data
-          totalDisconnections: studentConnectivity.disconnections,
-          totalInternetUnavailableDuration: studentConnectivity.duration,
-          connectivityHistory: studentConnectivity.history,
-          lastDisconnectionTime: studentConnectivity.lastDisconnectionTime // ✅ NEW
-        };
-      });
-      
-      setStudents(studentsData);
-      
-      setIsLoading(false);
-      setLastRefresh(new Date());
-      
-    } catch (error) {
-      console.error('Failed to load exam activity data:', error);
-      setIsLoading(false);
-    }
-  };
   // ==================== AUTO-REFRESH WITH AUTO-SUBMIT ====================
-  // Initial load and auto-refresh setup
+  // Server-side fetch via Cloud Function with auto-refresh
   useEffect(() => {
-    // NOTE: Initial data loading is handled by connectivity useEffect below
-    // which loads connectivity data FIRST, then student data
-    setIsAutoRefreshActive(true);
+    let refreshTimer: ReturnType<typeof setInterval> | null = null;
+    let isMounted = true;
 
-    // Set up auto-refresh (60 seconds)
-    const refreshInterval = setInterval(async () => {
+    const initialLoad = async () => {
+      setIsAutoRefreshActive(true);
+
+      // Try server-side first
+      const serverSuccess = await fetchFromServer(1, false);
+
+      if (!serverSuccess && isMounted) {
+        console.error('❌ Server fetch failed. Cloud Function may be unavailable.');
+      }
+    };
+
+    initialLoad();
+
+    // Auto-refresh every 60 seconds
+    refreshTimer = setInterval(async () => {
+      if (!isMounted) return;
       if (!examEndTime) return;
-      
+
       const now = new Date();
       const gracePeriodEnd = new Date(examEndTime.getTime() + GRACE_PERIOD_MINUTES * 60 * 1000);
-      
-      // ✅ OPTIMIZATION 1: Stop auto-refresh after grace period ends
+
+      // Stop auto-refresh after grace period
       if (now > gracePeriodEnd) {
-        console.log(`⏹️ Grace period ended (${GRACE_PERIOD_MINUTES} min after exam). Stopping auto-refresh.`);
+        console.log(`⏹️ Grace period ended. Stopping auto-refresh.`);
         setIsAutoRefreshActive(false);
-        clearInterval(refreshInterval);
+        if (refreshTimer) clearInterval(refreshTimer);
         return;
       }
-      
-      // ✅ AUTO-SUBMIT: If exam just ended and we haven't auto-submitted yet
+
+      // Auto-submit expired attempts once
       if (now > examEndTime && !hasAutoSubmittedRef.current) {
-        console.log('⏰ Exam time expired - triggering auto-submit...');
-        
         try {
           await autoSubmitExpiredAttempts();
         } catch (error) {
-          console.error('❌ Auto-submit error in interval:', error);
-          // autoSubmitExpiredAttempts handles its own retry logic
+          console.error('❌ Auto-submit error:', error);
         }
       }
-      
-      // ✅ Continue refreshing during exam and grace period
-      if (now <= gracePeriodEnd) {
-        console.log('Auto-refreshing Live Stats data...');
-        // Refresh connectivity data first, then student data with fresh data
-        const freshConnectivityData = await fetchConnectivityData();
-        await loadStudentData(freshConnectivityData);
-      }
+
+      // Silent refresh (no loading spinner)
+      console.log('🔄 Silent refresh...');
+      await fetchFromServer(currentPage, true);
+      setLastRefresh(new Date());
     }, AUTO_REFRESH_INTERVAL);
 
-    // Cleanup interval on unmount
     return () => {
-      console.log('Cleaning up auto-refresh interval');
-      clearInterval(refreshInterval);
+      isMounted = false;
+      if (refreshTimer) clearInterval(refreshTimer);
     };
-  }, [exam.id, examEndTime]); // ✅ Removed hasAutoSubmitted - using ref instead
+  }, [exam.id, examEndTime, currentPage]);
 
-  // ✅ NEW: Connectivity data fetching effect
-  useEffect(() => {
-    const initializeData = async () => {
-      // STEP 1: Fetch connectivity data FIRST and get the fresh data
-      const freshConnectivityData = await fetchConnectivityData();
-      
-      // STEP 2: Then load student data with the fresh connectivity data
-      await loadStudentData(freshConnectivityData);
-    };
-    
-    // Initialize on mount
-    initializeData();
-    
-    // Set up periodic refresh for connectivity data (every 60 seconds)
-    const connectivityInterval = setInterval(async () => {
-      console.log('🔄 Refreshing connectivity data...');
-      const freshConnectivityData = await fetchConnectivityData();
-      // Also refresh student data with the new connectivity info
-      await loadStudentData(freshConnectivityData);
-    }, CONNECTIVITY_REFRESH_INTERVAL);
-    
-    // Cleanup
-    return () => {
-      console.log('Cleaning up connectivity refresh interval');
-      clearInterval(connectivityInterval);
-    };
-  }, [exam.id]); // Only re-run if exam changes
+  // Page change handler (fetches new page from server silently)
+  const handlePageChange = async (newPage: number) => {
+    if (newPage < 1 || newPage > serverPagination.totalPages) return;
+    setCurrentPage(newPage);
+    if (isServerMode.current) {
+      await fetchFromServer(newPage, false);
+    }
+  };
 
 
   const presentStudents = students.filter(s => s.isPresent);
-  const totalStudentsCount = exam.totalStudents || students.length; // Use exam.totalStudents from Exams table
-  const absentCount = totalStudentsCount - presentStudents.length; // Calculate absent count
-  const submittedCount = presentStudents.filter(s => s.status === STUDENT_STATUS.SUBMITTED).length;
+  // ✅ Use server summary if available, otherwise compute client-side
+  const totalStudentsCount = serverSummary?.totalEnrolled || enrollmentCount || exam.totalStudents || students.length;
+  const presentCount = serverSummary?.presentCount ?? presentStudents.length;
+  const absentCount = serverSummary?.absentCount ?? (totalStudentsCount - presentCount);
+  const submittedCount = serverSummary?.submittedCount ?? presentStudents.filter(s => s.status === STUDENT_STATUS.SUBMITTED).length;
   const activeCount = presentStudents.filter(s => s.status === STUDENT_STATUS.ACTIVE).length;
   const expiredCount = presentStudents.filter(s => s.status === 'expired').length;
-  const notStartedCount = presentStudents.filter(s => s.status === 'not_started').length; // ✅ Count students who never started
-  const totalViolations = presentStudents.reduce((sum, s) => {
-    return sum + (s.violations?.length || 0);
-  }, 0);
-  const avgProgress = presentStudents.length > 0 
+  const notStartedCount = presentStudents.filter(s => s.status === 'not_started').length;
+  const totalViolations = serverSummary?.totalViolations ?? presentStudents.reduce((sum, s) => sum + (s.violations?.length || 0), 0);
+  const avgProgress = serverSummary?.avgProgress ?? (presentStudents.length > 0
     ? Math.round(presentStudents.reduce((sum, s) => sum + (s.progress || 0), 0) / presentStudents.length)
-    : 0;
+    : 0);
 
   // Get violation icon
  const getViolationIcon = (type: string) => {
@@ -1189,7 +751,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                   )}
                 </div>
               </div>
-              <p className="text-sm text-gray-600 mt-0.5">Live Stats</p>
+              <p className="text-sm text-gray-600 mt-0.5">Exam ID: <span className="font-medium text-gray-700">{exam.id}</span> · Live Stats</p>
             </div>
           </div>
         </div>
@@ -1216,13 +778,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
             <div className="flex items-center space-x-2 flex-shrink-0">
               <FontAwesomeIcon icon={faClock} className="text-gray-500 text-lg" />
               <span className="text-xs text-gray-500">Duration:</span>
-              <span className="text-sm font-semibold text-gray-900">{exam.duration} min</span>
-            </div>
-            
-            <div className="flex items-center space-x-2 flex-shrink-0">
-              <FontAwesomeIcon icon={faGraduationCap} className="text-gray-500 text-lg" />
-              <span className="text-xs text-gray-500">Class:</span>
-              <span className="text-sm font-semibold text-gray-900">{exam.class}</span>
+              <span className="text-sm font-semibold text-gray-900">{(parseInt(exam.duration) || 0) + ((exam as any).personalityAssessment ? ((exam as any).likertDuration || 0) : 0)} min</span>
             </div>
           </div>
         </div>
@@ -1233,27 +789,31 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
         {/* Attendance Summary Stats */}
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div 
-            className="p-4 rounded-xl border"
+            className="p-4 rounded-xl border cursor-pointer hover:shadow-md transition-shadow"
             style={{ 
               backgroundColor: `${brandTheme.colors.primary}08`,
               borderColor: brandTheme.colors.primary
             }}
+            onClick={() => { setAttendanceModalFilter('present'); setAttendanceModalOpen(true); }}
           >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-gray-600 mb-1">Present</p>
                 <p className="text-3xl font-bold" style={{ color: brandTheme.colors.primary }}>
-                  {presentStudents.length}
+                  {presentCount}
                 </p>
               </div>
               <FontAwesomeIcon icon={faCircleCheck} style={{ color: brandTheme.colors.primary }} className="text-3xl" />
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              {totalStudentsCount > 0 ? Math.round((presentStudents.length / totalStudentsCount) * 100) : 0}% attendance
+              {totalStudentsCount > 0 ? Math.round((presentCount / totalStudentsCount) * 100) : 0}% attendance
             </p>
           </div>
           
-          <div className="p-4 rounded-xl border border-red-200 bg-red-50">
+          <div 
+            className="p-4 rounded-xl border border-red-200 bg-red-50 cursor-pointer hover:shadow-md transition-shadow"
+            onClick={() => { setAttendanceModalFilter('absent'); setAttendanceModalOpen(true); }}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-gray-600 mb-1">Absent</p>
@@ -1275,7 +835,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
               <FontAwesomeIcon icon={faUsers} className="text-gray-600 text-3xl" />
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              Class {exam.class}
+              Total
             </p>
           </div>
         </div>
@@ -1350,11 +910,11 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                 <FontAwesomeIcon icon={faCircleCheck} className="text-green-600 text-xl mb-1" />
                 <p className="text-[10px] font-semibold text-green-700 mb-0.5">Submitted</p>
                 <p className="text-xl font-bold text-gray-900">
-                  {submittedCount}/{presentStudents.length}
+                  {submittedCount}/{presentCount}
                 </p>
               </div>
               <p className="text-[10px] text-gray-600 mt-2">
-                {presentStudents.length > 0 ? Math.round((submittedCount / presentStudents.length) * 100) : 0}% completed
+                {presentCount > 0 ? Math.round((submittedCount / presentCount) * 100) : 0}% completed
               </p>
             </div>
 
@@ -1376,7 +936,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                 <p className="text-xl font-bold text-gray-900">{totalViolations}</p>
               </div>
               <p className="text-[10px] text-gray-600 mt-2">
-                {presentStudents.filter(s => s.violations && s.violations.length > 0).length} students
+                {serverSummary?.violationStudentCount ?? presentStudents.filter(s => s.violations && s.violations.length > 0).length} students
               </p>
             </div>
           </div>
@@ -1385,7 +945,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
         {/* Internet Connectivity Summary Box - ALWAYS SHOW */}
         {useMemo(() => {
           const usersWithDisconnections = presentStudents.filter(s => (s.totalDisconnections || 0) > 0).length;
-          const affectedPercentage = presentStudents.length > 0 ? Math.round((usersWithDisconnections / presentStudents.length) * 100) : 0;
+          const affectedPercentage = presentCount > 0 ? Math.round((usersWithDisconnections / presentCount) * 100) : 0;
           
           // ✅ NEW: Smart disconnection counting - group by time window
           // If multiple students disconnect within 7 seconds, count as ONE incident
@@ -1466,6 +1026,11 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
           
           const { incidents: totalDisconnections, totalDuration } = calculateSmartMetrics();
           
+          // ✅ Use server summary for connectivity when available (covers ALL students, not just current page)
+          const displayDisconnections = serverSummary?.totalDisconnectionTimes ?? totalDisconnections;
+          const displayDuration = serverSummary?.totalDisconnectionMinutes != null ? serverSummary.totalDisconnectionMinutes * 60 : totalDuration;
+          const displayAffectedPct = serverSummary?.affectedUsersPercent ?? affectedPercentage;
+          
           // Format duration
           const formatDuration = (seconds: number): string => {
             if (seconds === 0) return '0 Minutes';
@@ -1491,7 +1056,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                     <p className="text-xs text-gray-600">Disconnection</p>
                   </div>
                   <p className="text-l font-bold" style={{ color: brandTheme.colors.primary }}>
-                    Total {formatDuration(totalDuration)}
+                    Total {formatDuration(displayDuration)}
                   </p>
                 </div>
                 
@@ -1502,7 +1067,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                     <p className="text-xs text-gray-600">Times</p>
                   </div>
                   <p className="text-l font-bold" style={{ color: brandTheme.colors.primary }}>
-                    {totalDisconnections} Time{totalDisconnections !== 1 ? 's' : ''}
+                    {displayDisconnections} Time{displayDisconnections !== 1 ? 's' : ''}
                   </p>
                 </div>
                 
@@ -1513,7 +1078,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                     <p className="text-xs text-gray-600">Affected Users</p>
                   </div>
                   <p className="text-l font-bold" style={{ color: brandTheme.colors.primary }}>
-                    {affectedPercentage}%
+                    {displayAffectedPct}%
                   </p>
                 </div>
               </div>
@@ -1632,7 +1197,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                     </>
                   )}
                   {' • '}
-                  <span className="font-semibold">{presentStudents.length} total</span>
+                  <span className="font-semibold">{isServerMode.current ? serverPagination.totalStudents : presentStudents.length} total</span>
                 </span>
               </div>
             </div>
@@ -1670,7 +1235,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                   <div className="flex items-center space-x-2">
                     <FontAwesomeIcon icon={faUserCheck} style={{ color: brandTheme.colors.primary }} className="text-xl" />
                     <h3 className="text-lg font-semibold text-gray-900">
-                      Present Students ({presentStudents.length})
+                      Present Students ({isServerMode.current ? serverPagination.totalStudents : presentStudents.length})
                     </h3>
                   </div>
                   
@@ -1999,6 +1564,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                     </div>
                   ))}
                 </div>
+
               </div>
             )}
 
@@ -2014,6 +1580,60 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
           </>
         )}
       </div>
+      
+      {/* Sticky Pagination Bar */}
+      {isServerMode.current && serverPagination.totalPages > 1 && (
+        <div className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-2.5 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-400">
+              Showing {((currentPage - 1) * PAGE_SIZE) + 1}–{Math.min(currentPage * PAGE_SIZE, serverPagination.totalStudents)} of {serverPagination.totalStudents}
+            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage <= 1}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <FontAwesomeIcon icon={faChevronLeft} className="text-[10px]" />
+                Prev
+              </button>
+
+              {Array.from({ length: Math.min(serverPagination.totalPages, 5) }, (_, i) => {
+                let pageNum: number;
+                const total = serverPagination.totalPages;
+                if (total <= 5) { pageNum = i + 1; }
+                else if (currentPage <= 3) { pageNum = i + 1; }
+                else if (currentPage >= total - 2) { pageNum = total - 4 + i; }
+                else { pageNum = currentPage - 2 + i; }
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => handlePageChange(pageNum)}
+                    className={`w-7 h-7 flex items-center justify-center text-xs font-medium rounded-md transition-all ${
+                      pageNum === currentPage
+                        ? 'text-white shadow-sm'
+                        : 'text-gray-600 bg-white border border-gray-200 hover:bg-gray-50'
+                    }`}
+                    style={pageNum === currentPage ? { backgroundColor: brandTheme.colors.primary } : {}}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={!serverPagination.hasMore}
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                Next
+                <FontAwesomeIcon icon={faChevronRight} className="text-[10px]" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
       
       {/* Violations Modal - Slide from Right */}
@@ -2220,11 +1840,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
                           <p className="text-[10px] text-gray-500">
                             <FontAwesomeIcon icon={faClock} className="mr-1" />
                             {(() => {
-                                const timestamp = violation.timestamp && typeof violation.timestamp === 'object' && 'toDate' in violation.timestamp
-                                ? (violation.timestamp as any).toDate()
-                                : violation.timestamp instanceof Date
-                                ? violation.timestamp 
-                                : new Date(violation.timestamp);
+                                const timestamp = toSafeDate(violation.timestamp);
                               return formatISTTime(timestamp);
                             })()}
                           </p>
@@ -2589,6 +2205,17 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
           </div>
         </div>
       )}
+      {/* Attendance List Modal */}
+      <AttendanceListModal
+        isOpen={attendanceModalOpen}
+        onClose={() => setAttendanceModalOpen(false)}
+        examId={exam?.id || ''}
+        collegeId={userCollegeId || ''}
+        filter={attendanceModalFilter}
+        presentCount={presentCount}
+        absentCount={absentCount}
+        brandTheme={brandTheme}
+      />
     </div>
   );
 }

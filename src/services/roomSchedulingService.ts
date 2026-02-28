@@ -16,6 +16,7 @@ import {
   limit as firestoreLimit,
   serverTimestamp
 } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { COLLECTIONS, USER_TYPES, USER_STATUS } from '../constants';
 
 export interface RoomBookingRequest {
@@ -1117,9 +1118,11 @@ export const createHallTicketGroup = async (hallTicketGroup: any): Promise<{
 
     console.log('Creating hall ticket group:', hallTicketGroup);
 
-    // Add server timestamp
+    // Add server timestamp and flat studentIds for querying
+    const studentIds = (hallTicketGroup.students || []).map((s: any) => s.studentId).filter(Boolean);
     const groupData = {
       ...hallTicketGroup,
+      studentIds,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp()
     };
@@ -1200,6 +1203,7 @@ export const getHallTicketGroups = async (
     className?: string;
     examType?: string;
     status?: string;
+    studentId?: string;
   }
 ): Promise<any[]> => {
   try {
@@ -1209,9 +1213,26 @@ export const getHallTicketGroups = async (
     // First, try to get all documents without orderBy to see if collegeId filtering works
     console.log('📋 Querying hallTicketGroups collection...');
     
+    const constraints: any[] = [
+      where('collegeId', '==', collegeId)
+    ];
+
+    // For students, query only groups they belong to using their authenticated UID
+    // We use getAuth().currentUser.uid to prevent spoofing — this can't be tampered with
+    if (filters?.studentId) {
+      const authUid = getAuth().currentUser?.uid;
+      if (!authUid) {
+        console.warn('⚠️ No authenticated user found, returning empty');
+        return [];
+      }
+      // Always use the authenticated UID, ignore the passed studentId for security
+      constraints.push(where('studentIds', 'array-contains', authUid));
+      console.log('👨‍🎓 Adding student filter using auth UID:', authUid);
+    }
+
     let hallTicketsQuery = query(
       collection(db, 'hallTicketGroups'),
-      where('collegeId', '==', collegeId)
+      ...constraints
     );
 
     console.log('⏳ Executing query...');
@@ -1219,20 +1240,7 @@ export const getHallTicketGroups = async (
     console.log('📊 Query returned:', snapshot.size, 'documents');
 
     if (snapshot.empty) {
-      console.warn('⚠️ No documents found. Checking if collection exists...');
-      
-      // Try to get all documents in the collection to see if it exists
-      const allDocsQuery = query(collection(db, 'hallTicketGroups'));
-      const allDocsSnapshot = await getDocs(allDocsQuery);
-      console.log('📊 Total documents in hallTicketGroups collection:', allDocsSnapshot.size);
-      
-      if (allDocsSnapshot.size > 0) {
-        console.log('📄 First document structure:', allDocsSnapshot.docs[0].data());
-        console.log('📄 First document collegeId field:', allDocsSnapshot.docs[0].data().collegeId);
-        console.log('🔍 Comparing with requested collegeId:', collegeId);
-        console.log('🔍 Type of stored collegeId:', typeof allDocsSnapshot.docs[0].data().collegeId);
-        console.log('🔍 Type of requested collegeId:', typeof collegeId);
-      }
+      console.log('📋 No hall ticket groups found matching the query.');
     }
     
     let hallTickets: any[] = snapshot.docs.map(doc => {

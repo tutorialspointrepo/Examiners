@@ -335,7 +335,7 @@ export default function Classes({ activeCollegeId, onClassSelect, selectedClass,
         {/* Administrative & Faculty Box */}
         <div
           onClick={() => onClassSelect('_administrative')}
-          className={`rounded-xl shadow-sm border p-5 cursor-pointer transition-all duration-200 mb-6 ${
+          className={`rounded-xl shadow-sm border p-5 cursor-pointer transition-all duration-200 mb-4 ${
             selectedClass === '_administrative'
               ? 'shadow-md'
               : 'bg-white border-gray-200 hover:shadow-md'
@@ -454,6 +454,21 @@ export default function Classes({ activeCollegeId, onClassSelect, selectedClass,
             </div>
           </div>
         </div>
+
+        {/* Total Students Summary */}
+        {filteredClasses.length > 0 && (
+          <div className="rounded-xl bg-white border border-gray-200 p-4 mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${brandTheme.colors.primary}15` }}>
+                <GraduationCap size={20} style={{ color: brandTheme.colors.primary }} />
+              </div>
+              <span className="text-sm font-semibold text-gray-700">Total Students</span>
+            </div>
+            <span className="text-2xl font-bold" style={{ color: brandTheme.colors.primary }}>
+              {filteredClasses.reduce((sum, c) => sum + c.totalStudents, 0)}
+            </span>
+          </div>
+        )}
 
         {filteredClasses.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 px-4">

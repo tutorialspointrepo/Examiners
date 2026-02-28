@@ -70,7 +70,8 @@ import {
   faCheckCircle,
   faCamera,
   faVideo,
-  faFileAlt
+  faFileAlt,
+  faChartBar
 } from '@fortawesome/sharp-light-svg-icons';
 
 interface Question {
@@ -287,6 +288,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [securityLevel, setSecurityLevel] = useState<SecurityLevel>(SECURITY_LEVELS.NORMAL);
   const [attendance, setAttendance] = useState<boolean>(false);
   const [avProctoring, setAvProctoring] = useState<boolean>(false);
+  const [personalityAssessment, setPersonalityAssessment] = useState<boolean>(false);
+  const [likertQuestions, setLikertQuestions] = useState<any[]>([]);
+  const [likertDuration, setLikertDuration] = useState<number>(10);
+  const [_isLoadingLikertQuestions, _setIsLoadingLikertQuestions] = useState<boolean>(false);
   const [completionPolicy, setCompletionPolicy] = useState<'strict' | 'flexible'>('strict');
   const [academicYear, setAcademicYear] = useState('');
   const [examType, setExamType] = useState('');
@@ -327,6 +332,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [poolQuestionMarks, setPoolQuestionMarks] = useState<number>(0);
   const [enableQuestionPool, setEnableQuestionPool] = useState<boolean>(false);
   const [isAddingToPool, setIsAddingToPool] = useState<boolean>(false);
+  const [isAddingToLikert, setIsAddingToLikert] = useState<boolean>(false);
   const [isEditingFromPool, setIsEditingFromPool] = useState<boolean>(false);
   
   const [showQuestionBankModal, setShowQuestionBankModal] = useState(false);
@@ -414,6 +420,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [, setCodingLanguages] = useState<string[]>(['Python', 'Java', 'C++', 'C', 'JavaScript', 'Go', 'Ruby']);
   const [, setIsLoadingLanguages] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [selectedStarterLang, setSelectedStarterLang] = useState<Record<string, string>>({});
 
   const [alertConfig, setAlertConfig] = useState<{
     show: boolean;
@@ -444,6 +451,12 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   const [studentModalPage, setStudentModalPage] = useState(1);
   const studentsPerPage = 25;
   const [showStudentClassDropdown, setShowStudentClassDropdown] = useState(false);
+  // Server-side pagination state
+  const [_studentLastDoc, setStudentLastDoc] = useState<any>(null);
+  const [_studentHasMore, setStudentHasMore] = useState(false);
+  const [totalStudentCount, setTotalStudentCount] = useState(0);
+  const [studentPageDocs, setStudentPageDocs] = useState<Map<number, any>>(new Map([[1, null]]));
+  const [isSelectingAllStudents, setIsSelectingAllStudents] = useState(false);
 
   const showAlert = (type: 'error' | 'success' | 'info', title: string, message: string, shouldCloseModal: boolean = false) => {
     setAlertConfig({
@@ -466,12 +479,20 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     const inPool = questionPool.some(q => 
       (q.questionBankId === questionId) || (q.id === questionId)
     );
+
+    // Check in likert questions
+    const inLikert = likertQuestions.some((q: any) => 
+      (q.questionBankId === questionId) || (q.id === questionId)
+    );
     
     if (inQuestions) {
       return { isAdded: true, location: 'exam questions' };
     }
     if (inPool) {
       return { isAdded: true, location: 'question pool' };
+    }
+    if (inLikert) {
+      return { isAdded: true, location: 'personality assessment' };
     }
     
     return { isAdded: false, location: '' };
@@ -675,8 +696,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         
         if (college) {
           const loadedExamTypes = college.examTypes && college.examTypes.length > 0 
-            ? college.examTypes 
-            : ['Unit Test', 'Quarterly', 'Half Yearly', 'Yearly'];
+            ? [...college.examTypes].sort((a: string, b: string) => a.localeCompare(b))
+            : ['Half Yearly', 'Quarterly', 'Unit Test', 'Yearly'];
           
           const loadedClasses = college.validClasses && college.validClasses.length > 0
             ? college.validClasses
@@ -747,9 +768,17 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         setSecurityLevel(existingExam.securityLevel || SECURITY_LEVELS.NORMAL);
         setAttendance(existingExam.attendance || false);
         setAvProctoring((existingExam as any).avProctoring || false);
+        setPersonalityAssessment((existingExam as any).personalityAssessment || false);
+        setLikertQuestions((existingExam as any).likertQuestions || []);
+        setLikertDuration((existingExam as any).likertDuration || 10);
         setCompletionPolicy((existingExam as any).completionPolicy || 'strict');
         setAcademicYear(existingExam.year);
         setExamType(existingExam.type);
+        // ✅ FIX: Extract exam label from title — format is "Type, Mon-YYYY (Label)"
+        const labelMatch = existingExam.title?.match(/\(([^)]+)\)\s*$/);
+        if (labelMatch) {
+          setExamLabel(labelMatch[1]);
+        }
         setClassName(existingExam.class);
         setSubject(existingExam.subject || '');
         setBoard(existingExam.board);
@@ -808,6 +837,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         setSecurityLevel(SECURITY_LEVELS.NORMAL);
         setAttendance(false);
         setAvProctoring(false);
+        setPersonalityAssessment(false);
+        setLikertQuestions([]);
         setCompletionPolicy('strict');
         getCurrentAcademicYear().then(year => setAcademicYear(year));
         setExamType('');
@@ -897,7 +928,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     if (!examTime) {
       newErrors.examTime = 'Exam time is required';
     }
-    if (!maximumMarks || maximumMarks <= 0) {
+    if (maximumMarks === undefined || maximumMarks === null || (maximumMarks <= 0 && !(personalityAssessment && questions.length === 0 && !enableQuestionPool))) {
       newErrors.maximumMarks = 'Maximum marks must be greater than 0';
     }
     if (!duration || duration <= 0) {
@@ -916,8 +947,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         newErrors.questionPaperImages = 'Please upload at least one question paper image';
       }
     } else if (examMode === EXAM_MODES.ONLINE) {
-      if (questions.length === 0 && !enableQuestionPool) {
-        newErrors.questions = 'Please add at least one question or enable question pool';
+      if (questions.length === 0 && !enableQuestionPool && likertQuestions.length === 0) {
+        newErrors.questions = 'Please add at least one question (regular, pool, or personality assessment)';
       } else {
         // Calculate total marks from regular questions
         const totalQuestionMarks = questions.reduce((sum, q) => sum + (q.maximumMarks || 0), 0);
@@ -962,7 +993,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         console.log('  Maximum marks:', maximumMarks);
         console.log('  Match:', grandTotalMarks === maximumMarks);
         
-        if (grandTotalMarks !== maximumMarks) {
+        if (grandTotalMarks !== maximumMarks && !(questions.length === 0 && !enableQuestionPool && likertQuestions.length > 0)) {
           newErrors.maximumMarks = `Maximum marks (${maximumMarks}) must equal total marks (${grandTotalMarks})`;
           
           if (questions.length > 0 || enableQuestionPool) {
@@ -1072,6 +1103,22 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       return;
     }
 
+    // ✅ CRITICAL: Validate that all MCQ/FITB/Jumbled questions have correctAnswers
+    // This prevents data loss when exam is loaded through Cloud Function (which strips correctAnswers)
+    if (examMode === EXAM_MODES.ONLINE) {
+      const allQuestionsToCheck = [...questions, ...questionPool];
+      const mcqWithoutAnswers = allQuestionsToCheck.filter(q => 
+        (q.type === QUESTION_TYPES.MCQ || q.type === QUESTION_TYPES.FITB || q.type === QUESTION_TYPES.JUMBLED) &&
+        (!q.correctAnswers || q.correctAnswers.length === 0)
+      );
+      if (mcqWithoutAnswers.length > 0) {
+        const qNames = mcqWithoutAnswers.slice(0, 3).map((q) => `Q${questions.indexOf(q) + 1}: ${q.questionText?.replace(/<[^>]*>/g, '').substring(0, 40)}...`).join('\n');
+        showAlert('error', 'Missing Correct Answers', 
+          `${mcqWithoutAnswers.length} question(s) are missing correct answers. Please edit them to add correct answers before saving.\n\n${qNames}`);
+        return;
+      }
+    }
+
     if (!activeCollegeId || !activeCollegeName) {
       showAlert('error', 'Missing Information', 'College information is missing. Please try again.');
       return;
@@ -1113,9 +1160,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         mode: examMode,
         examDate: examDate,
         examTime: examTime,
-        duration: duration.toString(),
-        totalQuestions: examMode === EXAM_MODES.OFFLINE ? 0 : questions.length + pickRandomCount,
-        maxMarks: maximumMarks.toString(),
+        duration: (personalityAssessment && questions.length === 0 && !enableQuestionPool) ? '0' : duration.toString(),
+        totalQuestions: examMode === EXAM_MODES.OFFLINE ? 0 : questions.length + pickRandomCount + likertQuestions.length,
+        maxMarks: (personalityAssessment && questions.length === 0 && !enableQuestionPool) ? '0' : maximumMarks.toString(),
         totalStudents: enrolledStudents.length,
         enrolledClasses: enrolledClassesList,
         collegeId: activeCollegeId,
@@ -1127,6 +1174,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         examData.attendance = attendance;
         examData.avProctoring = avProctoring;
         examData.completionPolicy = completionPolicy; // 'strict' or 'flexible'
+        (examData as any).personalityAssessment = personalityAssessment;
+        if (personalityAssessment && likertQuestions.length > 0) {
+          (examData as any).likertQuestions = likertQuestions;
+          (examData as any).likertDuration = likertDuration;
+        }
         // Keep field names consistent - no transformation needed
         examData.questionsList = questions.map((q, index) => {
           // Base question structure - use frontend field names consistently
@@ -1180,7 +1232,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           } else if (q.type === QUESTION_TYPES.CODE) {
             questionData.programmingLanguage = q.programmingLanguage || q.programming_language;
             questionData.testStub = q.testStub;
-            if ((q as any).starter_codes) questionData.starter_codes = (q as any).starter_codes;
+            if ((q as any).starterCodes) questionData.starter_codes = (q as any).starterCodes;
+            else if ((q as any).starter_codes) questionData.starter_codes = (q as any).starter_codes;
             questionData.testCases = q.testCases;
           } else if (q.type === QUESTION_TYPES.SQL) {
             questionData.sqlSchema = (q as any).sqlSchema;
@@ -1246,7 +1299,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
               questionData.programmingLanguage = q.programmingLanguage || q.programming_language;
               questionData.testCases = q.testCases;
               questionData.testStub = q.testStub;
-              if ((q as any).starter_codes) questionData.starter_codes = (q as any).starter_codes;
+              if ((q as any).starterCodes) questionData.starter_codes = (q as any).starterCodes;
+              else if ((q as any).starter_codes) questionData.starter_codes = (q as any).starter_codes;
             } else if (q.type === QUESTION_TYPES.SQL) {
               questionData.sqlSchema = (q as any).sqlSchema;
               questionData.sqlTestCases = ((q as any).sqlTestCases || []).map((tc: any) => ({
@@ -1342,6 +1396,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   };
 
   const addQuestion = () => {
+    setIsAddingToLikert(false);
     setSearchQuery('');
     setDebouncedSearchQuery('');
     setCurrentPage(1);
@@ -1827,9 +1882,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           ...newQuestion,
           // Preserve the original ID
           id: updatedPool[editingQuestionIndex].id,
-          // Mark as custom when edited
+          // Mark as custom when edited but preserve question bank reference
           source: 'custom',
-          questionBankId: undefined
+          questionBankId: updatedPool[editingQuestionIndex].questionBankId
         };
         setQuestionPool(updatedPool);
         showAlert('success', 'Question Updated!', 'Pool question has been updated successfully.');
@@ -1841,10 +1896,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           ...newQuestion,
           // Preserve the original ID
           id: updatedQuestions[editingQuestionIndex].id,
-          // Mark as custom when edited, even if from question bank
+          // Mark as custom when edited but preserve question bank reference
           source: 'custom',
-          // Remove question bank reference since it's been edited
-          questionBankId: undefined
+          questionBankId: updatedQuestions[editingQuestionIndex].questionBankId
         };
         setQuestions(updatedQuestions);
         showAlert('success', 'Question Updated!', 'Your changes have been saved successfully.');
@@ -1899,13 +1953,16 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     }
 
     try {
+      // ✅ Derive likert mode from both state and filter
+      const isLikertMode = isAddingToLikert || questionTypeFilter === QUESTION_TYPES.LIKERT;
+      
       // Fetch all questions to extract tags (pass className/subject if set, undefined if not)
       const result = await firebaseService.getQuestionsPaginated(
         activeCollegeId,
-        className || undefined,
+        isLikertMode ? undefined : (className || undefined),
         undefined, // board
-        subject || undefined,
-        undefined, // question type
+        isLikertMode ? 'Personality Assessment' : (subject || undefined),
+        isLikertMode ? (QUESTION_TYPES.LIKERT as any) : undefined, // question type
         'all', // proprietary
         1000, // Get many questions to collect all tags
         1,
@@ -1946,6 +2003,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     try {
       setIsLoadingQuestionBank(true);
       
+      // ✅ Derive likert mode from questionTypeFilter (already in useEffect deps, never stale)
+      const isLikertMode = isAddingToLikert || questionTypeFilter === QUESTION_TYPES.LIKERT;
+      
       const trimmedSearch = debouncedSearchQuery?.trim() || '';
       const searchQueryToSend = trimmedSearch.length >= 2 ? trimmedSearch : undefined;
       const actualQuestionType = getActualQuestionType(questionTypeFilter);
@@ -1955,10 +2015,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
       const result = await firebaseService.getQuestionsPaginated(
         activeCollegeId,
-        className || undefined,
+        isLikertMode ? undefined : (className || undefined),
         undefined, // board - show all
-        subject || undefined,
-        actualQuestionType as any,
+        isLikertMode ? 'Personality Assessment' : (subject || undefined),
+        isLikertMode ? (QUESTION_TYPES.LIKERT as any) : (actualQuestionType as any),
         proprietaryFilter, // Public/Private filter
         questionsPerPage,
         currentPage,
@@ -1966,7 +2026,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         complexityFilter !== 'all' ? complexityFilter : undefined,
         chapterFilter !== 'all' ? chapterFilter : undefined,
         tagFilter !== 'all' ? tagFilter : undefined,
-        lastDocForPage
+        lastDocForPage,
+        !isLikertMode ? QUESTION_TYPES.LIKERT : undefined // Exclude Likert from main bank
       );
 
       console.log(`✅ Fetched ${result.questions.length} of ${result.total} questions from Question Bank`);
@@ -1995,25 +2056,37 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     if (showQuestionBankModal && activeCollegeId) {
       fetchQuestionBankItems();
     }
-  }, [showQuestionBankModal, currentPage, debouncedSearchQuery, className, subject, activeCollegeId, questionTypeFilter, complexityFilter, chapterFilter, tagFilter, proprietaryFilter]);
+  }, [showQuestionBankModal, currentPage, debouncedSearchQuery, className, subject, activeCollegeId, questionTypeFilter, complexityFilter, chapterFilter, tagFilter, proprietaryFilter, isAddingToLikert]);
 
   // Fetch available chapters when modal opens or class/subject changes
   useEffect(() => {
     if (showQuestionBankModal && activeCollegeId) {
       fetchAvailableTags();
-      // Reset tag filter when class or subject changes
-      setTagFilter(FILTER_VALUES.ALL);
+      // Reset tag filter only if not already 'all' (prevents re-triggering fetchQuestionBankItems)
+      setTagFilter(prev => prev !== FILTER_VALUES.ALL ? FILTER_VALUES.ALL : prev);
       
-      // Chapters need class + subject
-      if (className && subject) {
+      if (isAddingToLikert) {
+        // Fetch chapters (traits) from Personality Assessment questions in DB
+        firebaseService.getChaptersForSubject(
+          activeCollegeId,
+          'Generic',
+          'Personality Assessment'
+        ).then(chapters => {
+          setAvailableChapters(chapters || []);
+          console.log('📚 Loaded Likert traits (chapters):', chapters);
+        }).catch(() => setAvailableChapters([]));
+        setChapterFilter(prev => prev !== FILTER_VALUES.ALL ? FILTER_VALUES.ALL : prev);
+      } else if (className && subject) {
+        // Chapters need class + subject
         fetchAvailableChapters();
-        setChapterFilter(FILTER_VALUES.ALL);
+        setChapterFilter(prev => prev !== FILTER_VALUES.ALL ? FILTER_VALUES.ALL : prev);
       } else {
         setAvailableChapters([]);
-        setChapterFilter(FILTER_VALUES.ALL);
+        setChapterFilter(prev => prev !== FILTER_VALUES.ALL ? FILTER_VALUES.ALL : prev);
       }
     }
-  }, [showQuestionBankModal, activeCollegeId, className, subject]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showQuestionBankModal, activeCollegeId, className, subject, isAddingToLikert]);
 
   // Fetch available chapters when custom question modal opens
   useEffect(() => {
@@ -2037,33 +2110,37 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     return () => clearTimeout(timer);
   }, [studentSearchQuery]);
 
-  // Fetch available students when student modal opens or filters change
+  // Fetch students for current page (server-side pagination)
   useEffect(() => {
-    const fetchStudents = async () => {
+    const fetchStudentsPage = async () => {
       if (!showStudentModal || !activeCollegeId) return;
       
       setIsLoadingStudents(true);
       try {
-        let students: UserModel[];
-        if (studentClassFilter && studentClassFilter !== 'all') {
-          students = await firebaseService.getStudentsByClass(studentClassFilter, activeCollegeId);
-        } else {
-          students = await firebaseService.getUsersByType('student', activeCollegeId);
+        const lastDocForPage = studentPageDocs.get(studentModalPage) || null;
+        
+        const result = await firebaseService.getStudentsForEnrollmentPaginated(
+          activeCollegeId,
+          studentsPerPage,
+          lastDocForPage,
+          studentClassFilter,
+          debouncedStudentSearch.trim() || undefined
+        );
+        
+        setAvailableStudents(result.students);
+        setStudentLastDoc(result.lastDoc);
+        setStudentHasMore(result.hasMore);
+        
+        // Store the lastDoc for the next page
+        if (result.lastDoc) {
+          setStudentPageDocs(prev => {
+            const newMap = new Map(prev);
+            newMap.set(studentModalPage + 1, result.lastDoc);
+            return newMap;
+          });
         }
         
-        // Filter by search query
-        if (debouncedStudentSearch.trim()) {
-          const searchLower = debouncedStudentSearch.toLowerCase();
-          students = students.filter(s => 
-            s.fullName?.toLowerCase().includes(searchLower) ||
-            s.email?.toLowerCase().includes(searchLower) ||
-            s.studentRoll?.toLowerCase().includes(searchLower)
-          );
-        }
-        
-        setAvailableStudents(students);
-        setStudentModalPage(1);
-        console.log(`✅ Loaded ${students.length} students`);
+        console.log(`✅ Loaded ${result.students.length} students (page ${studentModalPage})`);
       } catch (error) {
         console.error('❌ Error fetching students:', error);
         setAvailableStudents([]);
@@ -2072,8 +2149,24 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       }
     };
 
-    fetchStudents();
-  }, [showStudentModal, activeCollegeId, studentClassFilter, debouncedStudentSearch]);
+    fetchStudentsPage();
+  }, [showStudentModal, activeCollegeId, studentClassFilter, debouncedStudentSearch, studentModalPage]);
+
+  // Fetch total count when modal opens or filter changes
+  useEffect(() => {
+    const fetchCount = async () => {
+      if (!showStudentModal || !activeCollegeId) return;
+      const count = await firebaseService.getStudentsCountForEnrollment(activeCollegeId, studentClassFilter);
+      setTotalStudentCount(count);
+    };
+    fetchCount();
+  }, [showStudentModal, activeCollegeId, studentClassFilter]);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    setStudentModalPage(1);
+    setStudentPageDocs(new Map([[1, null]]));
+  }, [studentClassFilter, debouncedStudentSearch]);
 
   // Toggle student selection
   const toggleStudentSelection = (studentId: string) => {
@@ -2087,34 +2180,79 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
   };
 
   // Select all visible students
-  const toggleSelectAllStudents = () => {
-    const pageStudents = paginatedStudents;
-    const allSelected = pageStudents.every(s => selectedStudentIds.has(s.userId));
+  const toggleSelectAllStudents = async () => {
+    if (!activeCollegeId) return;
     
-    const newSelection = new Set(selectedStudentIds);
-    if (allSelected) {
-      pageStudents.forEach(s => newSelection.delete(s.userId));
-    } else {
-      pageStudents.forEach(s => newSelection.add(s.userId));
+    // If all current filtered students are already selected, deselect only them (not all)
+    if (selectedStudentIds.size >= totalStudentCount && totalStudentCount > 0) {
+      // Fetch current filter's IDs so we only deselect those, keeping other classes' selections
+      setIsSelectingAllStudents(true);
+      try {
+        const currentFilterIds = await firebaseService.getAllStudentIdsForEnrollment(
+          activeCollegeId,
+          studentClassFilter,
+          debouncedStudentSearch.trim() || undefined
+        );
+        const currentFilterSet = new Set(currentFilterIds);
+        setSelectedStudentIds(prev => {
+          const updated = new Set(prev);
+          currentFilterSet.forEach(id => updated.delete(id));
+          return updated;
+        });
+        console.log(`✅ Deselected ${currentFilterIds.length} students from current filter`);
+      } catch (error) {
+        console.error('❌ Error deselecting students:', error);
+      } finally {
+        setIsSelectingAllStudents(false);
+      }
+      return;
     }
-    setSelectedStudentIds(newSelection);
+    
+    // Fetch all matching student IDs from server and MERGE with existing selections
+    setIsSelectingAllStudents(true);
+    try {
+      const allIds = await firebaseService.getAllStudentIdsForEnrollment(
+        activeCollegeId,
+        studentClassFilter,
+        debouncedStudentSearch.trim() || undefined
+      );
+      setSelectedStudentIds(prev => {
+        const updated = new Set(prev);
+        allIds.forEach(id => updated.add(id));
+        return updated;
+      });
+      console.log(`✅ Selected all ${allIds.length} students (merged with existing)`);
+    } catch (error) {
+      console.error('❌ Error selecting all students:', error);
+    } finally {
+      setIsSelectingAllStudents(false);
+    }
   };
 
   // Confirm student enrollment
-  const confirmStudentEnrollment = () => {
-    // Get full student objects for selected IDs
-    const allStudents = [...enrolledStudents];
-    const existingIds = new Set(allStudents.map(s => s.userId));
+  const confirmStudentEnrollment = async () => {
+    // Collect all known student objects (from enrolled + current page)
+    const knownStudentsMap = new Map<string, UserModel>();
+    enrolledStudents.forEach(s => knownStudentsMap.set(s.userId, s));
+    availableStudents.forEach(s => knownStudentsMap.set(s.userId, s));
     
-    // Add newly selected students
-    availableStudents.forEach(s => {
-      if (selectedStudentIds.has(s.userId) && !existingIds.has(s.userId)) {
-        allStudents.push(s);
+    // Find IDs that we don't have UserModel for
+    const missingIds = Array.from(selectedStudentIds).filter(id => !knownStudentsMap.has(id));
+    
+    // Fetch missing students from server
+    if (missingIds.length > 0) {
+      try {
+        const fetchedStudents = await firebaseService.getStudentsByIds(missingIds);
+        fetchedStudents.forEach(s => knownStudentsMap.set(s.userId, s));
+      } catch (error) {
+        console.error('❌ Error fetching selected students:', error);
       }
-    });
+    }
     
-    // Remove deselected students
-    const finalStudents = allStudents.filter(s => selectedStudentIds.has(s.userId));
+    // Build final list from selected IDs
+    const finalStudents = Array.from(selectedStudentIds)
+      .map(id => knownStudentsMap.get(id))
+      .filter(Boolean) as UserModel[];
     
     setEnrolledStudents(finalStudents);
     setTotalStudents(finalStudents.length);
@@ -2130,15 +2268,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     setStudentClassFilter('all');
     setStudentSearchQuery('');
     setStudentModalPage(1);
+    setStudentPageDocs(new Map([[1, null]]));
+    setStudentLastDoc(null);
     setShowStudentModal(true);
   };
 
-  // Computed: paginated students for current page
-  const paginatedStudents = availableStudents.slice(
-    (studentModalPage - 1) * studentsPerPage,
-    studentModalPage * studentsPerPage
-  );
-  const totalStudentPages = Math.ceil(availableStudents.length / studentsPerPage);
+  // With server-side pagination, availableStudents IS the current page
+  const paginatedStudents = availableStudents;
+  const totalStudentPages = Math.ceil(totalStudentCount / studentsPerPage);
 
   // Computed: get unique classes from enrolled students for display
   const enrolledClassesList = [...new Set(enrolledStudents.map(s => s.studentClass).filter(Boolean))] as string[];
@@ -2198,10 +2335,10 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
       // Fetch with a very large limit to get all questions
       const result = await firebaseService.getQuestionsPaginated(
         activeCollegeId,
-        className || undefined,
+        isAddingToLikert ? undefined : (className || undefined),
         boardFilter,
-        subject || undefined,
-        actualQuestionType as any,
+        isAddingToLikert ? 'Personality Assessment' : (subject || undefined),
+        isAddingToLikert ? (QUESTION_TYPES.LIKERT as any) : (actualQuestionType as any),
         'all',
         10000, // Large limit to get all questions
         1,
@@ -2293,20 +2430,24 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
           programmingLanguage: item.programmingLanguage,
           testCases: item.testCases,
           testStub: item.testStub,
+          starterCodes: (item as any).starterCodes,
           // SQL question specific fields
           sqlSchema: (item as any).sqlSchema,
           sqlTestCases: (item as any).sqlTestCases,
           // Image URLs
           imageUrls: item.imageUrls || [],
+          // Likert specific fields
+          likertTrait: (item as any).likertTrait,
+          likertDirection: (item as any).likertDirection,
         } as any;
       });
 
     // Determine which list to check for duplicates and add to
-    const targetList = isAddingToPool ? questionPool : questions;
-    const setTargetList = isAddingToPool ? setQuestionPool : setQuestions;
-    const targetName = isAddingToPool ? 'pool' : 'exam';
-    const otherList = isAddingToPool ? questions : questionPool;
-    const otherName = isAddingToPool ? 'exam questions list' : 'question pool';
+    const targetList = isAddingToLikert ? likertQuestions : (isAddingToPool ? questionPool : questions);
+    const setTargetList = isAddingToLikert ? setLikertQuestions : (isAddingToPool ? setQuestionPool : setQuestions);
+    const targetName = isAddingToLikert ? 'personality assessment' : (isAddingToPool ? 'pool' : 'exam');
+    const otherList = isAddingToLikert ? [] : (isAddingToPool ? questions : questionPool);
+    const otherName = isAddingToLikert ? '' : (isAddingToPool ? 'exam questions list' : 'question pool');
 
     // Check for duplicates in target list
     const existingQuestionIds = new Set(targetList.map(q => q.questionBankId || q.id));
@@ -2377,6 +2518,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     setSelectedQuestionIds(new Set());
     setSelectedQuestionsMap(new Map());
     setIsAddingToPool(false); // Reset the flag
+    setIsAddingToLikert(false); // Reset the Likert flag
 
     // Auto-close success alert after 2 seconds
     if (duplicates.length === 0) {
@@ -2401,6 +2543,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     if (type === QUESTION_TYPES.JUMBLED) return { label: QUESTION_TYPE_LABELS[QUESTION_TYPES.JUMBLED], color: 'bg-purple-100 text-purple-700' };
     if (type === QUESTION_TYPES.DESCRIPTIVE) return { label: QUESTION_TYPE_LABELS[QUESTION_TYPES.DESCRIPTIVE], color: 'bg-orange-100 text-orange-700' };
     if (type === QUESTION_TYPES.CODE) return { label: QUESTION_TYPE_LABELS[QUESTION_TYPES.CODE], color: 'bg-indigo-100 text-indigo-700' };
+    if (type === QUESTION_TYPES.SQL) return { label: QUESTION_TYPE_LABELS[QUESTION_TYPES.SQL], color: 'bg-emerald-100 text-emerald-700' };
+    if (type === QUESTION_TYPES.LIKERT) return { label: QUESTION_TYPE_LABELS[QUESTION_TYPES.LIKERT], color: 'bg-purple-100 text-purple-700' };
     return { label: type.toUpperCase(), color: 'bg-gray-100 text-gray-700' };
   };
 
@@ -2486,7 +2630,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
     }`}>
       <div 
         className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
-        onClick={onClose}
       />
       
       <div 
@@ -2632,6 +2775,26 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         </div>
                         <span className="font-semibold text-xs text-gray-600">A/V Proctoring</span>
                       </button>
+
+                      <button
+                        onClick={() => setPersonalityAssessment(!personalityAssessment)}
+                        onMouseEnter={() => setHoveredExamOption('personality')}
+                        onMouseLeave={() => setHoveredExamOption(null)}
+                        className={`px-4 py-1.5 rounded-full border transition-all flex items-center space-x-2 ${
+                          personalityAssessment
+                            ? 'border-purple-500 bg-white'
+                            : 'border-gray-300 bg-white hover:border-gray-400'
+                        }`}
+                      >
+                        <div className={`w-3.5 h-3.5 rounded flex items-center justify-center ${
+                          personalityAssessment 
+                            ? 'border border-purple-500 bg-purple-500' 
+                            : 'border border-gray-400'
+                        }`}>
+                          {personalityAssessment && <FontAwesomeIcon icon={faCheck} className="text-white text-[8px]" />}
+                        </div>
+                        <span className={`font-semibold text-xs ${personalityAssessment ? 'text-purple-600' : 'text-gray-600'}`}>Personality Assessment</span>
+                      </button>
                     </div>
                     
                     {/* Tooltip display below the options */}
@@ -2658,6 +2821,12 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         <p className="text-xs text-gray-500 text-center animate-fadeIn flex items-center space-x-1.5">
                           <FontAwesomeIcon icon={faVideo} className="text-purple-500" />
                           <span>Exam conducted under webcam supervision with third-person audio detection</span>
+                        </p>
+                      )}
+                      {hoveredExamOption === 'personality' && (
+                        <p className="text-xs text-gray-500 text-center animate-fadeIn flex items-center space-x-1.5">
+                          <FontAwesomeIcon icon={faChartBar} className="text-purple-500" />
+                          <span>Include Big-8 personality trait assessment (Likert scale) — scored separately from exam</span>
                         </p>
                       )}
                       {!hoveredExamOption && (
@@ -2918,7 +3087,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 </div>
               </div>
 
-              {/* Basic Information */}
+              {/* Basic Information - Part 1 */}
               <div className="border rounded-xl p-4"
                 style={{ 
                   background: brand.gradients.card,
@@ -2935,7 +3104,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                {/* Row 1: Exam Type, Label | Date, Time */}
+                <div className="grid grid-cols-2 gap-3">
                   {/* Exam Type */}
                   <div className="dropdown-container">
                     <label className="block text-xs font-semibold text-gray-900 mb-1.5">
@@ -2944,13 +3114,13 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     <div className="relative">
                       <button
                         onClick={() => setOpenDropdown(openDropdown === 'type' ? null : 'type')}
-                        className={`w-full px-3 py-3 border rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm focus:ring-2 focus:border-transparent ${
+                        className={`w-full px-3 py-2 border rounded-lg text-left font-medium transition-all flex items-center justify-between text-sm focus:ring-2 focus:border-transparent ${
                           errors.examType && showErrors 
                             ? 'border-red-300 bg-red-50' 
                             : 'border-gray-300 hover:border-gray-400 bg-white'
                         }`}
                       >
-                        <span className="text-gray-900">{examType || 'Select Type'}</span>
+                        <span className="text-gray-900 truncate">{examType || 'Select Type'}</span>
                         <FontAwesomeIcon icon={faChevronDown} className="text-gray-500" />
                       </button>
                       {openDropdown === 'type' && (
@@ -2964,7 +3134,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                   setExamType(type);
                                   setOpenDropdown(null);
                                 }}
-                                className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center space-x-2 font-medium text-gray-900 text-sm"
+                                className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center space-x-2 font-medium text-gray-900 text-xs whitespace-nowrap"
                               >
                                 <FontAwesomeIcon icon={icon} style={{ color: brand.colors.secondary }} className="text-base" />
                                 <span>{type}</span>
@@ -2982,7 +3152,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   {/* Exam Label */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-900 mb-1.5">
-                      Exam Label <span className="text-gray-400 font-normal">(optional, 6-25 chars)</span>
+                      Exam Label <span className="text-gray-400 font-normal">(6-25 chars)</span>
                     </label>
                     <input
                       type="text"
@@ -2991,36 +3161,16 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         if (e.target.value.length <= 25) setExamLabel(e.target.value);
                       }}
                       placeholder="e.g. Infosys Test"
-                      className="w-full px-3 py-3 border border-gray-300 rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent hover:border-gray-400 bg-white"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent hover:border-gray-400 bg-white"
                     />
                     {examLabel && examLabel.length < 6 && (
                       <p className="text-xs text-amber-600 mt-1 ml-1">Minimum 6 characters ({6 - examLabel.length} more)</p>
                     )}
                   </div>
 
-                  {/* Maximum Marks */}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-900 mb-1.5">
-                      Maximum Marks <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      value={maximumMarks || ''}
-                      onChange={(e) => setMaximumMarks(parseInt(e.target.value))}
-                      className={`w-full px-3 py-3 border rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent ${
-                        errors.maximumMarks && showErrors 
-                          ? 'border-red-300 bg-red-50' 
-                          : 'border-gray-300 hover:border-gray-400 bg-white'
-                      }`}
-                      placeholder="e.g., 100"
-                    />
-                    {errors.maximumMarks && showErrors && (
-                      <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.maximumMarks}</p>
-                    )}
-                  </div>
                 </div>
 
-                <div className="grid grid-cols-4 gap-2.5 mt-5">
+                <div className="grid grid-cols-2 gap-3 mt-3">
                   {/* Exam Date */}
                   <div>
                     <label className="block text-xs font-semibold text-gray-900 mb-1.5">
@@ -3030,7 +3180,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       type="date"
                       value={examDate}
                       onChange={(e) => setExamDate(e.target.value)}
-                      className={`w-full px-2.5 py-2.5 border rounded-lg text-xs font-medium transition-all focus:ring-2 focus:border-transparent ${
+                      className={`w-full px-3 py-2 border rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent ${
                         errors.examDate && showErrors 
                           ? 'border-red-300 bg-red-50' 
                           : 'border-gray-300 hover:border-gray-400 bg-white'
@@ -3050,7 +3200,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       type="time"
                       value={examTime}
                       onChange={(e) => setExamTime(e.target.value)}
-                      className={`w-full px-2.5 py-2.5 border rounded-lg text-xs font-medium transition-all focus:ring-2 focus:border-transparent ${
+                      className={`w-full px-3 py-2 border rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent ${
                         errors.examTime && showErrors 
                           ? 'border-red-300 bg-red-50' 
                           : 'border-gray-300 hover:border-gray-400 bg-white'
@@ -3060,48 +3210,74 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.examTime}</p>
                     )}
                   </div>
-
-                  {/* Duration Value */}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-900 mb-1.5">
-                      Duration <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      value={durationDisplayValue || ''}
-                      onChange={(e) => setDurationDisplayValue(parseInt(e.target.value))}
-                      className={`w-full px-2.5 py-2.5 border rounded-lg text-xs font-medium transition-all focus:ring-2 focus:border-transparent ${
-                        errors.duration && showErrors 
-                          ? 'border-red-300 bg-red-50' 
-                          : 'border-gray-300 hover:border-gray-400 bg-white'
-                      }`}
-                      placeholder={durationUnit === 'days' ? 'e.g., 7' : durationUnit === 'hours' ? 'e.g., 3' : 'e.g., 180'}
-                    />
-                    {errors.duration && showErrors && (
-                      <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.duration}</p>
-                    )}
-                  </div>
-
-                  {/* Duration Unit */}
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-900 mb-1.5">
-                      Unit <span className="text-red-500">*</span>
-                    </label>
-                    <select
-                      value={durationUnit}
-                      onChange={(e) => {
-                        const newUnit = e.target.value as 'minutes' | 'hours' | 'days';
-                        setDurationUnit(newUnit);
-                        setDurationDisplayValue(convertFromMinutes(duration, newUnit));
-                      }}
-                      className="w-full px-2.5 py-2.5 border border-gray-300 hover:border-gray-400 rounded-lg text-xs font-medium bg-white focus:ring-2 focus:border-transparent transition-all"
-                    >
-                      <option value="minutes">Minutes</option>
-                      <option value="hours">Hours</option>
-                      <option value="days">Days</option>
-                    </select>
-                  </div>
                 </div>
+
+                {/* Row 2: Duration, Unit, Max Marks - Only when PA is OFF */}
+                {!personalityAssessment && (
+                  <div className="grid grid-cols-3 gap-3 mt-4">
+                    {/* Duration Value */}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-900 mb-1.5">
+                        Duration <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        value={durationDisplayValue || ''}
+                        onChange={(e) => setDurationDisplayValue(parseInt(e.target.value))}
+                        className={`w-full px-3 py-2 border rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent ${
+                          errors.duration && showErrors 
+                            ? 'border-red-300 bg-red-50' 
+                            : 'border-gray-300 hover:border-gray-400 bg-white'
+                        }`}
+                        placeholder={durationUnit === 'days' ? 'e.g., 7' : durationUnit === 'hours' ? 'e.g., 3' : 'e.g., 180'}
+                      />
+                      {errors.duration && showErrors && (
+                        <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.duration}</p>
+                      )}
+                    </div>
+
+                    {/* Duration Unit */}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-900 mb-1.5">
+                        Unit <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={durationUnit}
+                        onChange={(e) => {
+                          const newUnit = e.target.value as 'minutes' | 'hours' | 'days';
+                          setDurationUnit(newUnit);
+                          setDurationDisplayValue(convertFromMinutes(duration, newUnit));
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 hover:border-gray-400 rounded-lg text-sm font-medium bg-white focus:ring-2 focus:border-transparent transition-all"
+                      >
+                        <option value="minutes">Minutes</option>
+                        <option value="hours">Hours</option>
+                        <option value="days">Days</option>
+                      </select>
+                    </div>
+
+                    {/* Maximum Marks */}
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-900 mb-1.5">
+                        Maximum Marks <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        value={maximumMarks || ''}
+                        onChange={(e) => setMaximumMarks(parseInt(e.target.value))}
+                        className={`w-full px-3 py-2 border rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent ${
+                          errors.maximumMarks && showErrors 
+                            ? 'border-red-300 bg-red-50' 
+                            : 'border-gray-300 hover:border-gray-400 bg-white'
+                        }`}
+                        placeholder="e.g., 100"
+                      />
+                      {errors.maximumMarks && showErrors && (
+                        <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.maximumMarks}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Content based on exam mode */}
@@ -3181,23 +3357,205 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                 </div>
               ) : (
                 <>
-                  <div className="border rounded-2xl p-5" 
+                  {/* Personality Assessment Section - Only shown when toggle is ON */}
+                  {personalityAssessment && (
+                    <div className="border rounded-xl p-4 border-purple-200 bg-purple-50/30 mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-purple-100">
+                            <FontAwesomeIcon icon={faChartBar} className="text-purple-600" />
+                          </div>
+                          <div>
+                            <h3 className="text-base font-semibold text-gray-900">Personality Assessment (Likert)</h3>
+                            <p className="text-xs text-purple-600">Big-8 personality traits • {likertQuestions.length} questions added</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              showAlert('info', 'Coming Soon', 'Custom Likert question creation will be available soon. Use Question Bank to add existing Likert questions.');
+                            }}
+                            className="px-4 py-2 rounded-lg text-white text-xs font-semibold transition-colors flex items-center space-x-1.5"
+                            style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
+                          >
+                            <FontAwesomeIcon icon={faPen} />
+                            <span>Custom Question</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsAddingToLikert(true);
+                              setIsAddingToPool(false);
+                              setSearchQuery('');
+                              setDebouncedSearchQuery('');
+                              setCurrentPage(1);
+                              setQbPageDocs(new Map());
+                              setSelectedQuestionIds(new Set());
+                              setSelectedQuestionsMap(new Map());
+                              setExpandedQuestionId(null);
+                              setQuestionTypeFilter(QUESTION_TYPES.LIKERT);
+                              setComplexityFilter(FILTER_VALUES.ALL);
+                              setShowQuestionBankModal(true);
+                            }}
+                            className="px-4 py-2 rounded-lg text-white text-xs font-semibold transition-colors flex items-center space-x-1.5"
+                            style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}
+                          >
+                            <FontAwesomeIcon icon={faDatabase} />
+                            <span>Question Bank</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Likert Duration */}
+                      <div className="flex items-center space-x-3 mb-3 bg-purple-50/50 rounded-lg px-3 py-2.5 border border-purple-100">
+                        <FontAwesomeIcon icon={faClock} className="text-purple-500 text-xs" />
+                        <span className="text-xs font-semibold text-gray-700">Assessment Time</span>
+                        <input
+                          type="number"
+                          min="1"
+                          value={likertDuration}
+                          onChange={(e) => setLikertDuration(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-16 px-2 py-1 border border-purple-200 rounded-lg text-xs font-medium text-center bg-white focus:ring-2 focus:ring-purple-300 focus:border-transparent"
+                        />
+                        <span className="text-xs text-gray-500">minutes</span>
+                      </div>
+
+                      {likertQuestions.length > 0 ? (
+                        <div>
+                          <div className="bg-white rounded-lg border border-purple-100 p-3 max-h-64 overflow-y-auto">
+                            {likertQuestions.map((q: any, idx: number) => (
+                              <div key={q.id || idx} className="flex items-center space-x-2 py-2 border-b border-gray-50 last:border-0 group">
+                                <span className="w-6 h-6 rounded-md bg-purple-100 text-purple-700 text-xs font-bold flex items-center justify-center flex-shrink-0">{idx + 1}</span>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs text-gray-700 truncate">{q.questionText || q.question_text}</p>
+                                  <div className="flex items-center space-x-2 mt-0.5">
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 font-medium">{q.likertTrait || q.chapter}</span>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setLikertQuestions(prev => prev.filter((_, i) => i !== idx))}
+                                  className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
+                                  title="Remove question"
+                                >
+                                  <FontAwesomeIcon icon={faTrash} className="text-xs" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-white rounded-lg border border-dashed border-purple-200 p-8 text-center">
+                          <FontAwesomeIcon icon={faChartBar} className="text-purple-200 text-3xl mb-2" />
+                          <p className="text-sm font-medium text-gray-500">No personality questions added yet</p>
+                          <p className="text-xs text-gray-400 mt-1">Click "Question Bank" to select Likert questions for this exam</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Exam Duration & Marks - Part 2 (shown after PA section when PA is ON) */}
+                  {personalityAssessment && (
+                    <div className="border rounded-xl p-4"
+                      style={{ 
+                        background: brand.gradients.card,
+                        borderColor: brand.colors.secondary + '33'
+                      }}>
+                      <div className="flex items-center space-x-2.5 mb-3">
+                        <div className="w-10 h-10 rounded-lg flex items-center justify-center"
+                          style={{ backgroundColor: brand.colors.secondary + '20' }}>
+                          <FontAwesomeIcon icon={faClock} style={{ color: brand.colors.secondary }} />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-semibold text-gray-900">Main Exam Duration & Marks</h3>
+                          <p className="text-xs" style={{ color: brand.colors.secondary, opacity: 0.9 }}>Set the main exam timing and marks</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3">
+                        {/* Duration Value */}
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-900 mb-1.5">
+                            Duration <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            value={durationDisplayValue || ''}
+                            onChange={(e) => setDurationDisplayValue(parseInt(e.target.value))}
+                            className={`w-full px-3 py-2 border rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent ${
+                              errors.duration && showErrors 
+                                ? 'border-red-300 bg-red-50' 
+                                : 'border-gray-300 hover:border-gray-400 bg-white'
+                            }`}
+                            placeholder={durationUnit === 'days' ? 'e.g., 7' : durationUnit === 'hours' ? 'e.g., 3' : 'e.g., 180'}
+                          />
+                          {errors.duration && showErrors && (
+                            <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.duration}</p>
+                          )}
+                        </div>
+
+                        {/* Duration Unit */}
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-900 mb-1.5">
+                            Unit <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={durationUnit}
+                            onChange={(e) => {
+                              const newUnit = e.target.value as 'minutes' | 'hours' | 'days';
+                              setDurationUnit(newUnit);
+                              setDurationDisplayValue(convertFromMinutes(duration, newUnit));
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 hover:border-gray-400 rounded-lg text-sm font-medium bg-white focus:ring-2 focus:border-transparent transition-all"
+                          >
+                            <option value="minutes">Minutes</option>
+                            <option value="hours">Hours</option>
+                            <option value="days">Days</option>
+                          </select>
+                        </div>
+
+                        {/* Maximum Marks */}
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-900 mb-1.5">
+                            Maximum Marks <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="number"
+                            value={maximumMarks || ''}
+                            onChange={(e) => setMaximumMarks(parseInt(e.target.value))}
+                            className={`w-full px-3 py-2 border rounded-lg text-sm font-medium transition-all focus:ring-2 focus:border-transparent ${
+                              errors.maximumMarks && showErrors 
+                                ? 'border-red-300 bg-red-50' 
+                                : 'border-gray-300 hover:border-gray-400 bg-white'
+                            }`}
+                            placeholder="e.g., 100"
+                          />
+                          {errors.maximumMarks && showErrors && (
+                            <p className="text-xs text-red-600 mt-1 ml-1 font-semibold error-message">⚠️ {errors.maximumMarks}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="border rounded-xl p-4" 
                     style={{ 
                       background: brand.gradients.card,
                       borderColor: brand.colors.secondary + '33'
                     }}>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center"
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center"
                         style={{ backgroundColor: brand.colors.secondary + '20' }}>
                         <FontAwesomeIcon icon={faBook} style={{ color: brand.colors.secondary }} />
                       </div>
                       <div>
                         <h3 className="text-base font-semibold text-gray-900 flex items-center">
                           Questions List
-                          <span className="text-red-500 ml-1">*</span>
+                          {likertQuestions.length === 0 && !enableQuestionPool && <span className="text-red-500 ml-1">*</span>}
                         </h3>
-                        <p className="text-sm" style={{ color: brand.colors.secondary, opacity: 0.9 }}>
+                        <p className="text-xs" style={{ color: brand.colors.secondary, opacity: 0.9 }}>
                           {questions.length} question{questions.length !== 1 ? 's' : ''} added
                           {questions.length > 0 && (() => {
                             const regularMarks = questions.reduce((sum, q) => sum + (q.maximumMarks || 0), 0);
@@ -3211,13 +3569,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2">
                       <button
                         onClick={() => {
                           setIsAddingToPool(false);
                           openCustomQuestionModal();
                         }}
-                        className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 text-sm"
+                        className="px-4 py-2 rounded-lg text-white text-xs font-semibold transition-colors flex items-center space-x-1.5"
+                        style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
                       >
                         <FontAwesomeIcon icon={faPen} />
                         <span>Custom Question</span>
@@ -3227,10 +3586,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           setIsAddingToPool(false);
                           addQuestion();
                         }}
-                        disabled={false}
-                        className="px-4 py-2 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                        className="px-4 py-2 rounded-lg text-white text-xs font-semibold transition-colors flex items-center space-x-1.5"
                         style={{ background: brand.gradients.header }}
-                        title=""
                       >
                         <FontAwesomeIcon icon={faBookAtlas} />
                         <span>Question Bank</span>
@@ -3262,12 +3619,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                       question.type === QUESTION_TYPES.FITB ? 'bg-green-100 text-green-700' :
                                       question.type === QUESTION_TYPES.JUMBLED ? 'bg-purple-100 text-purple-700' :
                                       question.type === QUESTION_TYPES.CODE ? 'bg-indigo-100 text-indigo-700' :
+                                      question.type === QUESTION_TYPES.SQL ? 'bg-emerald-100 text-emerald-700' :
                                       'bg-orange-100 text-orange-700'
                                     }`}>
                                       {question.type === QUESTION_TYPES.MCQ ? 'MCQ' :
                                        question.type === QUESTION_TYPES.FITB ? 'Fill Blank' :
                                        question.type === QUESTION_TYPES.JUMBLED ? 'Jumbled' :
                                        question.type === QUESTION_TYPES.CODE ? 'Code' :
+                                       question.type === QUESTION_TYPES.SQL ? 'SQL' :
                                        'Descriptive'}
                                     </span>
                                     {question.complexity && (
@@ -3279,6 +3638,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                         {question.complexity.charAt(0).toUpperCase() + question.complexity.slice(1)}
                                       </span>
                                     )}
+                                    {question.type !== QUESTION_TYPES.LIKERT && (
                                     <span className="ml-auto text-xs font-bold px-3 py-1 rounded-lg"
                                       style={{ 
                                         color: brand.colors.secondary,
@@ -3286,6 +3646,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                       }}>
                                       {question.maximumMarks} marks
                                     </span>
+                                    )}
                                   </div>
                                   <div 
                                     className="text-sm text-gray-700 font-medium prose prose-sm max-w-none
@@ -3407,17 +3768,17 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     </>
                   ) : (
                     <div 
-                      className="text-center py-12 bg-white/50 rounded-xl border border-dashed"
+                      className="bg-white rounded-lg border border-dashed p-8 text-center"
                       style={{
                         borderColor: errors.questions && showErrors ? '#fca5a5' : brand.colors.secondary + '33'
                       }}
                     >
-                      <FontAwesomeIcon icon={faBook} className="mx-auto mb-3"
+                      <FontAwesomeIcon icon={faBook} className="text-3xl mb-2"
                         style={{
                           color: errors.questions && showErrors ? '#fca5a5' : brand.colors.secondary + '66'
                         }} />
-                      <p className="font-semibold text-gray-900">No questions added yet</p>
-                      <p className="text-sm text-gray-600 mt-1">Click "Custom Question" or "Question Bank" to start building your exam</p>
+                      <p className="text-sm font-medium text-gray-500">No questions added yet</p>
+                      <p className="text-xs text-gray-400 mt-1">Click "Custom Question" or "Question Bank" to start building your exam</p>
                     </div>
                   )}
                   {errors.questions && showErrors && (
@@ -3425,14 +3786,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                   )}
                 </div>
 
-                <div className="border rounded-2xl p-5 mt-5" 
+                <div className="border rounded-xl p-4 mt-4" 
                   style={{ 
                     background: brand.gradients.card,
                     borderColor: brand.colors.secondary + '33'
                   }}>
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 rounded-xl flex items-center justify-center"
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center"
                         style={{ backgroundColor: brand.colors.secondary + '20' }}>
                         <FontAwesomeIcon icon={faShuffle} style={{ color: brand.colors.secondary }} />
                       </div>
@@ -3459,7 +3820,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             <span className="ml-3 text-sm font-medium text-gray-700">Enable</span>
                           </label>
                         </div>
-                        <p className="text-sm mt-1" style={{ color: brand.colors.secondary, opacity: 0.9 }}>
+                        <p className="text-xs mt-1" style={{ color: brand.colors.secondary, opacity: 0.9 }}>
                           {enableQuestionPool ? (
                             <>
                               {questionPool.length} question{questionPool.length !== 1 ? 's' : ''} in pool
@@ -3476,13 +3837,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       </div>
                     </div>
                     {enableQuestionPool && (
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-2">
                         <button
                           onClick={() => {
                             setIsAddingToPool(true);
                             openCustomQuestionModal();
                           }}
-                          className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 text-sm"
+                          className="px-4 py-2 rounded-lg text-white text-xs font-semibold transition-colors flex items-center space-x-1.5"
+                          style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}
                         >
                           <FontAwesomeIcon icon={faPen} />
                           <span>Custom Question</span>
@@ -3492,10 +3854,8 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             setIsAddingToPool(true);
                             addQuestion();
                           }}
-                          disabled={false}
-                          className="px-4 py-2 text-white font-semibold rounded-xl transition-all shadow-md hover:shadow-lg flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                          className="px-4 py-2 rounded-lg text-white text-xs font-semibold transition-colors flex items-center space-x-1.5"
                           style={{ background: brand.gradients.header }}
-                          title=""
                         >
                           <FontAwesomeIcon icon={faBookAtlas} />
                           <span>Question Bank</span>
@@ -3515,7 +3875,6 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                             <input
                               type="number"
                               min="0"
-                              max={questionPool.length}
                               value={pickRandomCount}
                               onChange={(e) => {
                                 const value = e.target.value;
@@ -3536,7 +3895,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                               className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium"
                               placeholder="e.g., 5"
                             />
-                            {pickRandomCount > questionPool.length && (
+                            {pickRandomCount > questionPool.length && questionPool.length > 0 && (
                               <p className="text-xs text-red-600 mt-1 font-semibold">
                                 ⚠️ Cannot pick {pickRandomCount} questions from a pool of {questionPool.length}
                               </p>
@@ -3612,12 +3971,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                           question.type === QUESTION_TYPES.FITB ? 'bg-green-100 text-green-700' :
                                           question.type === QUESTION_TYPES.JUMBLED ? 'bg-purple-100 text-purple-700' :
                                           question.type === QUESTION_TYPES.CODE ? 'bg-indigo-100 text-indigo-700' :
+                                          question.type === QUESTION_TYPES.SQL ? 'bg-emerald-100 text-emerald-700' :
                                           'bg-orange-100 text-orange-700'
                                         }`}>
                                           {question.type === QUESTION_TYPES.MCQ ? 'MCQ' :
                                            question.type === QUESTION_TYPES.FITB ? 'Fill Blank' :
                                            question.type === QUESTION_TYPES.JUMBLED ? 'Jumbled' :
                                            question.type === QUESTION_TYPES.CODE ? 'Code' :
+                                           question.type === QUESTION_TYPES.SQL ? 'SQL' :
                                            'Descriptive'}
                                         </span>
                                         {question.complexity && (
@@ -3629,6 +3990,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                             {question.complexity.charAt(0).toUpperCase() + question.complexity.slice(1)}
                                           </span>
                                         )}
+                                        {question.type !== QUESTION_TYPES.LIKERT && (
                                         <span className="ml-auto text-xs font-bold px-3 py-1 rounded-lg"
                                           style={{ 
                                             color: brand.colors.secondary,
@@ -3636,6 +3998,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                           }}>
                                           {poolQuestionMarks > 0 ? poolQuestionMarks : question.maximumMarks} marks
                                         </span>
+                                        )}
                                       </div>
                                       <div 
                                         className="text-sm text-gray-700 font-medium prose prose-sm max-w-none line-clamp-3"
@@ -4146,7 +4509,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         {(customQuestionType === QUESTION_TYPES.CODE || customQuestionType === QUESTION_TYPES.SQL) ? 'Problem Statement' : 'Question Text'} <span className="text-red-500">*</span>
                       </h3>
                       <p className="text-xs text-blue-600">
-                        {(customQuestionType === QUESTION_TYPES.CODE || customQuestionType === QUESTION_TYPES.SQL) ? 'Describe the SQL problem' : 'Write your question'}
+                        {customQuestionType === QUESTION_TYPES.SQL ? 'Describe the SQL problem' : customQuestionType === QUESTION_TYPES.CODE ? 'Describe the coding problem' : 'Write your question'}
                       </p>
                     </div>
                   </div>
@@ -5000,7 +5363,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     <h2 className="text-lg font-bold text-white">
                       Question Bank
                     </h2>
-                    <p className="text-xs text-white/80">Select questions to add to your exam</p>
+                    <p className="text-xs text-white/80">{isAddingToLikert ? 'Select Likert questions for personality assessment' : 'Select questions to add to your exam'}</p>
                   </div>
                 </div>
                 <button
@@ -5025,6 +5388,13 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
 
                   {/* Class Filter Dropdown */}
                   <div className="relative filter-dropdown">
+                    {isAddingToLikert ? (
+                      <div className="px-3 py-1.5 bg-purple-50 border border-purple-200 rounded-lg flex items-center space-x-1.5">
+                        <FontAwesomeIcon icon={faGraduationCap} className="text-purple-500 text-xs" />
+                        <span className="text-xs font-semibold text-purple-700">Generic</span>
+                      </div>
+                    ) : (
+                    <>
                     <button
                       onClick={() => {
                         setShowQBClassDropdown(!showQBClassDropdown);
@@ -5074,10 +5444,19 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         ))}
                       </div>
                     )}
+                    </>
+                    )}
                   </div>
 
                   {/* Subject Filter Dropdown */}
                   <div className="relative filter-dropdown">
+                    {isAddingToLikert ? (
+                      <div className="px-3 py-1.5 bg-purple-50 border border-purple-200 rounded-lg flex items-center space-x-1.5">
+                        <FontAwesomeIcon icon={faBook} className="text-purple-500 text-xs" />
+                        <span className="text-xs font-semibold text-purple-700">Personality Assessment</span>
+                      </div>
+                    ) : (
+                    <>
                     <button
                       onClick={() => {
                         setShowQBSubjectDropdown(!showQBSubjectDropdown);
@@ -5125,10 +5504,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         ))}
                       </div>
                     )}
+                    </>
+                    )}
                   </div>
                   
                   {/* Question Type Filter Dropdown */}
+                  {!isAddingToLikert && (
                   <div className="relative filter-dropdown">
+                    <>
                     <button
                       onClick={() => {
                         setShowQuestionTypeDropdown(!showQuestionTypeDropdown);
@@ -5179,7 +5562,9 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                         ))}
                       </div>
                     )}
+                    </>
                   </div>
+                  )}
 
                   {/* Complexity Filter Dropdown */}
                   <div className="relative filter-dropdown">
@@ -5243,7 +5628,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                       >
                         <FontAwesomeIcon icon={faBookBookmark} className="text-gray-500 text-xs" />
                         <span className="text-xs font-semibold text-gray-700">
-                          {chapterFilter === FILTER_VALUES.ALL ? 'All Chapters' : 
+                          {chapterFilter === FILTER_VALUES.ALL ? (isAddingToLikert ? 'All Traits' : 'All Chapters') : 
                            chapterFilter.length > 20 ? chapterFilter.substring(0, 20) + '...' : chapterFilter}
                         </span>
                         <FontAwesomeIcon icon={faChevronDown} className="text-gray-400 text-xs" />
@@ -5260,7 +5645,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                               chapterFilter === FILTER_VALUES.ALL ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-700'
                             }`}
                           >
-                            All Chapters
+                            {isAddingToLikert ? 'All Traits' : 'All Chapters'}
                           </button>
                           {availableChapters.map((chapter) => (
                             <button
@@ -5644,10 +6029,12 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                               </button>
                             )}
                             
+                            {question.type !== QUESTION_TYPES.LIKERT && (
                             <div className="h-8 bg-gray-100 px-3 rounded-lg flex items-center">
                               <span className="text-base font-semibold text-gray-900">{question.marks}</span>
                               <span className="text-xs text-gray-600 ml-1">marks</span>
                             </div>
+                            )}
                             
                             <div 
                               onClick={() => !isAlreadyAdded && toggleQuestionSelection(question.id)}
@@ -6029,7 +6416,70 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           })()}
 
                           {/* Chapter Section - Outside Question Details (NON-CODE QUESTIONS) */}
-                          {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.type !== QUESTION_TYPES.SQL && (question as any).chapter && (
+                          {/* Likert Question Details */}
+                          {expandedQuestionId === question.id && question.type === QUESTION_TYPES.LIKERT && (
+                            <div className="mt-4 space-y-4">
+                              {/* Trait & Direction */}
+                              <div className="flex items-center space-x-4">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Trait</span>
+                                  <span className="px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm font-semibold">
+                                    {(question as any).likertTrait || (question as any).chapter || '—'}
+                                  </span>
+                                </div>
+                                {(question as any).likertDirection && (
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Direction</span>
+                                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                                      (question as any).likertDirection === 'positive' 
+                                        ? 'bg-green-100 text-green-700' 
+                                        : 'bg-amber-100 text-amber-700'
+                                    }`}>
+                                      {(question as any).likertDirection === 'positive' ? '↑ Positive' : '↓ Reverse'}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Likert Scale Options with Scoring */}
+                              <div>
+                                <h2 className="text-base font-semibold text-gray-900 mb-3">Likert Scale</h2>
+                                <div className="grid grid-cols-5 gap-2">
+                                  {(question.options || ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree']).map((option: string, idx: number) => {
+                                    const score = question.correctAnswers?.[idx];
+                                    const isHighest = score && Number(score) === 5;
+                                    const isLowest = score && Number(score) === 1;
+                                    return (
+                                      <div 
+                                        key={idx}
+                                        className={`rounded-xl p-3 text-center border-2 transition-all ${
+                                          isHighest ? 'border-green-300 bg-green-50' :
+                                          isLowest ? 'border-red-200 bg-red-50' :
+                                          'border-gray-200 bg-gray-50'
+                                        }`}
+                                      >
+                                        <div className={`text-2xl font-bold mb-1 ${
+                                          isHighest ? 'text-green-600' :
+                                          isLowest ? 'text-red-500' :
+                                          'text-gray-500'
+                                        }`}>
+                                          {score ?? (idx + 1)}
+                                        </div>
+                                        <div className="text-[10px] font-medium text-gray-600 leading-tight">{option}</div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                {question.correctAnswers && (
+                                  <p className="text-xs text-gray-400 mt-2 mb-4 text-center">
+                                    Score mapping: {question.correctAnswers.join(' → ')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.type !== QUESTION_TYPES.SQL && question.type !== QUESTION_TYPES.LIKERT && (question as any).chapter && (
                             <div className="mt-3">
                               <h2 className="text-base font-semibold text-gray-900 mb-2">Chapter</h2>
                               <p className="text-sm text-gray-900">{(question as any).chapter}</p>
@@ -6492,9 +6942,41 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                           )}
 
                           {/* Starter Code Template Section - Outside, Only for Code Questions */}
-                          {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && question.testStub && (
+                          {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && ((question.starterCodes?.length ?? 0) > 0 || question.testStub) && (() => {
+                            const starterCodes = (question.starterCodes?.length ?? 0) > 0 
+                              ? question.starterCodes! 
+                              : question.testStub 
+                                ? [{ language: question.programmingLanguage || 'java', code: question.testStub }]
+                                : [];
+                            if (!starterCodes || starterCodes.length === 0) return null;
+                            const activeLang = selectedStarterLang[question.id] || starterCodes[0].language;
+                            const activeCode = starterCodes.find((sc: any) => sc.language === activeLang)?.code || starterCodes[0].code;
+                            return (
                             <div className="mt-3">
-                              <h2 className="text-base font-semibold text-gray-900 mb-2">Starter Code Template</h2>
+                              <h2 className="text-base font-semibold text-gray-900 mb-2">
+                                Starter Code Template
+                                <span className="text-sm font-normal text-gray-500 ml-2">({starterCodes.length} language{starterCodes.length !== 1 ? 's' : ''})</span>
+                              </h2>
+                              
+                              {/* Language tabs */}
+                              {starterCodes.length > 1 && (
+                                <div className="flex flex-wrap gap-1 mb-2">
+                                  {starterCodes.map((sc: any) => (
+                                    <button
+                                      key={sc.language}
+                                      onClick={() => setSelectedStarterLang(prev => ({ ...prev, [question.id]: sc.language }))}
+                                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                                        activeLang === sc.language
+                                          ? 'bg-gray-800 text-white shadow-sm'
+                                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                      }`}
+                                    >
+                                      {sc.language === 'cpp' ? 'C++' : sc.language === 'javascript' ? 'JS' : sc.language.charAt(0).toUpperCase() + sc.language.slice(1)}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                              
                               <div className="relative rounded-lg overflow-hidden">
                                 {/* Terminal-style header with dots and copy button */}
                                 <div className="absolute top-0 left-0 right-0 h-10 bg-gray-800/95 backdrop-blur-sm z-10 flex items-center justify-between px-3 rounded-t-lg">
@@ -6507,11 +6989,11 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                   
                                   {/* Copy button */}
                                   <button
-                                    onClick={() => copyToClipboard(question.testStub || '', `stub-${question.id}`)}
+                                    onClick={() => copyToClipboard(activeCode, `stub-${question.id}-${activeLang}`)}
                                     className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-all"
                                     title="Copy to clipboard"
                                   >
-                                    {copiedCode === `stub-${question.id}` ? (
+                                    {copiedCode === `stub-${question.id}-${activeLang}` ? (
                                       <FontAwesomeIcon icon={faCheck} className="text-sm" />
                                     ) : (
                                       <FontAwesomeIcon icon={faCopy} className="text-sm" />
@@ -6522,7 +7004,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                 {/* Code content with top padding for header */}
                                 <div className="pt-10">
                                   <SyntaxHighlighter
-                                    language={question.programmingLanguage?.toLowerCase() || 'python'}
+                                    language={activeLang === 'cpp' ? 'cpp' : activeLang === 'c' ? 'c' : activeLang?.toLowerCase() || 'python'}
                                     style={vscDarkPlus}
                                     customStyle={{
                                       margin: 0,
@@ -6535,12 +7017,13 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                                     }}
                                     showLineNumbers={false}
                                   >
-                                    {question.testStub}
+                                    {activeCode}
                                   </SyntaxHighlighter>
                                 </div>
                               </div>
                             </div>
-                          )}
+                            );
+                          })()}
 
                           {/* SQL Schema & Test Cases - Expanded View */}
                           {expandedQuestionId === question.id && question.type === QUESTION_TYPES.SQL && (() => {
@@ -6652,7 +7135,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                               <div className="flex items-center space-x-4 text-xs text-gray-500">
                                 <div className="flex items-center space-x-1">
                                   <FontAwesomeIcon icon={faUser} />
-                                  <span>{question.createdByName}</span>
+                                  <span>Created by: {question.createdByName ? question.createdByName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : ''}</span>
                                 </div>
                                 <div className="flex items-center space-x-1">
                                   <FontAwesomeIcon icon={faCalendar} />
@@ -6906,11 +7389,14 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
               <label className="flex items-center space-x-2.5 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={paginatedStudents.length > 0 && paginatedStudents.every(s => selectedStudentIds.has(s.userId))}
+                  checked={totalStudentCount > 0 && paginatedStudents.length > 0 && paginatedStudents.every(s => selectedStudentIds.has(s.userId))}
                   onChange={toggleSelectAllStudents}
+                  disabled={isSelectingAllStudents || isLoadingStudents}
                   className="w-4 h-4 rounded border-gray-300"
                 />
-                <span className="text-sm font-semibold text-gray-700">Select All</span>
+                <span className="text-sm font-semibold text-gray-700">
+                  {isSelectingAllStudents ? 'Selecting all...' : 'Select All'}
+                </span>
               </label>
               {selectedStudentIds.size > 0 && (
                 <span className="text-xs font-semibold px-2 py-1 rounded-full text-white" style={{ background: brand.gradients.primary }}>
@@ -6985,16 +7471,16 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
               <div className="flex items-center space-x-2">
                 <span className="text-xs text-gray-500">
                   <span className="font-semibold text-gray-700">
-                    {Math.min((studentModalPage - 1) * studentsPerPage + 1, availableStudents.length)}-{Math.min(studentModalPage * studentsPerPage, availableStudents.length)}
+                    {totalStudentCount > 0 ? (studentModalPage - 1) * studentsPerPage + 1 : 0}-{Math.min(studentModalPage * studentsPerPage, totalStudentCount)}
                   </span>
                   {' '}of{' '}
-                  <span className="font-semibold text-gray-700">{availableStudents.length}</span>
+                  <span className="font-semibold text-gray-700">{totalStudentCount}</span>
                 </span>
                 {totalStudentPages > 1 && (
                   <div className="flex items-center space-x-1">
                     <button
                       onClick={() => setStudentModalPage(Math.max(1, studentModalPage - 1))}
-                      disabled={studentModalPage === 1}
+                      disabled={studentModalPage === 1 || isLoadingStudents}
                       className="w-7 h-7 rounded-lg border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
                     >
                       <FontAwesomeIcon icon={faChevronLeft} />
@@ -7002,7 +7488,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
                     <span className="text-xs font-semibold text-gray-600 px-1">{studentModalPage}/{totalStudentPages}</span>
                     <button
                       onClick={() => setStudentModalPage(Math.min(totalStudentPages, studentModalPage + 1))}
-                      disabled={studentModalPage === totalStudentPages}
+                      disabled={studentModalPage >= totalStudentPages || isLoadingStudents}
                       className="w-7 h-7 rounded-lg border border-gray-300 flex items-center justify-center text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed text-xs"
                     >
                       <FontAwesomeIcon icon={faChevronRight} />

@@ -17,6 +17,8 @@ export const LANGUAGE_IDS: Record<string, number> = {
   'kotlin': 78,
   'swift': 83,
   'typescript': 74,
+  'php': 68,
+  'r': 80,
 };
 
 export const LANGUAGE_NAMES: Record<number, string> = {
@@ -32,6 +34,8 @@ export const LANGUAGE_NAMES: Record<number, string> = {
   78: 'kotlin',
   83: 'swift',
   74: 'typescript',
+  68: 'php',
+  80: 'r',
 };
 
 export const LANGUAGE_EXTENSIONS: Record<number, string> = {
@@ -47,6 +51,8 @@ export const LANGUAGE_EXTENSIONS: Record<number, string> = {
   78: 'kt',
   83: 'swift',
   74: 'ts',
+  68: 'php',
+  80: 'r',
 };
 
 interface Judge0Submission {
@@ -291,6 +297,15 @@ class Judge0Service {
       case 'javascript':
       case 'typescript':
         return this.preprocessJavaScriptCode(code);
+      
+      case 'php':
+      case 'ruby':
+      case 'r':
+      case 'go':
+      case 'rust':
+      case 'swift':
+        // Basic preprocessing - normalize line endings
+        return code.includes('\r\n') ? code.replace(/\r\n/g, '\n') : code;
       
       default:
         return code;
@@ -673,6 +688,15 @@ class Judge0Service {
       
       case 'typescript':
         return `function ${functionName}(): void {\n    // Write your code here\n    \n}\n\n${functionName}();`;
+      
+      case 'php':
+        return `<?php\n// Write your code here\n\n?>`;
+      
+      case 'r':
+        return `# Write your code here\n\n`;
+      
+      case 'swift':
+        return `import Foundation\n\n// Write your code here\n`;
       
       default:
         return `// Write your code here\n`;

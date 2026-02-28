@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { firebaseService } from './services/firebase_service';
 import { judge0Service } from './services/judge0_service';
+import SQLHelpModal from './SQLHelpModal';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faChevronDown,
@@ -44,7 +45,8 @@ import {
   faCompress,
   faXmark,
   faTrash,
-  faArrowUp
+  faArrowUp,
+  faCircleArrowDown
 } from '@fortawesome/sharp-light-svg-icons';
 
 // ==================== CONSTANTS ====================
@@ -56,7 +58,14 @@ const LANGUAGE_CONFIG = [
   { id: 'java', name: 'Java', extension: 'java' },
   { id: 'python', name: 'Python', extension: 'py' },
   { id: 'javascript', name: 'JavaScript', extension: 'js' },
+  { id: 'typescript', name: 'TypeScript', extension: 'ts' },
+  { id: 'csharp', name: 'C#', extension: 'cs' },
   { id: 'go', name: 'Go', extension: 'go' },
+  { id: 'rust', name: 'Rust', extension: 'rs' },
+  { id: 'ruby', name: 'Ruby', extension: 'rb' },
+  { id: 'php', name: 'PHP', extension: 'php' },
+  { id: 'r', name: 'R', extension: 'r' },
+  { id: 'sql', name: 'SQL', extension: 'sql' },
 ];
 
 // ==================== TYPES ====================
@@ -557,10 +566,27 @@ async function executeCode(
 }
 
 // ==================== COMPONENT ====================
+// Default hello-world code for playground mode
+const PLAYGROUND_DEFAULT_CODE: Record<string, string> = {
+  c: `#include <stdio.h>\n\nint main() {\n    printf("Hello, World!\\n");\n    return 0;\n}`,
+  cpp: `#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello, World!" << endl;\n    return 0;\n}`,
+  java: `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello, World!");\n    }\n}`,
+  python: `print("Hello, World!")`,
+  javascript: `console.log("Hello, World!");`,
+  typescript: `const greeting: string = "Hello, World!";\nconsole.log(greeting);`,
+  csharp: `using System;\n\nclass Program {\n    static void Main() {\n        Console.WriteLine("Hello, World!");\n    }\n}`,
+  go: `package main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello, World!")\n}`,
+  rust: `fn main() {\n    println!("Hello, World!");\n}`,
+  ruby: `puts "Hello, World!"`,
+  php: `<?php\necho "Hello, World!\\n";\n?>`,
+  r: `cat("Hello, World!\\n")`,
+  sql: `-- Create a sample table\nCREATE TABLE users (\n    id INTEGER PRIMARY KEY,\n    name TEXT NOT NULL,\n    email TEXT,\n    age INTEGER\n);\n\n-- Insert sample data\nINSERT INTO users (id, name, email, age) VALUES (1, 'Alice', 'alice@example.com', 30);\nINSERT INTO users (id, name, email, age) VALUES (2, 'Bob', 'bob@example.com', 25);\nINSERT INTO users (id, name, email, age) VALUES (3, 'Charlie', 'charlie@example.com', 35);\n\n-- Query the data\nSELECT * FROM users WHERE age > 25;`,
+};
+
 const CodingLab: React.FC<CodingLabProps> = ({ 
   brandTheme,
   currentUser,
-  problemSlug = 'two-sum'
+  problemSlug = ''
 }) => {
   // Current problem slug - can be changed to load different problems
   const [currentProblemSlug, setCurrentProblemSlug] = useState(problemSlug);
@@ -572,14 +598,17 @@ const CodingLab: React.FC<CodingLabProps> = ({
     }
   }, [problemSlug]);
   
+  // Playground mode - when no problem slug is provided, show simple editor
+  const isPlaygroundMode = !currentProblemSlug;
+  
   // State
   const [problem, setProblem] = useState<ProblemData | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!isPlaygroundMode);
   const [error, setError] = useState<string | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState('c');
   const [currentView, setCurrentView] = useState<'problem' | 'solution'>('problem');
   const [rightPanelMode, setRightPanelMode] = useState<'editor' | 'analogy' | 'ai'>('editor');
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(PLAYGROUND_DEFAULT_CODE['c'] || '');
   const [output, setOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [activeOutputTab, setActiveOutputTab] = useState<'output' | 'stdin' | 'testcases'>('output');
@@ -612,6 +641,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
   const [isResizing, setIsResizing] = useState(false);
   const [editorState, setEditorState] = useState<'normal' | 'maximized' | 'minimized'>('normal');
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showSQLHelpModal, setShowSQLHelpModal] = useState(false);
   const [showTestCasesPanel, setShowTestCasesPanel] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
   const [solutionCodeCopied, setSolutionCodeCopied] = useState(false);
@@ -706,6 +736,16 @@ const CodingLab: React.FC<CodingLabProps> = ({
 
   // Load problem data
   useEffect(() => {
+    // Skip loading when in playground mode (no problem slug)
+    if (!currentProblemSlug) {
+      setIsLoading(false);
+      setProblem(null);
+      setError(null);
+      // Set default playground code for current language
+      setCode(PLAYGROUND_DEFAULT_CODE[selectedLanguage] || PLAYGROUND_DEFAULT_CODE['c']);
+      return;
+    }
+    
     const loadProblem = async () => {
       setIsLoading(true);
       setError(null);
@@ -714,6 +754,9 @@ const CodingLab: React.FC<CodingLabProps> = ({
       setCurrentView('problem');
       setRightPanelMode('editor');
       setAiMessages([]);
+      setOutputPanelState('normal');
+      setStdinInput('');
+      setExecutionStats(null);
       
       // Cleanup PGlite when switching problems
       if (pgliteRef.current) {
@@ -767,8 +810,18 @@ const CodingLab: React.FC<CodingLabProps> = ({
             if (data.defaultCode?.['sql']) {
               setCode(data.defaultCode['sql']);
             }
-          } else if (data.defaultCode?.[selectedLanguage]) {
-            setCode(data.defaultCode[selectedLanguage]);
+          } else {
+            // Reset language if current selection is 'sql' or not available in this problem
+            let langToUse = selectedLanguage;
+            if (langToUse === 'sql' || (data.defaultCode && !data.defaultCode[langToUse])) {
+              // Pick first available language from defaultCode, or fallback to 'c'
+              const availableLangs = data.defaultCode ? Object.keys(data.defaultCode) : [];
+              langToUse = availableLangs[0] || 'c';
+              setSelectedLanguage(langToUse);
+            }
+            if (data.defaultCode?.[langToUse]) {
+              setCode(data.defaultCode[langToUse]);
+            }
           }
           // Initialize test results
           setTestResults(data.testCases?.map((tc: any, idx: number) => ({
@@ -818,10 +871,13 @@ const CodingLab: React.FC<CodingLabProps> = ({
 
   // Update code when language changes
   useEffect(() => {
-    if (problem?.defaultCode?.[selectedLanguage]) {
+    if (!currentProblemSlug) {
+      // Playground mode - use default hello world code
+      setCode(PLAYGROUND_DEFAULT_CODE[selectedLanguage] || PLAYGROUND_DEFAULT_CODE['c']);
+    } else if (problem?.defaultCode?.[selectedLanguage]) {
       setCode(problem.defaultCode[selectedLanguage]);
     }
-  }, [selectedLanguage, problem]);
+  }, [selectedLanguage, problem, currentProblemSlug]);
 
   // Handlers
   const toggleSection = (section: string) => {
@@ -1079,6 +1135,104 @@ const CodingLab: React.FC<CodingLabProps> = ({
       setIsRunning(false);
     }
   };
+
+  /** Run SQL in playground mode — fresh PGlite, no problem/tableSchema needed */
+  const runPlaygroundSql = async () => {
+    setIsRunning(true);
+    setActiveOutputTab('output');
+    setOutput('🐘 Initializing PostgreSQL...');
+    setExecutionStats(null);
+    
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Initialize PGlite if not already done
+    if (!pgliteRef.current) {
+      try {
+        setOutput('🐘 Initializing PostgreSQL database...\n⏳ Please wait (first time may take a few seconds)...');
+        const { PGlite } = await import('https://cdn.jsdelivr.net/npm/@electric-sql/pglite/dist/index.js' as any);
+        pgliteRef.current = new PGlite();
+        await pgliteRef.current.waitReady;
+        setPgliteReady(true);
+      } catch (initError: any) {
+        setOutput(`❌ Failed to initialize PostgreSQL database.\n\nError: ${initError.message}\n\n💡 Please check your internet connection and try again.`);
+        setIsRunning(false);
+        return;
+      }
+    }
+    
+    try {
+      const startTime = performance.now();
+      
+      // Remove comments, split by semicolon
+      const codeWithoutComments = code
+        .split('\n')
+        .map((line: string) => {
+          const commentIndex = line.indexOf('--');
+          if (commentIndex !== -1) return line.substring(0, commentIndex).trim();
+          return line;
+        })
+        .join('\n');
+      
+      const statements = codeWithoutComments.split(';').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+      
+      let outputText = '';
+      for (const statement of statements) {
+        if (!statement) continue;
+        try {
+          const result = await pgliteRef.current.query(statement);
+          const upperStatement = statement.toUpperCase().trim();
+          
+          if (upperStatement.startsWith('SELECT') || upperStatement.startsWith('TABLE') || upperStatement.startsWith('WITH')) {
+            if (result && result.rows && result.rows.length > 0) {
+              const columns = result.fields?.map((f: any) => f.name) || Object.keys(result.rows[0]);
+              const colWidths = columns.map((col: string) => {
+                const maxDataWidth = Math.max(...result.rows.map((row: any) => String(row[col] ?? 'NULL').length));
+                return Math.max(col.length, maxDataWidth, 4);
+              });
+              const header = columns.map((col: string, i: number) => col.padEnd(colWidths[i])).join(' │ ');
+              const separator = colWidths.map((w: number) => '─'.repeat(w)).join('─┼─');
+              const rows = result.rows.map((row: any) =>
+                columns.map((col: string, i: number) => String(row[col] ?? 'NULL').padEnd(colWidths[i])).join(' │ ')
+              ).join('\n');
+              outputText += `\n${header}\n${separator}\n${rows}\n\n(${result.rows.length} row${result.rows.length !== 1 ? 's' : ''})\n`;
+            } else {
+              outputText += `\n(0 rows)\n`;
+            }
+          } else if (upperStatement.startsWith('INSERT')) {
+            const count = result?.affectedRows ?? result?.rowCount ?? 1;
+            outputText += `\n✅ INSERT ${count} row${count !== 1 ? 's' : ''}\n`;
+          } else if (upperStatement.startsWith('UPDATE')) {
+            const count = result?.affectedRows ?? result?.rowCount ?? 0;
+            outputText += `\n✅ UPDATE ${count} row${count !== 1 ? 's' : ''}\n`;
+          } else if (upperStatement.startsWith('DELETE')) {
+            const count = result?.affectedRows ?? result?.rowCount ?? 0;
+            outputText += `\n✅ DELETE ${count} row${count !== 1 ? 's' : ''}\n`;
+          } else if (upperStatement.startsWith('CREATE TABLE')) {
+            const tName = statement.match(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)/i)?.[1] || 'table';
+            outputText += `\n✅ Table "${tName}" created successfully\n`;
+          } else if (upperStatement.startsWith('DROP TABLE')) {
+            const tName = statement.match(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(\w+)/i)?.[1] || 'table';
+            outputText += `\n✅ Table "${tName}" dropped successfully\n`;
+          } else {
+            outputText += `\n✅ Query executed successfully\n`;
+          }
+        } catch (stmtError: any) {
+          outputText += `\n❌ Error: ${stmtError.message}\n`;
+        }
+      }
+      
+      const endTime = performance.now();
+      const execTime = ((endTime - startTime) / 1000).toFixed(3);
+      
+      setOutput(`🐘 PostgreSQL (PGlite)\n════════════════════════════════\n${outputText}\n════════════════════════════════`);
+      setExecutionStats({ time: `${execTime}s`, memory: 'In-Browser' });
+    } catch (error: any) {
+      setOutput(`❌ SQL Error: ${error.message}`);
+      setExecutionStats(null);
+    } finally {
+      setIsRunning(false);
+    }
+  };
   
   /** Run a single SQL test case: truncate → insert test data → run query → compare */
   const runSingleSqlTestCase = async (index: number) => {
@@ -1211,6 +1365,12 @@ const CodingLab: React.FC<CodingLabProps> = ({
     // For SQL problems, use PGlite instead of Judge0
     if (problem?.isSql) {
       await runSqlCode();
+      return;
+    }
+    
+    // For SQL in playground mode (no problem loaded), use PGlite directly
+    if (!problem && selectedLanguage === 'sql') {
+      await runPlaygroundSql();
       return;
     }
     
@@ -3434,7 +3594,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
                   <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     {(problem?.isSql 
                       ? [{ id: 'sql', name: 'SQL', extension: 'sql' }] 
-                      : LANGUAGE_CONFIG
+                      : LANGUAGE_CONFIG.filter(l => problem?.defaultCode?.[l.id])
                     ).map(lang => (
                       <button
                         key={lang.id}
@@ -3986,7 +4146,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
           
           {/* Help */}
           <button 
-            onClick={() => setShowHelpModal(true)}
+            onClick={() => selectedLanguage === 'sql' ? setShowSQLHelpModal(true) : setShowHelpModal(true)}
             className="text-gray-400 hover:text-gray-600 transition-all"
             title="AI Features Help"
           >
@@ -4029,7 +4189,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
             >
               {(problem?.isSql 
                 ? [{ id: 'sql', name: 'SQL', extension: 'sql' }] 
-                : LANGUAGE_CONFIG
+                : LANGUAGE_CONFIG.filter(l => problem?.defaultCode?.[l.id])
               ).map(lang => (
                 <option key={lang.id} value={lang.id}>{lang.name}</option>
               ))}
@@ -4045,7 +4205,26 @@ const CodingLab: React.FC<CodingLabProps> = ({
             className={`p-1 transition-all ${codeCopied ? 'text-green-500' : 'text-gray-400 hover:text-gray-600'}`} 
             title={codeCopied ? 'Copied!' : 'Copy'}
           >
-            <FontAwesomeIcon icon={codeCopied ? faCheck : faCopy} className="w-3.5 h-3.5" />
+            <FontAwesomeIcon icon={codeCopied ? faCheck : faCopy} className="w-4 h-4" />
+          </button>
+          <button 
+            onClick={() => {
+              const ext = LANGUAGE_CONFIG.find(l => l.id === selectedLanguage)?.extension || 'txt';
+              const filename = problem?.slug ? `${problem.slug}.${ext}` : `code.${ext}`;
+              const blob = new Blob([code], { type: 'text/plain' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = filename;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }} 
+            className="p-1 text-gray-400 hover:text-gray-600 transition-all" 
+            title="Download Code"
+          >
+            <FontAwesomeIcon icon={faCircleArrowDown} className="w-4 h-4" />
           </button>
           {/* Minimize Button - only show when not maximized */}
           {editorState !== 'maximized' && (
@@ -4054,7 +4233,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
               className="p-1 text-gray-400 hover:text-gray-600 transition-all" 
               title={editorState === 'minimized' ? 'Restore' : 'Minimize Editor'}
             >
-              <FontAwesomeIcon icon={editorState === 'minimized' ? faExpand : faCompress} className="w-3.5 h-3.5" />
+              <FontAwesomeIcon icon={editorState === 'minimized' ? faExpand : faCompress} className="w-4 h-4" />
             </button>
           )}
           {/* Maximize/Restore Button */}
@@ -4063,7 +4242,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
             className="p-1 text-gray-400 hover:text-gray-600 transition-all" 
             title={editorState === 'maximized' ? 'Restore' : 'Maximize Editor'}
           >
-            <FontAwesomeIcon icon={editorState === 'maximized' ? faCompress : faExpand} className="w-3.5 h-3.5" />
+            <FontAwesomeIcon icon={editorState === 'maximized' ? faCompress : faExpand} className="w-4 h-4" />
           </button>
         </div>
       </div>
@@ -4300,7 +4479,7 @@ const CodingLab: React.FC<CodingLabProps> = ({
           {/* Right side - colored circles */}
           <div className="flex items-center gap-1.5 pr-2">
             <button 
-              onClick={() => setShowHelpModal(true)}
+              onClick={() => selectedLanguage === 'sql' ? setShowSQLHelpModal(true) : setShowHelpModal(true)}
               className="w-5 h-5 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center hover:bg-blue-600" 
               title="AI Features Help"
             >
@@ -4442,6 +4621,615 @@ const CodingLab: React.FC<CodingLabProps> = ({
 
   // ==================== MAIN RENDER ====================
   
+  // ==================== PLAYGROUND MODE ====================
+  // Simple left-right layout: Editor on left, Output on right, no test cases
+  if (isPlaygroundMode) {
+    return (
+      <div className="h-full w-full flex flex-col overflow-hidden bg-gray-100 font-sans">
+        {/* Main Content - Two Panels side by side */}
+        <div ref={containerRef} className="flex-1 flex overflow-hidden">
+          {/* Left Panel - Code Editor */}
+          <div 
+            className={`flex flex-col overflow-hidden ${outputPanelState === 'minimized' ? 'flex-1' : ''}`}
+            style={outputPanelState === 'minimized' ? {} : outputPanelState === 'expanded' ? { width: '75%' } : { width: `${leftPanelWidth}%` }}
+          >
+            {/* Top Toolbar */}
+            <div className="flex items-center justify-between px-3 py-1" style={{ backgroundColor: '#f3f4f6' }}>
+              <div className="flex items-center gap-4">
+                {/* Run Button */}
+                <button 
+                  onClick={runCode}
+                  disabled={isRunning}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 text-xs font-medium"
+                >
+                  {isRunning ? (
+                    <>
+                      <span className="w-2.5 h-2.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      <span>Running...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FontAwesomeIcon icon={faPlay} className="w-2.5 h-2.5" />
+                      <span>Run</span>
+                    </>
+                  )}
+                </button>
+                
+                {/* Explain */}
+                <button 
+                  onClick={() => handleAIOperation('explain')}
+                  disabled={aiOperationLoading !== null}
+                  className={`flex items-center gap-1 text-xs transition-all ${
+                    aiOperationLoading === 'explain' ? 'text-blue-600' : 'text-gray-500 hover:text-blue-600'
+                  }`}
+                >
+                  {aiOperationLoading === 'explain' ? (
+                    <span className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <FontAwesomeIcon icon={faCircleInfo} className="w-3 h-3" />
+                  )}
+                  <span>Explain</span>
+                </button>
+                
+                {/* Fix */}
+                <button 
+                  onClick={() => handleAIOperation('fix')}
+                  disabled={aiOperationLoading !== null}
+                  className={`flex items-center gap-1 text-xs transition-all ${
+                    aiOperationLoading === 'fix' ? 'text-orange-600' : 'text-gray-500 hover:text-orange-600'
+                  }`}
+                >
+                  {aiOperationLoading === 'fix' ? (
+                    <span className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <FontAwesomeIcon icon={faWrench} className="w-3 h-3" />
+                  )}
+                  <span>Fix</span>
+                </button>
+                
+                {/* Suggest */}
+                <button 
+                  onClick={() => handleAIOperation('suggest')}
+                  disabled={aiOperationLoading !== null}
+                  className={`flex items-center gap-1 text-xs transition-all ${
+                    aiOperationLoading === 'suggest' ? 'text-amber-600' : 'text-gray-500 hover:text-amber-600'
+                  }`}
+                >
+                  {aiOperationLoading === 'suggest' ? (
+                    <span className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <FontAwesomeIcon icon={faLightbulb} className="w-3 h-3" />
+                  )}
+                  <span>Suggest</span>
+                </button>
+                
+                {/* Format */}
+                <button 
+                  onClick={() => handleAIOperation('format')}
+                  disabled={aiOperationLoading !== null}
+                  className={`flex items-center gap-1 text-xs transition-all ${
+                    aiOperationLoading === 'format' ? 'text-purple-600' : 'text-gray-500 hover:text-purple-600'
+                  }`}
+                >
+                  {aiOperationLoading === 'format' ? (
+                    <span className="w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full animate-spin"></span>
+                  ) : (
+                    <FontAwesomeIcon icon={faPenToSquare} className="w-3 h-3" />
+                  )}
+                  <span>Format</span>
+                </button>
+                
+                {/* Help */}
+                <button 
+                  onClick={() => selectedLanguage === 'sql' ? setShowSQLHelpModal(true) : setShowHelpModal(true)}
+                  className="text-gray-400 hover:text-gray-600 transition-all"
+                  title="AI Features Help"
+                >
+                  <FontAwesomeIcon icon={faCircleQuestion} className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              
+              {/* Right side - Language + Copy */}
+              <div className="flex items-center gap-2">
+                {/* Language Dropdown */}
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-white border border-gray-200 rounded text-xs cursor-pointer">
+                  <FontAwesomeIcon icon={faCode} className="w-3 h-3 text-gray-400" />
+                  <select 
+                    value={selectedLanguage}
+                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                    className="bg-transparent text-gray-600 cursor-pointer focus:outline-none text-xs"
+                  >
+                    {LANGUAGE_CONFIG.map(lang => (
+                      <option key={lang.id} value={lang.id}>{lang.name}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(code);
+                    setCodeCopied(true);
+                    setTimeout(() => setCodeCopied(false), 2000);
+                  }} 
+                  className={`p-1 transition-all ${codeCopied ? 'text-green-500' : 'text-gray-400 hover:text-gray-600'}`} 
+                  title={codeCopied ? 'Copied!' : 'Copy'}
+                >
+                  <FontAwesomeIcon icon={codeCopied ? faCheck : faCopy} className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => {
+                    const ext = LANGUAGE_CONFIG.find(l => l.id === selectedLanguage)?.extension || 'txt';
+                    const filename = `code.${ext}`;
+                    const blob = new Blob([code], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  }} 
+                  className="p-1 text-gray-400 hover:text-gray-600 transition-all" 
+                  title="Download Code"
+                >
+                  <FontAwesomeIcon icon={faCircleArrowDown} className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Monaco Code Editor */}
+            <div className="flex-1 mt-1 flex flex-col rounded-xl overflow-hidden bg-white shadow-sm border border-gray-200">
+              <div className="flex-1 overflow-hidden">
+                <Editor
+                  height="100%"
+                  language={selectedLanguage === 'cpp' ? 'cpp' : selectedLanguage}
+                  value={code}
+                  onChange={(value) => setCode(value || '')}
+                  theme="vs"
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 14,
+                    lineNumbers: 'on',
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                    tabSize: 4,
+                    wordWrap: 'on',
+                    folding: false,
+                    stickyScroll: { enabled: false },
+                    lineNumbersMinChars: 3,
+                    padding: { top: 12, bottom: 12 },
+                    renderLineHighlight: 'line',
+                    renderLineHighlightOnlyWhenFocus: false,
+                    hideCursorInOverviewRuler: true,
+                    overviewRulerBorder: false,
+                    overviewRulerLanes: 0,
+                    guides: {
+                      indentation: false,
+                      bracketPairs: false,
+                      highlightActiveIndentation: false,
+                    },
+                    scrollbar: {
+                      vertical: 'auto',
+                      horizontal: 'auto',
+                      verticalScrollbarSize: 8,
+                      horizontalScrollbarSize: 8,
+                    },
+                  }}
+                  onMount={(editor, monaco) => {
+                    monacoEditorRef.current = editor;
+                    monaco.editor.defineTheme('customLight', {
+                      base: 'vs',
+                      inherit: true,
+                      rules: [],
+                      colors: {
+                        'editor.background': '#FEFDFB',
+                        'editorLineNumber.foreground': '#9ca3af',
+                        'editorLineNumber.activeForeground': '#6b7280',
+                        'editor.lineHighlightBackground': '#f5f5f0',
+                        'editor.lineHighlightBorder': '#00000000',
+                      }
+                    });
+                    monaco.editor.setTheme('customLight');
+                    editor.onDidChangeCursorPosition((e) => {
+                      setCursorPosition({ line: e.position.lineNumber, col: e.position.column });
+                    });
+                  }}
+                />
+              </div>
+              {/* Status Bar */}
+              <div 
+                className="px-4 py-1 text-right border-t"
+                style={{ backgroundColor: 'rgb(254, 253, 251)', borderColor: '#f0ebe0' }}
+              >
+                <span className="text-xs text-gray-400 font-mono">Ln {cursorPosition.line}, Col {cursorPosition.col}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Horizontal Resizer - hidden when output minimized */}
+          {outputPanelState !== 'minimized' && (
+          <div 
+            className="w-2 cursor-col-resize flex items-center justify-center z-10"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setIsResizing(true);
+            }}
+          >
+            <div 
+              className={`h-12 w-1 rounded-full transition-all ${
+                isResizing ? 'bg-green-500' : 'bg-gray-300 hover:bg-green-400'
+              }`}
+            />
+          </div>
+          )}
+
+          {/* Right Panel - Output + Stdin only, no Test Cases */}
+          {outputPanelState !== 'minimized' && (
+          <div 
+            className="flex-1 flex flex-col overflow-hidden"
+            style={outputPanelState === 'expanded' ? { maxWidth: '25%', minWidth: '200px' } : {}}
+          >
+            {/* Output Tabs Header */}
+            <div className="flex items-center justify-between px-3 py-1" style={{ backgroundColor: '#f3f4f6' }}>
+              <div className="flex items-center gap-0">
+                {/* Output Tab */}
+                <button
+                  onClick={() => setActiveOutputTab('output')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border-b-2 ${
+                    activeOutputTab === 'output' 
+                      ? 'text-green-600 border-green-500' 
+                      : 'text-gray-500 border-transparent hover:text-gray-700'
+                  }`}
+                >
+                  <FontAwesomeIcon icon={faTerminal} className="w-4 h-4 text-gray-400" />
+                  <span>Output</span>
+                </button>
+                
+                {/* Stdin Tab */}
+                <button
+                  onClick={() => setActiveOutputTab('stdin')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border-b-2 ${
+                    activeOutputTab === 'stdin' 
+                      ? 'text-green-600 border-green-500' 
+                      : 'text-gray-500 border-transparent hover:text-gray-700'
+                  }`}
+                >
+                  <FontAwesomeIcon icon={faKeyboard} className="w-4 h-4" />
+                  <span>Stdin</span>
+                </button>
+                
+                {/* Refresh/Reset */}
+                <button 
+                  onClick={async () => {
+                    setOutput('');
+                    setStdinInput('');
+                    setExecutionStats(null);
+                    // Also reset PGlite database when SQL
+                    if (selectedLanguage === 'sql' && pgliteRef.current) {
+                      try { await pgliteRef.current.close(); } catch (e) { /* ignore */ }
+                      pgliteRef.current = null;
+                      setPgliteReady(false);
+                      setOutput('🔄 Database reset. Run your code to create fresh tables.');
+                    }
+                  }} 
+                  className="p-1.5 ml-1 text-gray-400 hover:text-gray-600 rounded"
+                  title={selectedLanguage === 'sql' ? 'Reset Output & Database' : 'Reset Output & Stdin'}
+                >
+                  <FontAwesomeIcon icon={faRotate} className="w-4 h-4" />
+                </button>
+              </div>
+              
+              {/* Right side - colored circles */}
+              <div className="flex items-center gap-1.5 pr-2">
+                <button 
+                  onClick={() => selectedLanguage === 'sql' ? setShowSQLHelpModal(true) : setShowHelpModal(true)}
+                  className="w-5 h-5 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center hover:bg-blue-600" 
+                  title="AI Features Help"
+                >
+                  <FontAwesomeIcon icon={faInfo} className="w-2.5 h-2.5" />
+                </button>
+                <button 
+                  onClick={() => setOutputPanelState('minimized')}
+                  className="w-5 h-5 rounded-full bg-orange-400 text-white text-xs flex items-center justify-center hover:bg-orange-500" 
+                  title="Minimize Output Panel"
+                >
+                  <FontAwesomeIcon icon={faMinus} className="w-2.5 h-2.5" />
+                </button>
+                <button 
+                  onClick={() => setOutputPanelState(outputPanelState === 'expanded' ? 'normal' : 'expanded')}
+                  className="w-5 h-5 rounded-full bg-green-500 text-white text-xs flex items-center justify-center hover:bg-green-600" 
+                  title={outputPanelState === 'expanded' ? 'Restore Output Panel' : 'Expand Editor'}
+                >
+                  <FontAwesomeIcon icon={faPlus} className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Output/Stdin Content */}
+            <div className="flex-1 mt-1 mb-2 mr-2 flex flex-col rounded-xl overflow-hidden bg-white shadow-sm border border-gray-200">
+              <div className="flex-1 p-4 overflow-auto bg-gray-50">
+                {activeOutputTab === 'output' ? (
+                  <div className="h-full">
+                    {aiOperationLoading ? (
+                      <div className="flex flex-col items-center justify-center h-full py-8">
+                        <div className="relative mb-4">
+                          <FontAwesomeIcon icon={faRobot} className="w-12 h-12 text-green-500" />
+                          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white shadow flex items-center justify-center">
+                            <div className="w-3 h-3 border-2 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+                          </div>
+                        </div>
+                        <p className="text-gray-700 font-semibold mb-1">
+                          {aiOperationLoading === 'explain' && 'Analyzing your code...'}
+                          {aiOperationLoading === 'fix' && 'Finding and fixing issues...'}
+                          {aiOperationLoading === 'suggest' && 'Generating suggestions...'}
+                          {aiOperationLoading === 'format' && 'Formatting code...'}
+                        </p>
+                        <p className="text-gray-400 text-sm">This may take a few seconds...</p>
+                      </div>
+                    ) : output ? (
+                      <div>
+                        <pre className="font-mono text-sm text-green-600 whitespace-pre-wrap">{output}</pre>
+                        {executionStats && (
+                          <div className="mt-2 text-xs text-gray-500 font-mono">
+                            <span className="text-gray-400">✓</span> Executed in {executionStats.time} <span className="text-gray-400">✓</span> Memory: {executionStats.memory}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <pre className="font-mono text-sm text-gray-400 italic">// Output will appear here after running code</pre>
+                    )}
+                  </div>
+                ) : (
+                  <textarea
+                    value={stdinInput}
+                    onChange={(e) => setStdinInput(e.target.value)}
+                    placeholder="Enter input for your program..."
+                    className="w-full h-full bg-transparent text-gray-800 font-mono text-sm resize-none focus:outline-none"
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+          )}
+
+          {/* Minimized Output Strip - vertical buttons on right edge when output is hidden */}
+          {outputPanelState === 'minimized' && (
+            <div 
+              className="w-10 flex flex-col items-center py-3 gap-3 bg-gray-50 border-l border-gray-200"
+            >
+              <button 
+                onClick={() => selectedLanguage === 'sql' ? setShowSQLHelpModal(true) : setShowHelpModal(true)}
+                className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center hover:bg-blue-600 transition-colors" 
+                title="AI Features Help"
+              >
+                <FontAwesomeIcon icon={faInfo} className="w-2.5 h-2.5" />
+              </button>
+              <button 
+                onClick={() => setOutputPanelState('normal')}
+                className="w-6 h-6 rounded-full bg-orange-400 text-white text-xs flex items-center justify-center hover:bg-orange-500 transition-colors" 
+                title="Restore Output Panel"
+              >
+                <FontAwesomeIcon icon={faPlus} className="w-2.5 h-2.5" />
+              </button>
+              <button 
+                onClick={() => setOutputPanelState('normal')}
+                className="w-6 h-6 rounded-full bg-green-500 text-white text-xs flex items-center justify-center hover:bg-green-600 transition-colors" 
+                title="Restore Output Panel"
+              >
+                <FontAwesomeIcon icon={faExpand} className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* AI Result Modal - reuse from main mode */}
+        {showAIResultModal && aiResultContent && (
+          <>
+            <div 
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000]"
+              onClick={() => { setShowAIResultModal(false); setAiResultContent(null); }}
+            />
+            <div 
+              className={`fixed right-2 top-2 bottom-2 w-[calc(100%-16px)] ${
+                ['fix', 'format', 'optimize', 'tests', 'docs'].includes(aiResultContent.operation)
+                  ? 'sm:w-[50rem]' : 'sm:w-[35rem]'
+              } bg-white z-[10001] flex flex-col rounded-2xl shadow-2xl overflow-hidden`}
+              style={{ animation: 'slideInRight 0.3s ease-out' }}
+            >
+              <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white">
+                <div className="flex items-center gap-3">
+                  <FontAwesomeIcon icon={faRobot} className="w-5 h-5" />
+                  <span className="text-lg font-semibold">{aiResultContent.title}</span>
+                </div>
+                <button 
+                  onClick={() => { setShowAIResultModal(false); setAiResultContent(null); }}
+                  className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition"
+                >
+                  <FontAwesomeIcon icon={faXmark} className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                {['fix', 'format', 'optimize', 'tests', 'docs'].includes(aiResultContent.operation) ? (
+                  <div className="h-full flex flex-col">
+                    <div className="flex items-center justify-between px-4 py-2 bg-gray-100 border-b border-gray-200">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-red-400"></span>
+                        <span className="w-3 h-3 rounded-full bg-yellow-400"></span>
+                        <span className="w-3 h-3 rounded-full bg-green-400"></span>
+                      </div>
+                      <span className="text-xs text-gray-500 font-mono bg-gray-200 px-2 py-1 rounded">{selectedLanguage}</span>
+                    </div>
+                    <div className="flex-1">
+                      <Editor
+                        height="100%"
+                        language={selectedLanguage === 'cpp' ? 'cpp' : selectedLanguage}
+                        value={extractCodeFromAIResponse(aiResultContent.content, aiResultContent.operation)}
+                        theme="vs"
+                        options={{
+                          readOnly: true,
+                          minimap: { enabled: false },
+                          fontSize: 13,
+                          lineNumbers: 'on',
+                          scrollBeyondLastLine: false,
+                          automaticLayout: true,
+                          tabSize: 4,
+                          wordWrap: 'off',
+                          folding: false,
+                          lineNumbersMinChars: 4,
+                          glyphMargin: false,
+                          lineDecorationsWidth: 16,
+                          padding: { top: 12, bottom: 12 },
+                          renderLineHighlight: 'none',
+                          hideCursorInOverviewRuler: true,
+                          overviewRulerBorder: false,
+                          domReadOnly: true,
+                          guides: { indentation: false, bracketPairs: false, highlightActiveIndentation: false },
+                          scrollbar: { vertical: 'auto', horizontal: 'auto', verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-5 max-w-none">
+                    {renderMarkdown(aiResultContent.content)}
+                  </div>
+                )}
+              </div>
+              <div className="px-5 py-4 border-t border-gray-200 bg-gray-50">
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => {
+                      const contentToCopy = extractCodeFromAIResponse(aiResultContent.content, aiResultContent.operation);
+                      navigator.clipboard.writeText(contentToCopy);
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 text-gray-600 hover:text-gray-800 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition"
+                  >
+                    <FontAwesomeIcon icon={faCopy} className="w-4 h-4" />
+                    {['fix', 'format', 'optimize', 'tests', 'docs'].includes(aiResultContent.operation) ? 'Copy Code' : 'Copy'}
+                  </button>
+                  {['fix', 'format', 'optimize', 'tests', 'docs'].includes(aiResultContent.operation) && (
+                    <button
+                      onClick={applyAICode}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition font-medium"
+                    >
+                      <FontAwesomeIcon icon={faCheck} className="w-4 h-4" />
+                      Apply to Editor
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { setShowAIResultModal(false); setAiResultContent(null); }}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-xl hover:from-green-600 hover:to-emerald-700 transition font-medium shadow-sm"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Help Modal for Playground */}
+        {showHelpModal && (
+          <>
+            <div 
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[10000] transition-opacity duration-200"
+              onClick={() => setShowHelpModal(false)}
+            />
+            <div 
+              className="fixed right-2 top-2 bottom-2 w-[calc(100%-16px)] sm:w-[35rem] bg-white shadow-2xl z-[10001] rounded-2xl overflow-hidden flex flex-col"
+              style={{ animation: 'slideInRight 0.3s ease-out' }}
+            >
+              <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white">
+                <div className="flex items-center gap-3">
+                  <FontAwesomeIcon icon={faRobot} className="w-5 h-5" />
+                  <span className="text-lg font-semibold">AI Features Help</span>
+                </div>
+                <button 
+                  onClick={() => setShowHelpModal(false)}
+                  className="p-2 rounded-lg bg-white/20 hover:bg-white/30 transition"
+                >
+                  <FontAwesomeIcon icon={faXmark} className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6">
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
+                    <FontAwesomeIcon icon={faGearComplexCode} className="w-4 h-4" />
+                    Header Buttons
+                  </div>
+                  {[
+                    { icon: '💡', title: 'Explain', color: 'blue', desc: 'Get a detailed explanation of your code. Select specific code or analyze the entire file. Understand algorithms, logic flow, and complexity.' },
+                    { icon: '🔧', title: 'Fix', color: 'red', desc: 'Automatically detect and fix issues in your code. Finds bugs, syntax errors, and common mistakes. Shows you what was fixed.' },
+                    { icon: '💡', title: 'Suggest', color: 'purple', desc: 'Get improvement suggestions for your code. Best practices, performance tips, and code quality recommendations.' },
+                    { icon: '✨', title: 'Format', color: 'green', desc: 'Auto-format and clean up your code. Fixes indentation, spacing, and style consistency.' },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100 mb-3 hover:border-green-300 transition">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
+                        item.color === 'blue' ? 'bg-blue-100' : 
+                        item.color === 'red' ? 'bg-red-100' : 
+                        item.color === 'purple' ? 'bg-purple-100' : 'bg-green-100'
+                      }`}>
+                        {item.icon}
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-800 mb-1">{item.title}</div>
+                        <div className="text-sm text-gray-500 leading-relaxed">{item.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mb-6">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">
+                    <FontAwesomeIcon icon={faWandMagicSparkles} className="w-4 h-4" />
+                    Smart Actions (Slash Commands)
+                  </div>
+                  {[
+                    { icon: '🔧', title: '/fix', color: 'red', desc: 'Find and fix issues in your code. Detects common problems and applies automatic fixes.' },
+                    { icon: '💡', title: '/explain', color: 'blue', desc: 'Get a detailed explanation of what your code does, including time/space complexity analysis.' },
+                    { icon: '🧪', title: '/tests', color: 'purple', desc: 'Automatically generate unit tests for your code. Creates comprehensive test cases.' },
+                    { icon: '📝', title: '/docs', color: 'green', desc: 'Generate documentation for your code. Creates docstrings, JSDoc comments, and type hints.' },
+                    { icon: '⚡', title: '/optimize', color: 'orange', desc: 'Get performance optimization suggestions. Improve speed and reduce memory usage.' },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-start gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100 mb-3 hover:border-green-300 transition">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0 ${
+                        item.color === 'blue' ? 'bg-blue-100' : 
+                        item.color === 'red' ? 'bg-red-100' : 
+                        item.color === 'purple' ? 'bg-purple-100' : 
+                        item.color === 'orange' ? 'bg-orange-100' : 'bg-green-100'
+                      }`}>
+                        {item.icon}
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-800 mb-1 flex items-center gap-2">
+                          {item.title}
+                          <code className="px-2 py-0.5 bg-gray-200 rounded text-xs text-green-600">Enter</code>
+                        </div>
+                        <div className="text-sm text-gray-500 leading-relaxed">{item.desc}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-start gap-3 p-4 bg-green-50 rounded-xl border-l-4 border-green-500">
+                  <span className="text-lg">💡</span>
+                  <div className="text-sm text-gray-700">
+                    <strong className="text-green-600">Pro Tip:</strong> Select specific code before using Explain, Fix, or Smart Actions to analyze only that portion. Otherwise, the entire file will be analyzed.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* SQL Help Modal for Playground */}
+        <SQLHelpModal 
+          isOpen={showSQLHelpModal}
+          onClose={() => setShowSQLHelpModal(false)}
+        />
+      </div>
+    );
+  }
+
   // Loading state
   if (isLoading) {
     return (
@@ -4454,8 +5242,8 @@ const CodingLab: React.FC<CodingLabProps> = ({
     );
   }
 
-  // Error state
-  if (error || !problem) {
+  // Error state (only when a problem was expected but failed to load)
+  if (error || (!isPlaygroundMode && !problem)) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-gray-100">
         <div className="text-center max-w-md p-6">
@@ -4517,8 +5305,24 @@ const CodingLab: React.FC<CodingLabProps> = ({
               </div>
             </div>
             
-            {/* Right side - Terminal / Analogy / AI Assistant */}
+            {/* Right side - Playground / Terminal / Analogy / AI Assistant */}
             <div className="flex items-center gap-1">
+              <button
+                onClick={() => {
+                  setCurrentProblemSlug('');
+                  setProblem(null);
+                  setError(null);
+                  setCode(PLAYGROUND_DEFAULT_CODE[selectedLanguage] || PLAYGROUND_DEFAULT_CODE['c']);
+                  setOutput('');
+                  setStdinInput('');
+                  setExecutionStats(null);
+                  setTestResults([]);
+                }}
+                className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-all border ${!currentProblemSlug ? 'border-green-400 bg-green-50 text-green-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
+              >
+                <FontAwesomeIcon icon={faTerminal} className="w-3 h-3" />
+                Playground
+              </button>
               <button
                 onClick={() => setRightPanelMode('editor')}
                 className={`px-3 py-1 rounded-full text-xs font-medium transition-all border ${rightPanelMode === 'editor' ? 'border-gray-400 bg-gray-50 text-gray-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}
@@ -5581,6 +6385,12 @@ const CodingLab: React.FC<CodingLabProps> = ({
           </div>
         </>
       )}
+
+      {/* SQL Help Modal */}
+      <SQLHelpModal 
+        isOpen={showSQLHelpModal}
+        onClose={() => setShowSQLHelpModal(false)}
+      />
     </div>
   );
 };

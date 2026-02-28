@@ -13,12 +13,18 @@ import {
   faBuilding,
   faCheckSquare,
   faClock,
-  faTrophy
+  faTrophy,
+  faChartBar,
+  faFingerprint,
+  faStar,
+  faVideo
 } from '@fortawesome/sharp-light-svg-icons';
 import { firebaseService } from './services/firebase_service';
 import type { DocumentSnapshot } from 'firebase/firestore';
 import { 
   EXAM_STATUS, 
+  EXAM_MODES,
+  SECURITY_LEVELS,
   MONTH_NAMES_SHORT,
   USER_TYPES,
   hasPermissionLevel,
@@ -97,6 +103,10 @@ interface Exam {
   createdBy: string;
   createdById: string;
   createdByRole: string;
+  personalityAssessment?: boolean;
+  likertQuestions?: any[];
+  likertDuration?: number;
+  avProctoring?: boolean;
 }
 
 interface ResultProps {
@@ -110,7 +120,7 @@ interface ResultProps {
   onCollapse: () => void;
   onCountsChange?: () => void;
   onResultsListChange?: (completedExams: Exam[]) => void;
-  onStudentsDataChange?: (data: { presentStudents: any[], absentStudents: any[], totalStudents: number }) => void;
+  onStudentsDataChange?: (data: { presentStudents: any[], absentStudents: any[], totalStudents: number, totalPresentCount: number, totalAbsentCount: number }) => void;
   onStudentSelect?: (student: any) => void;
   selectedStudent?: any;
   currentUserType?: typeof USER_TYPES[keyof typeof USER_TYPES];
@@ -139,6 +149,7 @@ function Result({
 
   // State
   const [exams, setExams] = useState<Exam[]>([]);
+  const [enrolledExamIds, setEnrolledExamIds] = useState<Set<string> | null>(null); // ✅ Enrolled exam IDs for students
   
   // Reset viewingStudents when selectedExam becomes null (when clicking Result in sidebar)
   useEffect(() => {
@@ -150,6 +161,8 @@ function Result({
       setTotalStudents(0);
       setActiveStudentTab('all');
       setSearchQuery('');
+      setCurrentPage(1);
+      setHasMoreStudents(true);
     }
   }, [selectedExam]);
   const [isLoadingExams, setIsLoadingExams] = useState(true);
@@ -173,13 +186,15 @@ function Result({
   const [activeStudentTab, setActiveStudentTab] = useState<'all' | 'present' | 'absent'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   
+  // ✅ Server-side pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMoreStudents, setHasMoreStudents] = useState(true);
+  const [totalPresentCount, setTotalPresentCount] = useState(0);
+  const [totalAbsentCount, setTotalAbsentCount] = useState(0);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Pagination state for students
   const [isLoadingMoreStudents, setIsLoadingMoreStudents] = useState(false);
-  const [hasMorePresentStudents, setHasMorePresentStudents] = useState(true);
-  const [hasMoreAbsentStudents, setHasMoreAbsentStudents] = useState(true);
-  const [lastPresentStudentDoc, setLastPresentStudentDoc] = useState<DocumentSnapshot | null>(null);
-  const [lastAbsentStudentDoc, setLastAbsentStudentDoc] = useState<DocumentSnapshot | null>(null);
   
   // Dropdown states
   const [isClassDropdownOpen, setIsClassDropdownOpen] = useState(false);
@@ -203,8 +218,30 @@ function Result({
   // ✅ ADDED: Refs for pagination
   const examObserverRef = useRef<IntersectionObserver | null>(null);
   const examSentinelRef = useRef<HTMLDivElement>(null);
-  const studentObserverRef = useRef<IntersectionObserver | null>(null);
-  const studentSentinelRef = useRef<HTMLDivElement>(null);
+
+  // Helper: count answered questions from attempt responses (more reliable than stored field)
+  // Unified isAnswered check — used everywhere
+  // Likert questions ARE answered (studentAnswer has values like "2", "4", etc.)
+  const isAnswered = (r: any): boolean => {
+    const ans = r.studentAnswer;
+    if (ans === undefined || ans === null || ans === '') return false;
+    if (Array.isArray(ans)) return ans.length > 0;
+    return true;
+  };
+
+  const getAttemptedCount = (attemptData: any): number => {
+    // Primary: compute from responses using isAnswered
+    const responses = attemptData?.responses;
+    if (responses) {
+      const responsesArray = Array.isArray(responses) ? responses : Object.values(responses);
+      if (responsesArray.length > 0) {
+        return responsesArray.filter(isAnswered).length;
+      }
+    }
+    // List view: responses stripped, use pre-computed value from firebase_service
+    if (typeof attemptData?.attemptedQuestions === 'number') return attemptData.attemptedQuestions;
+    return 0;
+  };
 
   // Helper function to get actual question count from exam
   const getQuestionCount = (exam: Exam): number | string => {
@@ -270,6 +307,25 @@ function Result({
     }
   }
 
+  // Helper function to format duration in human-readable format
+  function formatDuration(durationMinutes: string | number): string {
+    const minutes = typeof durationMinutes === 'string' ? parseInt(durationMinutes) : durationMinutes;
+    if (isNaN(minutes)) return durationMinutes.toString();
+    if (minutes >= 1440) {
+      const days = Math.floor(minutes / 1440);
+      const remainingHours = Math.floor((minutes % 1440) / 60);
+      if (remainingHours > 0) return `${days} day${days !== 1 ? 's' : ''} ${remainingHours} hr${remainingHours !== 1 ? 's' : ''}`;
+      return `${days} day${days !== 1 ? 's' : ''}`;
+    }
+    if (minutes >= 60) {
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+      if (remainingMinutes > 0) return `${hours} hr${hours !== 1 ? 's' : ''} ${remainingMinutes} min${remainingMinutes !== 1 ? 's' : ''}`;
+      return `${hours} hr${hours !== 1 ? 's' : ''}`;
+    }
+    return `${minutes} min${minutes !== 1 ? 's' : ''}`;
+  }
+
   // ✅ ADDED: Helper function to format time spent (seconds to minutes and seconds)
   function formatTimeSpent(seconds: number): string {
     if (!seconds || seconds === 0) return '0m 0s';
@@ -310,12 +366,10 @@ function Result({
       setLastExamDoc(result.lastDoc); // ✅ ADDED: Store last document
       setHasMoreExams(result.hasMore); // ✅ ADDED: Store hasMore flag
       
-      // ✅ Extract unique filter values from completed exams
+      // ✅ Extract unique filter values from completed exams (for class/board only)
       const uniqueClasses = [...new Set(completedExams.map(e => e.class).filter(Boolean))];
       const uniqueBoards = [...new Set(completedExams.map(e => e.board).filter(Boolean))];
-      const uniqueExamTypes = [...new Set(completedExams.map(e => e.type).filter(Boolean))];
-      
-      // Only show filters if there are options to filter
+
       if (uniqueClasses.length > 0) {
         setClasses(['all', ...uniqueClasses.sort()]);
         setShowClassFilter(uniqueClasses.length >= 1);
@@ -323,7 +377,7 @@ function Result({
         setClasses([]);
         setShowClassFilter(false);
       }
-      
+
       if (uniqueBoards.length > 1) {
         setBoards(['all', ...uniqueBoards.sort()]);
         setShowBoardFilter(true);
@@ -331,19 +385,10 @@ function Result({
         setBoards([]);
         setShowBoardFilter(false);
       }
+
+      // Exam types are loaded from college config in loadCollegeData
       
-      if (uniqueExamTypes.length > 0) {
-        setExamTypes(['all', ...uniqueExamTypes.sort()]);
-        setShowExamTypeFilter(uniqueExamTypes.length >= 1);
-      } else {
-        setExamTypes([]);
-        setShowExamTypeFilter(false);
-      }
-      
-      // Notify parent of results list
-      if (onResultsListChange) {
-        onResultsListChange(completedExams as unknown as Exam[]);
-      }
+      // Note: sidebar count is synced via filteredExams useEffect
     } catch (error) {
       console.error('❌ [RESULT.TSX] Error loading completed exams:', error);
       setExams([]);
@@ -379,10 +424,9 @@ function Result({
       setLastExamDoc(result.lastDoc);
       setHasMoreExams(result.hasMore);
       
-      // ✅ Update filter options with new exams
+      // ✅ Update class/board filter options with new exams (exam types from college config)
       const uniqueClasses = [...new Set(updatedExams.map(e => e.class).filter(Boolean))];
       const uniqueBoards = [...new Set(updatedExams.map(e => e.board).filter(Boolean))];
-      const uniqueExamTypes = [...new Set(updatedExams.map(e => e.type).filter(Boolean))];
       
       if (uniqueClasses.length > 0) {
         setClasses(['all', ...uniqueClasses.sort()]);
@@ -394,15 +438,7 @@ function Result({
         setShowBoardFilter(true);
       }
       
-      if (uniqueExamTypes.length > 0) {
-        setExamTypes(['all', ...uniqueExamTypes.sort()]);
-        setShowExamTypeFilter(uniqueExamTypes.length >= 1);
-      }
-      
-      // Notify parent
-      if (onResultsListChange) {
-        onResultsListChange(updatedExams as unknown as Exam[]);
-      }
+      // Note: sidebar count is synced via filteredExams useEffect
       
       console.log('✅ [RESULT.TSX] Load more complete:', {
         newExams: completedExams.length,
@@ -443,9 +479,28 @@ function Result({
     };
   }, [hasMoreExams, isLoadingMoreExams, isLoadingExams, loadMoreExams, viewingStudents]);
 
-  // Load students for selected exam - Use exam_enrollments + attendance + attempts (class-independent)
+  // Load students for selected exam - Server-side paginated via Cloud Function
+  const STUDENT_PAGE_SIZE = 20;
+  
+  const fetchStudentsPage = useCallback(async (
+    examId: string,
+    page: number,
+    filter: 'all' | 'present' | 'absent' = 'all',
+    search: string = ''
+  ) => {
+    console.log('📊 [RESULT.TSX] fetchStudentsPage:', { examId, page, filter, search });
+    
+    const result = await firebaseService.getExamStudentsPaginated(examId, {
+      page,
+      pageSize: STUDENT_PAGE_SIZE,
+      filter,
+      searchQuery: search,
+    });
+    
+    return result;
+  }, []);
+
   const loadStudentsForExam = useCallback(async (exam: Exam) => {
-    // Permission check - students cannot view student list
     if (!canViewStudentList) {
       console.log('🚫 [RESULT.TSX] User does not have permission to view student list');
       return;
@@ -453,123 +508,61 @@ function Result({
     
     setIsLoadingStudents(true);
     setActiveStudentTab('all');
+    setSearchQuery('');
+    setCurrentPage(1);
     
-    // Clear and reset pagination state
+    // Clear pagination state
     setPresentStudents([]);
     setAbsentStudents([]);
-    setLastPresentStudentDoc(null);
-    setLastAbsentStudentDoc(null);
-    setHasMorePresentStudents(true);
-    setHasMoreAbsentStudents(true);
+    setHasMoreStudents(true);
+    setTotalPresentCount(0);
+    setTotalAbsentCount(0);
     
     try {
-      console.log('👥 [RESULT.TSX] Loading students for exam:', exam.id, 'Board:', exam.board);
-      console.log('📚 Total students (from Exams table):', exam.totalStudents || 0);
-      
-      // STEP 1: Get enrollment count (lightweight - no full list fetch)
-      const enrollmentCount = await firebaseService.getExamEnrollmentCount(exam.id);
-      console.log(`📋 Enrolled students:`, enrollmentCount);
-      
-      // STEP 2: Get attendance records for this exam
-      const attendanceRecords = await firebaseService.getExamAttendance(exam.id);
-      console.log(`📝 Total attendance records:`, attendanceRecords.length);
-      
-      // Create set of present student IDs from attendance
-      const presentAttendanceIds = new Set(
-        attendanceRecords.filter((record: any) => record.status === 'present').map((record: any) => record.studentId)
-      );
-      console.log(`✅ Present students from attendance:`, presentAttendanceIds.size);
-      
-      // STEP 3: Get exam attempts
-      const attemptsResult = await firebaseService.getExamAttempts(exam.id);
-      
-      // Create a Map of attempts by studentId (keep latest)
-      const attemptsMap = new Map();
-      attemptsResult.forEach((attempt: any) => {
-        const existingAttempt = attemptsMap.get(attempt.studentId);
-        if (!existingAttempt) {
-          attemptsMap.set(attempt.studentId, attempt);
-        } else {
-          const existingStartTime = existingAttempt.startTime instanceof Date 
-            ? existingAttempt.startTime 
-            : new Date(existingAttempt.startTime);
-          const currentStartTime = attempt.startTime instanceof Date 
-            ? attempt.startTime 
-            : new Date(attempt.startTime);
-          
-          if (currentStartTime > existingStartTime) {
-            attemptsMap.set(attempt.studentId, attempt);
-          }
+      // ✅ PERF: Lazy-load full exam data if this is a lite exam (no questionsList)
+      let fullExam = exam;
+      const hasFullData = (exam.questionsList && exam.questionsList.length > 0) ||
+                          (exam.questionPaperImages && exam.questionPaperImages.length > 0) ||
+                          (exam as any)._isLite === false;
+      if (!hasFullData) {
+        const fetched = await firebaseService.getExamFullById(exam.id);
+        if (fetched) {
+          fullExam = {
+            ...exam,
+            questionPaperImages: fetched.questionPaperImages,
+            questionsList: fetched.questionsList,
+            questionPool: fetched.questionPool,
+            pickRandomCount: fetched.pickRandomCount,
+            poolQuestionMarks: fetched.poolQuestionMarks,
+            personalityAssessment: fetched.personalityAssessment,
+            likertQuestions: fetched.likertQuestions,
+            likertDuration: fetched.likertDuration,
+            _isLite: false,
+          } as Exam;
+          // Cache in exams list so re-selecting doesn't re-fetch
+          setExams(prev => prev.map(e => e.id === exam.id ? fullExam : e));
         }
+      }
+
+      const result = await fetchStudentsPage(fullExam.id, 1, 'all', '');
+      
+      console.log('✅ [RESULT.TSX] Initial page loaded:', {
+        present: result.present.length,
+        absent: result.absent.length,
+        totalPresent: result.counts.totalPresent,
+        totalAbsent: result.counts.totalAbsent,
+        hasMore: result.pagination.hasMore,
       });
       
-      console.log(`✅ Exam attempts:`, attemptsResult.length, '(unique students:', attemptsMap.size, ')');
+      setPresentStudents(result.present);
+      setAbsentStudents(result.absent);
+      setHasMoreStudents(result.pagination.hasMore);
+      setTotalPresentCount(result.counts.totalPresent);
+      setTotalAbsentCount(result.counts.totalAbsent);
+      setTotalStudents(result.counts.totalAll);
       
-      // STEP 4: Build present students from attendance (present) + attempts
-      const presentStudentsList: any[] = [];
-      const processedIds = new Set<string>();
-      
-      // Add students marked present in attendance
-      attendanceRecords.filter((r: any) => r.status === 'present').forEach((record: any) => {
-        const attemptData = attemptsMap.get(record.studentId);
-        processedIds.add(record.studentId);
-        presentStudentsList.push({
-          studentId: record.studentId,
-          studentName: record.studentName || 'Unknown',
-          rollNumber: record.studentRollNumber || 'N/A',
-          hasAttempt: !!attemptData,
-          attemptData: attemptData || null
-        });
-      });
-      
-      // Add students with attempts but not in attendance
-      attemptsMap.forEach((attempt: any, studentId: string) => {
-        if (!processedIds.has(studentId)) {
-          processedIds.add(studentId);
-          presentStudentsList.push({
-            studentId: studentId,
-            studentName: attempt.studentName || 'Unknown',
-            rollNumber: attempt.rollNumber || 'N/A',
-            hasAttempt: true,
-            attemptData: attempt
-          });
-        }
-      });
-      
-      // STEP 5: Build absent from attendance records with status='absent'
-      const absentStudentsList: any[] = [];
-      attendanceRecords.filter((r: any) => r.status === 'absent').forEach((record: any) => {
-        if (!processedIds.has(record.studentId)) {
-          absentStudentsList.push({
-            studentId: record.studentId,
-            studentName: record.studentName || 'Unknown',
-            rollNumber: record.studentRollNumber || 'N/A',
-            hasAttempt: false,
-            attemptData: null
-          });
-        }
-      });
-      
-      // STEP 6: Calculate totals - use enrollment count as total
-      const totalStudentsCount = enrollmentCount || exam.totalStudents || (presentStudentsList.length + absentStudentsList.length);
-      
-      console.log('✅ [RESULT.TSX] Loaded students:', {
-        enrolled: enrollmentCount,
-        present: presentStudentsList.length,
-        absent: absentStudentsList.length,
-        total: totalStudentsCount
-      });
-      
-      setPresentStudents(presentStudentsList);
-      setAbsentStudents(absentStudentsList);
-      setTotalStudents(totalStudentsCount);
-      
-      // For pagination: absent has more if enrollment count > present + initial absent shown
-      setHasMorePresentStudents(presentStudentsList.length > 25);
-      setHasMoreAbsentStudents(totalStudentsCount > presentStudentsList.length + absentStudentsList.length);
-      
-      
-      setSelectedExamForStudents(exam);
+      const examWithCorrectCount = { ...fullExam, totalStudents: result.counts.totalAll };
+      setSelectedExamForStudents(examWithCorrectCount);
       setViewingStudents(true);
     } catch (error) {
       console.error('❌ [RESULT.TSX] Error loading students:', error);
@@ -579,134 +572,119 @@ function Result({
     } finally {
       setIsLoadingStudents(false);
     }
-  }, [activeCollegeId, canViewStudentList, onStudentsDataChange]);
+  }, [canViewStudentList, fetchStudentsPage]);
 
-  // Simple filter function for search
+  // Simple filter function - data is already filtered server-side
   const getFilteredStudents = () => {
-    if (!searchQuery.trim()) {
-      return { present: presentStudents, absent: absentStudents };
-    }
-
-    const lowerQuery = searchQuery.toLowerCase().trim();
-    const filteredPresent = presentStudents.filter(s => 
-      s.studentName?.toLowerCase().includes(lowerQuery) ||
-      String(s.rollNumber || '').toLowerCase().includes(lowerQuery)
-    );
-    const filteredAbsent = absentStudents.filter(s => 
-      s.studentName?.toLowerCase().includes(lowerQuery) ||
-      String(s.rollNumber || '').toLowerCase().includes(lowerQuery)
-    );
-
-    return { present: filteredPresent, absent: filteredAbsent };
+    return { present: presentStudents, absent: absentStudents };
   };
 
-  // ✅ ADDED: Load more present students
-  const loadMorePresentStudents = useCallback(async () => {
-    if (!hasMorePresentStudents || isLoadingMoreStudents || !selectedExamForStudents) return;
-    
-    console.log('👥 [RESULT.TSX] Loading more present students...');
-    setIsLoadingMoreStudents(true);
-    
-    try {
-      const result = await firebaseService.getExamPresentStudentsPaginated(
-        selectedExamForStudents.id,
-        selectedExamForStudents.class,
-        selectedExamForStudents.board,
-        25,
-        lastPresentStudentDoc
-      );
-      
-      console.log('📊 [RESULT.TSX] More present students fetched:', result.students.length);
-      
-      setPresentStudents(prev => [...prev, ...result.students]);
-      setLastPresentStudentDoc(result.lastDoc);
-      setHasMorePresentStudents(result.hasMore);
-      
-      
-      console.log('✅ [RESULT.TSX] Load more present students complete:', {
-        newStudents: result.students.length,
-        totalPresent: presentStudents.length + result.students.length,
-        hasMore: result.hasMore
-      });
-    } catch (error) {
-      console.error('Error loading more present students:', error);
-    } finally {
-      setIsLoadingMoreStudents(false);
-    }
-  }, [hasMorePresentStudents, isLoadingMoreStudents, selectedExamForStudents, lastPresentStudentDoc, presentStudents.length]);
-
-  // ✅ ADDED: Load more absent students
-  const loadMoreAbsentStudents = useCallback(async () => {
-    if (!hasMoreAbsentStudents || isLoadingMoreStudents || !selectedExamForStudents) return;
-    
-    console.log('👥 [RESULT.TSX] Loading more absent students...');
-    setIsLoadingMoreStudents(true);
-    
-    try {
-      const result = await firebaseService.getExamAbsentStudentsPaginated(
-        selectedExamForStudents.id,
-        selectedExamForStudents.class,
-        selectedExamForStudents.board,
-        25,
-        lastAbsentStudentDoc
-      );
-      
-      console.log('📊 [RESULT.TSX] More absent students fetched:', result.students.length);
-      
-      setAbsentStudents(prev => [...prev, ...result.students]);
-      setLastAbsentStudentDoc(result.lastDoc);
-      setHasMoreAbsentStudents(result.hasMore);
-      
-      
-      console.log('✅ [RESULT.TSX] Load more absent students complete:', {
-        newStudents: result.students.length,
-        totalAbsent: absentStudents.length + result.students.length,
-        hasMore: result.hasMore
-      });
-    } catch (error) {
-      console.error('Error loading more absent students:', error);
-    } finally {
-      setIsLoadingMoreStudents(false);
-    }
-  }, [hasMoreAbsentStudents, isLoadingMoreStudents, selectedExamForStudents, lastAbsentStudentDoc, absentStudents.length]);
-
-  // ✅ ADDED: Setup intersection observer for students infinite scroll
+  // ✅ Debounced search — calls Cloud Function with search query
   useEffect(() => {
-    if (!studentSentinelRef.current || !viewingStudents) return;
-
-    const options = {
-      root: null,
-      rootMargin: '100px',
-      threshold: 0.1
-    };
-
-    studentObserverRef.current = new IntersectionObserver((entries) => {
-      const firstEntry = entries[0];
-      if (firstEntry.isIntersecting && !isLoadingMoreStudents) {
-        console.log('🔄 [RESULT.TSX] Student sentinel intersecting...');
+    if (!selectedExamForStudents) return;
+    
+    // Clear timer on every keystroke
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    
+    searchTimerRef.current = setTimeout(async () => {
+      setIsLoadingStudents(true);
+      setCurrentPage(1);
+      setPresentStudents([]);
+      setAbsentStudents([]);
+      
+      try {
+        const result = await fetchStudentsPage(
+          selectedExamForStudents.id,
+          1,
+          activeStudentTab,
+          searchQuery
+        );
         
-        // Load more based on active tab
-        if (activeStudentTab === 'present' || activeStudentTab === 'all') {
-          if (hasMorePresentStudents) {
-            loadMorePresentStudents();
-          }
-        }
-        if (activeStudentTab === 'absent' || activeStudentTab === 'all') {
-          if (hasMoreAbsentStudents) {
-            loadMoreAbsentStudents();
-          }
-        }
+        setPresentStudents(result.present);
+        setAbsentStudents(result.absent);
+        setHasMoreStudents(result.pagination.hasMore);
+        setTotalPresentCount(result.counts.totalPresent);
+        setTotalAbsentCount(result.counts.totalAbsent);
+        setTotalStudents(result.counts.totalAll);
+      } catch (error) {
+        console.error('❌ [RESULT.TSX] Search error:', error);
+      } finally {
+        setIsLoadingStudents(false);
       }
-    }, options);
-
-    studentObserverRef.current.observe(studentSentinelRef.current);
-
+    }, searchQuery.trim() ? 600 : 0); // Immediate for empty search (clear), debounced for typed search
+    
     return () => {
-      if (studentObserverRef.current) {
-        studentObserverRef.current.disconnect();
-      }
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
-  }, [viewingStudents, hasMorePresentStudents, hasMoreAbsentStudents, isLoadingMoreStudents, loadMorePresentStudents, loadMoreAbsentStudents, activeStudentTab]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
+  // ✅ Re-fetch when tab changes
+  useEffect(() => {
+    if (!selectedExamForStudents || isLoadingStudents) return;
+    
+    setCurrentPage(1);
+    setPresentStudents([]);
+    setAbsentStudents([]);
+    setIsLoadingStudents(true);
+    
+    fetchStudentsPage(selectedExamForStudents.id, 1, activeStudentTab, searchQuery)
+      .then(result => {
+        setPresentStudents(result.present);
+        setAbsentStudents(result.absent);
+        setHasMoreStudents(result.pagination.hasMore);
+        setTotalPresentCount(result.counts.totalPresent);
+        setTotalAbsentCount(result.counts.totalAbsent);
+      })
+      .catch(error => console.error('❌ Tab switch error:', error))
+      .finally(() => setIsLoadingStudents(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStudentTab]);
+
+  // Load more handler for sticky pagination bar
+  const handleLoadMoreStudents = useCallback(async () => {
+    if (isLoadingMoreStudents || !hasMoreStudents || !selectedExamForStudents) return;
+    
+    setIsLoadingMoreStudents(true);
+    const nextPage = currentPage + 1;
+    
+    try {
+      const result = await fetchStudentsPage(
+        selectedExamForStudents.id,
+        nextPage,
+        activeStudentTab,
+        searchQuery
+      );
+      
+      setPresentStudents(prev => [...prev, ...result.present]);
+      setAbsentStudents(prev => [...prev, ...result.absent]);
+      setHasMoreStudents(result.pagination.hasMore);
+      setCurrentPage(nextPage);
+      
+      console.log('✅ [RESULT.TSX] Load more complete:', {
+        page: nextPage,
+        newPresent: result.present.length,
+        newAbsent: result.absent.length,
+        hasMore: result.pagination.hasMore,
+      });
+    } catch (error) {
+      console.error('❌ Error loading more students:', error);
+    } finally {
+      setIsLoadingMoreStudents(false);
+    }
+  }, [isLoadingMoreStudents, hasMoreStudents, selectedExamForStudents, currentPage, activeStudentTab, searchQuery, fetchStudentsPage]);
+
+
+  // ✅ Fetch enrolled exam IDs for students
+  useEffect(() => {
+    if (currentUserType === USER_TYPES.STUDENT && currentUserId && activeCollegeId) {
+      firebaseService.getEnrolledExamIdsForStudent(currentUserId, activeCollegeId)
+        .then(ids => setEnrolledExamIds(ids))
+        .catch(() => setEnrolledExamIds(new Set()));
+    } else {
+      setEnrolledExamIds(null);
+    }
+  }, [currentUserType, currentUserId, activeCollegeId]);
 
   // ✅ MODIFIED: Use loadInitialExams instead of loadExams
   useEffect(() => {
@@ -760,8 +738,15 @@ function Result({
         
         if (college) {
           console.log('📊 [RESULT.TSX] College data loaded:', college.collegeName);
-          // Filters are now dynamically populated from exam data
-          // No need to load from college config
+          
+          // Load exam types from college config (matching Exams.tsx)
+          if (college.examTypes && college.examTypes.length > 0) {
+            setExamTypes(['all', ...college.examTypes]);
+            setShowExamTypeFilter(true);
+          } else {
+            setExamTypes([]);
+            setShowExamTypeFilter(false);
+          }
         }
       } catch (error) {
         console.error('Error loading college data:', error);
@@ -798,10 +783,12 @@ function Result({
       onStudentsDataChange({
         presentStudents,
         absentStudents,
-        totalStudents
+        totalStudents,
+        totalPresentCount,
+        totalAbsentCount
       });
     }
-  }, [selectedExamForStudents, presentStudents, absentStudents, totalStudents, onStudentsDataChange]);
+  }, [selectedExamForStudents, presentStudents, absentStudents, totalStudents, totalPresentCount, totalAbsentCount, onStudentsDataChange]);
 
   const goBackToExamsList = () => {
     setViewingStudents(false);
@@ -815,14 +802,42 @@ function Result({
   // Filter exams by class, board, and exam type
   const filteredExams = useMemo(() => {
     return exams.filter(exam => {
+      // For students, only show exams they are enrolled in
+      if (currentUserType === USER_TYPES.STUDENT) {
+        if (enrolledExamIds === null) return false;
+        if (!enrolledExamIds.has(exam.id)) return false;
+        
+        // Apply only exam type filter for students (no class/board)
+        const isPAFilter = selectedExamType === 'PA Included' || selectedExamType === 'Personality Assessment';
+        const examTypeMatch = selectedExamType === 'all' 
+          || (isPAFilter
+              ? !!(exam.personalityAssessment || (exam as any).personalityAssessment)
+              : exam.type === selectedExamType);
+        return examTypeMatch;
+      }
+      
       const classMatch = selectedClass === 'all' || exam.class === selectedClass;
       const boardMatch = selectedBoard === 'all' || exam.board === selectedBoard;
-      const examTypeMatch = selectedExamType === 'all' || exam.type === selectedExamType;
+      const isPAFilter = selectedExamType === 'PA Included' || selectedExamType === 'Personality Assessment';
+      const examTypeMatch = selectedExamType === 'all' 
+        || (isPAFilter
+            ? !!(exam.personalityAssessment || (exam as any).personalityAssessment)
+            : exam.type === selectedExamType);
       return classMatch && boardMatch && examTypeMatch;
     });
-  }, [exams, selectedClass, selectedBoard, selectedExamType]);
+  }, [exams, selectedClass, selectedBoard, selectedExamType, currentUserType, enrolledExamIds]);
+
+  // Sync filtered results count to sidebar
+  useEffect(() => {
+    if (onResultsListChange) {
+      onResultsListChange(filteredExams);
+    }
+  }, [filteredExams.length]);
 
   // Helper functions
+
+  // Check if exam is personality-only (no regular questions)
+  const isPersonalityOnly = !!(selectedExamForStudents?.personalityAssessment && (!selectedExamForStudents?.questionsList || selectedExamForStudents.questionsList.length === 0) && (!(selectedExamForStudents as any)?.questionPool?.length || !(selectedExamForStudents as any)?.pickRandomCount));
 
   const getScoreColor = (percentage: number) => {
     if (percentage >= 90) return brandTheme.colors.primary || '#22c55e';
@@ -875,23 +890,23 @@ function Result({
                 </div>
 
                 {/* Row 2: Exam Details */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-700 mb-2">{selectedExamForStudents.title}</h3>
-                    <div className="flex items-center gap-4 text-sm text-gray-600">
-                      <span className="flex items-center">
-                        <FontAwesomeIcon icon={faUsers} style={{ fontSize: '12px' }} className="mr-1" />
-                        {selectedExamForStudents.totalStudents || 0} Students
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-2">{selectedExamForStudents.title}</h3>
+                  <p className="text-xs text-gray-600 flex items-center gap-3">
+                    <span className="flex items-center">
+                      <FontAwesomeIcon icon={faUsers} style={{ fontSize: '12px' }} className="mr-1" />
+                      {totalStudents > 0 ? totalStudents : (selectedExamForStudents.totalStudents || 0)} Students
+                    </span>
+                    {(selectedExamForStudents as any).personalityAssessment && ((selectedExamForStudents as any).likertQuestions?.length > 0 || (selectedExamForStudents as any).likertDuration > 0) && (
+                      <span className="flex items-center gap-1 text-xs font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                        PA Included
                       </span>
-                      <span className="flex items-center">
-                        <FontAwesomeIcon icon={faClipboardList} style={{ fontSize: '12px' }} className="mr-1" />
-                        {selectedExamForStudents.type}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1.5 rounded-md">
-                    ID: {selectedExamForStudents.id}
-                  </span>
+                    )}
+                    <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                      <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                      ID: {selectedExamForStudents.id}
+                    </span>
+                  </p>
                 </div>
 
                 {/* Row 3: Search Bar */}
@@ -939,8 +954,8 @@ function Result({
                     <FontAwesomeIcon icon={faTrophy} style={{ fontSize: '28px' }} className="text-gray-900" />
                     <h2 className="text-2xl font-bold text-gray-900">Exam Results</h2>
                     
-                    {/* Class Dropdown - Only show if there are classes in exams */}
-                    {showClassFilter && (
+                    {/* Class Dropdown - Only show if there are classes in exams and not a student */}
+                    {showClassFilter && currentUserType !== USER_TYPES.STUDENT && (
                     <div ref={classDropdownRef} className="relative class-dropdown-container z-[200]">
                       <button 
                         onClick={() => setIsClassDropdownOpen(!isClassDropdownOpen)}
@@ -978,8 +993,8 @@ function Result({
                     </div>
                     )}
                     
-                    {/* Board Dropdown */}
-                    {showBoardFilter && (
+                    {/* Board Dropdown - hide for students */}
+                    {showBoardFilter && currentUserType !== USER_TYPES.STUDENT && (
                       <div ref={boardDropdownRef} className="relative board-dropdown-container z-[200]">
                         <button 
                           onClick={() => setIsBoardDropdownOpen(!isBoardDropdownOpen)}
@@ -1017,46 +1032,7 @@ function Result({
                       </div>
                     )}
                     
-                    {/* Exam Type Dropdown - Only show if there are exam types in exams */}
-                    {showExamTypeFilter && (
-                    <div ref={examTypeDropdownRef} className="relative exam-type-dropdown-container z-[200]">
-                      <button 
-                        onClick={() => setIsExamTypeDropdownOpen(!isExamTypeDropdownOpen)}
-                        className="flex items-center space-x-2 px-4 py-2 rounded-xl font-medium transition-colors text-xs bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                        </svg>
-                        <span>{selectedExamType === 'all' ? 'Exam Type' : selectedExamType}</span>
-                        <FontAwesomeIcon icon={faChevronDown} style={{ fontSize: '16px' }} className={`transition-transform ${isExamTypeDropdownOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                      
-                      {isExamTypeDropdownOpen && (
-                        <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[300]">
-                          {examTypes.map((type) => (
-                            <button
-                              key={type}
-                              onClick={() => {
-                                setSelectedExamType(type);
-                                setIsExamTypeDropdownOpen(false);
-                              }}
-                              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                                selectedExamType === type 
-                                  ? 'font-medium' 
-                                  : 'text-gray-700 hover:bg-gray-50'
-                              }`}
-                              style={selectedExamType === type ? {
-                                backgroundColor: `${brandTheme.colors.primary}15`,
-                                color: brandTheme.colors.primary
-                              } : {}}
-                            >
-                              {type === 'all' ? 'All Types' : type}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    )}
+                    {/* Exam Type filter moved to content area to match Exams.tsx */}
                   </div>
                   
                   <button 
@@ -1125,9 +1101,9 @@ function Result({
                   </div>
                 </div>
               ) : (
-              <div className="w-full h-full">
+              <div className="w-full min-h-full">
                 {/* Students List */}
-                <div className="overflow-y-auto px-6 py-2 bg-white [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">{/* Tabs */}
+                <div className="px-6 py-2 bg-white">{/* Tabs */}
                 <div className="border-b border-gray-200 mb-6">
                   <div className="flex space-x-8">
                     <button
@@ -1148,7 +1124,7 @@ function Result({
                           : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                       }`}
                     >
-                      Present ({presentStudents.length})
+                      Present ({totalPresentCount || presentStudents.length})
                     </button>
                     <button
                       onClick={() => setActiveStudentTab('absent')}
@@ -1158,7 +1134,7 @@ function Result({
                           : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                       }`}
                     >
-                      Absent ({absentStudents.length})
+                      Absent ({totalAbsentCount || absentStudents.length})
                     </button>
                   </div>
                 </div>
@@ -1191,7 +1167,7 @@ function Result({
                           <div>
                             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                               <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                              Present Students ({filtered.present.length})
+                              Present Students (Loaded {filtered.present.length})
                             </h3>
                             <div className="grid grid-cols-1 gap-4">
                             {filtered.present.map((student, index) => {
@@ -1233,10 +1209,16 @@ function Result({
                                           <FontAwesomeIcon icon={faUser} style={{ fontSize: '14px' }} className="mr-1.5" />
                                           <span>Roll: {student.rollNumber || 'N/A'}</span>
                                         </span>
+                                        {isPersonalityOnly && student.hasAttempt && student.attemptData?.personalityType?.title && (
+                                          <span className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
+                                            <FontAwesomeIcon icon={faStar} style={{ fontSize: '12px' }} />
+                                            {student.attemptData.personalityType.title}
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                     <div className="text-right">
-                                      {student.hasAttempt && student.attemptData ? (
+                                      {isPersonalityOnly ? null : student.hasAttempt && student.attemptData ? (
                                         <div 
                                           className="text-2xl font-bold px-4 py-2 rounded-lg inline-block"
                                           style={{ 
@@ -1270,10 +1252,11 @@ function Result({
                                         <div>
                                           <p className="text-xs text-gray-500">Attempted</p>
                                           <p className="text-base font-bold text-gray-900">
-                                            {student.attemptData.attemptedQuestions || 0} / {selectedExamForStudents ? getQuestionCount(selectedExamForStudents) : (student.attemptData.totalQuestions || 0)}
+                                            {getAttemptedCount(student.attemptData)} / {selectedExamForStudents ? getQuestionCount(selectedExamForStudents) : (student.attemptData.totalQuestions || 0)}
                                           </p>
                                         </div>
                                       </div>
+                                      {!isPersonalityOnly ? (
                                       <div className="flex items-start space-x-3">
                                         <FontAwesomeIcon icon={faAward} style={{ fontSize: '20px' }} className="text-gray-500 mt-1" />
                                         <div>
@@ -1283,6 +1266,18 @@ function Result({
                                           </p>
                                         </div>
                                       </div>
+                                      ) : student.attemptData.responseStyle ? (
+                                      <div className="flex items-start space-x-3">
+                                        <FontAwesomeIcon icon={faFingerprint} className="mt-1" 
+                                          style={{fontSize: '20px', color: student.attemptData.responseStyle === 'Genuine' ? '#10b981' : student.attemptData.responseStyle === 'Central Tendency' ? '#f59e0b' : '#ef4444'}} />
+                                        <div>
+                                          <p className="text-xs text-gray-500">Response Style</p>
+                                          <p className="text-sm font-bold" style={{ color: student.attemptData.responseStyle === 'Genuine' ? '#10b981' : student.attemptData.responseStyle === 'Central Tendency' ? '#f59e0b' : '#ef4444' }}>
+                                            {student.attemptData.responseStyle}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      ) : null}
                                       <div className="flex items-start space-x-3">
                                         <FontAwesomeIcon icon={faClock} style={{ fontSize: '20px' }} className="text-gray-500 mt-1" />
                                         <div>
@@ -1302,6 +1297,7 @@ function Result({
                                             <p className="text-base font-bold text-gray-400">0 / {selectedExamForStudents ? getQuestionCount(selectedExamForStudents) : 0}</p>
                                           </div>
                                         </div>
+                                        {!isPersonalityOnly && (
                                         <div className="flex items-start space-x-3">
                                           <FontAwesomeIcon icon={faAward} style={{ fontSize: '20px' }} className="text-gray-400 mt-1" />
                                           <div>
@@ -1309,6 +1305,7 @@ function Result({
                                             <p className="text-base font-bold text-gray-400">0 / {selectedExamForStudents ? getTotalMarks(selectedExamForStudents) : 0}</p>
                                           </div>
                                         </div>
+                                        )}
                                         <div className="flex items-start space-x-3">
                                           <FontAwesomeIcon icon={faClock} style={{ fontSize: '20px' }} className="text-gray-400 mt-1" />
                                           <div>
@@ -1356,7 +1353,7 @@ function Result({
                           <div>
                             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
                               <span className="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></span>
-                              Absent Students ({filtered.absent.length})
+                              Absent Students (Loaded {filtered.absent.length})
                             </h3>
                             <div className="grid grid-cols-1 gap-4">
                               {filtered.absent.map((student, index) => (
@@ -1386,25 +1383,22 @@ function Result({
                           </div>
                         )}
 
-                        {/* ✅ ADDED: Sentinel for students infinite scroll */}
-                        {(hasMorePresentStudents || hasMoreAbsentStudents) && (
-                          <div ref={studentSentinelRef} className="flex items-center justify-center py-8">
-                            {isLoadingMoreStudents && (
-                              <div className="flex items-center space-x-2">
-                                <div className="w-6 h-6 border-4 rounded-full animate-spin"
-                                  style={{ 
-                                    borderColor: brandTheme.colors.primary + '20',
-                                    borderTopColor: brandTheme.colors.primary
-                                  }}
-                                />
-                                <span className="text-sm text-gray-500">Loading more students...</span>
-                              </div>
-                            )}
+                        {/* ✅ No results found for search */}
+                        {searchQuery.trim() && !isLoadingStudents && filtered.present.length === 0 && filtered.absent.length === 0 && (
+                          <div className="flex flex-col items-center justify-center py-12">
+                            <FontAwesomeIcon icon={faUsers} style={{ fontSize: '48px' }} className="text-gray-300 mb-4" />
+                            <p className="text-gray-600 font-semibold mb-1">No students found</p>
+                            <p className="text-sm text-gray-400">No results for "{searchQuery}" in this exam</p>
                           </div>
                         )}
 
-                        {/* ✅ ADDED: No more students indicator */}
-                        {!hasMorePresentStudents && !hasMoreAbsentStudents && (presentStudents.length > 0 || absentStudents.length > 0) && (
+                        {/* Spacer for sticky pagination bar */}
+                        {(hasMoreStudents) && (
+                          <div className="h-20"></div>
+                        )}
+
+                        {/* All loaded indicator */}
+                        {!hasMoreStudents && (presentStudents.length > 0 || absentStudents.length > 0) && (
                           <div className="flex flex-col items-center justify-center py-8">
                             <div className="relative mb-3">
                               <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
@@ -1415,7 +1409,7 @@ function Result({
                               </div>
                             </div>
                             <p className="text-sm font-semibold text-gray-700">That's everyone!</p>
-                            <p className="text-xs text-gray-400 mt-1">No more students to load</p>
+                            <p className="text-xs text-gray-400 mt-1">Showing all {presentStudents.length + absentStudents.length} students</p>
                           </div>
                         )}
                       </>
@@ -1455,9 +1449,15 @@ function Result({
                                       <FontAwesomeIcon icon={faUser} style={{ fontSize: '14px' }} className="mr-1.5" />
                                       <span>Roll: {student.rollNumber || 'N/A'}</span>
                                     </span>
+                                    {isPersonalityOnly && student.hasAttempt && student.attemptData?.personalityType?.title && (
+                                      <span className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600">
+                                        <FontAwesomeIcon icon={faStar} style={{ fontSize: '12px' }} />
+                                        {student.attemptData.personalityType.title}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
-                                {student.hasAttempt && student.attemptData && (
+                                {student.hasAttempt && student.attemptData && !isPersonalityOnly && (
                                   <div className="text-right">
                                     <div 
                                       className="text-2xl font-bold px-4 py-2 rounded-lg inline-block"
@@ -1484,10 +1484,11 @@ function Result({
                                     <div>
                                       <p className="text-xs text-gray-500">Attempted</p>
                                       <p className="text-base font-bold text-gray-900">
-                                        {student.attemptData.attemptedQuestions || 0} / {selectedExamForStudents ? getQuestionCount(selectedExamForStudents) : (student.attemptData.totalQuestions || 0)}
+                                        {getAttemptedCount(student.attemptData)} / {selectedExamForStudents ? getQuestionCount(selectedExamForStudents) : (student.attemptData.totalQuestions || 0)}
                                       </p>
                                     </div>
                                   </div>
+                                  {!isPersonalityOnly ? (
                                   <div className="flex items-start space-x-3">
                                     <FontAwesomeIcon icon={faAward} style={{ fontSize: '20px' }} className="text-gray-500 mt-1" />
                                     <div>
@@ -1497,6 +1498,18 @@ function Result({
                                       </p>
                                     </div>
                                   </div>
+                                  ) : student.attemptData.responseStyle ? (
+                                  <div className="flex items-start space-x-3">
+                                    <FontAwesomeIcon icon={faFingerprint} className="mt-1" 
+                                      style={{fontSize: '20px', color: student.attemptData.responseStyle === 'Genuine' ? '#10b981' : student.attemptData.responseStyle === 'Central Tendency' ? '#f59e0b' : '#ef4444'}} />
+                                    <div>
+                                      <p className="text-xs text-gray-500">Response Style</p>
+                                      <p className="text-sm font-bold" style={{ color: student.attemptData.responseStyle === 'Genuine' ? '#10b981' : student.attemptData.responseStyle === 'Central Tendency' ? '#f59e0b' : '#ef4444' }}>
+                                        {student.attemptData.responseStyle}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  ) : null}
                                   <div className="flex items-start space-x-3">
                                     <FontAwesomeIcon icon={faClock} style={{ fontSize: '20px' }} className="text-gray-500 mt-1" />
                                     <div>
@@ -1537,25 +1550,18 @@ function Result({
                           ))}
                         </div>
 
-                        {/* ✅ ADDED: Sentinel for present students infinite scroll */}
-                        {hasMorePresentStudents && (
-                          <div ref={studentSentinelRef} className="flex items-center justify-center py-8">
-                            {isLoadingMoreStudents && (
-                              <div className="flex items-center space-x-2">
-                                <div className="w-6 h-6 border-4 rounded-full animate-spin"
-                                  style={{ 
-                                    borderColor: brandTheme.colors.primary + '20',
-                                    borderTopColor: brandTheme.colors.primary
-                                  }}
-                                />
-                                <span className="text-sm text-gray-500">Loading more students...</span>
-                              </div>
-                            )}
+                        {/* ✅ No results for search in present tab */}
+                        {searchQuery.trim() && !isLoadingStudents && filtered.present.length === 0 && (
+                          <div className="flex flex-col items-center justify-center py-12">
+                            <p className="text-gray-600 font-semibold mb-1">No present students found</p>
+                            <p className="text-sm text-gray-400">No results for "{searchQuery}"</p>
                           </div>
                         )}
 
-                        {/* ✅ ADDED: No more students indicator */}
-                        {!hasMorePresentStudents && presentStudents.length > 0 && (
+                        {/* Spacer for sticky pagination bar */}
+                        {hasMoreStudents && <div className="h-20"></div>}
+
+                        {!hasMoreStudents && presentStudents.length > 0 && (
                           <div className="flex flex-col items-center justify-center py-8">
                             <div className="relative mb-3">
                               <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
@@ -1566,7 +1572,7 @@ function Result({
                               </div>
                             </div>
                             <p className="text-sm font-semibold text-gray-700">That's everyone!</p>
-                            <p className="text-xs text-gray-400 mt-1">No more students to load</p>
+                            <p className="text-xs text-gray-400 mt-1">Showing all {presentStudents.length} present students</p>
                           </div>
                         )}
                       </>
@@ -1605,40 +1611,34 @@ function Result({
                               ))
                             ) : (
                               <div className="flex flex-col items-center justify-center py-20">
-                                <div className="relative mb-4">
-                                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-green-50 to-green-100 border border-green-200 flex items-center justify-center">
-                                    <div className="text-center">
-                                      <div className="text-3xl mb-1">✅</div>
+                                {searchQuery.trim() ? (
+                                  <>
+                                    <p className="text-gray-600 font-semibold mb-1">No absent students found</p>
+                                    <p className="text-sm text-gray-400">No results for "{searchQuery}"</p>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="relative mb-4">
+                                      <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-green-50 to-green-100 border border-green-200 flex items-center justify-center">
+                                        <div className="text-center">
+                                          <div className="text-3xl mb-1">✅</div>
+                                        </div>
+                                      </div>
                                     </div>
-                                  </div>
-                                </div>
-                                <p className="text-lg font-semibold text-gray-900 mb-2">Perfect Attendance!</p>
-                                <p className="text-sm text-gray-500 text-center max-w-md">
-                                  All students marked present for this exam
-                                </p>
+                                    <p className="text-lg font-semibold text-gray-900 mb-2">Perfect Attendance!</p>
+                                    <p className="text-sm text-gray-500 text-center max-w-md">
+                                      All students marked present for this exam
+                                    </p>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>
 
-                          {/* Sentinel for absent students infinite scroll */}
-                          {hasMoreAbsentStudents && (
-                            <div ref={studentSentinelRef} className="flex items-center justify-center py-8">
-                              {isLoadingMoreStudents && (
-                                <div className="flex items-center space-x-2">
-                                  <div className="w-6 h-6 border-4 rounded-full animate-spin"
-                                    style={{ 
-                                      borderColor: brandTheme.colors.primary + '20',
-                                      borderTopColor: brandTheme.colors.primary
-                                    }}
-                                  />
-                                  <span className="text-sm text-gray-500">Loading more students...</span>
-                                </div>
-                              )}
-                            </div>
-                          )}
+                          {/* Spacer for sticky pagination bar */}
+                          {hasMoreStudents && <div className="h-20"></div>}
 
-                          {/* No more students indicator */}
-                          {!hasMoreAbsentStudents && absentStudents.length > 0 && (
+                          {!hasMoreStudents && absentStudents.length > 0 && (
                             <div className="flex flex-col items-center justify-center py-8">
                               <div className="relative mb-3">
                                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
@@ -1649,7 +1649,7 @@ function Result({
                                 </div>
                               </div>
                               <p className="text-sm font-semibold text-gray-700">That's everyone!</p>
-                              <p className="text-xs text-gray-400 mt-1">No more students to load</p>
+                              <p className="text-xs text-gray-400 mt-1">Showing all {absentStudents.length} absent students</p>
                             </div>
                           )}
                         </>
@@ -1657,13 +1657,118 @@ function Result({
                     })()}
                   </div>
                 )}
+
+                {/* Sticky Pagination Bar - shown when more than 20 students and more to load */}
+                {(() => {
+                  const hasMore = hasMoreStudents;
+                  const loaded = presentStudents.length + absentStudents.length;
+                  const total = activeStudentTab === 'present' ? totalPresentCount 
+                    : activeStudentTab === 'absent' ? totalAbsentCount 
+                    : totalStudents;
+                  const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+
+                  if (!hasMore || loaded === 0) return null;
+
+                  return (
+                    <div className="sticky bottom-0 z-30 bg-white border-t border-gray-200 px-6 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)] -mx-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <div className="flex items-center space-x-2">
+                            <FontAwesomeIcon icon={faUsers} style={{ fontSize: '16px' }} className="text-gray-400" />
+                            <div>
+                              <p className="text-xs text-gray-500">Loaded</p>
+                              <p className="text-sm font-bold text-gray-900">{loaded} / {total}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{ width: `${pct}%`, backgroundColor: brandTheme.colors.primary }}
+                              ></div>
+                            </div>
+                            <span className="text-xs font-medium text-gray-500">{pct}%</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleLoadMoreStudents}
+                          disabled={isLoadingMoreStudents}
+                          className="flex items-center space-x-2 px-5 py-2.5 rounded-full text-white text-sm font-bold shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-105 disabled:opacity-60 disabled:hover:scale-100"
+                          style={{ 
+                            background: isLoadingMoreStudents 
+                              ? '#9ca3af' 
+                              : `linear-gradient(135deg, ${brandTheme.colors.primary}, ${brandTheme.colors.primary}dd)`
+                          }}
+                        >
+                          {isLoadingMoreStudents ? (
+                            <>
+                              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                              <span>Loading...</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Load More</span>
+                              <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">+{STUDENT_PAGE_SIZE}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
               </div>
               )
             ) : (
               // ========== EXAMS VIEW ==========
               <>
-              <p className="text-sm text-gray-600 mb-6 font-medium">{filteredExams.length} result{filteredExams.length !== 1 ? 's' : ''}</p>
+              {/* Filter Bar - matching Exams.tsx layout */}
+              <div className="sticky top-0 z-50 bg-white pt-4 pb-4 -mx-6 px-6">
+                <div className="flex items-center space-x-3">
+                  <span className="text-sm text-gray-600 font-medium">{filteredExams.length} result{filteredExams.length !== 1 ? 's' : ''}</span>
+                  
+                  {/* Exam Type Filter Dropdown - matching Exams.tsx */}
+                  {showExamTypeFilter && (
+                    <div ref={examTypeDropdownRef} className="relative ml-auto">
+                      <button 
+                        onClick={() => setIsExamTypeDropdownOpen(!isExamTypeDropdownOpen)}
+                        className="flex items-center space-x-2 px-4 py-2 rounded-xl font-medium transition-colors text-xs bg-gray-100 text-gray-700 hover:bg-gray-200 max-w-[180px]"
+                      >
+                        <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        <span className="truncate flex-1 min-w-0">{selectedExamType === 'all' ? 'Exam Type' : selectedExamType}</span>
+                        <FontAwesomeIcon icon={faChevronDown} style={{ fontSize: '16px' }} className={`transition-transform flex-shrink-0 ${isExamTypeDropdownOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      
+                      {isExamTypeDropdownOpen && (
+                        <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[1000]">
+                          {examTypes.map((type) => (
+                            <button
+                              key={type}
+                              onClick={() => {
+                                setSelectedExamType(type);
+                                setIsExamTypeDropdownOpen(false);
+                              }}
+                              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                                selectedExamType === type 
+                                  ? 'font-medium' 
+                                  : 'text-gray-700 hover:bg-gray-50'
+                              }`}
+                              style={selectedExamType === type ? {
+                                backgroundColor: `${brandTheme.colors.primary}15`,
+                                color: brandTheme.colors.primary
+                              } : {}}
+                            >
+                              {type === 'all' ? 'All Types' : type}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
 
                 {/* Loading State */}
                 {isLoadingExams ? (
@@ -1708,15 +1813,12 @@ function Result({
                                   if (currentUserId) {
                                     console.log('📝 [RESULT.TSX] Current User ID:', currentUserId);
                                     
-                                    // Get the student's attempt data
-                                    const attempts = await firebaseService.getExamAttempts(exam.id);
-                                    console.log('📊 [RESULT.TSX] All attempts for exam:', attempts.length);
-                                    
-                                    const studentAttempt = attempts.find((attempt: any) => attempt.studentId === currentUserId);
+                                    // Get the student's attempt for this specific exam (direct query by examId + studentId)
+                                    const studentAttempt = await firebaseService.getAnyAttempt(exam.id, currentUserId);
                                     console.log('✅ [RESULT.TSX] Student attempt found:', !!studentAttempt);
                                     
-                                    // Get student info
-                                    const studentInfo = await firebaseService.getUserProfile(currentUserId);
+                                    // Get student info (direct doc read - allowed for own profile)
+                                    const studentInfo = await firebaseService.getUserById(currentUserId);
                                     console.log('👤 [RESULT.TSX] Student info:', studentInfo?.fullName);
                                     
                                     // Create student object with attempt data
@@ -1765,7 +1867,10 @@ function Result({
                                 setViewingStudents(true);
                                 try {
                                   await loadStudentsForExam(exam);
-                                  onExamSelect(exam);
+                                  // ✅ PERF: loadStudentsForExam already fetched full data,
+                                  // get the cached version from exams state
+                                  const cachedFull = exams.find(e => e.id === exam.id) || exam;
+                                  onExamSelect(cachedFull);
                                 } finally {
                                   setLoadingExamId(null);
                                 }
@@ -1828,14 +1933,17 @@ function Result({
                                     <FontAwesomeIcon icon={faUsers} style={{ fontSize: '12px' }} className="mr-1" />
                                     <span className="font-medium">{exam.totalStudents || 0} Student{exam.totalStudents !== 1 ? 's' : ''}</span>
                                   </span>
-                                  <span className="flex items-center">
-                                    <FontAwesomeIcon icon={faClipboardList} style={{ fontSize: '12px' }} className="mr-1" />
-                                    <span>{exam.type}</span>
+                                  {exam.personalityAssessment && ((exam.likertQuestions?.length || 0) > 0 || (exam.likertDuration || 0) > 0) && (
+                                    <span className="flex items-center gap-1 text-xs font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                                      <FontAwesomeIcon icon={faChartBar} style={{ fontSize: '10px' }} />
+                                      PA Included
+                                    </span>
+                                  )}
+                                  <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                                    <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                                    ID: {exam.id}
                                   </span>
                                 </p>
-                              </div>
-                              <div className="flex flex-col items-end">
-                                <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-md">ID: {exam.id}</span>
                               </div>
                             </div>
                             
@@ -1861,7 +1969,13 @@ function Result({
                                 <FontAwesomeIcon icon={faClock} style={{ fontSize: '16px' }} className="text-gray-500" />
                                 <div>
                                   <p className="text-xs text-gray-500">Duration</p>
-                                  <p className="text-sm font-medium text-gray-900">{exam.duration}</p>
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {(() => {
+                                      const examDur = parseInt(exam.duration) || 0;
+                                      const likertDur = exam.personalityAssessment ? (exam.likertDuration || 0) : 0;
+                                      return formatDuration(examDur + likertDur);
+                                    })()}
+                                  </p>
                                 </div>
                               </div>
                               <div className="flex items-center space-x-2">
@@ -1875,42 +1989,91 @@ function Result({
                                 <FontAwesomeIcon icon={faAward} style={{ fontSize: '16px' }} className="text-gray-500" />
                                 <div>
                                   <p className="text-xs text-gray-500">Max Marks</p>
-                                  <p className="text-sm font-medium text-gray-900">{exam.maxMarks}</p>
+                                  <p className="text-sm font-medium text-gray-900">
+                                    {(() => {
+                                      const marks = parseInt(exam.maxMarks || '0');
+                                      const isPersonalityOnly = exam.personalityAssessment && marks === 0;
+                                      return isPersonalityOnly ? 'N/A' : `${marks} marks`;
+                                    })()}
+                                  </p>
                                 </div>
                               </div>
                             </div>
 
                             <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                              <div className="flex items-center space-x-2">
-                                <span className="text-[11px] font-medium text-indigo-700 bg-indigo-100 px-3 py-1 rounded-full">
+                              <div className="flex items-center gap-2">
+                                {/* Board Badge */}
+                                <span className="inline-flex items-center text-[10px] font-semibold text-indigo-700 bg-gradient-to-r from-indigo-50 to-indigo-100 px-2 py-1 rounded-full">
                                   {exam.board}
                                 </span>
-                                <span className="text-[11px] font-medium text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
+                                
+                                {/* Year Badge */}
+                                <span className="inline-flex items-center text-[10px] font-semibold text-blue-700 bg-gradient-to-r from-blue-50 to-blue-100 px-2 py-1 rounded-full">
                                   {exam.year}
                                 </span>
-                                {exam.mode === 'online' && exam.securityLevel === 'secure' && (
-                                  <div className="w-7 h-7 bg-red-100 rounded-full flex items-center justify-center" title="Secure Exam">
-                                    <FontAwesomeIcon icon={faShield} style={{ fontSize: '14px' }} className="text-red-600" />
+                                
+                                {/* Security Level Badge */}
+                                {exam.mode === EXAM_MODES.ONLINE && exam.securityLevel === SECURITY_LEVELS.SECURE && (
+                                  <div 
+                                    className="inline-flex items-center justify-center w-6 h-6 bg-gradient-to-br from-red-50 to-red-100 rounded-full cursor-help" 
+                                    title="Secure Exam - Enhanced Security Measures Enabled"
+                                  >
+                                    <FontAwesomeIcon icon={faShield} style={{ fontSize: '10px' }} className="text-red-600" />
                                   </div>
                                 )}
-                                {exam.mode === 'online' && exam.attendance && (
-                                  <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center" title="Attendance Required">
-                                    <FontAwesomeIcon icon={faCheckSquare} style={{ fontSize: '14px' }} className="text-blue-600" />
+                                
+                                {/* Attendance Badge */}
+                                {exam.mode === EXAM_MODES.ONLINE && exam.attendance && (
+                                  <div 
+                                    className="inline-flex items-center justify-center w-6 h-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-full cursor-help" 
+                                    title="Attendance Required - Students must mark attendance"
+                                  >
+                                    <FontAwesomeIcon icon={faCheckSquare} style={{ fontSize: '10px' }} className="text-blue-600" />
+                                  </div>
+                                )}
+                                
+                                {/* A/V Proctoring Badge */}
+                                {exam.mode === EXAM_MODES.ONLINE && exam.avProctoring && (
+                                  <div 
+                                    className="inline-flex items-center justify-center w-6 h-6 bg-gradient-to-br from-purple-50 to-purple-100 rounded-full cursor-help" 
+                                    title="A/V Proctoring Enabled - Audio & Video Monitoring Active"
+                                  >
+                                    <FontAwesomeIcon icon={faVideo} style={{ fontSize: '10px' }} className="text-purple-600" />
                                   </div>
                                 )}
                               </div>
-                              <div className="flex space-x-2">
-                                {/* View Students Button - visual indicator */}
+                              
+                              <div className="flex items-center gap-2 ml-auto">
+                                {/* Submitted badge for students */}
+                                {currentUserType === USER_TYPES.STUDENT && (
+                                  <div className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1">
+                                    <FontAwesomeIcon icon={faCheckSquare} style={{ fontSize: '9px' }} />
+                                    <span>Submitted</span>
+                                  </div>
+                                )}
+                                {/* View Results button for students */}
+                                {currentUserType === USER_TYPES.STUDENT && (
+                                  <div
+                                    className="inline-flex items-center text-[10px] font-semibold px-2 py-1 rounded-full pointer-events-none"
+                                    style={{
+                                      backgroundColor: `${brandTheme.colors.primary}15`,
+                                      color: brandTheme.colors.primary
+                                    }}
+                                  >
+                                    View Results
+                                  </div>
+                                )}
+                                {/* View Students Button - for teachers/admins */}
                                 {canViewStudentList && (
                                   <div
-                                    className="text-xs font-medium px-3 py-1.5 rounded-lg pointer-events-none"
+                                    className="inline-flex items-center text-[10px] font-semibold px-2 py-1 rounded-full pointer-events-none"
                                     style={{
                                       backgroundColor: `${brandTheme.colors.primary}15`,
                                       color: brandTheme.colors.primary
                                     }}
                                     title="Click card to view students"
                                   >
-                                    <FontAwesomeIcon icon={faUsers} style={{ fontSize: '12px' }} className="mr-1.5" />
+                                    <FontAwesomeIcon icon={faUsers} style={{ fontSize: '9px' }} className="mr-1" />
                                     View Students
                                   </div>
                                 )}

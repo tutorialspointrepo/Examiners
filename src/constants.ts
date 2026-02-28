@@ -37,9 +37,26 @@ export const QUESTION_TYPES = {
   DESCRIPTIVE: 'descriptive',
   CODE: 'code',
   SQL: 'sql',
+  LIKERT: 'likert',
 } as const;
 
 export type QuestionType = typeof QUESTION_TYPES[keyof typeof QUESTION_TYPES];
+
+/**
+ * Likert personality traits (Big 5 OCEAN + 3 Custom)
+ */
+export const LIKERT_TRAITS = [
+  'Openness',
+  'Conscientiousness',
+  'Extraversion',
+  'Agreeableness',
+  'Emotional Stability',
+  'Leadership',
+  'Problem Solving',
+  'Communication',
+] as const;
+
+export type LikertTrait = typeof LIKERT_TRAITS[number];
 
 /**
  * UI labels for question types
@@ -51,6 +68,7 @@ export const QUESTION_TYPE_LABELS = {
   [QUESTION_TYPES.DESCRIPTIVE]: 'Descriptive',
   [QUESTION_TYPES.CODE]: 'Code',
   [QUESTION_TYPES.SQL]: 'SQL',
+  [QUESTION_TYPES.LIKERT]: 'Likert',
 } as const;
 
 // ==================== USER TYPES ====================
@@ -465,9 +483,11 @@ export const COLLECTIONS = {
   QUESTION_BANK: 'questionBank',
   EXAMS: 'exams',
   EXAM_ATTEMPTS: 'examAttempts',
+  EXAM_ENROLLMENTS: 'exam_enrollments',
   STUDENT_RESPONSES: 'studentResponses',
   NOTIFICATIONS: 'notifications',
   ACTIVITIES: 'activities',
+  ACTIVITY_LOGS: 'activityLogs',
   VIOLATIONS: 'violations',
   INTERNET_STATUS: 'internetStatus',
   CHAT_MESSAGES: 'chatMessages',
@@ -480,7 +500,19 @@ export const COLLECTIONS = {
   PASSWORD_RESET_REQUESTS: 'passwordResetRequests',
   CODING_LANGUAGES: 'CodingLanguages',
   COURSES: 'courses',
+  COLLEGE_COURSES: 'college_courses',
+  COURSE_ENROLLMENTS: 'course_enrollments',
   LEARNING_PATHS: 'learningPaths',
+  PATH_ENROLLMENTS: 'path_enrollments',
+  PROBLEMS: 'problems',
+  PROBLEM_LIKES: 'problem_likes',
+  PROBLEM_VIEWS: 'problem_views',
+  PROBLEMS_ATTEMPT: 'problemsAttempt',
+  AI_INTERVIEWS: 'ai_interviews',
+  JOBS: 'jobs',
+  SAVED_JOBS: 'savedJobs',
+  DAILY_LEARNING_LOG: 'dailyLearningLog',
+  STUDENT_LEARNING_DETAIL: 'studentLearningDetail',
 } as const;
 
 // ==================== SPECIAL IDENTIFIERS ====================
@@ -489,7 +521,7 @@ export const COLLECTIONS = {
  * Special college/organization identifiers
  */
 export const SPECIAL_IDS = {
-  TUTORIALS_POINT: 'tutorialspoint',
+  TUTORIALSPOINT: 'TPX',
   SYSTEM: 'system',
   COMMON: 'common',
 } as const;
@@ -497,7 +529,7 @@ export const SPECIAL_IDS = {
 /**
  * Default college ID for common questions (shared across all colleges)
  */
-export const DEFAULT_COLLEGE_ID = SPECIAL_IDS.TUTORIALS_POINT;
+export const DEFAULT_COLLEGE_ID = SPECIAL_IDS.TUTORIALSPOINT;
 
 // ==================== PERMISSION LEVELS ====================
 

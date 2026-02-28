@@ -89,7 +89,7 @@ export const generateLearningPathAI = functions
     memory: '512MB'
   })
   .https.onCall(async (data, context) => {
-    console.log('🚀 GenerateLearningPathAI called');
+    // console.log('🚀 GenerateLearningPathAI called');
     
     if (!context.auth) {
       throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
@@ -107,10 +107,10 @@ export const generateLearningPathAI = functions
     }
 
     if (hasFile) {
-      console.log(`📄 File received: ${fileName} (${(Buffer.from(fileBase64, 'base64').length / 1024).toFixed(1)} KB)`);
+      // console.log(`📄 File received: ${fileName} (${(Buffer.from(fileBase64, 'base64').length / 1024).toFixed(1)} KB)`);
     }
     if (hasText) {
-      console.log(`📄 JD text length: ${jdText.trim().length}`);
+      // console.log(`📄 JD text length: ${jdText.trim().length}`);
     }
 
     // Get Gemini API key and model from Firestore settings
@@ -127,7 +127,7 @@ export const generateLearningPathAI = functions
     }
 
     try {
-      console.log('📦 Fetching courses...');
+      // console.log('📦 Fetching courses...');
 
       // 1. Fetch all courses and filter in code (avoids needing composite index)
       const coursesSnapshot = await db.collection('courses').get();
@@ -170,7 +170,7 @@ export const generateLearningPathAI = functions
         throw new functions.https.HttpsError('not-found', 'No active courses found in catalog');
       }
 
-      console.log(`📚 Learning Path: ${courseMap.size} courses in catalog for matching`);
+      // console.log(`📚 Learning Path: ${courseMap.size} courses in catalog for matching`);
 
       const catalogText = `COURSE CATALOG (${courseMap.size} courses):\n${catalogLines.join('\n')}`;
 
@@ -216,7 +216,7 @@ export const generateLearningPathAI = functions
       }
 
       // 3. Call Gemini via REST API
-      console.log('🤖 Calling Gemini model:', geminiModel);
+      // console.log('🤖 Calling Gemini model:', geminiModel);
 
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`,
@@ -243,7 +243,7 @@ export const generateLearningPathAI = functions
       const geminiResult = await response.json();
       let rawResult = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text || '';
 
-      console.log(`🤖 Learning Path AI (Gemini ${geminiModel}) — Response length: ${rawResult.length}`);
+      // console.log(`🤖 Learning Path AI (Gemini ${geminiModel}) — Response length: ${rawResult.length}`);
 
       // 4. Parse JSON response
       let cleanResult = rawResult.trim();
@@ -264,7 +264,7 @@ export const generateLearningPathAI = functions
       for (const aiCourse of aiCourses) {
         const realCourse = courseMap.get(Number(aiCourse.courseId));
         if (!realCourse) {
-          console.warn(`⚠️ AI suggested courseId ${aiCourse.courseId} not found in catalog — skipping`);
+          // console.warn(`⚠️ AI suggested courseId ${aiCourse.courseId} not found in catalog — skipping`);
           continue;
         }
 
@@ -298,7 +298,7 @@ export const generateLearningPathAI = functions
         altGroup: skill.altGroup || null,
       }));
 
-      console.log(`✅ Learning Path: ${validatedSkills.length} skills extracted, ${validatedCourses.length} courses mapped`);
+      // console.log(`✅ Learning Path: ${validatedSkills.length} skills extracted, ${validatedCourses.length} courses mapped`);
 
       return {
         success: true,
@@ -420,7 +420,7 @@ export const generateLogicAnalysis = functions
       
       const client = new OpenAI({ apiKey });
 
-      console.log(`🧠 Generating logic analysis for problem: ${problemStatement.substring(0, 50)}...`);
+      // console.log(`🧠 Generating logic analysis for problem: ${problemStatement.substring(0, 50)}...`);
 
       const completion = await client.chat.completions.create({
         model: AI_MODELS.GPT_4O_MINI,
@@ -469,7 +469,7 @@ export const generateLogicAnalysis = functions
         analysisResult.algorithm = [analysisResult.algorithm];
       }
 
-      console.log(`✅ Successfully generated logic analysis`);
+      // console.log(`✅ Successfully generated logic analysis`);
       
       return {
         success: true,
@@ -591,7 +591,7 @@ When answering, relate your responses to the course content when relevant.`;
       const response = completion.choices?.[0]?.message?.content?.trim() || 'Sorry, I could not generate a response.';
       
       // Log for monitoring
-      console.log(`🎓 Learning AI - Course: ${courseContext.courseName || 'N/A'}, User: ${context.auth?.uid || 'anonymous'}`);
+      // console.log(`🎓 Learning AI - Course: ${courseContext.courseName || 'N/A'}, User: ${context.auth?.uid || 'anonymous'}`);
       
       return { success: true, response };
       
@@ -635,7 +635,7 @@ export const submitExerciseForEvaluation = functions
         );
       }
 
-      console.log(`📝 Queueing exercise evaluation: ${visibilityId}`);
+      // console.log(`📝 Queueing exercise evaluation: ${visibilityId}`);
 
       // Publish to Pub/Sub topic for background processing
       const topic = pubsub.topic('evaluate-exercises');
@@ -653,7 +653,7 @@ export const submitExerciseForEvaluation = functions
         }
       });
 
-      console.log(`✅ Exercise queued for evaluation: ${visibilityId}`);
+      // console.log(`✅ Exercise queued for evaluation: ${visibilityId}`);
 
       return {
         success: true,
@@ -705,9 +705,7 @@ export const exerciseEvaluationWorker = functions
       progLanguage 
     } = message.json;
 
-    console.log(`🎯 [Worker] Evaluating exercise: ${visibilityId} for enrollment: ${enrollmentId}`);
-    
-    const startTime = Date.now();
+    // console.log(`🎯 [Worker] Evaluating exercise: ${visibilityId} for enrollment: ${enrollmentId}`);
 
     try {
       // Get OpenAI API key
@@ -784,11 +782,11 @@ Always provide at least one constructive suggestion for improvement.`;
 
       const result = JSON.parse(completion.choices?.[0]?.message?.content || '{}');
 
-      console.log(`🤖 [Worker] AI Evaluation Result for ${visibilityId}:`, {
-        isCorrect: result.isCorrect,
-        score: result.score,
-        isOptimized: result.isOptimized
-      });
+      // console.log(`🤖 [Worker] AI Evaluation Result for ${visibilityId}:`, {
+      //   isCorrect: result.isCorrect,
+      //   score: result.score,
+      //   isOptimized: result.isOptimized
+      // });
 
       // Prepare evaluation data
       const evaluation = {
@@ -807,14 +805,112 @@ Always provide at least one constructive suggestion for improvement.`;
         .collection('exerciseSubmissions')
         .doc(visibilityId);
 
+      // Read existing submission to detect retake and get previous score
+      const existingSubmission = await submissionRef.get();
+      const existingData = existingSubmission.exists ? existingSubmission.data() : null;
+      const isRetake = existingData?.status === 'evaluated' && existingData?.evaluation?.score !== undefined;
+      const previousScore = isRetake ? (existingData?.evaluation?.score ?? 0) : 0;
+
       await submissionRef.update({
         status: 'evaluated',
         evaluation,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      const duration = Date.now() - startTime;
-      console.log(`✅ [Worker] Exercise ${visibilityId} evaluated in ${duration}ms (Score: ${result.score})`);
+      // --- Track exercise completion in studentLearningDetail & dailyLearningLog ---
+      try {
+        const enrollmentDoc = await admin.firestore()
+          .collection('course_enrollments')
+          .doc(enrollmentId)
+          .get();
+        
+        if (enrollmentDoc.exists) {
+          const enrollData = enrollmentDoc.data();
+          const userId = enrollData?.userId;
+          const collegeId = enrollData?.collegeId;
+          const courseSlug = enrollData?.courseSlug || '';
+
+          if (userId && collegeId) {
+            const detailDocId = `${userId}_${collegeId}`;
+            const detailRef = admin.firestore().collection('studentLearningDetail').doc(detailDocId);
+            const newScore = result.score ?? 0;
+
+            if (isRetake) {
+              // Retake: only update marks difference, don't increment count
+              const marksDiff = newScore - previousScore;
+              if (marksDiff !== 0) {
+                const retakeUpdate: any = {
+                  totalExerciseMarksObtained: admin.firestore.FieldValue.increment(marksDiff),
+                  updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                };
+                if (courseSlug) {
+                  retakeUpdate[`courses.${courseSlug}.exerciseMarksObtained`] = admin.firestore.FieldValue.increment(marksDiff);
+                }
+                await detailRef.update(retakeUpdate);
+              }
+            } else {
+              // First evaluated attempt: increment count + add marks (global + course-level)
+              const firstUpdate: any = {
+                totalExercisesCompleted: admin.firestore.FieldValue.increment(1),
+                totalExerciseMarksObtained: admin.firestore.FieldValue.increment(newScore),
+                totalExerciseMaxMarks: admin.firestore.FieldValue.increment(100),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              };
+              if (courseSlug) {
+                firstUpdate[`courses.${courseSlug}.exercisesCompleted`] = admin.firestore.FieldValue.increment(1);
+                firstUpdate[`courses.${courseSlug}.exerciseMarksObtained`] = admin.firestore.FieldValue.increment(newScore);
+                firstUpdate[`courses.${courseSlug}.exerciseMaxMarks`] = admin.firestore.FieldValue.increment(100);
+              }
+              await detailRef.update(firstUpdate);
+
+              // Update daily learning log
+              const now = new Date();
+              const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+              const dailyLogRef = admin.firestore().collection('dailyLearningLog').doc(`${userId}_${dateStr}`);
+              
+              const dailyUpdateData: any = {
+                userId,
+                collegeId,
+                date: dateStr,
+                exerciseMarksObtained: admin.firestore.FieldValue.increment(newScore),
+                exerciseMaxMarks: admin.firestore.FieldValue.increment(100),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+              };
+              if (courseSlug) {
+                // We'll handle coursesAccessed via arrayUnion
+                dailyUpdateData.coursesAccessed = admin.firestore.FieldValue.arrayUnion(courseSlug);
+              }
+              await dailyLogRef.set(dailyUpdateData, { merge: true });
+            }
+
+            // console.log(`📊 [Worker] Updated learning detail for ${userId} (retake: ${isRetake}, score: ${newScore})`);
+
+            // Recalculate compositeScore (non-blocking)
+            try {
+              const updatedDoc = await detailRef.get();
+              if (updatedDoc.exists) {
+                const d = updatedDoc.data()!;
+                const tH = (d.totalTimeSpent || 0) / 3600;
+                const lec = d.totalLecturesCompleted || 0;
+                const qz = d.totalQuizzesCompleted || 0;
+                const ex = d.totalExercisesCompleted || 0;
+                const qMax = d.totalQuizMaxMarks || 0;
+                const eMax = d.totalExerciseMaxMarks || 0;
+                const qP = qMax > 0 ? ((d.totalQuizMarksObtained || 0) / qMax) * 100 : 0;
+                const eP = eMax > 0 ? ((d.totalExerciseMarksObtained || 0) / eMax) * 100 : 0;
+                const cs = Math.round(((tH * 2) + (lec * 3) + (qP * 0.5) + (eP * 0.5) + (qz * 2) + (ex * 2)) * 10) / 10;
+                await detailRef.update({ compositeScore: cs });
+              }
+            } catch (_e) { /* non-blocking */ }
+          }
+        }
+      } catch (trackingError: any) {
+        // Non-blocking: don't fail the evaluation if tracking fails
+        // console.warn(`⚠️ [Worker] Failed to update learning tracking for ${visibilityId}:`, trackingError.message);
+      }
+
+      // const duration = Date.now() - startTime;
+      // console.log(`✅ [Worker] Exercise ${visibilityId} evaluated in ${duration}ms (Score: ${result.score})`);
 
     } catch (error: any) {
       console.error(`❌ [Worker] Failed to evaluate ${visibilityId}:`, error.message);
@@ -864,7 +960,7 @@ export const enhanceResumeContent = functions
       );
     }
 
-    const { type, content, context: requestContext, userId, organizationId } = data;
+    const { type, content, context: requestContext } = data;
 
     // Validate required fields
     if (!type || !content) {
@@ -1020,7 +1116,7 @@ Return the optimized version with improved keyword usage.`;
       }
 
       // Log usage for monitoring
-      console.log(`📝 Resume AI Enhancement - Type: ${type}, User: ${userId}, Org: ${organizationId}`);
+      // console.log(`📝 Resume AI Enhancement - Type: ${type}, User: ${userId}, Org: ${organizationId}`);
 
       return {
         enhanced,
@@ -1086,8 +1182,8 @@ function cleanObject(obj: any): any {
  */
 function sanitizeQuestionForClient(question: any): any {
   // Debug: Log what fields are present
-  console.log(`[SANITIZE] Processing question ${question.id} (type: ${question.type})`);
-  console.log(`[SANITIZE] Available fields:`, Object.keys(question));
+  // console.log(`[SANITIZE] Processing question ${question.id} (type: ${question.type})`);
+  // console.log(`[SANITIZE] Available fields:`, Object.keys(question));
   
   const {
     correctAnswers,
@@ -1095,7 +1191,7 @@ function sanitizeQuestionForClient(question: any): any {
     ...safeQuestion
   } = question;
   
-  console.log(`[SANITIZE] After destructuring:`, Object.keys(safeQuestion));
+  // console.log(`[SANITIZE] After destructuring:`, Object.keys(safeQuestion));
   
   // FITB: Send blanksCount
   if (question.type === 'fitb' && correctAnswers && Array.isArray(correctAnswers)) {
@@ -1106,7 +1202,7 @@ function sanitizeQuestionForClient(question: any): any {
   if (question.type === 'code') {
       if (question.testStub) {
         safeQuestion.boilerplate = question.testStub;
-        console.log(`[SANITIZE] ✅ Renamed testStub to boilerplate (${question.testStub.length} chars)`);
+        // console.log(`[SANITIZE] ✅ Renamed testStub to boilerplate (${question.testStub.length} chars)`);
       }
       
       if (question.testCases && Array.isArray(question.testCases)) {
@@ -1115,7 +1211,7 @@ function sanitizeQuestionForClient(question: any): any {
           expected_output: tc.expected_output || tc.expectedOutput || tc.output || '',  // ✅ Use snake_case
           marks: tc.marks,
         }));
-        console.log(`[SANITIZE] ✅ Preserved ${safeQuestion.testCases.length} test cases with expected outputs`);
+        // console.log(`[SANITIZE] ✅ Preserved ${safeQuestion.testCases.length} test cases with expected outputs`);
       }
     }
 
@@ -1123,30 +1219,30 @@ function sanitizeQuestionForClient(question: any): any {
   if (question.type === 'sql') {
     if (question.sqlSchema) {
       safeQuestion.sqlSchema = question.sqlSchema;
-      console.log(`[SANITIZE] ✅ Kept sqlSchema (${Array.isArray(question.sqlSchema) ? question.sqlSchema.length : 1} tables)`);
+      // console.log(`[SANITIZE] ✅ Kept sqlSchema (${Array.isArray(question.sqlSchema) ? question.sqlSchema.length : 1} tables)`);
     }
     if (question.sqlTestCases && Array.isArray(question.sqlTestCases)) {
       safeQuestion.sqlTestCases = question.sqlTestCases;
-      console.log(`[SANITIZE] ✅ Kept ${question.sqlTestCases.length} SQL test cases`);
+      // console.log(`[SANITIZE] ✅ Kept ${question.sqlTestCases.length} SQL test cases`);
     }
   }
   
   // JUMBLED: Keep jumbledOptions
   if (question.type === 'jumbled') {
-    console.log(`[SANITIZE] Jumbled question - checking for jumbledOptions...`);
-    console.log(`[SANITIZE] question.jumbledOptions exists?`, !!question.jumbledOptions);
-    console.log(`[SANITIZE] question.jumbledOptions value:`, question.jumbledOptions);
+    // console.log(`[SANITIZE] Jumbled question - checking for jumbledOptions...`);
+    // console.log(`[SANITIZE] question.jumbledOptions exists?`, !!question.jumbledOptions);
+    // console.log(`[SANITIZE] question.jumbledOptions value:`, question.jumbledOptions);
     
     if (question.jumbledOptions && Array.isArray(question.jumbledOptions)) {
       safeQuestion.jumbledOptions = [...question.jumbledOptions];
-      console.log(`[SANITIZE] ✅ Kept jumbledOptions: ${question.jumbledOptions.length} items`);
+      // console.log(`[SANITIZE] ✅ Kept jumbledOptions: ${question.jumbledOptions.length} items`);
     } else {
       console.error(`[SANITIZE] ❌ WARNING: Jumbled question ${question.id} has NO jumbledOptions!`);
       console.error(`[SANITIZE] Available fields:`, Object.keys(question));
     }
   }
   
-  console.log(`[SANITIZE] Final safeQuestion keys:`, Object.keys(safeQuestion));
+  // console.log(`[SANITIZE] Final safeQuestion keys:`, Object.keys(safeQuestion));
   
   return safeQuestion;
 }
@@ -1154,17 +1250,17 @@ function sanitizeQuestionForClient(question: any): any {
 /**
  * 🔒 Sanitize all questions in exam (SERVER-SIDE)
  */
-function sanitizeExamQuestions(exam: any): any {
-  if (exam.questionsList && Array.isArray(exam.questionsList)) {
-    exam.questionsList = exam.questionsList.map((q: any) => sanitizeQuestionForClient(q));
-  }
-  
-  if (exam.questionPool && Array.isArray(exam.questionPool)) {
-    exam.questionPool = exam.questionPool.map((q: any) => sanitizeQuestionForClient(q));
-  }
-  
-  return exam;
-}
+// function sanitizeExamQuestions(exam: any): any {
+//   if (exam.questionsList && Array.isArray(exam.questionsList)) {
+//     exam.questionsList = exam.questionsList.map((q: any) => sanitizeQuestionForClient(q));
+//   }
+//   
+//   if (exam.questionPool && Array.isArray(exam.questionPool)) {
+//     exam.questionPool = exam.questionPool.map((q: any) => sanitizeQuestionForClient(q));
+//   }
+//   
+//   return exam;
+// }
 
 // ============================================
 // AI HELPER FUNCTIONS (SERVER-SIDE ONLY)
@@ -1544,14 +1640,14 @@ Be concise and actionable in all feedback. Focus on what matters most for learni
     const result = JSON.parse(completion.choices?.[0]?.message?.content || '{}');
 
     // ✅ DEBUG: Log what AI actually returned
-    console.log('🤖 AI Response:', JSON.stringify({
-      marks: result.marks,
-      correctPoints: result.correctPoints?.length || 0,
-      improvements: result.improvements?.length || 0,
-      // Check old fields too
-      strengths: result.strengths?.length || 0,
-      keyPointsMissing: result.keyPointsMissing?.length || 0
-    }));
+    // console.log('🤖 AI Response:', JSON.stringify({
+    //   marks: result.marks,
+    //   correctPoints: result.correctPoints?.length || 0,
+    //   improvements: result.improvements?.length || 0,
+    //   // Check old fields too
+    //   strengths: result.strengths?.length || 0,
+    //   keyPointsMissing: result.keyPointsMissing?.length || 0
+    // }));
 
     // Extract feedback with fallbacks
     const correctPoints = result.correctPoints || result.strengths || [];
@@ -1567,7 +1663,7 @@ Be concise and actionable in all feedback. Focus on what matters most for learni
       } else {
         improvements.push('Review the model answer to identify missing key concepts.');
       }
-      console.log('⚠️ Added fallback improvement - AI returned empty improvements');
+      // console.log('⚠️ Added fallback improvement - AI returned empty improvements');
     }
 
     // ✅ Return clean structure with proper defaults using ?? operator
@@ -1644,7 +1740,12 @@ Be concise and actionable in all feedback. Focus on what matters most for learni
 // 1. GET EXAM (SANITIZED)
 // ============================================
 
-export const getExamForStudent = functions
+// ============================================
+// getExamMetadata — Returns exam info WITHOUT question content for students
+// Students see this when they click on an exam card (detail panel)
+// Admins/teachers get full data
+// ============================================
+export const getExamMetadata = functions
   .region('us-central1')
   .https.onCall(async (data, context) => {
     try {
@@ -1653,7 +1754,12 @@ export const getExamForStudent = functions
       }
       
       const { examId } = data;
-      const userType = context.auth.token.userType || 'student';
+      // Look up userType from Firestore since custom claims may not be set
+      let userType = context.auth.token.userType;
+      if (!userType) {
+        const userDoc = await admin.firestore().collection(COLLECTIONS.USERS).doc(context.auth.uid).get();
+        userType = userDoc.exists ? (userDoc.data()?.userType || 'student') : 'student';
+      }
       
       if (!examId) {
         throw new functions.https.HttpsError('invalid-argument', 'examId is required');
@@ -1671,9 +1777,261 @@ export const getExamForStudent = functions
       let exam = examDoc.data() as any;
       exam.id = examDoc.id;
       
-      // Sanitize for students only
+      // 🔒 For students: strip ALL question content, keep only counts/types
       if (userType === 'student') {
-        exam = sanitizeExamQuestions(exam);
+        if (exam.questionsList && Array.isArray(exam.questionsList)) {
+          exam.totalQuestions = exam.questionsList.length;
+          exam.questionTypeSummary = exam.questionsList.reduce((acc: any, q: any) => {
+            const type = q.type || 'unknown';
+            acc[type] = (acc[type] || 0) + 1;
+            return acc;
+          }, {});
+          delete exam.questionsList;
+        }
+        
+        if (exam.questionPool && Array.isArray(exam.questionPool)) {
+          exam.hasQuestionPool = true;
+          exam.questionPoolSize = exam.questionPool.length;
+          delete exam.questionPool;
+        }
+        
+        if (exam.likertQuestions && Array.isArray(exam.likertQuestions)) {
+          exam.likertQuestionCount = exam.likertQuestions.length;
+          delete exam.likertQuestions;
+        }
+      }
+      
+      return { success: true, exam };
+      
+    } catch (error: any) {
+      if (error instanceof functions.https.HttpsError) throw error;
+      throw new functions.https.HttpsError('internal', error.message);
+    }
+  });
+
+// ============================================
+// getExamQuestionsList — Returns sanitized questions ONLY when exam has started
+// Requires an active/in-progress attempt for the student
+// Admins/teachers can fetch anytime
+// ============================================
+export const getExamQuestionsList = functions
+  .region('us-central1')
+  .https.onCall(async (data, context) => {
+    try {
+      if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+      }
+      
+      const { examId } = data;
+      const userId = context.auth.uid;
+      // Look up userType from Firestore since custom claims may not be set
+      let userType = context.auth.token.userType;
+      if (!userType) {
+        const userDoc = await admin.firestore().collection(COLLECTIONS.USERS).doc(userId).get();
+        userType = userDoc.exists ? (userDoc.data()?.userType || 'student') : 'student';
+      }
+      
+      if (!examId) {
+        throw new functions.https.HttpsError('invalid-argument', 'examId is required');
+      }
+      
+      // 🔒 For students: verify they have an active attempt before releasing questions
+      if (userType === 'student') {
+        const attemptsSnapshot = await admin.firestore()
+          .collection(COLLECTIONS.EXAM_ATTEMPTS)
+          .where('examId', '==', examId)
+          .where('studentId', '==', userId)
+          .where('status', 'in', ['in_progress', 'started'])
+          .limit(1)
+          .get();
+        
+        if (attemptsSnapshot.empty) {
+          throw new functions.https.HttpsError(
+            'permission-denied', 
+            'No active attempt found. Start the exam first.'
+          );
+        }
+      }
+      
+      const examDoc = await admin.firestore()
+        .collection(COLLECTIONS.EXAMS)
+        .doc(examId)
+        .get();
+      
+      if (!examDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Exam not found');
+      }
+      
+      const exam = examDoc.data() as any;
+      exam.id = examDoc.id;
+      
+      // If questions are stored in Cloud Storage (large exams >20 questions), fetch them
+      if ((!exam.questionsList || exam.questionsList.length === 0) && exam.questionsStorageUrl) {
+        try {
+          const storageResponse = await fetch(exam.questionsStorageUrl);
+          if (storageResponse.ok) {
+            exam.questionsList = await storageResponse.json();
+          }
+        } catch (storageErr: any) {
+          console.error('Failed to fetch questions from Storage:', storageErr.message);
+        }
+      }
+      
+      // Sanitize for students (strip correctAnswers, solution but keep question text, options etc.)
+      if (userType === 'student') {
+        if (exam.questionsList && Array.isArray(exam.questionsList)) {
+          exam.questionsList = exam.questionsList.map((q: any) => sanitizeQuestionForClient(q));
+        }
+        if (exam.questionPool && Array.isArray(exam.questionPool)) {
+          exam.questionPool = exam.questionPool.map((q: any) => sanitizeQuestionForClient(q));
+        }
+      }
+      
+      return { 
+        success: true, 
+        questionsList: exam.questionsList || [],
+        questionPool: exam.questionPool || [],
+        likertQuestions: exam.likertQuestions || [],
+        enableQuestionPool: exam.enableQuestionPool || false,
+        pickRandomCount: exam.pickRandomCount || 0,
+        poolQuestionMarks: exam.poolQuestionMarks || 0,
+        personalityAssessment: exam.personalityAssessment || false,
+        likertDuration: exam.likertDuration || 0,
+      };
+      
+    } catch (error: any) {
+      if (error instanceof functions.https.HttpsError) throw error;
+      throw new functions.https.HttpsError('internal', error.message);
+    }
+  });
+
+// ============================================
+// getExamForStudent — Returns full exam with sanitized questions for students
+// Students get questions (text, options, type, marks) but NOT answers (correctAnswers, solution)
+// Teachers/Admins get complete data including answers
+// Used by: getExamById in firebase_service.ts (exam detail, results, etc.)
+// ============================================
+export const getExamForStudent = functions
+  .region('us-central1')
+  .https.onCall(async (data, context) => {
+    try {
+      if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
+      }
+      
+      const { examId, viewContext } = data;
+      // Look up userType from Firestore since custom claims may not be set
+      let userType = context.auth.token.userType;
+      if (!userType) {
+        const userDoc = await admin.firestore().collection(COLLECTIONS.USERS).doc(context.auth.uid).get();
+        userType = userDoc.exists ? (userDoc.data()?.userType || 'student') : 'student';
+      }
+      
+      if (!examId) {
+        throw new functions.https.HttpsError('invalid-argument', 'examId is required');
+      }
+      
+      const examDoc = await admin.firestore()
+        .collection(COLLECTIONS.EXAMS)
+        .doc(examId)
+        .get();
+      
+      if (!examDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Exam not found');
+      }
+      
+      let exam = examDoc.data() as any;
+      exam.id = examDoc.id;
+      
+      // If questions are stored in Cloud Storage (large exams >20 questions), fetch them
+      if ((!exam.questionsList || exam.questionsList.length === 0) && exam.questionsStorageUrl) {
+        try {
+          const storageResponse = await fetch(exam.questionsStorageUrl);
+          if (storageResponse.ok) {
+            exam.questionsList = await storageResponse.json();
+          }
+        } catch (storageErr: any) {
+          console.error('Failed to fetch questions from Storage:', storageErr.message);
+        }
+      }
+      
+      // 🔧 ENRICH: If questions are missing correctAnswers, fetch from Question Bank
+      // This handles exams where correctAnswers wasn't copied during exam creation
+      const allQuestions = [
+        ...(exam.questionsList || []),
+        ...(exam.questionPool || [])
+      ];
+      const missingIds = allQuestions
+        .filter((q: any) => q.questionBankId && !q.correctAnswers)
+        .map((q: any) => q.questionBankId);
+      
+      if (missingIds.length > 0) {
+        const uniqueIds = [...new Set(missingIds)] as string[];
+        const qbMap = new Map<string, any>();
+        
+        // Batch fetch from Question Bank (Firestore getAll supports up to 100 refs)
+        for (let i = 0; i < uniqueIds.length; i += 30) {
+          const chunk = uniqueIds.slice(i, i + 30);
+          const refs = chunk.map(id => admin.firestore().collection(COLLECTIONS.QUESTION_BANK).doc(id));
+          const docs = await admin.firestore().getAll(...refs);
+          docs.forEach(d => {
+            if (d.exists) qbMap.set(d.id, d.data());
+          });
+        }
+        
+        // Enrich exam questions with correctAnswers from Question Bank
+        const enrichQuestion = (q: any) => {
+          if (q.questionBankId && !q.correctAnswers && qbMap.has(q.questionBankId)) {
+            const qb = qbMap.get(q.questionBankId);
+            if (qb.correctAnswers) q.correctAnswers = qb.correctAnswers;
+            if (qb.correctAnswer !== undefined) q.correctAnswer = qb.correctAnswer;
+          }
+          return q;
+        };
+        
+        if (exam.questionsList) exam.questionsList = exam.questionsList.map(enrichQuestion);
+        if (exam.questionPool) exam.questionPool = exam.questionPool.map(enrichQuestion);
+      }
+      
+      // 🔒 SERVER-SIDE PROTECTION: Before exam date, ONLY the creator can see questions
+      // After exam date, all teachers/admins can see questions
+      const userId = context.auth.uid;
+      const isCreator = exam.createdBy === userId;
+      
+      // Check if exam date has arrived (compare in IST — exam dates are stored as IST dates)
+      let hasExamDateArrived = true; // default true if no date set
+      if (exam.examDate) {
+        const today = new Date();
+        // Convert to IST for comparison (UTC+5:30)
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        const todayIST = new Date(today.getTime() + istOffset);
+        todayIST.setHours(0, 0, 0, 0);
+        
+        const examDate = new Date(exam.examDate);
+        examDate.setHours(0, 0, 0, 0);
+        
+        hasExamDateArrived = examDate <= todayIST;
+      }
+      
+      // Non-creator staff before exam date: strip questions, keep metadata
+      if (userType !== 'student' && !isCreator && !hasExamDateArrived && viewContext !== 'result') {
+        const questionCount = exam.questionsList?.length || 0;
+        delete exam.questionsList;
+        delete exam.questionPool;
+        delete exam.likertQuestions;
+        exam.totalQuestions = questionCount;
+        exam.questionsHidden = true; // Flag so UI knows questions are intentionally hidden
+      }
+      
+      // For students: sanitize questions ONLY when browsing exams (not in results)
+      // When viewContext='result', exam is already submitted — show full data including answers
+      if (userType === 'student' && viewContext !== 'result') {
+        if (exam.questionsList && Array.isArray(exam.questionsList)) {
+          exam.questionsList = exam.questionsList.map((q: any) => sanitizeQuestionForClient(q));
+        }
+        if (exam.questionPool && Array.isArray(exam.questionPool)) {
+          exam.questionPool = exam.questionPool.map((q: any) => sanitizeQuestionForClient(q));
+        }
       }
       
       return { success: true, exam };
@@ -1740,7 +2098,7 @@ async function gradeSqlWithPGlite(params: {
       }).join(', ');
       createSQL += ')';
 
-      console.log(`      🗄️ Creating table: ${tableName}`);
+      // console.log(`      🗄️ Creating table: ${tableName}`);
       await db.query(createSQL);
     }
 
@@ -1838,7 +2196,7 @@ async function gradeSqlWithPGlite(params: {
           error: null
         });
 
-        console.log(`         Test ${testNum}: ${passed ? '✅ PASSED' : '❌ FAILED'} (${executionTime}ms)`);
+        // console.log(`         Test ${testNum}: ${passed ? '✅ PASSED' : '❌ FAILED'} (${executionTime}ms)`);
 
       } catch (testError: any) {
         testResults.push({
@@ -1852,7 +2210,7 @@ async function gradeSqlWithPGlite(params: {
           executionTime: null,
           error: testError.message
         });
-        console.log(`         Test ${testNum}: ❌ ERROR: ${testError.message}`);
+        // console.log(`         Test ${testNum}: ❌ ERROR: ${testError.message}`);
       }
     }
 
@@ -1891,7 +2249,7 @@ async function gradeSqlWithPGlite(params: {
  * Used by both submitAndGradeExam and autoSubmitPendingAttempts
  */
 async function gradeAttempt(examId: string, attemptId: string, responses: any[]) {
-  console.log(`🎯 Starting grading for attempt: ${attemptId}`);
+  // console.log(`🎯 Starting grading for attempt: ${attemptId}`);
   
   // Fetch exam WITH answers
   const examDoc = await admin.firestore()
@@ -1904,12 +2262,31 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
   }
   
   const exam = examDoc.data() as any;
+  
+  // Fetch attempt document to get poolQuestionIds (the exact questions presented to this student)
+  const attemptDoc = await admin.firestore()
+    .collection(COLLECTIONS.EXAM_ATTEMPTS)
+    .doc(attemptId)
+    .get();
+  const attemptData = attemptDoc.exists ? attemptDoc.data() as any : {};
+  const poolQuestionIds: string[] = attemptData.poolQuestionIds || [];
+  
+  if (exam.enableQuestionPool && poolQuestionIds.length > 0) {
+    // console.log(`📋 Found ${poolQuestionIds.length} presented pool question IDs in attempt`);
+  }
+  
   const allQuestions = [
     ...(exam.questionsList || []),
-    ...(exam.questionPool || [])
+    ...(exam.questionPool || []),
+    ...(exam.likertQuestions || [])
   ];
   
-  console.log(`🔑 Fetched exam WITH answers (${allQuestions.length} questions)`);
+  // Build set of actual pool question IDs (from exam.questionPool, NOT questionsList)
+  const poolQuestionIdSet = new Set<string>(
+    (exam.questionPool || []).map((q: any) => q.id)
+  );
+  
+  // console.log(`🔑 Fetched exam WITH answers (${allQuestions.length} questions, ${poolQuestionIdSet.size} pool questions)`);
   
   // Initialize aggregation variables
   let totalScore = 0;
@@ -1955,12 +2332,15 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
     }
   }
   
+  // traitMap for Likert personality aggregation (populated during grading loop)
+  const traitMap: Record<string, { total: number; count: number; max: number }> = {};
+
   // Grade each response
   for (const response of responses) {
     const question = allQuestions.find((q: any) => q.id === response.questionId);
     
     if (!question) {
-      console.warn(`Question not found: ${response.questionId}`);
+      // console.warn(`Question not found: ${response.questionId}`);
       gradedResponses.push({
         ...response,
         marksAwarded: 0,
@@ -1971,7 +2351,11 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       continue;
     }
     
-    const questionMaxMarks = question.marks || question.maximumMarks || 0;
+    const isPoolQuestion = exam.enableQuestionPool && poolQuestionIdSet.has(question.id);
+    const questionMaxMarks = question.type === 'likert' ? 0
+      : isPoolQuestion && exam.poolQuestionMarks != null
+      ? Number(exam.poolQuestionMarks)
+      : (question.marks || question.maximumMarks || 0);
     maxMarks += questionMaxMarks;
     
     const isAttempted = response.studentAnswer !== null && 
@@ -2049,7 +2433,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
     // ============================================
     else if ((question.type === 'descriptive' || question.type === 'text') && isAttempted) {
       try {
-        console.log(`      🤖 AI grading descriptive Q${response.questionNo}...`);
+        // console.log(`      🤖 AI grading descriptive Q${response.questionNo}...`);
         
         const modelAnswer = question.correctAnswers?.[0] || '';
         const studentAnswer = response.studentAnswer as string;
@@ -2068,7 +2452,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
         isCorrect = marksAwarded >= (questionMaxMarks * 0.6);
         evaluationMethod = 'ai_grading';
         
-        console.log(`      ✅ AI awarded ${marksAwarded}/${questionMaxMarks} marks`);
+        // console.log(`      ✅ AI awarded ${marksAwarded}/${questionMaxMarks} marks`);
         
       } catch (aiError: any) {
         console.error(`      ❌ AI grading failed: ${aiError.message}`);
@@ -2082,14 +2466,14 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
     // CODE GRADING (SERVER-SIDE JUDGE0 + AI FEEDBACK)
     // ============================================
     else if (question.type === 'code' && isAttempted) {
-      console.log(`      💻 Grading code with Judge0 execution + AI analysis...`);
+      // console.log(`      💻 Grading code with Judge0 execution + AI analysis...`);
       
       const testCases = question.testCases || [];
       const studentCode = response.studentAnswer as string;
       
       // ✅ CHECK: If code is empty/null/undefined, mark as not attempted
       if (!studentCode || studentCode.trim() === '') {
-        console.log(`      ⚠️ No code submitted for Q${response.questionNo} - marking as unattempted`);
+        // console.log(`      ⚠️ No code submitted for Q${response.questionNo} - marking as unattempted`);
         
         gradedResponses.push({
           ...response,
@@ -2109,7 +2493,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
         continue;
       }
       
-      const programmingLanguage = question.programmingLanguage || question.language || 'javascript';
+      const programmingLanguage = response.programmingLanguage || question.programmingLanguage || question.language || 'javascript';
       let passedCount = 0;
       let testResults: any[] = [];
       
@@ -2132,13 +2516,13 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       
       const languageId = languageIdMap[programmingLanguage.toLowerCase()] || 63;
       
-      console.log(`      🔧 Programming Language: ${programmingLanguage} (Judge0 ID: ${languageId})`);
+      // console.log(`      🔧 Programming Language: ${programmingLanguage} (Judge0 ID: ${languageId})`);
       
       // Fetch Judge0 base URL
       let JUDGE0_BASE_URL = '';
       
       try {
-        console.log(`      📥 Fetching Judge0 base URL from Firestore...`);
+        // console.log(`      📥 Fetching Judge0 base URL from Firestore...`);
         
         const settingsDoc = await admin.firestore()
           .collection('settings')
@@ -2148,7 +2532,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
         if (settingsDoc.exists) {
           const settingsData = settingsDoc.data();
           JUDGE0_BASE_URL = settingsData?.url || settingsData?.value || settingsData?.judge0_base_url || '';
-          console.log(`      ✅ Judge0 URL: ${JUDGE0_BASE_URL}`);
+          // console.log(`      ✅ Judge0 URL: ${JUDGE0_BASE_URL}`);
         } else {
           console.error(`      ❌ Judge0 settings document not found`);
           throw new Error('Judge0 base URL not configured');
@@ -2189,12 +2573,12 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       
       // Execute code with Judge0
       try {
-        console.log(`      🚀 Executing ${testCases.length} test cases with Judge0...`);
+        // console.log(`      🚀 Executing ${testCases.length} test cases with Judge0...`);
         
         for (let i = 0; i < testCases.length; i++) {
           const testCase = testCases[i];
           
-          console.log(`         Test ${i + 1}: Input="${testCase.input}"`);
+          // console.log(`         Test ${i + 1}: Input="${testCase.input}"`);
           
           const submissionResponse = await fetch(
             `${JUDGE0_BASE_URL}/submissions?base64_encoded=false&wait=true`,
@@ -2221,12 +2605,12 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
           
           const result = await submissionResponse.json();
           
-          console.log(`         Judge0 Response:`, {
-            status: result.status?.description,
-            statusId: result.status?.id,
-            time: result.time,
-            memory: result.memory
-          });
+          // console.log(`         Judge0 Response:`, {
+          //   status: result.status?.description,
+          //   statusId: result.status?.id,
+          //   time: result.time,
+          //   memory: result.memory
+          // });
           
           const actualOutput = result.stdout?.trim() || '';
           const expectedOutput = testCase.expected_output?.trim() || '';
@@ -2247,14 +2631,14 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
           
           if (passed) {
             passedCount++;
-            console.log(`         ✅ Test ${i + 1} PASSED`);
+            // console.log(`         ✅ Test ${i + 1} PASSED`);
           } else {
-            console.log(`         ❌ Test ${i + 1} FAILED`);
-            console.log(`            Expected: "${expectedOutput}"`);
-            console.log(`            Got: "${actualOutput}"`);
-            console.log(`            Status: ${result.status?.description}`);
+            // console.log(`         ❌ Test ${i + 1} FAILED`);
+            // console.log(`            Expected: "${expectedOutput}"`);
+            // console.log(`            Got: "${actualOutput}"`);
+            // console.log(`            Status: ${result.status?.description}`);
             if (result.stderr) {
-              console.log(`            Error: ${result.stderr.substring(0, 200)}`);
+              // console.log(`            Error: ${result.stderr.substring(0, 200)}`);
             }
           }
           
@@ -2298,14 +2682,14 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       isCorrect = passedCount === testCases.length;
       evaluationMethod = 'code_auto_judge0';
       
-      console.log(`      📊 Final Test Results: ${passedCount}/${testCases.length} passed`);
-      console.log(`      💯 Marks: ${marksAwarded}/${questionMaxMarks}`);
+      // console.log(`      📊 Final Test Results: ${passedCount}/${testCases.length} passed`);
+      // console.log(`      💯 Marks: ${marksAwarded}/${questionMaxMarks}`);
       
       // AI Code Analysis
       let codeAIFeedback = null;
       
       try {
-        console.log(`      🤖 Analyzing code with AI...`);
+        // console.log(`      🤖 Analyzing code with AI...`);
         
         codeAIFeedback = await analyzeCodeWithAIHelper({
           questionText: question.questionText,
@@ -2318,15 +2702,15 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
           modelSolution: question.solution || ''
         });
         
-        console.log(`      ✅ AI Analysis complete:`);
-        console.log(`         - Code Quality: ${codeAIFeedback.codeQuality}/100`);
-        console.log(`         - Time Complexity: ${codeAIFeedback.timeComplexity}`);
-        console.log(`         - Space Complexity: ${codeAIFeedback.spaceComplexity}`);
+        // console.log(`      ✅ AI Analysis complete:`);
+        // console.log(`         - Code Quality: ${codeAIFeedback.codeQuality}/100`);
+        // console.log(`         - Time Complexity: ${codeAIFeedback.timeComplexity}`);
+        // console.log(`         - Space Complexity: ${codeAIFeedback.spaceComplexity}`);
         
         if (codeAIFeedback.allTestsPassed) {
-          console.log(`         - Optimizations: ${codeAIFeedback.optimizationSuggestions?.length || 0}`);
+          // console.log(`         - Optimizations: ${codeAIFeedback.optimizationSuggestions?.length || 0}`);
         } else {
-          console.log(`         - Bugs found: ${codeAIFeedback.bugLocations?.length || 0}`);
+          // console.log(`         - Bugs found: ${codeAIFeedback.bugLocations?.length || 0}`);
         }
         
       } catch (aiError: any) {
@@ -2363,13 +2747,13 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
     // SQL GRADING (SERVER-SIDE PGlite + Test Cases)
     // ============================================
     else if (question.type === 'sql' && isAttempted) {
-      console.log(`      🐘 Grading SQL with PGlite execution...`);
+      // console.log(`      🐘 Grading SQL with PGlite execution...`);
       
       const studentCode = response.studentAnswer as string;
       
       // CHECK: If code is empty, mark as not attempted
       if (!studentCode || studentCode.trim() === '') {
-        console.log(`      ⚠️ No SQL submitted for Q${response.questionNo} - marking as unattempted`);
+        // console.log(`      ⚠️ No SQL submitted for Q${response.questionNo} - marking as unattempted`);
         
         gradedResponses.push({
           ...response,
@@ -2393,7 +2777,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       const sqlTestCases = question.sqlTestCases || question.sql_test_cases || [];
       
       if (sqlTestCases.length === 0) {
-        console.log(`      ⚠️ No SQL test cases for Q${response.questionNo} - pending manual`);
+        // console.log(`      ⚠️ No SQL test cases for Q${response.questionNo} - pending manual`);
         evaluationMethod = 'pending_manual';
         pendingManualGrading++;
         
@@ -2419,7 +2803,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       }
       
       try {
-        console.log(`      🚀 Executing ${sqlTestCases.length} SQL test cases with PGlite...`);
+        // console.log(`      🚀 Executing ${sqlTestCases.length} SQL test cases with PGlite...`);
         
         const sqlResult = await gradeSqlWithPGlite({
           studentCode,
@@ -2432,8 +2816,8 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
         isCorrect = sqlResult.isCorrect;
         evaluationMethod = 'sql_auto_pglite';
         
-        console.log(`      📊 SQL Test Results: ${sqlResult.passedCount}/${sqlResult.totalTests} passed`);
-        console.log(`      💯 Marks: ${marksAwarded}/${questionMaxMarks}`);
+        // console.log(`      📊 SQL Test Results: ${sqlResult.passedCount}/${sqlResult.totalTests} passed`);
+        // console.log(`      💯 Marks: ${marksAwarded}/${questionMaxMarks}`);
         
         // Store graded response (mirrors CODE pattern)
         gradedResponses.push({
@@ -2486,6 +2870,26 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
         trackPerformance(question, response, questionMaxMarks, 0, isAttempted, false);
         continue;
       }
+    }
+    
+    // ============================================
+    // LIKERT GRADING - Personality Trait Scoring
+    // ============================================
+    else if (question.type === 'likert' && isAttempted) {
+      const rawScore = parseInt(response.studentAnswer as string, 10);
+      const direction = question.likertDirection || 'normal';
+      const traitScore = direction === 'reverse' ? (6 - rawScore) : rawScore;
+      const trait = question.likertTrait || 'General';
+
+      // Accumulate into traitMap for personality profile (aggregated at attempt level)
+      if (!traitMap[trait]) traitMap[trait] = { total: 0, count: 0, max: 0 };
+      traitMap[trait].total += traitScore;
+      traitMap[trait].count += 1;
+      traitMap[trait].max += 5;
+
+      marksAwarded = 0;
+      isCorrect = false;
+      evaluationMethod = 'likert_auto';
     }
     
     // ============================================
@@ -2553,22 +2957,28 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
     });
   }
   
-  const percentage = maxMarks > 0 ? (totalScore / maxMarks) * 100 : 0;
+  // percentage is calculated after pool maxMarks correction below
   
   // ✅ Add unattempted questions to byType, byComplexity, byChapter
+  // For NON-POOL questions (questionsList): add unattempted ones normally
   for (const question of allQuestions) {
     const hasResponse = responses.some((r: any) => r.questionId === question.id);
     if (!hasResponse) {
+      // Skip ALL pool questions here — they are handled separately below
+      const isPoolQuestion = exam.enableQuestionPool && poolQuestionIdSet.has(question.id);
+      if (isPoolQuestion) continue;
+      
+      // Skip likert questions — they don't contribute to marks
+      if (question.type === 'likert') continue;
+      
       const qMaxMarks = question.maximumMarks || question.marks || question.maxMarks || 0;
       
-      // byType
       const qType = question.type;
       if (qType) {
         if (!byType[qType]) byType[qType] = { attempted: 0, score: 0, maxScore: 0 };
         byType[qType].maxScore += qMaxMarks;
       }
       
-      // byComplexity
       if (question.complexity) {
         const complexity = question.complexity.toLowerCase() as 'easy' | 'medium' | 'hard';
         if (byComplexity[complexity]) {
@@ -2576,7 +2986,6 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
         }
       }
       
-      // byChapter
       const unattemptedChapter = question.chapter || 
         responses.find((r: any) => r.questionId === question.id)?.chapter;
       if (unattemptedChapter) {
@@ -2586,30 +2995,228 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
     }
   }
   
+  // ✅ POOL QUESTIONS: Recalculate maxScore for chapter/type/complexity
+  // using the EXACT presented pool question IDs stored in the attempt document
+  if (exam.enableQuestionPool && exam.questionPool && Array.isArray(exam.questionPool)) {
+    const poolQuestionMarksValue = Number(exam.poolQuestionMarks) || 0;
+    const pickRandomCount = Number(exam.pickRandomCount) || 0;
+    
+    // Determine presented pool questions — use stored IDs if available, else fallback to distribution estimate
+    let presentedPoolQuestions: any[] = [];
+    
+    if (poolQuestionIds.length > 0) {
+      // ✅ EXACT: We know exactly which questions were shown to this student
+      const poolIdSet = new Set(poolQuestionIds);
+      presentedPoolQuestions = exam.questionPool.filter((q: any) => poolIdSet.has(q.id));
+      // console.log(`📋 Using exact poolQuestionIds: ${presentedPoolQuestions.length} presented questions`);
+    } else {
+      // ⚠️ FALLBACK for older attempts without poolQuestionIds — use distribution estimate
+      // console.log('⚠️ No poolQuestionIds in attempt — using distribution estimate');
+      
+      const poolByChapter = new Map<string, any[]>();
+      for (const q of exam.questionPool) {
+        const chapter = q.chapter || q.board || q.subject || 'General';
+        if (!poolByChapter.has(chapter)) poolByChapter.set(chapter, []);
+        poolByChapter.get(chapter)!.push(q);
+      }
+      
+      const totalChapters = poolByChapter.size;
+      const baseQuota = Math.floor(pickRandomCount / totalChapters);
+      
+      const chapterPresentedCount = new Map<string, number>();
+      let assigned = 0;
+      for (const [chapter, questions] of poolByChapter) {
+        const quota = Math.min(baseQuota, questions.length);
+        chapterPresentedCount.set(chapter, quota);
+        assigned += quota;
+      }
+      
+      let remainingToAssign = pickRandomCount - assigned;
+      if (remainingToAssign > 0) {
+        const chaptersWithCapacity = Array.from(poolByChapter.entries())
+          .filter(([chapter, questions]) => questions.length > (chapterPresentedCount.get(chapter) || 0))
+          .sort((a, b) => b[1].length - a[1].length);
+        
+        for (const [chapter] of chaptersWithCapacity) {
+          if (remainingToAssign === 0) break;
+          chapterPresentedCount.set(chapter, (chapterPresentedCount.get(chapter) || 0) + 1);
+          remainingToAssign--;
+        }
+      }
+      
+      // Build synthetic presentedPoolQuestions from estimated counts
+      for (const [chapter, count] of chapterPresentedCount) {
+        for (let i = 0; i < count; i++) {
+          const chapQuestions = poolByChapter.get(chapter) || [];
+          if (chapQuestions[i]) {
+            presentedPoolQuestions.push(chapQuestions[i]);
+          }
+        }
+      }
+    }
+    
+    // Now correct byChapter, byType, byComplexity using presented pool questions
+    // Step 1: Subtract what the grading loop added for responded pool questions
+    const respondedPoolIds = new Set(
+      responses
+        .filter((r: any) => poolQuestionIdSet.has(r.questionId))
+        .map((r: any) => r.questionId)
+    );
+    
+    for (const r of responses) {
+      const q = allQuestions.find((aq: any) => aq.id === r.questionId);
+      if (!q || !poolQuestionIdSet.has(q.id)) continue;
+      
+      const chapter = q.chapter || q.board || q.subject || 'General';
+      const qType = q.type;
+      const complexity = q.complexity ? q.complexity.toLowerCase() : null;
+      
+      // Remove the per-response maxScore that grading loop added
+      if (byChapter[chapter]) byChapter[chapter].maxScore -= poolQuestionMarksValue;
+      if (qType && byType[qType]) byType[qType].maxScore -= poolQuestionMarksValue;
+      if (complexity && byComplexity[complexity]) byComplexity[complexity].maxScore -= poolQuestionMarksValue;
+    }
+    
+    // Step 2: Add correct maxScore for ALL presented pool questions (including untouched ones)
+    for (const q of presentedPoolQuestions) {
+      const chapter = q.chapter || q.board || q.subject || 'General';
+      const qType = q.type;
+      const complexity = q.complexity ? q.complexity.toLowerCase() : null;
+      
+      if (!byChapter[chapter]) byChapter[chapter] = { attempted: 0, score: 0, maxScore: 0 };
+      byChapter[chapter].maxScore += poolQuestionMarksValue;
+      
+      if (qType) {
+        if (!byType[qType]) byType[qType] = { attempted: 0, score: 0, maxScore: 0 };
+        byType[qType].maxScore += poolQuestionMarksValue;
+      }
+      
+      if (complexity) {
+        if (!byComplexity[complexity]) byComplexity[complexity] = { attempted: 0, score: 0, maxScore: 0 };
+        byComplexity[complexity].maxScore += poolQuestionMarksValue;
+      }
+    }
+    
+    // Step 3: Fix total maxMarks
+    const gradingLoopPoolMax = respondedPoolIds.size * poolQuestionMarksValue;
+    const correctPoolMax = presentedPoolQuestions.length * poolQuestionMarksValue;
+    maxMarks = (maxMarks - gradingLoopPoolMax) + correctPoolMax;
+    
+    // console.log('📊 Pool correction applied:');
+    // console.log(`   - Presented: ${presentedPoolQuestions.length} questions`);
+    // console.log(`   - Responded: ${respondedPoolIds.size} questions`);
+    // console.log(`   - Pool maxMarks: ${correctPoolMax}`);
+    // console.log(`   - Total maxMarks: ${maxMarks}`);
+  }
+  
+  // Recalculate percentage with corrected maxMarks
+  const correctedPercentage = maxMarks > 0 ? (totalScore / maxMarks) * 100 : 0;
+  
   // Calculate total questions from exam and time spent from responses
-  const totalQuestions = allQuestions.length;  // Total questions in exam
+  // For pool-based exams, total = questionsList count + pickRandomCount (not entire pool)
+  const nonPoolQuestionCount = allQuestions.filter((q: any) => !(exam.enableQuestionPool && q.source === 'questionBank')).length;
+  const totalQuestions = nonPoolQuestionCount + (exam.enableQuestionPool ? Number(exam.pickRandomCount) || 0 : 0);
   const timeSpent = responses.reduce((sum: number, r: any) => sum + (r.timeSpent || 0), 0);
   
-  console.log(`✅ Grading complete: ${totalScore}/${maxMarks} (${percentage.toFixed(2)}%)`);
-  console.log(`   - Total questions: ${totalQuestions}`);
-  console.log(`   - Attempted: ${attemptedQuestions}/${totalQuestions}`);
-  console.log(`   - Correct: ${correctAnswers}`);
-  console.log(`   - Time spent: ${timeSpent}s`);
-  console.log(`   - Pending manual: ${pendingManualGrading}`);
+  // console.log(`✅ Grading complete: ${totalScore}/${maxMarks} (${correctedPercentage.toFixed(2)}%)`);
+  // console.log(`   - Total questions: ${totalQuestions}`);
+  // console.log(`   - Attempted: ${attemptedQuestions}/${totalQuestions}`);
+  // console.log(`   - Correct: ${correctAnswers}`);
+  // console.log(`   - Time spent: ${timeSpent}s`);
+  // console.log(`   - Pending manual: ${pendingManualGrading}`);
   
+  // ============================================
+  // PERSONALITY PROFILE AGGREGATION (Likert)
+  // ============================================
+  const personalityProfile: Record<string, { score: number; maxScore: number; average: number; percentage: number; level: string }> = {};
+  for (const [trait, data] of Object.entries(traitMap)) {
+    const traitPercentage = parseFloat(((data.total / data.max) * 100).toFixed(1));
+    const level = traitPercentage <= 20 ? 'Very Low'
+      : traitPercentage <= 40 ? 'Low'
+      : traitPercentage <= 60 ? 'Moderate'
+      : traitPercentage <= 80 ? 'High'
+      : 'Very High';
+    personalityProfile[trait] = {
+      score: data.total,
+      maxScore: data.max,
+      average: parseFloat((data.total / data.count).toFixed(2)),
+      percentage: traitPercentage,
+      level
+    };
+  }
+  const hasPersonalityData = Object.keys(personalityProfile).length > 0;
+
+  // Derive personality type from top 2 traits
+  let personalityType: any = null;
+  if (hasPersonalityData) {
+    const sorted = Object.entries(personalityProfile).sort((a, b) => b[1].percentage - a[1].percentage);
+    const top1 = sorted[0]?.[0] || '';
+    const top2 = sorted[1]?.[0] || '';
+
+    const PERSONALITY_TYPES = [
+      { t1: 'Problem Solving', t2: 'Openness',           title: 'The Strategic Innovator',      desc: 'Combines strong analytical thinking with curiosity for new ideas. Excels at finding creative solutions to complex challenges.',      careers: ['Software Architect', 'Data Scientist', 'R&D Engineer', 'Product Manager'] },
+      { t1: 'Leadership',      t2: 'Extraversion',        title: 'The Dynamic Leader',            desc: 'A charismatic, action-oriented leader who thrives in social settings. Naturally rallies teams and drives group energy.',               careers: ['CEO', 'Sales Director', 'Event Manager', 'Startup Founder'] },
+      { t1: 'Conscientiousness', t2: 'Problem Solving',   title: 'The Methodical Achiever',       desc: 'Highly organized and detail-oriented with strong analytical skills. Systematic approach ensures consistent high-quality results.',    careers: ['Project Manager', 'Quality Analyst', 'Auditor', 'Systems Engineer'] },
+      { t1: 'Agreeableness',   t2: 'Communication',       title: 'The Empathetic Connector',      desc: 'Warm, trustworthy, and an excellent communicator. Builds strong relationships and creates harmony in teams.',                        careers: ['HR Manager', 'Counselor', 'Customer Success', 'Social Worker'] },
+      { t1: 'Openness',        t2: 'Extraversion',        title: 'The Creative Catalyst',         desc: 'Energetic and imaginative with a passion for sharing new ideas. Inspires others with vision and enthusiasm.',                        careers: ['Marketing Director', 'UX Designer', 'Creative Director', 'Entrepreneur'] },
+      { t1: 'Leadership',      t2: 'Conscientiousness',   title: 'The Disciplined Commander',     desc: 'A structured leader who leads by example with strong work ethic. Plans meticulously and holds team to high standards.',              careers: ['Operations Manager', 'Military Officer', 'Engineering Lead', 'COO'] },
+      { t1: 'Communication',   t2: 'Agreeableness',       title: 'The Diplomatic Mediator',       desc: 'Skilled at resolving conflicts and finding common ground. Excellent listener who adapts message to any audience.',                   careers: ['Mediator', 'Public Relations', 'Diplomat', 'Team Facilitator'] },
+      { t1: 'Emotional Stability', t2: 'Leadership',      title: 'The Composed Director',         desc: 'Calm under pressure with natural authority. Makes tough decisions without being swayed by emotions or panic.',                       careers: ['Crisis Manager', 'Surgeon', 'Air Traffic Controller', 'Executive'] },
+      { t1: 'Openness',        t2: 'Problem Solving',     title: 'The Curious Analyst',           desc: 'Intellectually driven with a love for exploring and understanding complex systems. Thrives on research and discovery.',              careers: ['Research Scientist', 'Analyst', 'AI/ML Engineer', 'Philosopher'] },
+      { t1: 'Extraversion',    t2: 'Communication',       title: 'The Charismatic Communicator',  desc: 'Natural storyteller who commands attention. Thrives in public-facing roles and excels at persuasion and influence.',                careers: ['Public Speaker', 'Journalist', 'Sales Executive', 'Politician'] },
+      { t1: 'Conscientiousness', t2: 'Emotional Stability', title: 'The Steady Performer',        desc: 'Reliable, calm, and consistent. Delivers quality work under any condition without losing composure or focus.',                       careers: ['Accountant', 'Pilot', 'Pharmacist', 'Database Administrator'] },
+      { t1: 'Leadership',      t2: 'Problem Solving',     title: 'The Decisive Strategist',       desc: 'Takes charge with confidence backed by strong analytical reasoning. Makes data-driven decisions swiftly.',                          careers: ['Management Consultant', 'CTO', 'Military Strategist', 'Fund Manager'] },
+      { t1: 'Agreeableness',   t2: 'Emotional Stability', title: 'The Calm Supporter',            desc: 'Patient, understanding, and emotionally grounded. A stabilizing presence who supports others through challenges.',                  careers: ['Therapist', 'Nurse', 'Teacher', 'Social Worker', 'Mentor'] },
+      { t1: 'Openness',        t2: 'Communication',       title: 'The Visionary Storyteller',     desc: 'Combines creative thinking with the ability to articulate complex ideas simply. Inspires through words and vision.',                careers: ['Content Strategist', 'Author', 'TED Speaker', 'Brand Manager'] },
+      { t1: 'Problem Solving', t2: 'Conscientiousness',   title: 'The Precision Engineer',        desc: 'Methodical problem-solver who leaves nothing to chance. Combines logic with discipline for flawless execution.',                    careers: ['DevOps Engineer', 'Architect', 'Financial Analyst', 'QA Lead'] },
+      { t1: 'Leadership',      t2: 'Communication',       title: 'The Inspiring Captain',         desc: 'Leads through clear vision and powerful communication. Motivates teams by articulating goals and building trust.',                  careers: ['School Principal', 'Team Lead', 'Coach', 'Non-Profit Director'] },
+      { t1: 'Extraversion',    t2: 'Agreeableness',       title: 'The Social Harmonizer',         desc: 'Outgoing and deeply considerate of others. Creates inclusive environments where everyone feels valued.',                            careers: ['Community Manager', 'Recruiter', 'Hospitality Manager', 'Trainer'] },
+      { t1: 'Emotional Stability', t2: 'Problem Solving', title: 'The Cool-Headed Solver',        desc: 'Stays rational and focused even in crisis. Approaches emergencies with logic rather than panic.',                                  careers: ['Emergency Doctor', 'Firefighter', 'Ethical Hacker', 'Debug Specialist'] },
+      { t1: 'Conscientiousness', t2: 'Communication',     title: 'The Organized Communicator',    desc: 'Combines structured thinking with clear expression. Documentation, processes, and clarity are their strength.',                     careers: ['Technical Writer', 'Business Analyst', 'Compliance Officer', 'Editor'] },
+      { t1: 'Openness',        t2: 'Leadership',          title: 'The Trailblazing Pioneer',      desc: 'Fearless leader who embraces change and takes teams into uncharted territory. Sees opportunity where others see risk.',             careers: ['Venture Capitalist', 'Innovation Director', 'Startup CEO', 'Explorer'] },
+    ];
+
+    const match = PERSONALITY_TYPES.find(p =>
+      (p.t1 === top1 && p.t2 === top2) || (p.t1 === top2 && p.t2 === top1)
+    ) || PERSONALITY_TYPES.find(p => p.t1 === top1) || {
+      title: 'The Well-Rounded Individual',
+      desc: 'You demonstrate a balanced personality profile with strengths across multiple dimensions.',
+      careers: ['Management', 'Consulting', 'Education', 'Research']
+    };
+
+    personalityType = { title: match.title, desc: match.desc, careers: match.careers, topTrait: top1, secondTrait: top2 };
+  }
+
+  // Detect response style
+  let responseStyle = 'Genuine';
+  if (hasPersonalityData) {
+    const allLikertResponses = gradedResponses.filter((r: any) => r.questionType === 'likert' && r.studentAnswer);
+    const total = allLikertResponses.length;
+    if (total > 0) {
+      const neutralCount = allLikertResponses.filter((r: any) => r.studentAnswer === '3' || r.studentAnswer === 3).length;
+      const agreeCount = allLikertResponses.filter((r: any) => ['4','5',4,5].includes(r.studentAnswer)).length;
+      const extremeCount = allLikertResponses.filter((r: any) => ['1','5',1,5].includes(r.studentAnswer)).length;
+      const sameAnswer = [1,2,3,4,5].some(v => allLikertResponses.filter((r: any) => r.studentAnswer === String(v) || r.studentAnswer === v).length / total >= 0.9);
+      if (sameAnswer) responseStyle = 'Careless Responding';
+      else if (extremeCount / total > 0.70) responseStyle = 'Extreme Responding';
+      else if (agreeCount / total > 0.70) responseStyle = 'Acquiescence';
+      else if (neutralCount / total > 0.40) responseStyle = 'Central Tendency';
+    }
+  }
+
   // Clean responses to remove undefined values
   const cleanedResponses = gradedResponses.map(r => cleanObject(r));
-  
+
   // Update attempt document
   await admin.firestore()
     .collection(COLLECTIONS.EXAM_ATTEMPTS)
     .doc(attemptId)
     .update({
       responses: cleanedResponses,
-      obtainedMarks: totalScore,  // Same as totalScore (keeping both for compatibility)
-      totalScore: totalScore,     // Duplicate of obtainedMarks
+      obtainedMarks: totalScore,
+      totalScore: totalScore,
       maximumScore: maxMarks,
-      percentage: percentage,
+      percentage: correctedPercentage,
       totalQuestions: totalQuestions,
       attemptedQuestions: attemptedQuestions,
       correctAnswers: correctAnswers,
@@ -2621,6 +3228,9 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       aiEvaluated: true,
       manualReviewRequired: pendingManualGrading > 0,
       pendingEvaluations: pendingManualGrading,
+      ...(hasPersonalityData && { personalityProfile }),
+      ...(personalityType && { personalityType }),
+      ...(hasPersonalityData && { responseStyle }),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
   
@@ -2628,7 +3238,7 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
     success: true,
     totalScore,
     maxMarks,
-    percentage,
+    percentage: correctedPercentage,
     totalQuestions,
     attemptedQuestions,
     correctAnswers,
@@ -2649,7 +3259,7 @@ export const submitAndGradeExam = functions
   })
   .https.onCall(async (data, context) => {
     try {
-      console.log('📝 [SERVER-SIDE GRADING] Starting...');
+      // console.log('📝 [SERVER-SIDE GRADING] Starting...');
       
       if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'Must be authenticated');
@@ -2659,7 +3269,7 @@ export const submitAndGradeExam = functions
 
       // ✅ QUICK SUBMIT MODE: Save immediately, evaluate in background
       if (quickSubmit) {
-        console.log('⚡ Quick submit - saving answers without evaluation');
+        // console.log('⚡ Quick submit - saving answers without evaluation');
         
         await admin.firestore()
           .collection(COLLECTIONS.EXAM_ATTEMPTS)
@@ -2689,10 +3299,10 @@ export const submitAndGradeExam = functions
       }
       
       // 🎯 Use shared grading function (same logic as auto-submit)
-      console.log('🔐 Calling shared grading function...');
+      // console.log('🔐 Calling shared grading function...');
       const result = await gradeAttempt(examId, attemptId, responses);
       
-      console.log('💾 Results saved');
+      // console.log('💾 Results saved');
       
       return {
         success: true,
@@ -2817,7 +3427,7 @@ export const chatWithAI = functions
   });
 
 // ============================================
-// AI CODE ASSISTANT (CodingLab Integration)
+// AI CODE ASSISTANT (CodePractice Integration)
 // Version: 1.2.0
 // Operations: explain, fix, suggest, tests, docs, optimize, assistant, format, autocomplete, inline
 // ============================================
@@ -3335,11 +3945,9 @@ export const sendWelcomeEmail = functions
       // NOTE: Permission check removed for user creation workflow
       // This function is called from firebase_service.ts during legitimate user creation
       // and is not directly exposed to end users
-      const callerDoc = await admin.firestore().doc(`${COLLECTIONS.USERS}/${context.auth.uid}`).get();
-      const callerData = callerDoc.data();
       
       // Log who called it for auditing purposes
-      console.log('📧 sendWelcomeEmail called by:', callerData?.userType || 'Unknown', context.auth.uid);
+      // console.log('📧 sendWelcomeEmail called by:', callerData?.userType || 'Unknown', context.auth.uid);
       
       // Permission check disabled to allow user creation workflow
       // Original check kept for reference:
@@ -3361,7 +3969,7 @@ export const sendWelcomeEmail = functions
       // ============================================
       // FETCH EMAIL CREDENTIALS FROM FIRESTORE
       // ============================================
-      console.log('📧 Fetching email credentials from Firestore...');
+      // console.log('📧 Fetching email credentials from Firestore...');
       
       const emailCredsDoc = await admin.firestore()
         .doc(FIRESTORE_PATHS.EMAIL_CREDENTIALS)
@@ -3383,10 +3991,10 @@ export const sendWelcomeEmail = functions
         );
       }
 
-      console.log('✅ Email credentials loaded from Firestore');
-      console.log('📮 SMTP Host:', emailCreds.MAIL_HOST);
-      console.log('👤 SMTP User:', emailCreds.MAIL_USERNAME);
-      console.log('🔌 SMTP Port:', emailCreds.MAIL_PORT);
+      // console.log('✅ Email credentials loaded from Firestore');
+      // console.log('📮 SMTP Host:', emailCreds.MAIL_HOST);
+      // console.log('👤 SMTP User:', emailCreds.MAIL_USERNAME);
+      // console.log('🔌 SMTP Port:', emailCreds.MAIL_PORT);
 
       // ============================================
       // CREATE TRANSPORTER WITH BREVO CREDENTIALS
@@ -3401,7 +4009,7 @@ export const sendWelcomeEmail = functions
         },
       });
 
-      console.log('📬 Nodemailer transporter created with Brevo SMTP');
+      // console.log('📬 Nodemailer transporter created with Brevo SMTP');
 
       // ============================================
       // GET COLLEGE NAME
@@ -3436,11 +4044,11 @@ export const sendWelcomeEmail = functions
         html: emailHtml,
       };
 
-      console.log('📤 Sending email to:', email);
+      // console.log('📤 Sending email to:', email);
       
       await transporter.sendMail(mailOptions);
 
-      console.log('✅ Welcome email sent successfully to:', email);
+      // console.log('✅ Welcome email sent successfully to:', email);
 
       return {
         success: true,
@@ -3482,7 +4090,7 @@ export const sendOTPEmail = functions
       // ============================================
       // FETCH EMAIL CREDENTIALS FROM FIRESTORE
       // ============================================
-      console.log('📧 Fetching email credentials for OTP...');
+      // console.log('📧 Fetching email credentials for OTP...');
       
       const emailCredsDoc = await admin.firestore()
         .doc(FIRESTORE_PATHS.EMAIL_CREDENTIALS)
@@ -3573,7 +4181,7 @@ export const sendOTPEmail = functions
 
       await transporter.sendMail(mailOptions);
 
-      console.log('✅ OTP email sent successfully to:', email);
+      // console.log('✅ OTP email sent successfully to:', email);
 
       return {
         success: true,
@@ -3698,7 +4306,7 @@ export const resetPasswordSecurely = functions
           password: newPassword
         });
         
-        console.log('✅ Password updated successfully for user:', userRecord.uid);
+        // console.log('✅ Password updated successfully for user:', userRecord.uid);
       } catch (error: any) {
         console.error('Failed to update password:', error);
         throw new functions.https.HttpsError(
@@ -3729,11 +4337,11 @@ export const resetPasswordSecurely = functions
         const oldRequest = await oldRequestDoc.get();
         if (oldRequest.exists) {
           await oldRequestDoc.delete();
-          console.log('🧹 Cleaned up old password reset request');
+          // console.log('🧹 Cleaned up old password reset request');
         }
       } catch (error) {
         // Non-critical, just log
-        console.log('No old password reset request to delete');
+        // console.log('No old password reset request to delete');
       }
 
       // 10. Update user's last password change timestamp in Firestore
@@ -3743,10 +4351,10 @@ export const resetPasswordSecurely = functions
         });
       } catch (error) {
         // Non-critical, just log
-        console.warn('Could not update lastPasswordChange in user document:', error);
+        // console.warn('Could not update lastPasswordChange in user document:', error);
       }
 
-      console.log('✅ Password reset completed successfully for:', email);
+      // console.log('✅ Password reset completed successfully for:', email);
 
       return {
         success: true,
@@ -3791,7 +4399,7 @@ export const cleanupExpiredOTPs = functions
   .pubsub.schedule('every 24 hours')
   .timeZone('Asia/Kolkata')
   .onRun(async (context) => {
-    console.log('🧹 Starting cleanup of expired OTPs...');
+    // console.log('🧹 Starting cleanup of expired OTPs...');
     
     try {
       const db = admin.firestore();
@@ -3804,7 +4412,7 @@ export const cleanupExpiredOTPs = functions
         .get();
 
       if (expiredOTPs.empty) {
-        console.log('✅ No expired OTPs to clean up');
+        // console.log('✅ No expired OTPs to clean up');
         return null;
       }
 
@@ -3814,7 +4422,7 @@ export const cleanupExpiredOTPs = functions
       });
 
       await batch.commit();
-      console.log(`🧹 Cleaned up ${expiredOTPs.size} expired OTPs`);
+      // console.log(`🧹 Cleaned up ${expiredOTPs.size} expired OTPs`);
       
       return {
         success: true,
@@ -4090,7 +4698,7 @@ export const sendPasswordResetEmail = functions
       }
 
       // Fetch email credentials from Firestore
-      console.log('📧 Fetching email credentials from Firestore...');
+      // console.log('📧 Fetching email credentials from Firestore...');
       
       const emailCredsDoc = await admin.firestore()
         .doc('settings/email_credentials')
@@ -4112,7 +4720,7 @@ export const sendPasswordResetEmail = functions
         );
       }
 
-      console.log('✅ Email credentials loaded from Firestore');
+      // console.log('✅ Email credentials loaded from Firestore');
 
       // Create transporter with Brevo credentials
       const transporter = nodemailer.createTransport({
@@ -4139,11 +4747,11 @@ export const sendPasswordResetEmail = functions
         html: emailHtml,
       };
 
-      console.log('📤 Sending password reset email to:', email);
+      // console.log('📤 Sending password reset email to:', email);
       
       await transporter.sendMail(mailOptions);
 
-      console.log('✅ Password reset email sent successfully to:', email);
+      // console.log('✅ Password reset email sent successfully to:', email);
 
       return {
         success: true,
@@ -4256,7 +4864,7 @@ export const sendPasswordResetEmail = functions
 
 function isExamExpired(exam: ExamData): boolean {
   if (!exam.examDate || !exam.examTime || !exam.duration) {
-    console.log(`⏭️ Skipping exam ${exam.id}: Missing date/time/duration`);
+    // console.log(`⏭️ Skipping exam ${exam.id}: Missing date/time/duration`);
     return false;
   }
 
@@ -4264,7 +4872,7 @@ function isExamExpired(exam: ExamData): boolean {
     // Parse duration first to validate
     const durationMinutes = parseInt(exam.duration);
     if (isNaN(durationMinutes)) {
-      console.log(`⚠️ Invalid duration for exam ${exam.id}: ${exam.duration}`);
+      // console.log(`⚠️ Invalid duration for exam ${exam.id}: ${exam.duration}`);
       return false;
     }
 
@@ -4294,16 +4902,16 @@ function isExamExpired(exam: ExamData): boolean {
     const isExpired = nowUTC > examEndTimeUTC;
     
     // For logging, convert timestamps to readable dates
-    const examStartIST = new Date(examStartTimeUTC);
-    const examEndIST = new Date(examEndTimeUTC);
-    const nowIST = new Date(nowUTC);
+    // const examStartIST = new Date(examStartTimeUTC);
+    // const examEndIST = new Date(examEndTimeUTC);
+    // const nowIST = new Date(nowUTC);
     
-    console.log(`🔍 Checking exam: ${exam.title || exam.id}`);
-    console.log(`   Date: ${exam.examDate}, Time: ${exam.examTime} IST, Duration: ${exam.duration}min`);
-    console.log(`   Start Time (UTC): ${examStartIST.toISOString()}`);
-    console.log(`   End Time (UTC): ${examEndIST.toISOString()}`);
-    console.log(`   Current Time (UTC): ${nowIST.toISOString()}`);
-    console.log(`   Is Expired: ${isExpired}`);
+    // console.log(`🔍 Checking exam: ${exam.title || exam.id}`);
+    // console.log(`   Date: ${exam.examDate}, Time: ${exam.examTime} IST, Duration: ${exam.duration}min`);
+    // console.log(`   Start Time (UTC): ${examStartIST.toISOString()}`);
+    // console.log(`   End Time (UTC): ${examEndIST.toISOString()}`);
+    // console.log(`   Current Time (UTC): ${nowIST.toISOString()}`);
+    // console.log(`   Is Expired: ${isExpired}`);
     
     return isExpired;
   } catch (error) {
@@ -4317,14 +4925,14 @@ function isExamExpired(exam: ExamData): boolean {
  */
 function isExamBeyondGracePeriod(exam: ExamData, gracePeriodMinutes: number = 30): boolean {
   if (!exam.examDate || !exam.examTime || !exam.duration) {
-    console.log(`⏭️ Skipping exam ${exam.id}: Missing date/time/duration`);
+    // console.log(`⏭️ Skipping exam ${exam.id}: Missing date/time/duration`);
     return false;
   }
 
   try {
     const durationMinutes = parseInt(exam.duration);
     if (isNaN(durationMinutes)) {
-      console.log(`⚠️ Invalid duration for exam ${exam.id}: ${exam.duration}`);
+      // console.log(`⚠️ Invalid duration for exam ${exam.id}: ${exam.duration}`);
       return false;
     }
 
@@ -4341,9 +4949,9 @@ function isExamBeyondGracePeriod(exam: ExamData, gracePeriodMinutes: number = 30
     
     const isBeyondGracePeriod = nowUTC > graceEndTimeUTC;
     
-    console.log(`🔍 Checking exam grace period: ${exam.title || exam.id}`);
-    console.log(`   Grace End Time: ${new Date(graceEndTimeUTC).toISOString()} (+${gracePeriodMinutes}min)`);
-    console.log(`   Beyond Grace Period: ${isBeyondGracePeriod}`);
+    // console.log(`🔍 Checking exam grace period: ${exam.title || exam.id}`);
+    // console.log(`   Grace End Time: ${new Date(graceEndTimeUTC).toISOString()} (+${gracePeriodMinutes}min)`);
+    // console.log(`   Beyond Grace Period: ${isBeyondGracePeriod}`);
     
     return isBeyondGracePeriod;
   } catch (error) {
@@ -4357,7 +4965,7 @@ export const autoCompleteExpiredExams = functions
   .pubsub.schedule('every 1 hours')
   .timeZone('Asia/Kolkata')
   .onRun(async (context) => {
-    console.log('🚀 Starting auto-complete expired exams function...');
+    // console.log('🚀 Starting auto-complete expired exams function...');
     
     const startTime = Date.now();
     let processedCount = 0;
@@ -4372,11 +4980,11 @@ export const autoCompleteExpiredExams = functions
         .get();
       
       if (examsSnapshot.empty) {
-        console.log('✅ No upcoming exams found. Nothing to process.');
+        // console.log('✅ No upcoming exams found. Nothing to process.');
         return null;
       }
       
-      console.log(`📊 Found ${examsSnapshot.size} upcoming exams to check`);
+      // console.log(`📊 Found ${examsSnapshot.size} upcoming exams to check`);
       
       let batch = db.batch();
       let batchCount = 0;
@@ -4397,11 +5005,11 @@ export const autoCompleteExpiredExams = functions
           batchCount++;
           updatedCount++;
           
-          console.log(`✅ Queued for completion: ${exam.title || exam.id}`);
+          // console.log(`✅ Queued for completion: ${exam.title || exam.id}`);
           
           if (batchCount >= batchSize) {
             await batch.commit();
-            console.log(`💾 Committed batch of ${batchCount} updates`);
+            // console.log(`💾 Committed batch of ${batchCount} updates`);
             batch = db.batch();
             batchCount = 0;
           }
@@ -4410,19 +5018,19 @@ export const autoCompleteExpiredExams = functions
       
       if (batchCount > 0) {
         await batch.commit();
-        console.log(`💾 Committed final batch of ${batchCount} updates`);
+        // console.log(`💾 Committed final batch of ${batchCount} updates`);
       }
       
       const duration = Date.now() - startTime;
       
-      console.log('========================================');
-      console.log('✅ Auto-complete function completed!');
-      console.log(`📊 Statistics:`);
-      console.log(`   - Total processed: ${processedCount}`);
-      console.log(`   - Updated to completed: ${updatedCount}`);
-      console.log(`   - Errors: ${errorCount}`);
-      console.log(`   - Duration: ${duration}ms`);
-      console.log('========================================');
+      // console.log('========================================');
+      // console.log('✅ Auto-complete function completed!');
+      // console.log(`📊 Statistics:`);
+      // console.log(`   - Total processed: ${processedCount}`);
+      // console.log(`   - Updated to completed: ${updatedCount}`);
+      // console.log(`   - Errors: ${errorCount}`);
+      // console.log(`   - Duration: ${duration}ms`);
+      // console.log('========================================');
       
       return {
         success: true,
@@ -4459,7 +5067,7 @@ export const manualAutoCompleteExams = functions
       return;
     }
     
-    console.log('🔧 Manual auto-complete triggered');
+    // console.log('🔧 Manual auto-complete triggered');
     
     const startTime = Date.now();
     let processedCount = 0;
@@ -4473,7 +5081,7 @@ export const manualAutoCompleteExams = functions
       let query = db.collection(COLLECTIONS.EXAMS).where('status', '==', EXAM_STATUS.UPCOMING);
       
       if (collegeId) {
-        console.log(`🏫 Filtering by collegeId: ${collegeId}`);
+        // console.log(`🏫 Filtering by collegeId: ${collegeId}`);
         query = query.where('collegeId', '==', collegeId) as admin.firestore.Query;
       }
       
@@ -4490,7 +5098,7 @@ export const manualAutoCompleteExams = functions
         return;
       }
       
-      console.log(`📊 Found ${examsSnapshot.size} upcoming exams to check`);
+      // console.log(`📊 Found ${examsSnapshot.size} upcoming exams to check`);
       
       let batch = db.batch();
       let batchCount = 0;
@@ -4534,7 +5142,7 @@ export const manualAutoCompleteExams = functions
         duration: duration
       };
       
-      console.log('✅ Manual auto-complete completed:', result);
+      // console.log('✅ Manual auto-complete completed:', result);
       
       res.json(result);
       
@@ -4617,7 +5225,7 @@ export const autoSubmitPendingAttempts = functions
   .pubsub.schedule('every 30 minutes')
   .timeZone('Asia/Kolkata')
   .onRun(async (context) => {
-    console.log('🚀 Starting auto-submit pending attempts function...');
+    // console.log('🚀 Starting auto-submit pending attempts function...');
     
     const startTime = Date.now();
     let processedExams = 0;
@@ -4631,7 +5239,7 @@ export const autoSubmitPendingAttempts = functions
       const now = admin.firestore.Timestamp.now();
       const sixHoursAgo = new Date(now.toMillis() - (6 * 60 * 60 * 1000));
       
-      console.log(`📅 Processing exams completed in last 6 hours (since ${sixHoursAgo.toISOString()})`);
+      // console.log(`📅 Processing exams completed in last 6 hours (since ${sixHoursAgo.toISOString()})`);
       
       const completedExamsSnapshot = await db.collection(COLLECTIONS.EXAMS)
         .where('status', '==', EXAM_STATUS.COMPLETED)
@@ -4639,11 +5247,11 @@ export const autoSubmitPendingAttempts = functions
         .get();
       
       if (completedExamsSnapshot.empty) {
-        console.log('✅ No completed exams found.');
+        // console.log('✅ No completed exams found.');
         return null;
       }
       
-      console.log(`📊 Found ${completedExamsSnapshot.size} completed exams to check`);
+      // console.log(`📊 Found ${completedExamsSnapshot.size} completed exams to check`);
       
       const GRACE_PERIOD_MINUTES = 30;
       
@@ -4655,7 +5263,7 @@ export const autoSubmitPendingAttempts = functions
           continue;
         }
         
-        console.log(`⚡ Processing exam "${exam.title || exam.id}"`);
+        // console.log(`⚡ Processing exam "${exam.title || exam.id}"`);
         
         try {
           const pendingAttemptsSnapshot = await db.collection(COLLECTIONS.EXAM_ATTEMPTS)
@@ -4664,11 +5272,11 @@ export const autoSubmitPendingAttempts = functions
             .get();
           
           if (pendingAttemptsSnapshot.empty) {
-            console.log(`   ✅ No pending attempts`);
+            // console.log(`   ✅ No pending attempts`);
             continue;
           }
           
-          console.log(`   📝 Found ${pendingAttemptsSnapshot.size} pending attempts`);
+          // console.log(`   📝 Found ${pendingAttemptsSnapshot.size} pending attempts`);
           
           let batch = db.batch();
           let batchCount = 0;
@@ -4704,10 +5312,10 @@ export const autoSubmitPendingAttempts = functions
             await batch.commit();
           }
           
-          console.log(`   ✅ Auto-submitted ${pendingAttemptsSnapshot.size} attempts`);
+          // console.log(`   ✅ Auto-submitted ${pendingAttemptsSnapshot.size} attempts`);
           
           // 🎯 NOW GRADE THEM - Call the SAME function as manual submit!
-          console.log(`   🔍 Starting grading for auto-submitted attempts...`);
+          // console.log(`   🔍 Starting grading for auto-submitted attempts...`);
           let gradedCount = 0;
           let gradingErrors = 0;
           
@@ -4721,17 +5329,17 @@ export const autoSubmitPendingAttempts = functions
               const responses = attemptData?.responses || [];
               
               if (responses.length === 0) {
-                console.log(`      ⚠️ No responses found for: ${attemptDoc.id}`);
+                // console.log(`      ⚠️ No responses found for: ${attemptDoc.id}`);
                 continue;
               }
               
-              console.log(`      📊 Grading ${responses.length} responses for: ${attemptDoc.id}`);
+              // console.log(`      📊 Grading ${responses.length} responses for: ${attemptDoc.id}`);
               
               // Call the SAME grading function that manual submit uses!
               await gradeAttempt(attempt.examId, attemptDoc.id, responses);
               
               gradedCount++;
-              console.log(`      ✅ Successfully graded: ${attemptDoc.id}`);
+              // console.log(`      ✅ Successfully graded: ${attemptDoc.id}`);
               
             } catch (gradeError: any) {
               console.error(`      ❌ Grading error for ${attemptDoc.id}:`, gradeError.message);
@@ -4739,7 +5347,7 @@ export const autoSubmitPendingAttempts = functions
             }
           }
           
-          console.log(`   ✅ Grading complete: ${gradedCount} graded, ${gradingErrors} errors`);
+          // console.log(`   ✅ Grading complete: ${gradedCount} graded, ${gradingErrors} errors`);
           
           // 🎯 UPDATE EXAM: Mark that auto-grading is complete
           try {
@@ -4751,7 +5359,7 @@ export const autoSubmitPendingAttempts = functions
               autoGradingErrors: gradingErrors,
               updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
-            console.log(`   ✅ Exam marked as auto-grading complete`);
+            // console.log(`   ✅ Exam marked as auto-grading complete`);
           } catch (updateError: any) {
             console.error(`   ⚠️ Could not update exam: ${updateError.message}`);
           }
@@ -4764,14 +5372,14 @@ export const autoSubmitPendingAttempts = functions
       
       const duration = Date.now() - startTime;
       
-      console.log('========================================');
-      console.log('✅ Auto-submit completed!');
-      console.log(`📊 Statistics:`);
-      console.log(`   - Exams processed: ${processedExams}`);
-      console.log(`   - Attempts auto-submitted: ${totalAttemptsSubmitted}`);
-      console.log(`   - Errors: ${errorCount}`);
-      console.log(`   - Duration: ${duration}ms`);
-      console.log('========================================');
+      // console.log('========================================');
+      // console.log('✅ Auto-submit completed!');
+      // console.log(`📊 Statistics:`);
+      // console.log(`   - Exams processed: ${processedExams}`);
+      // console.log(`   - Attempts auto-submitted: ${totalAttemptsSubmitted}`);
+      // console.log(`   - Errors: ${errorCount}`);
+      // console.log(`   - Duration: ${duration}ms`);
+      // console.log('========================================');
       
       return {
         success: true,
@@ -4811,7 +5419,7 @@ export const manualAutoSubmitAndGrade = functions
       return;
     }
     
-    console.log('🔧 Manual auto-submit and grade triggered');
+    // console.log('🔧 Manual auto-submit and grade triggered');
     
     const startTime = Date.now();
     let processedExams = 0;
@@ -4827,14 +5435,14 @@ export const manualAutoSubmitAndGrade = functions
       const now = admin.firestore.Timestamp.now();
       const sixHoursAgo = new Date(now.toMillis() - (6 * 60 * 60 * 1000));
       
-      console.log(`📅 Processing exams completed in last 6 hours (since ${sixHoursAgo.toISOString()})`);
+      // console.log(`📅 Processing exams completed in last 6 hours (since ${sixHoursAgo.toISOString()})`);
       
       let query = db.collection(COLLECTIONS.EXAMS)
         .where('status', '==', EXAM_STATUS.COMPLETED)
         .where('autoCompletedAt', '>=', sixHoursAgo);  // ✅ ONLY last 6 hours!
       
       if (examId) {
-        console.log(`📝 Processing specific exam: ${examId}`);
+        // console.log(`📝 Processing specific exam: ${examId}`);
         query = query.where(admin.firestore.FieldPath.documentId(), '==', examId) as admin.firestore.Query;
       }
       
@@ -4851,13 +5459,13 @@ export const manualAutoSubmitAndGrade = functions
         return;
       }
       
-      console.log(`📊 Found ${completedExamsSnapshot.size} completed exams to process`);
+      // console.log(`📊 Found ${completedExamsSnapshot.size} completed exams to process`);
       
       for (const examDoc of completedExamsSnapshot.docs) {
         const exam: any = { id: examDoc.id, ...examDoc.data() };
         processedExams++;
         
-        console.log(`⚡ Processing exam "${exam.title || exam.id}"`);
+        // console.log(`⚡ Processing exam "${exam.title || exam.id}"`);
         
         try {
           const pendingAttemptsSnapshot = await db.collection(COLLECTIONS.EXAM_ATTEMPTS)
@@ -4866,11 +5474,11 @@ export const manualAutoSubmitAndGrade = functions
             .get();
           
           if (pendingAttemptsSnapshot.empty) {
-            console.log(`   ✅ No pending attempts for this exam`);
+            // console.log(`   ✅ No pending attempts for this exam`);
             continue;
           }
           
-          console.log(`   📝 Found ${pendingAttemptsSnapshot.size} pending attempts`);
+          // console.log(`   📝 Found ${pendingAttemptsSnapshot.size} pending attempts`);
           
           let batch = db.batch();
           let batchCount = 0;
@@ -4906,9 +5514,9 @@ export const manualAutoSubmitAndGrade = functions
             await batch.commit();
           }
           
-          console.log(`   ✅ Auto-submitted ${pendingAttemptsSnapshot.size} attempts`);
+          // console.log(`   ✅ Auto-submitted ${pendingAttemptsSnapshot.size} attempts`);
           
-          console.log(`   🔍 Starting grading for ${pendingAttemptsSnapshot.size} attempts...`);
+          // console.log(`   🔍 Starting grading for ${pendingAttemptsSnapshot.size} attempts...`);
           let gradedCount = 0;
           let gradingErrors = 0;
           
@@ -4921,17 +5529,17 @@ export const manualAutoSubmitAndGrade = functions
               const responses = attemptData?.responses || [];
               
               if (responses.length === 0) {
-                console.log(`      ⚠️ No responses for: ${attemptDoc.id}`);
+                // console.log(`      ⚠️ No responses for: ${attemptDoc.id}`);
                 continue;
               }
               
-              console.log(`      📊 Grading ${responses.length} responses for: ${attemptDoc.id}`);
+              // console.log(`      📊 Grading ${responses.length} responses for: ${attemptDoc.id}`);
               
               await gradeAttempt(attempt.examId, attemptDoc.id, responses);
               
               gradedCount++;
               totalAttemptsGraded++;
-              console.log(`      ✅ Graded: ${attemptDoc.id}`);
+              // console.log(`      ✅ Graded: ${attemptDoc.id}`);
               
             } catch (gradeError: any) {
               console.error(`      ❌ Grading error for ${attemptDoc.id}:`, gradeError.message);
@@ -4939,7 +5547,7 @@ export const manualAutoSubmitAndGrade = functions
             }
           }
           
-          console.log(`   ✅ Grading complete: ${gradedCount} graded, ${gradingErrors} errors`);
+          // console.log(`   ✅ Grading complete: ${gradedCount} graded, ${gradingErrors} errors`);
           
           try {
             await examDoc.ref.update({
@@ -4950,7 +5558,7 @@ export const manualAutoSubmitAndGrade = functions
               autoGradingErrors: gradingErrors,
               updatedAt: admin.firestore.FieldValue.serverTimestamp()
             });
-            console.log(`   ✅ Exam marked as auto-grading complete`);
+            // console.log(`   ✅ Exam marked as auto-grading complete`);
           } catch (updateError: any) {
             console.error(`   ⚠️ Could not update exam:`, updateError.message);
           }
@@ -4963,15 +5571,15 @@ export const manualAutoSubmitAndGrade = functions
       
       const duration = Date.now() - startTime;
       
-      console.log('========================================');
-      console.log('✅ Manual auto-submit and grade completed!');
-      console.log(`📊 Statistics:`);
-      console.log(`   - Exams processed: ${processedExams}`);
-      console.log(`   - Attempts auto-submitted: ${totalAttemptsSubmitted}`);
-      console.log(`   - Attempts graded: ${totalAttemptsGraded}`);
-      console.log(`   - Errors: ${errorCount}`);
-      console.log(`   - Duration: ${duration}ms`);
-      console.log('========================================');
+      // console.log('========================================');
+      // console.log('✅ Manual auto-submit and grade completed!');
+      // console.log(`📊 Statistics:`);
+      // console.log(`   - Exams processed: ${processedExams}`);
+      // console.log(`   - Attempts auto-submitted: ${totalAttemptsSubmitted}`);
+      // console.log(`   - Attempts graded: ${totalAttemptsGraded}`);
+      // console.log(`   - Errors: ${errorCount}`);
+      // console.log(`   - Duration: ${duration}ms`);
+      // console.log('========================================');
       
       res.status(200).json({
         success: true,
@@ -5013,7 +5621,7 @@ async function checkAndMarkExamGradingComplete(examId: string) {
     
     // If no pending tasks, mark exam as complete
     if (pendingSnapshot.empty) {
-      console.log(`✅ All grading complete for exam: ${examId}`);
+      // console.log(`✅ All grading complete for exam: ${examId}`);
       
       // Get counts
       const [gradedSnapshot, failedSnapshot] = await Promise.all([
@@ -5038,9 +5646,9 @@ async function checkAndMarkExamGradingComplete(examId: string) {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
       
-      console.log(`✅ Exam ${examId} marked as fully graded`);
-      console.log(`   - Graded: ${gradedSnapshot.data().count}`);
-      console.log(`   - Failed: ${failedSnapshot.data().count}`);
+      // console.log(`✅ Exam ${examId} marked as fully graded`);
+      // console.log(`   - Graded: ${gradedSnapshot.data().count}`);
+      // console.log(`   - Failed: ${failedSnapshot.data().count}`);
     }
   } catch (error: any) {
     console.error(`Error checking completion for exam ${examId}:`, error);
@@ -5067,7 +5675,7 @@ export const completeExamWithGrading = functions
       return;
     }
     
-    console.log('🎓 Complete Exam with Grading - PUB/SUB MODE (PARALLEL)');
+    // console.log('🎓 Complete Exam with Grading - PUB/SUB MODE (PARALLEL)');
     
     const startTime = Date.now();
     let processedExams = 0;
@@ -5080,13 +5688,13 @@ export const completeExamWithGrading = functions
       const db = admin.firestore();
       const examId = req.body?.examId;
       
-      console.log(`📅 Processing UPCOMING exams that need completion`);
+      // console.log(`📅 Processing UPCOMING exams that need completion`);
       
       let query = db.collection(COLLECTIONS.EXAMS)
         .where('status', '==', EXAM_STATUS.UPCOMING);
       
       if (examId) {
-        console.log(`📝 Processing specific exam: ${examId}`);
+        // console.log(`📝 Processing specific exam: ${examId}`);
         query = query.where(admin.firestore.FieldPath.documentId(), '==', examId) as admin.firestore.Query;
       }
       
@@ -5101,7 +5709,7 @@ export const completeExamWithGrading = functions
         return;
       }
       
-      console.log(`📊 Found ${upcomingExamsSnapshot.size} upcoming exams to check`);
+      // console.log(`📊 Found ${upcomingExamsSnapshot.size} upcoming exams to check`);
       
       const GRACE_PERIOD_MINUTES = 30;
       
@@ -5111,11 +5719,11 @@ export const completeExamWithGrading = functions
         
         // Check grace period
         if (!isExamBeyondGracePeriod(exam, GRACE_PERIOD_MINUTES)) {
-          console.log(`   ⏰ Exam "${exam.title}" still in grace period - skipping`);
+          // console.log(`   ⏰ Exam "${exam.title}" still in grace period - skipping`);
           continue;
         }
         
-        console.log(`⚡ Processing exam "${exam.title || exam.id}"`);
+        // console.log(`⚡ Processing exam "${exam.title || exam.id}"`);
         
         try {
           // Find pending attempts
@@ -5124,7 +5732,7 @@ export const completeExamWithGrading = functions
             .where('status', '==', 'in_progress')
             .get();
           
-          console.log(`   📝 Found ${pendingAttemptsSnapshot.size} pending attempts`);
+          // console.log(`   📝 Found ${pendingAttemptsSnapshot.size} pending attempts`);
           
           // ==========================================
           // STEP 1: SUBMIT ALL ATTEMPTS (BATCH - FAST!)
@@ -5165,12 +5773,12 @@ export const completeExamWithGrading = functions
               await batch.commit();
             }
             
-            console.log(`   ✅ Auto-submitted ${pendingAttemptsSnapshot.size} attempts`);
+            // console.log(`   ✅ Auto-submitted ${pendingAttemptsSnapshot.size} attempts`);
             
             // ==========================================
             // STEP 2: QUEUE GRADING TASKS (PUB/SUB - PARALLEL!)
             // ==========================================
-            console.log(`   🚀 Queueing ${pendingAttemptsSnapshot.size} grading tasks to Pub/Sub...`);
+            // console.log(`   🚀 Queueing ${pendingAttemptsSnapshot.size} grading tasks to Pub/Sub...`);
             
             const topic = pubsub.topic('grade-attempts');
             
@@ -5182,7 +5790,7 @@ export const completeExamWithGrading = functions
               const responses = attempt.responses || [];
               
               if (responses.length === 0) {
-                console.log(`      ⚠️ No responses for: ${attemptDoc.id}`);
+                // console.log(`      ⚠️ No responses for: ${attemptDoc.id}`);
                 // Mark as no responses
                 await attemptDoc.ref.update({
                   gradingQueued: false,
@@ -5211,7 +5819,7 @@ export const completeExamWithGrading = functions
             // Wait for all messages to be published (fast - milliseconds)
             await Promise.all(publishPromises);
             
-            console.log(`   ✅ Queued ${totalGradingTasksQueued} grading tasks to Pub/Sub`);
+            // console.log(`   ✅ Queued ${totalGradingTasksQueued} grading tasks to Pub/Sub`);
           }
           
           // ==========================================
@@ -5229,7 +5837,7 @@ export const completeExamWithGrading = functions
           });
           
           examsCompleted++;
-          console.log(`   ✅ Exam marked as COMPLETED (grading ${pendingAttemptsSnapshot.size > 0 ? 'in progress' : 'not needed'})`);
+          // console.log(`   ✅ Exam marked as COMPLETED (grading ${pendingAttemptsSnapshot.size > 0 ? 'in progress' : 'not needed'})`);
           
         } catch (examError: any) {
           console.error(`❌ Error processing exam ${exam.id}:`, examError);
@@ -5239,17 +5847,17 @@ export const completeExamWithGrading = functions
       
       const duration = Date.now() - startTime;
       
-      console.log('========================================');
-      console.log('✅ Exam completion with parallel grading queued!');
-      console.log(`📊 Statistics:`);
-      console.log(`   - Exams checked: ${processedExams}`);
-      console.log(`   - Exams completed: ${examsCompleted}`);
-      console.log(`   - Attempts submitted: ${totalAttemptsSubmitted}`);
-      console.log(`   - Grading tasks queued: ${totalGradingTasksQueued}`);
-      console.log(`   - Errors: ${errorCount}`);
-      console.log(`   - Duration: ${duration}ms`);
-      console.log(`   - ⚡ Grading now happening in PARALLEL via Pub/Sub workers!`);
-      console.log('========================================');
+      // console.log('========================================');
+      // console.log('✅ Exam completion with parallel grading queued!');
+      // console.log(`📊 Statistics:`);
+      // console.log(`   - Exams checked: ${processedExams}`);
+      // console.log(`   - Exams completed: ${examsCompleted}`);
+      // console.log(`   - Attempts submitted: ${totalAttemptsSubmitted}`);
+      // console.log(`   - Grading tasks queued: ${totalGradingTasksQueued}`);
+      // console.log(`   - Errors: ${errorCount}`);
+      // console.log(`   - Duration: ${duration}ms`);
+      // console.log(`   - ⚡ Grading now happening in PARALLEL via Pub/Sub workers!`);
+      // console.log('========================================');
       
       res.status(200).json({
         success: true,
@@ -5290,9 +5898,9 @@ export const gradeAttemptWorker = functions
   })
   .pubsub.topic('grade-attempts')
   .onPublish(async (message) => {
-    const { examId, attemptId, examTitle, studentId } = message.json;
+    const { examId, attemptId } = message.json;
     
-    console.log(`🎯 [Worker] Grading attempt: ${attemptId} for student: ${studentId} (Exam: ${examTitle})`);
+    // console.log(`🎯 [Worker] Grading attempt: ${attemptId} for student: ${studentId} (Exam: ${examTitle})`);
     
     const startTime = Date.now();
     
@@ -5311,7 +5919,7 @@ export const gradeAttemptWorker = functions
       const responses = attemptData?.responses || [];
       
       if (responses.length === 0) {
-        console.log(`⚠️ No responses for attempt ${attemptId}`);
+        // console.log(`⚠️ No responses for attempt ${attemptId}`);
         await attemptDoc.ref.update({
           gradingQueued: false,
           gradingComplete: true,
@@ -5321,7 +5929,7 @@ export const gradeAttemptWorker = functions
         return;
       }
       
-      console.log(`   📊 Grading ${responses.length} responses...`);
+      // console.log(`   📊 Grading ${responses.length} responses...`);
       
       // Call shared grading function (includes CODE + DESCRIPTIVE with AI!)
       await gradeAttempt(examId, attemptId, responses);
@@ -5334,8 +5942,8 @@ export const gradeAttemptWorker = functions
         gradingDuration: Date.now() - startTime
       });
       
-      const duration = Date.now() - startTime;
-      console.log(`✅ [Worker] Successfully graded attempt ${attemptId} in ${duration}ms`);
+      // const duration = Date.now() - startTime;
+      // console.log(`✅ [Worker] Successfully graded attempt ${attemptId} in ${duration}ms`);
       
       // Check if all attempts for this exam are now graded
       await checkAndMarkExamGradingComplete(examId);
@@ -5452,7 +6060,7 @@ export const changeUserPasswordAdmin = functions
       );
     }
 
-    const { targetUserId, newPassword, performedBy, performedByRole } = data;
+    const { targetUserId, newPassword, performedBy } = data;
 
     // Validate inputs
     if (!targetUserId) {
@@ -5479,12 +6087,35 @@ export const changeUserPasswordAdmin = functions
     try {
       const db = admin.firestore();
       
-      // Get the performer's user document to verify role
-      const performerDoc = await db.collection(COLLECTIONS.USERS).doc(performedBy).get();
+      // SECURITY: Use context.auth.uid (server-verified) instead of client-passed performedBy
+      const callerUid = context.auth!.uid;
+      
+      // SECURITY: Verify caller identity matches claimed performer
+      if (performedBy && performedBy !== callerUid) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'Caller identity mismatch - cannot impersonate another user'
+        );
+      }
+      
+      // Get the performer's user document to verify role SERVER-SIDE
+      const performerDoc = await db.collection(COLLECTIONS.USERS).doc(callerUid).get();
       if (!performerDoc.exists) {
         throw new functions.https.HttpsError(
           'permission-denied',
           'Performer user not found'
+        );
+      }
+      
+      // SECURITY: Use server-verified role from Firestore, NEVER trust client-passed role
+      const performerData = performerDoc.data();
+      const verifiedRole = performerData?.userType || '';
+      
+      // SECURITY: Prevent changing own password through admin endpoint
+      if (targetUserId === callerUid) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          'Use the regular change password flow to change your own password'
         );
       }
       
@@ -5500,22 +6131,34 @@ export const changeUserPasswordAdmin = functions
       const targetUserData = targetDoc.data();
       const targetUserType = targetUserData?.userType || 'student';
       
-      // Permission check:
+      // SECURITY: Verify college match (non-system_admin can only change passwords within their college)
+      if (verifiedRole !== 'system_admin') {
+        const performerCollege = performerData?.collegeId;
+        const targetCollege = targetUserData?.collegeId;
+        if (!performerCollege || performerCollege !== targetCollege) {
+          throw new functions.https.HttpsError(
+            'permission-denied',
+            'You can only change passwords for users in your college'
+          );
+        }
+      }
+      
+      // Permission check using SERVER-VERIFIED role:
       // - system_admin can change anyone's password
-      // - admin can change anyone's password EXCEPT other admins
+      // - admin/super_admin can change anyone's password EXCEPT other admins/system_admin
       // - principal, dean, teacher can only change student passwords
       // - students cannot change anyone's password
-      const allowedRoles = ['system_admin', 'admin', 'principal', 'dean', 'teacher'];
+      const allowedRoles = ['system_admin', 'admin', 'super_admin', 'principal', 'dean', 'teacher'];
       
-      if (!allowedRoles.includes(performedByRole)) {
+      if (!allowedRoles.includes(verifiedRole)) {
         throw new functions.https.HttpsError(
           'permission-denied',
           'You do not have permission to change passwords'
         );
       }
       
-      // Admin cannot change other admin's password
-      if (performedByRole === 'admin' && (targetUserType === 'admin' || targetUserType === 'system_admin')) {
+      // Admin cannot change other admin's or system_admin's password
+      if (['admin', 'super_admin'].includes(verifiedRole) && ['admin', 'super_admin', 'system_admin'].includes(targetUserType)) {
         throw new functions.https.HttpsError(
           'permission-denied',
           'Admins cannot change other admin passwords'
@@ -5523,7 +6166,7 @@ export const changeUserPasswordAdmin = functions
       }
       
       // Non-admin roles can only change student passwords
-      if (['principal', 'dean', 'teacher'].includes(performedByRole) && targetUserType !== 'student') {
+      if (['principal', 'dean', 'teacher'].includes(verifiedRole) && targetUserType !== 'student') {
         throw new functions.https.HttpsError(
           'permission-denied',
           'You can only change student passwords'
@@ -5538,14 +6181,14 @@ export const changeUserPasswordAdmin = functions
       // Update Firestore user document
       await db.collection(COLLECTIONS.USERS).doc(targetUserId).update({
         passwordChangedAt: admin.firestore.FieldValue.serverTimestamp(),
-        passwordChangedBy: performedBy,
-        passwordChangedByRole: performedByRole,
+        passwordChangedBy: callerUid,
+        passwordChangedByRole: verifiedRole,
         mustChangePassword: false,
         temporaryPassword: false,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      console.log(`✅ Password changed for user ${targetUserId} by ${performedBy} (${performedByRole})`);
+      // console.log(`✅ Password changed for user ${targetUserId} by ${callerUid} (${verifiedRole})`);
 
       return { 
         success: true,
@@ -5708,7 +6351,7 @@ export const createUser = functions
           
           userId = userRecord.uid;
           authAccountCreated = true;
-          console.log(`✅ Auth user created: ${userId}`);
+          // console.log(`✅ Auth user created: ${userId}`);
           
         } catch (authError: any) {
           if (authError.code === 'auth/email-already-exists') {
@@ -5785,7 +6428,7 @@ export const createUser = functions
 
       // Save user document
       await db.collection(COLLECTIONS.USERS).doc(userId).set(userDoc);
-      console.log(`✅ User document saved: ${userId}`);
+      // console.log(`✅ User document saved: ${userId}`);
 
       // Save temporary credentials if auth account created
       if (authAccountCreated && temporaryPassword) {
@@ -5822,13 +6465,13 @@ export const createUser = functions
         
         await collegeRef.update(updates);
       } catch (countError) {
-        console.warn('⚠️ Failed to update college counts:', countError);
+        // console.warn('⚠️ Failed to update college counts:', countError);
       }
 
       // ✅ Send welcome email if auth account was created with email
       if (authAccountCreated && email && temporaryPassword) {
         try {
-          console.log('📧 Sending welcome email to:', email);
+          // console.log('📧 Sending welcome email to:', email);
           
           // Fetch email credentials from Firestore
           const emailCredsDoc = await db.doc(FIRESTORE_PATHS.EMAIL_CREDENTIALS).get();
@@ -5874,12 +6517,12 @@ export const createUser = functions
                 html: emailHtml,
               });
 
-              console.log('✅ Welcome email sent successfully to:', email);
+              // console.log('✅ Welcome email sent successfully to:', email);
             } else {
-              console.warn('⚠️ Incomplete email credentials, skipping welcome email');
+              // console.warn('⚠️ Incomplete email credentials, skipping welcome email');
             }
           } else {
-            console.warn('⚠️ Email credentials not found, skipping welcome email');
+            // console.warn('⚠️ Email credentials not found, skipping welcome email');
           }
         } catch (emailError: any) {
           // Don't fail user creation if email fails
@@ -5887,7 +6530,7 @@ export const createUser = functions
         }
       }
 
-      console.log(`✅ User created successfully: ${fullName} (${userType})`);
+      // console.log(`✅ User created successfully: ${fullName} (${userType})`);
 
       return {
         success: true,
@@ -6025,7 +6668,7 @@ export const addCollege = functions
 
       // Save college document
       await db.collection(COLLECTIONS.COLLEGES).doc(collegeId).set(collegeDoc);
-      console.log(`✅ College created: ${collegeName} (${collegeId})`);
+      // console.log(`✅ College created: ${collegeName} (${collegeId})`);
 
       return {
         success: true,
@@ -6309,7 +6952,7 @@ async function syncAllStudentLearningDetails(): Promise<{ synced: number; errors
     studentMap.get(key)!.enrollments.push({ id: doc.id, ...data });
   });
 
-  console.log(`📊 Found ${studentMap.size} student-college pairs to sync`);
+  // console.log(`📊 Found ${studentMap.size} student-college pairs to sync`);
 
   // Build course info cache keyed by courseId (number→string)
   const courseInfoCache = new Map<string, any>();
@@ -6331,30 +6974,49 @@ async function syncAllStudentLearningDetails(): Promise<{ synced: number; errors
         });
       }
     });
-    console.log(`📚 Cached ${courseInfoCache.size} courses by courseId`);
+    // console.log(`📚 Cached ${courseInfoCache.size} courses by courseId`);
   } catch (err) {
-    console.warn('⚠️ Failed to fetch courses:', err);
+    // console.warn('⚠️ Failed to fetch courses:', err);
   }
+
+  // Track college-level aggregated stats
+  const collegeStatsMap = new Map<string, {
+    totalCoursesEnrolled: number;
+    totalCoursesCompleted: number;
+    totalLearningSeconds: number;
+    totalLecturesCompleted: number;
+    totalQuizzesCompleted: number;
+    totalExercisesCompleted: number;
+  }>();
 
   for (const [docId, { userId, collegeId, enrollments }] of studentMap) {
     try {
       // Fetch user info from users collection
       let userName = '';
       let userEmail = '';
+      let studentClass = '';
+      let userType = '';
       try {
         const userDoc = await db.collection('users').doc(userId).get();
         if (userDoc.exists) {
           const userData = userDoc.data();
           userName = userData?.fullName || userData?.displayName || userData?.name || '';
           userEmail = userData?.email || '';
+          studentClass = userData?.studentClass || userData?.class || '';
+          userType = userData?.userType || '';
         }
       } catch (_e) { /* skip */ }
+
+      const docRef = db.collection('studentLearningDetail').doc(docId);
+      const existingDoc = await docRef.get();
+      const existingData = existingDoc.exists ? existingDoc.data() : {} as any;
 
       let totalTimeSpent = 0;
       let totalCoursesEnrolled = 0;
       let totalCoursesCompleted = 0;
       let totalLecturesCompleted = 0;
       let totalQuizzesCompleted = 0;
+      let totalExercisesCompleted = 0;
       const courses: any = {};
 
       for (const enrollment of enrollments) {
@@ -6369,7 +7031,20 @@ async function syncAllStudentLearningDetails(): Promise<{ synced: number; errors
         totalTimeSpent += progress.totalTimeSpent || 0;
 
         const quizResults = progress.quizResults || {};
-        totalQuizzesCompleted += Object.keys(quizResults).length;
+        const courseQuizzesCompleted = Object.keys(quizResults).length;
+        totalQuizzesCompleted += courseQuizzesCompleted;
+
+        // Count exercise submissions that have been evaluated
+        let courseExercisesCompleted = 0;
+        try {
+          const exSubsSnap = await db.collection('course_enrollments')
+            .doc(enrollment.id)
+            .collection('exerciseSubmissions')
+            .where('status', '==', 'evaluated')
+            .get();
+          courseExercisesCompleted = exSubsSnap.size;
+          totalExercisesCompleted += courseExercisesCompleted;
+        } catch (_e) { /* skip */ }
 
         // Get course info from cache by courseId
         const courseInfo = courseInfoCache.get(courseId);
@@ -6378,6 +7053,9 @@ async function syncAllStudentLearningDetails(): Promise<{ synced: number; errors
           const calculatedPercentage = courseTotalLectures > 0 
             ? Math.max(completedLectures.length > 0 ? 1 : 0, Math.round((completedLectures.length / courseTotalLectures) * 100))
             : 0;
+
+          // Preserve existing per-course marks from existing doc
+          const existingCourse = existingData?.courses?.[courseId] || {};
 
           courses[courseId] = {
           courseName: courseInfo?.courseName || courseId,
@@ -6392,6 +7070,13 @@ async function syncAllStudentLearningDetails(): Promise<{ synced: number; errors
           percentage: progress.percentage || calculatedPercentage,
           timeSpent: progress.totalTimeSpent || 0,
           lecturesCompleted: completedLectures.length,
+          quizzesCompleted: courseQuizzesCompleted,
+          exercisesCompleted: courseExercisesCompleted,
+          // Preserve marks tracking (set by real-time methods, not recalculable from enrollments)
+          quizMarksObtained: existingCourse.quizMarksObtained || 0,
+          quizMaxMarks: existingCourse.quizMaxMarks || 0,
+          exerciseMarksObtained: existingCourse.exerciseMarksObtained || 0,
+          exerciseMaxMarks: existingCourse.exerciseMaxMarks || 0,
           lastLectureId: progress.lastLectureId || '',
           lastLectureTitle: progress.lectures?.[progress.lastLectureId]?.title || '',
           lastChapterName: '',
@@ -6400,21 +7085,38 @@ async function syncAllStudentLearningDetails(): Promise<{ synced: number; errors
         };
       }
 
-      const docRef = db.collection('studentLearningDetail').doc(docId);
-      const existingDoc = await docRef.get();
-      const existingData = existingDoc.exists ? existingDoc.data() : {} as any;
+      // Calculate composite score
+      const totalQuizMarksObtained = existingData?.totalQuizMarksObtained || 0;
+      const totalQuizMaxMarks = existingData?.totalQuizMaxMarks || 0;
+      const totalExerciseMarksObtained = existingData?.totalExerciseMarksObtained || 0;
+      const totalExerciseMaxMarks = existingData?.totalExerciseMaxMarks || 0;
+
+      const timeHrs = totalTimeSpent / 3600;
+      const qPct = totalQuizMaxMarks > 0 ? (totalQuizMarksObtained / totalQuizMaxMarks) * 100 : 0;
+      const ePct = totalExerciseMaxMarks > 0 ? (totalExerciseMarksObtained / totalExerciseMaxMarks) * 100 : 0;
+      const compositeScore = Math.round(
+        ((timeHrs * 2) + (totalLecturesCompleted * 3) + (qPct * 0.5) + (ePct * 0.5) + (totalQuizzesCompleted * 2) + (totalExercisesCompleted * 2)) * 10
+      ) / 10;
 
       await docRef.set({
         userId,
         collegeId,
         userName: userName || existingData?.userName || '',
         userEmail: userEmail || existingData?.userEmail || '',
+        studentClass: studentClass || existingData?.studentClass || '',
+        userType: userType || existingData?.userType || '',
+        compositeScore,
         totalCoursesEnrolled,
         totalCoursesCompleted,
         totalTimeSpent,
         totalLecturesCompleted,
         totalQuizzesCompleted,
+        totalExercisesCompleted,
         totalAssessmentsCompleted: existingData?.totalAssessmentsCompleted || 0,
+        totalQuizMarksObtained,
+        totalQuizMaxMarks,
+        totalExerciseMarksObtained,
+        totalExerciseMaxMarks,
         courses,
         recentActivity: existingData?.recentActivity || [],
         lastActiveAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -6424,36 +7126,98 @@ async function syncAllStudentLearningDetails(): Promise<{ synced: number; errors
 
       synced++;
 
-      // Ensure dailyLearningLog docs exist for today and yesterday
-      // (handles case where last night's cron failed)
-      const today = new Date();
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      const dates = [today, yesterday].map(d => 
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      );
-
-      for (const dateStr of dates) {
-        const dailyLogRef = db.collection('dailyLearningLog').doc(`${userId}_${dateStr}`);
-        const dailyLogSnap = await dailyLogRef.get();
-        if (!dailyLogSnap.exists) {
-          await dailyLogRef.set({
-            userId,
-            collegeId,
-            date: dateStr,
-            timeSpent: 0,
-            lecturesCompleted: 0,
-            quizzesCompleted: 0,
-            exercisesCompleted: 0,
-            assessmentsCompleted: 0,
-            coursesAccessed: [],
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-        }
+      // Accumulate college-level stats
+      if (!collegeStatsMap.has(collegeId)) {
+        collegeStatsMap.set(collegeId, {
+          totalCoursesEnrolled: 0, totalCoursesCompleted: 0,
+          totalLearningSeconds: 0, totalLecturesCompleted: 0,
+          totalQuizzesCompleted: 0, totalExercisesCompleted: 0,
+        });
       }
+      const cs = collegeStatsMap.get(collegeId)!;
+      cs.totalCoursesEnrolled += totalCoursesEnrolled;
+      cs.totalCoursesCompleted += totalCoursesCompleted;
+      cs.totalLearningSeconds += totalTimeSpent;
+      cs.totalLecturesCompleted += totalLecturesCompleted;
+      cs.totalQuizzesCompleted += totalQuizzesCompleted;
+      cs.totalExercisesCompleted += totalExercisesCompleted;
+
     } catch (err) {
       console.error(`❌ Error syncing ${docId}:`, err);
       errors++;
+    }
+  }
+
+  // Write aggregated learning stats to each COLLEGES/{collegeId} doc
+  for (const [collegeId, stats] of collegeStatsMap) {
+    try {
+      const avgCompletionRate = stats.totalCoursesEnrolled > 0
+        ? Math.round((stats.totalCoursesCompleted / stats.totalCoursesEnrolled) * 100)
+        : 0;
+      const totalLearningHours = Math.round((stats.totalLearningSeconds / 3600) * 10) / 10;
+
+      await db.collection('colleges').doc(collegeId).update({
+        totalEnrollments: stats.totalCoursesEnrolled,
+        'learningStats.totalCoursesEnrolled': stats.totalCoursesEnrolled,
+        'learningStats.totalCoursesCompleted': stats.totalCoursesCompleted,
+        'learningStats.totalLearningSeconds': stats.totalLearningSeconds,
+        'learningStats.totalLearningHours': totalLearningHours,
+        'learningStats.totalLecturesCompleted': stats.totalLecturesCompleted,
+        'learningStats.totalQuizzesCompleted': stats.totalQuizzesCompleted,
+        'learningStats.totalExercisesCompleted': stats.totalExercisesCompleted,
+        'learningStats.avgCompletionRate': avgCompletionRate,
+        'learningStats.lastSyncedAt': admin.firestore.FieldValue.serverTimestamp(),
+      });
+      // console.log(`📊 Updated college learning stats for ${collegeId}: ${totalLearningHours}h learning`);
+    } catch (err) {
+      // console.warn(`⚠️ Failed to update college learning stats for ${collegeId}:`, err);
+    }
+  }
+
+  // Recalculate collegeDailyLearningLog for yesterday (day is closed, no more writes)
+  const datesToSync = [0, 1]; // today + yesterday
+  
+  const collegeIds = Array.from(collegeStatsMap.keys());
+  for (const collegeId of collegeIds) {
+    for (const daysAgo of datesToSync) {
+      try {
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() - daysAgo);
+        const dateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${String(targetDate.getDate()).padStart(2, '0')}`;
+
+        const dailyLogsSnap = await db.collection('dailyLearningLog')
+          .where('collegeId', '==', collegeId)
+          .where('date', '==', dateStr)
+          .get();
+
+        let timeSpent = 0;
+        const studentIds = new Set<string>();
+
+        dailyLogsSnap.docs.forEach(d => {
+          const data = d.data();
+          timeSpent += data.timeSpent || 0;
+          if (data.userId) studentIds.add(data.userId);
+        });
+
+        // Only write if we have actual data, and don't overwrite with lower values
+        const docRef = db.collection('collegeDailyLearningLog').doc(`${collegeId}_${dateStr}`);
+        const existingDoc = await docRef.get();
+        const existingTime = existingDoc.exists ? (existingDoc.data()?.timeSpent || 0) : 0;
+
+        if (timeSpent >= existingTime) {
+          await docRef.set({
+            collegeId,
+            date: dateStr,
+            timeSpent,
+            activeStudentIds: Array.from(studentIds),
+          });
+          // console.log(`📅 Synced college daily log for ${collegeId} on ${dateStr}: ${Math.round(timeSpent/3600*10)/10}h, ${studentIds.size} students`);
+        } else {
+          // console.log(`📅 Skipped college daily log for ${collegeId} on ${dateStr}: existing ${Math.round(existingTime/3600*10)/10}h > aggregated ${Math.round(timeSpent/3600*10)/10}h`);
+        }
+      } catch (err) {
+        // console.warn(`⚠️ Failed to sync college daily log for ${collegeId}:`, err);
+      }
     }
   }
 
@@ -6470,9 +7234,9 @@ export const syncStudentLearningDetailsCron = functions
   .pubsub.schedule('0 0 * * *')
   .timeZone('Asia/Kolkata')
   .onRun(async () => {
-    console.log('🕛 Starting nightly student learning detail sync...');
-    const result = await syncAllStudentLearningDetails();
-    console.log(`✅ Nightly sync complete: ${result.synced} synced, ${result.errors} errors`);
+    // console.log('🕛 Starting nightly student learning detail sync...');
+    await syncAllStudentLearningDetails();
+    // console.log(`✅ Nightly sync complete`);
     return null;
   });
 
@@ -6495,9 +7259,9 @@ export const syncStudentLearningDetailsManual = functions
       throw new functions.https.HttpsError('permission-denied', 'Only system_admin can trigger manual sync');
     }
 
-    console.log(`🔄 Manual sync triggered by ${context.auth.uid}`);
+    // console.log(`🔄 Manual sync triggered by ${context.auth.uid}`);
     const result = await syncAllStudentLearningDetails();
-    console.log(`✅ Manual sync complete: ${result.synced} synced, ${result.errors} errors`);
+    // console.log(`✅ Manual sync complete: ${result.synced} synced, ${result.errors} errors`);
 
     return {
       success: true,
@@ -6541,7 +7305,7 @@ export const fetchLeetCodeStats = functions.https.onCall(async (data, context) =
         }
       }
     } catch (cacheErr) {
-      console.warn('Cache read error:', cacheErr);
+      // console.warn('Cache read error:', cacheErr);
     }
   }
 
@@ -6762,7 +7526,7 @@ export const fetchLeetCodeStats = functions.https.onCall(async (data, context) =
         cachedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     } catch (cacheErr) {
-      console.warn('Cache write error:', cacheErr);
+      // console.warn('Cache write error:', cacheErr);
     }
 
     return { success: true, ...stats, fromCache: false };
@@ -6933,7 +7697,7 @@ topic = the technical concept being tested.`
                 topic: evalParsed.topic || '',
               };
             } catch (evalErr) {
-              console.warn('Evaluation call failed, defaulting to incorrect:', evalErr);
+              // console.warn('Evaluation call failed, defaulting to incorrect:', evalErr);
               // If eval fails, default to incorrect — never leave as null
               evaluationMeta = {
                 isCorrect: false,
@@ -6946,7 +7710,7 @@ topic = the technical concept being tested.`
           }
         }
 
-        console.log(`🎤 AI Interview chat - Q:${detectedQuestionNum} correct:${evaluationMeta.isCorrect} for user: ${context.auth?.uid || 'anonymous'}`);
+        // console.log(`🎤 AI Interview chat - Q:${detectedQuestionNum} correct:${evaluationMeta.isCorrect} for user: ${context.auth?.uid || 'anonymous'}`);
 
         return {
           success: true,
@@ -7008,7 +7772,7 @@ Generate a detailed performance feedback report in the JSON format specified.`
           const cleaned = responseText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
           parsed = JSON.parse(cleaned);
         } catch (parseErr) {
-          console.warn('Failed to parse feedback JSON, using fallback:', responseText);
+          // console.warn('Failed to parse feedback JSON, using fallback:', responseText);
           parsed = {
             overallSummary: `You scored ${score}% answering ${totalCorrect} out of ${totalAsked} questions correctly.`,
             strengths: [],
@@ -7018,7 +7782,7 @@ Generate a detailed performance feedback report in the JSON format specified.`
           };
         }
 
-        console.log(`🎤 AI Interview feedback generated: ${score}% for user: ${context.auth?.uid || 'anonymous'}`);
+        // console.log(`🎤 AI Interview feedback generated: ${score}% for user: ${context.auth?.uid || 'anonymous'}`);
 
         return {
           success: true,
@@ -7166,7 +7930,7 @@ async function runJobScraper(apiKey: string): Promise<{
 
         await new Promise(r => setTimeout(r, JOB_SCRAPER_CONFIG.delayBetweenRequests));
       } catch (error: any) {
-      console.warn(`Job scraper error for "${query}" page ${page}:`, error.message);
+      // console.warn(`Job scraper error for "${query}" page ${page}:`, error.message);
         break;
       }
     }
@@ -7182,6 +7946,28 @@ async function runJobScraper(apiKey: string): Promise<{
       queriesRun: JOB_SCRAPER_QUERIES.length,
     },
   };
+}
+
+// Helper: Generate short 8-char alphanumeric ID for SEO-friendly URLs
+function generateShortId(length = 8): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  const bytes = require('crypto').randomBytes(length);
+  for (let i = 0; i < length; i++) {
+    result += chars[bytes[i] % chars.length];
+  }
+  return result;
+}
+
+// Helper: Generate a unique shortId (check Firestore for collisions)
+async function generateUniqueShortId(db: admin.firestore.Firestore): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const shortId = generateShortId();
+    const existing = await db.collection('jobs').where('shortId', '==', shortId).limit(1).get();
+    if (existing.empty) return shortId;
+  }
+  // Fallback: 10-char to virtually eliminate collision
+  return generateShortId(10);
 }
 
 // Helper: Write jobs to Firestore with dedup
@@ -7242,6 +8028,9 @@ async function writeJobsToFirestore(jobs: any[]): Promise<{ newJobs: number; upd
         updatedJobs++;
       } else {
         // New job — full write
+        // Generate SEO-friendly short ID
+        const shortId = await generateUniqueShortId(db);
+
         // Convert relative postedAt string to actual timestamp
         const postedAtStr = job.detected_extensions?.posted_at || '';
         let postedTimestamp = now;
@@ -7270,6 +8059,7 @@ async function writeJobsToFirestore(jobs: any[]): Promise<{ newJobs: number; upd
         }
 
         batch.set(docRef, {
+          shortId,
           jobId: job.job_id,
           title: job.title || '',
           company: job.company_name || '',
@@ -7300,7 +8090,7 @@ async function writeJobsToFirestore(jobs: any[]): Promise<{ newJobs: number; upd
     }
 
     await batch.commit();
-    console.log(`📦 Batch committed: ${chunk.length} jobs (index ${i}-${i + chunk.length - 1})`);
+    // console.log(`📦 Batch committed: ${chunk.length} jobs (index ${i}-${i + chunk.length - 1})`);
   }
 
   return { newJobs, updatedJobs };
@@ -7394,7 +8184,7 @@ export const scheduledJobScraper = functions
   .pubsub.schedule('30 14 * * *')   // 2:30 PM UTC = 8:00 PM IST
   .timeZone('Asia/Kolkata')
   .onRun(async () => {
-    console.log('🔍 Starting scheduled job scraper...');
+    // console.log('🔍 Starting scheduled job scraper...');
 
     // Read SerpAPI key from Firestore settings
     const settingsDoc = await admin.firestore().collection('settings').doc('google_serpapi_key').get();
@@ -7407,16 +8197,16 @@ export const scheduledJobScraper = functions
     try {
       // 1. Scrape jobs
       const { jobs, stats } = await runJobScraper(apiKey);
-      console.log(`✅ Scraped ${jobs.length} unique jobs (${stats.totalApiCalls} API calls, ${stats.duplicatesSkipped} dupes)`);
+      // console.log(`✅ Scraped ${jobs.length} unique jobs (${stats.totalApiCalls} API calls, ${stats.duplicatesSkipped} dupes)`);
 
       if (jobs.length === 0) {
-        console.log('⚠️ No jobs found today');
+        // console.log('⚠️ No jobs found today');
         return;
       }
 
       // 2. Write to Firestore
       const { newJobs, updatedJobs } = await writeJobsToFirestore(jobs);
-      console.log(`📊 Firestore: ${newJobs} new, ${updatedJobs} updated`);
+      // console.log(`📊 Firestore: ${newJobs} new, ${updatedJobs} updated`);
 
       // 3. Backfill postedTimestamp for older jobs missing it
       const backfilled = await backfillPostedTimestamp();
@@ -7424,7 +8214,7 @@ export const scheduledJobScraper = functions
 
       // 4. Mark old jobs as expired
       const expired = await markExpiredJobs();
-      console.log(`🗑️ Marked ${expired} jobs as expired`);
+      // console.log(`🗑️ Marked ${expired} jobs as expired`);
 
       // 5. Log scrape run
       await admin.firestore().collection('jobScrapeLog').add({
@@ -7438,7 +8228,7 @@ export const scheduledJobScraper = functions
         duplicatesSkipped: stats.duplicatesSkipped,
       });
 
-      console.log('✅ Job scraper completed successfully');
+      // console.log('✅ Job scraper completed successfully');
     } catch (error: any) {
       console.error('❌ Job scraper failed:', error.message);
     }
@@ -7510,6 +8300,1299 @@ export const triggerJobScraper = functions
     }
   });
 
-  PIBYYQUAdGg6SKnqh2YBrCMthei2
+// ============================================================
+// Personality Trait Aggregation for Exam Dashboard
+// Lightweight query - fetches only personalityProfile from attempts
+// ============================================================
+export const getPersonalityTraitAggregation = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 60, memory: '256MB' })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
 
-  RyIDJMC8PVcju4ADd7i5lB3ROGq1
+    const { examId } = data;
+    if (!examId) {
+      throw new functions.https.HttpsError('invalid-argument', 'examId is required');
+    }
+
+    try {
+      // Query only attempts that have personalityProfile, using select() for field projection
+      const attemptsSnapshot = await admin.firestore()
+        .collection('examAttempts')
+        .where('examId', '==', examId)
+        .where('status', '==', 'submitted')
+        .select('personalityProfile', 'personalityType', 'studentId')
+        .get();
+
+      if (attemptsSnapshot.empty) {
+        return { success: true, totalStudents: 0, traits: {}, studentCount: 0, personalityTypes: [] };
+      }
+
+      // Aggregate trait data
+      const traitAggregates: Record<string, { 
+        totalPercentage: number; 
+        count: number; 
+        scores: number[];
+        levels: Record<string, number>;
+      }> = {};
+
+      // Aggregate personality types
+      const typeMap: Record<string, { count: number; topTrait: string; secondTrait: string; desc: string }> = {};
+
+      let studentCount = 0;
+
+      attemptsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const profile = data.personalityProfile;
+        const pType = data.personalityType;
+
+        if (profile && typeof profile === 'object') {
+          studentCount++;
+
+          Object.entries(profile).forEach(([trait, traitData]: [string, any]) => {
+            if (!traitAggregates[trait]) {
+              traitAggregates[trait] = { totalPercentage: 0, count: 0, scores: [], levels: {} };
+            }
+            const percentage = traitData?.percentage || 0;
+            traitAggregates[trait].totalPercentage += percentage;
+            traitAggregates[trait].count += 1;
+            traitAggregates[trait].scores.push(percentage);
+            
+            const level = traitData?.level || 'Unknown';
+            traitAggregates[trait].levels[level] = (traitAggregates[trait].levels[level] || 0) + 1;
+          });
+        }
+
+        // Aggregate personality types
+        if (pType?.title) {
+          const title = pType.title;
+          if (!typeMap[title]) {
+            typeMap[title] = {
+              count: 0,
+              topTrait: pType.topTrait || '',
+              secondTrait: pType.secondTrait || '',
+              desc: pType.desc || '',
+            };
+          }
+          typeMap[title].count += 1;
+        }
+      });
+
+      // Compute final stats per trait
+      const traits: Record<string, {
+        average: number;
+        min: number;
+        max: number;
+        stdDeviation: number;
+        count: number;
+        levels: Record<string, number>;
+      }> = {};
+
+      Object.entries(traitAggregates).forEach(([trait, data]) => {
+        const avg = data.count > 0 ? data.totalPercentage / data.count : 0;
+        const min = data.scores.length > 0 ? Math.min(...data.scores) : 0;
+        const max = data.scores.length > 0 ? Math.max(...data.scores) : 0;
+        const variance = data.scores.length > 1
+          ? data.scores.reduce((sum, s) => sum + Math.pow(s - avg, 2), 0) / data.scores.length
+          : 0;
+
+        traits[trait] = {
+          average: Math.round(avg * 10) / 10,
+          min,
+          max,
+          stdDeviation: Math.round(Math.sqrt(variance) * 10) / 10,
+          count: data.count,
+          levels: data.levels,
+        };
+      });
+
+      // Build sorted personality types array
+      const personalityTypes = Object.entries(typeMap)
+        .map(([title, data]) => ({
+          title,
+          count: data.count,
+          topTrait: data.topTrait,
+          secondTrait: data.secondTrait,
+          desc: data.desc,
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      return {
+        success: true,
+        totalStudents: attemptsSnapshot.size,
+        studentCount,
+        traits,
+        personalityTypes,
+      };
+    } catch (error: any) {
+      console.error('❌ getPersonalityTraitAggregation failed:', error);
+      throw new functions.https.HttpsError('internal', 'Failed to aggregate personality data', error.message);
+    }
+  });
+
+// ============================================
+// 📊 LEADERBOARD - Firestore Trigger
+// Updates pre-computed leaderboard stats when exam attempts change
+// Collection: leaderboardStats/{collegeId}_{studentId}
+// ============================================
+
+export const updateLeaderboardStats = functions
+  .runWith({ timeoutSeconds: 60, memory: '256MB' })
+  .firestore.document('examAttempts/{attemptId}')
+  .onWrite(async (change, context) => {
+    const after = change.after.exists ? change.after.data() : null;
+    const before = change.before.exists ? change.before.data() : null;
+
+    // Only process submitted attempts
+    const data = after || before;
+    if (!data || !data.studentId || !data.collegeId) return;
+
+    // Only trigger on status change to submitted or marks update
+    const statusChanged = after?.status === 'submitted' && before?.status !== 'submitted';
+    const marksChanged = after?.status === 'submitted' && after?.obtainedMarks !== before?.obtainedMarks;
+    const deleted = !change.after.exists;
+
+    if (!statusChanged && !marksChanged && !deleted) return;
+
+    const db = admin.firestore();
+    const studentId = data.studentId;
+    const collegeId = data.collegeId;
+
+    // console.log(`📊 Updating leaderboard for student ${studentId} in college ${collegeId}`);
+
+    try {
+      // Fetch all submitted attempts for this student in this college
+      const attemptsSnap = await db.collection('examAttempts')
+        .where('studentId', '==', studentId)
+        .where('collegeId', '==', collegeId)
+        .where('status', '==', 'submitted')
+        .get();
+
+      const docId = `${collegeId}_${studentId}`;
+      const statsRef = db.collection('leaderboardStats').doc(docId);
+
+      if (attemptsSnap.empty) {
+        // No submitted attempts — remove from leaderboard
+        await statsRef.delete();
+        // console.log(`🗑️ Removed leaderboard entry for ${studentId}`);
+        return;
+      }
+
+      let totalMarks = 0;
+      let totalMaxMarks = 0;
+      let totalExams = 0;
+      let highestScore = 0;
+      let lowestScore = 100;
+      let lastExamDate: admin.firestore.Timestamp | null = null;
+
+      // Track per-class and per-subject stats
+      const classStats: Record<string, { totalMarks: number; totalMaxMarks: number; totalExams: number }> = {};
+      const subjectStats: Record<string, { totalMarks: number; totalMaxMarks: number; totalExams: number }> = {};
+
+      attemptsSnap.docs.forEach(doc => {
+        const attempt = doc.data();
+        const obtained = attempt.obtainedMarks || 0;
+        const max = attempt.maximumScore || 0;
+        const pct = max > 0 ? (obtained / max) * 100 : 0;
+
+        totalMarks += obtained;
+        totalMaxMarks += max;
+        totalExams += 1;
+        if (pct > highestScore) highestScore = pct;
+        if (pct < lowestScore) lowestScore = pct;
+
+        const examDate = attempt.submitTime || attempt.startTime;
+        if (examDate && (!lastExamDate || examDate.toMillis() > lastExamDate.toMillis())) {
+          lastExamDate = examDate;
+        }
+
+        // Class stats
+        const cls = attempt.class || 'unknown';
+        if (!classStats[cls]) classStats[cls] = { totalMarks: 0, totalMaxMarks: 0, totalExams: 0 };
+        classStats[cls].totalMarks += obtained;
+        classStats[cls].totalMaxMarks += max;
+        classStats[cls].totalExams += 1;
+
+        // Subject stats
+        const subj = attempt.subject || 'unknown';
+        if (!subjectStats[subj]) subjectStats[subj] = { totalMarks: 0, totalMaxMarks: 0, totalExams: 0 };
+        subjectStats[subj].totalMarks += obtained;
+        subjectStats[subj].totalMaxMarks += max;
+        subjectStats[subj].totalExams += 1;
+      });
+
+      const averagePercentage = totalMaxMarks > 0 ? (totalMarks / totalMaxMarks) * 100 : 0;
+
+      // Use first attempt for student metadata
+      const firstAttempt = attemptsSnap.docs[0].data();
+
+      await statsRef.set({
+        studentId,
+        collegeId,
+        userName: firstAttempt.studentName || '',
+        rollNumber: firstAttempt.rollNumber || '',
+        class: firstAttempt.class || '',
+        board: firstAttempt.board || '',
+        academicYear: firstAttempt.academicYear || '',
+        totalExams,
+        totalMarks,
+        totalMaxMarks,
+        averagePercentage: Math.round(averagePercentage * 100) / 100,
+        highestScore: Math.round(highestScore * 100) / 100,
+        lowestScore: Math.round(lowestScore * 100) / 100,
+        lastExamDate,
+        classStats,
+        subjectStats,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+
+      // console.log(`✅ Leaderboard updated for ${firstAttempt.studentName}: ${averagePercentage.toFixed(1)}% (${totalExams} exams)`);
+    } catch (error) {
+      console.error(`❌ Error updating leaderboard for ${studentId}:`, error);
+    }
+  });
+
+// ============================================
+// 📊 LEADERBOARD - Paginated Query
+// Callable function for paginated leaderboard reads
+// ============================================
+
+export const getLeaderboardPaginated = functions
+  .runWith({ timeoutSeconds: 30, memory: '256MB' })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const {
+      collegeId,
+      pageSize = 20,
+      lastDocId,
+      filterClass,
+      filterSubject,
+    } = data;
+
+    if (!collegeId) {
+      throw new functions.https.HttpsError('invalid-argument', 'collegeId is required');
+    }
+
+    const db = admin.firestore();
+
+    try {
+      let q: admin.firestore.Query = db.collection('leaderboardStats')
+        .where('collegeId', '==', collegeId);
+
+      // Apply filters
+      if (filterClass && filterClass !== 'all') {
+        q = q.where('class', '==', filterClass);
+      }
+
+      // Sort by averagePercentage descending
+      q = q.orderBy('averagePercentage', 'desc').limit(pageSize + 1);
+
+      // Cursor-based pagination
+      if (lastDocId) {
+        const lastDoc = await db.collection('leaderboardStats').doc(lastDocId).get();
+        if (lastDoc.exists) {
+          q = db.collection('leaderboardStats')
+            .where('collegeId', '==', collegeId);
+          
+          if (filterClass && filterClass !== 'all') {
+            q = q.where('class', '==', filterClass);
+          }
+
+          q = q.orderBy('averagePercentage', 'desc')
+            .startAfter(lastDoc)
+            .limit(pageSize + 1);
+        }
+      }
+
+      const snapshot = await q.get();
+      const docs = snapshot.docs;
+
+      // Check if there are more results
+      const hasMore = docs.length > pageSize;
+      const resultDocs = hasMore ? docs.slice(0, pageSize) : docs;
+
+      // If subject filter, do it in memory (since subjects are in a nested map)
+      let students = resultDocs.map((doc, index) => {
+        const d = doc.data();
+        return {
+          docId: doc.id,
+          userId: d.studentId,
+          userName: d.userName,
+          rollNumber: d.rollNumber,
+          collegeId: d.collegeId,
+          class: d.class,
+          board: d.board,
+          academicYear: d.academicYear,
+          totalExams: d.totalExams,
+          totalMarks: d.totalMarks,
+          totalMaxMarks: d.totalMaxMarks,
+          averagePercentage: d.averagePercentage,
+          highestScore: d.highestScore,
+          lowestScore: d.lowestScore,
+        };
+      });
+
+      // Subject filter (in-memory since it's nested)
+      if (filterSubject && filterSubject !== 'all') {
+        students = students.map(s => {
+          const doc = resultDocs.find(d => d.id === s.docId);
+          const subjectData = doc?.data()?.subjectStats?.[filterSubject];
+          if (!subjectData || subjectData.totalExams === 0) return null;
+          return {
+            ...s,
+            totalExams: subjectData.totalExams,
+            totalMarks: subjectData.totalMarks,
+            totalMaxMarks: subjectData.totalMaxMarks,
+            averagePercentage: subjectData.totalMaxMarks > 0
+              ? Math.round((subjectData.totalMarks / subjectData.totalMaxMarks) * 100 * 100) / 100
+              : 0,
+          };
+        }).filter((s): s is NonNullable<typeof s> => s !== null);
+      }
+
+      // Get total count for this query
+      // For efficiency, we use a count query
+      let countQuery: admin.firestore.Query = db.collection('leaderboardStats')
+        .where('collegeId', '==', collegeId);
+      if (filterClass && filterClass !== 'all') {
+        countQuery = countQuery.where('class', '==', filterClass);
+      }
+      const countSnap = await countQuery.count().get();
+      const totalCount = countSnap.data().count;
+
+      return {
+        students,
+        hasMore,
+        lastDocId: resultDocs.length > 0 ? resultDocs[resultDocs.length - 1].id : null,
+        totalCount,
+      };
+    } catch (error: any) {
+      console.error('❌ getLeaderboardPaginated failed:', error);
+      throw new functions.https.HttpsError('internal', 'Failed to fetch leaderboard', error.message);
+    }
+  });
+
+// ============================================
+// 📊 LEADERBOARD - One-time Migration
+// Backfills leaderboardStats for all existing submitted attempts
+// Call once after deploying, then disable
+// ============================================
+
+export const migrateLeaderboardStats = functions
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const { collegeId } = data;
+    if (!collegeId) {
+      throw new functions.https.HttpsError('invalid-argument', 'collegeId is required');
+    }
+
+    const db = admin.firestore();
+
+    try {
+      // console.log(`📊 Starting leaderboard migration for college: ${collegeId}`);
+
+      // Fetch all submitted attempts for this college in batches
+      const batchSize = 500;
+      let lastDoc: admin.firestore.QueryDocumentSnapshot | null = null;
+      let totalProcessed = 0;
+
+      // Accumulate all student data
+      const studentMap = new Map<string, {
+        studentId: string;
+        userName: string;
+        rollNumber: string;
+        collegeId: string;
+        class: string;
+        board: string;
+        academicYear: string;
+        totalExams: number;
+        totalMarks: number;
+        totalMaxMarks: number;
+        scores: number[];
+        lastExamDate: admin.firestore.Timestamp | null;
+        classStats: Record<string, { totalMarks: number; totalMaxMarks: number; totalExams: number }>;
+        subjectStats: Record<string, { totalMarks: number; totalMaxMarks: number; totalExams: number }>;
+      }>();
+
+      while (true) {
+        let q: admin.firestore.Query = db.collection('examAttempts')
+          .where('collegeId', '==', collegeId)
+          .where('status', '==', 'submitted')
+          .orderBy('startTime', 'desc')
+          .limit(batchSize);
+
+        if (lastDoc) {
+          q = q.startAfter(lastDoc);
+        }
+
+        const snapshot = await q.get();
+        if (snapshot.empty) break;
+
+        snapshot.docs.forEach(doc => {
+          const attempt = doc.data();
+          const key = attempt.studentId;
+
+          if (!studentMap.has(key)) {
+            studentMap.set(key, {
+              studentId: attempt.studentId,
+              userName: attempt.studentName || '',
+              rollNumber: attempt.rollNumber || '',
+              collegeId: attempt.collegeId,
+              class: attempt.class || '',
+              board: attempt.board || '',
+              academicYear: attempt.academicYear || '',
+              totalExams: 0,
+              totalMarks: 0,
+              totalMaxMarks: 0,
+              scores: [],
+              lastExamDate: null,
+              classStats: {},
+              subjectStats: {},
+            });
+          }
+
+          const student = studentMap.get(key)!;
+          const obtained = attempt.obtainedMarks || 0;
+          const max = attempt.maximumScore || 0;
+          const pct = max > 0 ? (obtained / max) * 100 : 0;
+
+          student.totalExams += 1;
+          student.totalMarks += obtained;
+          student.totalMaxMarks += max;
+          student.scores.push(pct);
+
+          const examDate = attempt.submitTime || attempt.startTime;
+          if (examDate && (!student.lastExamDate || examDate.toMillis() > student.lastExamDate.toMillis())) {
+            student.lastExamDate = examDate;
+          }
+
+          // Class stats
+          const cls = attempt.class || 'unknown';
+          if (!student.classStats[cls]) student.classStats[cls] = { totalMarks: 0, totalMaxMarks: 0, totalExams: 0 };
+          student.classStats[cls].totalMarks += obtained;
+          student.classStats[cls].totalMaxMarks += max;
+          student.classStats[cls].totalExams += 1;
+
+          // Subject stats
+          const subj = attempt.subject || 'unknown';
+          if (!student.subjectStats[subj]) student.subjectStats[subj] = { totalMarks: 0, totalMaxMarks: 0, totalExams: 0 };
+          student.subjectStats[subj].totalMarks += obtained;
+          student.subjectStats[subj].totalMaxMarks += max;
+          student.subjectStats[subj].totalExams += 1;
+        });
+
+        totalProcessed += snapshot.docs.length;
+        lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        // console.log(`📊 Processed ${totalProcessed} attempts so far (${studentMap.size} students)`);
+
+        if (snapshot.docs.length < batchSize) break;
+      }
+
+      // Write leaderboard stats in batches of 500
+      const students = Array.from(studentMap.values());
+
+      for (let i = 0; i < students.length; i += 500) {
+        const batch = db.batch();
+        const chunk = students.slice(i, i + 500);
+
+        chunk.forEach(student => {
+          const avgPct = student.totalMaxMarks > 0 ? (student.totalMarks / student.totalMaxMarks) * 100 : 0;
+          const docId = `${collegeId}_${student.studentId}`;
+          const ref = db.collection('leaderboardStats').doc(docId);
+
+          batch.set(ref, {
+            studentId: student.studentId,
+            collegeId: student.collegeId,
+            userName: student.userName,
+            rollNumber: student.rollNumber,
+            class: student.class,
+            board: student.board,
+            academicYear: student.academicYear,
+            totalExams: student.totalExams,
+            totalMarks: student.totalMarks,
+            totalMaxMarks: student.totalMaxMarks,
+            averagePercentage: Math.round(avgPct * 100) / 100,
+            highestScore: student.scores.length > 0 ? Math.round(Math.max(...student.scores) * 100) / 100 : 0,
+            lowestScore: student.scores.length > 0 ? Math.round(Math.min(...student.scores) * 100) / 100 : 0,
+            lastExamDate: student.lastExamDate,
+            classStats: student.classStats,
+            subjectStats: student.subjectStats,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        });
+
+        await batch.commit();
+        // console.log(`✅ Written leaderboard entries batch`);
+      }
+
+      // console.log(`✅ Migration complete: ${totalProcessed} attempts → ${students.length} leaderboard entries`);
+
+      return {
+        success: true,
+        totalAttempts: totalProcessed,
+        totalStudents: students.length,
+      };
+    } catch (error: any) {
+      console.error('❌ migrateLeaderboardStats failed:', error);
+      throw new functions.https.HttpsError('internal', 'Migration failed', error.message);
+    }
+  });
+// ============================================
+// LIVE EXAM STATS - Server-side paginated
+// Replaces heavy client-side fetching in LiveStats
+// ============================================
+export const getLiveExamStats = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 30, memory: '512MB' })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const { examId, collegeId, page = 1, pageSize = 20, filter = 'present' } = data;
+
+    if (!examId || !collegeId) {
+      throw new functions.https.HttpsError('invalid-argument', 'examId and collegeId are required');
+    }
+
+    try {
+      const db = admin.firestore();
+
+      // ──────────────────────────────────────────
+      // 1. EXAM METADATA
+      // ──────────────────────────────────────────
+      const examDoc = await db.collection(COLLECTIONS.EXAMS).doc(examId).get();
+      if (!examDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Exam not found');
+      }
+      const exam = examDoc.data()!;
+      const totalQuestions = exam.totalQuestions || 0;
+      const durationMinutes = parseInt(exam.duration) || 0;
+
+      // Calculate exam timing
+      let examStartTime: Date | null = null;
+      let examEndTime: Date | null = null;
+      if (exam.examDate) {
+        const examDate = exam.examDate.toDate ? exam.examDate.toDate() : new Date(exam.examDate);
+        examStartTime = new Date(examDate);
+        if (exam.examTime) {
+          const [hours, minutes] = exam.examTime.split(':').map(Number);
+          examStartTime.setHours(hours, minutes, 0, 0);
+        }
+        examEndTime = new Date(examStartTime.getTime() + durationMinutes * 60 * 1000);
+      }
+
+      const now = new Date();
+      let examStatus: 'not_started' | 'in_progress' | 'ended' = 'not_started';
+      if (examStartTime && examEndTime) {
+        if (now < examStartTime) examStatus = 'not_started';
+        else if (now > examEndTime) examStatus = 'ended';
+        else examStatus = 'in_progress';
+      }
+
+      // Progress bar
+      let progressPercent = 0;
+      let elapsedMinutes = 0;
+      let remainingMinutes = durationMinutes;
+      if (examStartTime && examEndTime) {
+        const totalMs = examEndTime.getTime() - examStartTime.getTime();
+        const elapsedMs = Math.max(0, now.getTime() - examStartTime.getTime());
+        progressPercent = Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100));
+        elapsedMinutes = Math.floor(elapsedMs / 60000);
+        remainingMinutes = Math.max(0, Math.floor((totalMs - elapsedMs) / 60000));
+      }
+
+      // ──────────────────────────────────────────
+      // 2. ENROLLMENTS (total count)
+      // ──────────────────────────────────────────
+      const enrollSnap = await db.collection(COLLECTIONS.EXAM_ENROLLMENTS)
+        .where('examId', '==', examId)
+        .where('status', '==', 'active')
+        .get();
+      const totalEnrolled = enrollSnap.size;
+      const enrolledStudentIds = new Set<string>();
+      enrollSnap.docs.forEach(d => enrolledStudentIds.add(d.data().studentId));
+      // console.log(`📊 [DEBUG] Enrollments: collection=${COLLECTIONS.EXAM_ENROLLMENTS}, examId=${examId}, totalEnrolled=${totalEnrolled}, enrolledIds=${Array.from(enrolledStudentIds).slice(0, 3).join(',')}...`);
+
+      // ──────────────────────────────────────────
+      // 3. ATTENDANCE (present students)
+      // ──────────────────────────────────────────
+      const attendanceSnap = await db.collection(COLLECTIONS.ATTENDANCE)
+        .where('examId', '==', examId)
+        .get();
+
+      // Filter: status=present AND enrolled
+      const presentRecords: any[] = [];
+      attendanceSnap.docs.forEach(d => {
+        const rec = d.data();
+        const sid = rec.studentId || rec.userId;
+        if (rec.status === 'present' && (enrolledStudentIds.size === 0 || enrolledStudentIds.has(sid))) {
+          presentRecords.push(rec);
+        }
+      });
+      
+      // ──────────────────────────────────────────
+      // 4. EXAM ATTEMPTS (all for this exam, dedupe by studentId keeping latest)
+      // ──────────────────────────────────────────
+      const attemptsSnap = await db.collection(COLLECTIONS.EXAM_ATTEMPTS)
+        .where('examId', '==', examId)
+        .get();
+
+      const attemptsMap = new Map<string, any>();
+      const attemptCountMap = new Map<string, number>();
+      attemptsSnap.docs.forEach(d => {
+        const attempt: any = { ...d.data(), attemptId: d.id };
+        const sid = attempt.studentId;
+        attemptCountMap.set(sid, (attemptCountMap.get(sid) || 0) + 1);
+
+        const existing = attemptsMap.get(sid);
+        if (!existing) {
+          attemptsMap.set(sid, attempt);
+        } else {
+          const existingStart = existing.startTime?.toDate ? existing.startTime.toDate() : new Date(existing.startTime || 0);
+          const currentStart = attempt.startTime?.toDate ? attempt.startTime.toDate() : new Date(attempt.startTime || 0);
+          if (currentStart > existingStart) {
+            attemptsMap.set(sid, attempt);
+          }
+        }
+      });
+
+      // If no attendance records but there ARE attempts, treat attempted students as present
+      // This handles exams where attendance was not marked (Firestore rules issue or attendance disabled)
+      if (presentRecords.length === 0 && attemptsMap.size > 0) {
+        // console.log(`📊 [DEBUG] No attendance records but ${attemptsMap.size} attempts found — using attempts as present`);
+        attemptsMap.forEach((attempt, sid) => {
+          if (enrolledStudentIds.size === 0 || enrolledStudentIds.has(sid)) {
+            presentRecords.push({
+              studentId: sid,
+              userId: sid,
+              status: 'present',
+              fullName: attempt.studentName || attempt.fullName || '',
+              studentRoll: attempt.rollNumber || attempt.studentRoll || '',
+              markedAt: attempt.startTime,
+            });
+          }
+        });
+      }
+
+      const presentCount = presentRecords.length;
+      const absentCount = Math.max(0, totalEnrolled - presentCount);
+      
+      // DEBUG: Log attendance details
+      // const skippedNotPresent = attendanceSnap.docs.filter(d => d.data().status !== 'present').length;
+      // const skippedNotEnrolled = attendanceSnap.docs.filter(d => {
+      //   const rec = d.data();
+      //   const sid = rec.studentId || rec.userId;
+      //   return rec.status === 'present' && enrolledStudentIds.size > 0 && !enrolledStudentIds.has(sid);
+      // }).length;
+      // console.log(`📊 [DEBUG] Attendance: collection=${COLLECTIONS.ATTENDANCE}, totalDocs=${attendanceSnap.size}, statusPresent=${attendanceSnap.docs.filter(d => d.data().status === 'present').length}, skippedNotEnrolled=${skippedNotEnrolled}, skippedNotPresent=${skippedNotPresent}, finalPresent=${presentCount}`);
+
+      // console.log(`📊 [DEBUG] Attempts: collection=${COLLECTIONS.EXAM_ATTEMPTS}, totalDocs=${attemptsSnap.size}, uniqueStudents=${attemptsMap.size}, duplicates=${attemptsSnap.size - attemptsMap.size}`);
+
+      // ──────────────────────────────────────────
+      // 5. CONNECTIVITY (all for this exam, group by userId)
+      // ──────────────────────────────────────────
+      const connectivityMap = new Map<string, { disconnections: number; duration: number }>();
+      try {
+        const connectSnap = await db.collection(COLLECTIONS.INTERNET_STATUS)
+          .where('examId', '==', examId)
+          .get();
+        connectSnap.docs.forEach(d => {
+          const rec = d.data();
+          const uid = rec.userId;
+          const existing = connectivityMap.get(uid) || { disconnections: 0, duration: 0 };
+          existing.disconnections += 1;
+          existing.duration += (rec.internetUnavailableDuration || 0);
+          connectivityMap.set(uid, existing);
+        });
+      } catch (e) {
+        // console.warn('⚠️ Connectivity fetch failed, continuing without:', e);
+      }
+      // console.log(`📊 [DEBUG] Connectivity: collection=${COLLECTIONS.INTERNET_STATUS}, usersWithData=${connectivityMap.size}, totalEntries=${Array.from(connectivityMap.values()).reduce((s, v) => s + v.disconnections, 0)}, totalDurationSec=${Array.from(connectivityMap.values()).reduce((s, v) => s + v.duration, 0)}`);
+
+      // ──────────────────────────────────────────
+      // 6. COMPUTE SUMMARY STATS
+      // ──────────────────────────────────────────
+      let submittedCount = 0;
+      let totalProgress = 0;
+      let totalViolations = 0;
+      const violationStudentIds = new Set<string>();
+
+      presentRecords.forEach(rec => {
+        const sid = rec.studentId || rec.userId;
+        const attempt = attemptsMap.get(sid);
+        if (!attempt) return;
+
+        // Submitted
+        if (attempt.status === 'submitted' || attempt.status === 'auto_submitted') {
+          submittedCount++;
+        }
+
+        // Progress: count answered questions
+        const answered = attempt.responses
+          ? attempt.responses.filter((r: any) => {
+              if (r.isAnswered === true) return true;
+              if (r.studentAnswer) {
+                if (typeof r.studentAnswer === 'string' && r.studentAnswer.trim().length > 0) return true;
+                if (Array.isArray(r.studentAnswer) && r.studentAnswer.length > 0) return true;
+              }
+              return false;
+            }).length
+          : 0;
+        const pct = totalQuestions > 0 ? (answered / totalQuestions) * 100 : 0;
+        totalProgress += pct;
+
+        // Violations from responses
+        if (attempt.responses) {
+          attempt.responses.forEach((r: any) => {
+            if (r.violations && Array.isArray(r.violations) && r.violations.length > 0) {
+              totalViolations += r.violations.length;
+              violationStudentIds.add(sid);
+            }
+          });
+        }
+      });
+
+      const avgProgress = presentCount > 0 ? Math.round(totalProgress / presentCount) : 0;
+
+      // Connectivity aggregate
+      let totalDisconnectionSeconds = 0;
+      let totalDisconnectionTimes = 0;
+      connectivityMap.forEach(v => {
+        totalDisconnectionSeconds += v.duration;
+        totalDisconnectionTimes += v.disconnections;
+      });
+
+      // ──────────────────────────────────────────
+      // 7. PAGINATE STUDENTS (present or absent based on filter)
+      // ──────────────────────────────────────────
+      // Sort present records: submitted first, then active, then others
+      const statusOrder: Record<string, number> = { 'submitted': 0, 'auto_submitted': 0, 'in_progress': 1, 'expired': 2 };
+      presentRecords.sort((a, b) => {
+        const aAttempt = attemptsMap.get(a.studentId || a.userId);
+        const bAttempt = attemptsMap.get(b.studentId || b.userId);
+        const aOrder = statusOrder[aAttempt?.status] ?? 3;
+        const bOrder = statusOrder[bAttempt?.status] ?? 3;
+        return aOrder - bOrder;
+      });
+
+      // Build absent student records if filter is 'absent'
+      let absentRecords: any[] = [];
+      if (filter === 'absent') {
+        const presentStudentIds = new Set(presentRecords.map((r: any) => r.studentId || r.userId));
+        const absentStudentIds = Array.from(enrolledStudentIds).filter(id => !presentStudentIds.has(id));
+        
+        // Fetch user details for absent students in batches
+        const batchSize = 10;
+        for (let i = 0; i < absentStudentIds.length; i += batchSize) {
+          const batch = absentStudentIds.slice(i, i + batchSize);
+          const userSnaps = await Promise.all(
+            batch.map(uid => db.collection('users').doc(uid).get())
+          );
+          userSnaps.forEach((snap, idx) => {
+            const userData = snap.exists ? snap.data() : null;
+            absentRecords.push({
+              studentId: batch[idx],
+              studentName: userData?.fullName || userData?.name || 'Unknown',
+              studentRollNumber: userData?.studentRoll || userData?.rollNumber || 'N/A',
+              email: userData?.email || '',
+            });
+          });
+        }
+        // Sort absent by name
+        absentRecords.sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''));
+      }
+
+      const recordsToPage = filter === 'absent' ? absentRecords : presentRecords;
+      const totalForFilter = filter === 'absent' ? absentCount : presentCount;
+      const startIndex = (page - 1) * pageSize;
+      const pageRecords = recordsToPage.slice(startIndex, startIndex + pageSize);
+      const totalPages = Math.ceil(totalForFilter / pageSize);
+
+      // ──────────────────────────────────────────
+      // 7b. ENRICH: Fetch user profiles for page records missing name/roll
+      // ──────────────────────────────────────────
+      const missingNameIds: string[] = [];
+      pageRecords.forEach((rec: any) => {
+        const sid = rec.studentId || rec.userId;
+        const attempt = attemptsMap.get(sid);
+        const hasName = rec.studentName || rec.fullName || attempt?.studentName || attempt?.fullName;
+        if (!hasName && sid) {
+          missingNameIds.push(sid);
+        }
+      });
+
+      const userProfileCache = new Map<string, any>();
+      if (missingNameIds.length > 0) {
+        const batchSize = 10;
+        for (let i = 0; i < missingNameIds.length; i += batchSize) {
+          const batch = missingNameIds.slice(i, i + batchSize);
+          const userSnaps = await Promise.all(
+            batch.map(uid => db.collection('users').doc(uid).get())
+          );
+          userSnaps.forEach((snap, idx) => {
+            if (snap.exists) {
+              userProfileCache.set(batch[idx], snap.data());
+            }
+          });
+        }
+      }
+
+      // ──────────────────────────────────────────
+      // 8. MAP STUDENT DATA FOR PAGE
+      // ──────────────────────────────────────────
+      const toDateSafe = (val: any): Date | null => {
+        if (!val) return null;
+        if (val.toDate) return val.toDate();
+        if (val.__time__) return new Date(val.__time__);
+        if (val.seconds) return new Date(val.seconds * 1000 + (val.nanoseconds || 0) / 1e6);
+        if (typeof val === 'number') return new Date(val > 1e12 ? val : val * 1000);
+        if (typeof val === 'string') return new Date(val);
+        return null;
+      };
+
+      const formatTime = (date: Date | null): string | null => {
+        if (!date || isNaN(date.getTime())) return null;
+        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+      };
+
+      const students = pageRecords.map(rec => {
+        const sid = rec.studentId || rec.userId;
+        const attempt = attemptsMap.get(sid);
+        const connectivity = connectivityMap.get(sid) || { disconnections: 0, duration: 0 };
+
+        // Activities
+        const activities = attempt?.activities || [];
+        const entryActivities = activities.filter((a: any) => a.type === 'enter');
+        const entryActivity = entryActivities[0];
+        const exitActivity = [...activities].reverse().find((a: any) => a.type === 'exit');
+
+        const entryTime = toDateSafe(entryActivity?.timestamp);
+        const exitTime = toDateSafe(exitActivity?.timestamp);
+        const ipAddress = entryActivity?.ipAddress || '';
+
+        // Multiple IPs check
+        const uniqueIPs = new Set(entryActivities.map((a: any) => a.ipAddress).filter(Boolean));
+
+        // Questions answered
+        const questionsAnswered = attempt?.responses
+          ? attempt.responses.filter((r: any) => {
+              if (r.isAnswered === true) return true;
+              if (r.studentAnswer) {
+                if (typeof r.studentAnswer === 'string' && r.studentAnswer.trim().length > 0) return true;
+                if (Array.isArray(r.studentAnswer) && r.studentAnswer.length > 0) return true;
+              }
+              return false;
+            }).length
+          : 0;
+
+        const progressPct = totalQuestions > 0 ? Math.round((questionsAnswered / totalQuestions) * 100) : 0;
+
+        // Status
+        let status = 'not_started';
+        if (!attempt) {
+          status = 'not_started';
+        } else if (attempt.status === 'submitted' || attempt.status === 'auto_submitted') {
+          status = 'submitted';
+        } else if (attempt.status === 'expired' || attempt.status === 'timeout') {
+          status = 'expired';
+        } else if (attempt.status === 'in_progress') {
+          status = examEndTime && now > examEndTime ? 'expired' : 'active';
+        }
+
+        // Duration
+        let duration = attempt?.timeSpent || 0;
+        if (duration === 0 && entryTime) {
+          const end = exitTime || now;
+          duration = Math.floor((end.getTime() - entryTime.getTime()) / 1000);
+        }
+
+        // Violations from responses
+        const violations: any[] = [];
+        if (attempt?.responses) {
+          attempt.responses.forEach((r: any) => {
+            if (r.violations && Array.isArray(r.violations)) {
+              r.violations.forEach((v: any) => {
+                let severity = v.severity || 'low';
+                if (severity === 'moderate') severity = 'high';
+                if (severity === 'minor') severity = 'low';
+                violations.push({
+                  type: v.type || 'unknown',
+                  details: v.details || '',
+                  severity,
+                  timestamp: v.timestamp || null,
+                  questionNo: r.questionNo || 0,
+                });
+              });
+            }
+          });
+        }
+
+        return {
+          userId: sid,
+          fullName: rec.studentName || rec.fullName || attempt?.studentName || attempt?.fullName || userProfileCache.get(sid)?.fullName || userProfileCache.get(sid)?.name || userProfileCache.get(sid)?.displayName || 'Unknown',
+          studentRoll: rec.studentRollNumber || rec.studentRoll || rec.rollNumber || attempt?.rollNumber || attempt?.studentRoll || userProfileCache.get(sid)?.studentRoll || userProfileCache.get(sid)?.rollNumber || 'N/A',
+          status,
+          attemptId: attempt?.attemptId || null,
+          attemptCount: attemptCountMap.get(sid) || 0,
+          questionsAnswered,
+          totalQuestions,
+          progressPercent: progressPct,
+          entryTime: formatTime(entryTime),
+          exitTime: formatTime(exitTime),
+          duration,
+          markedAt: formatTime(toDateSafe(rec.markedAt)),
+          ipAddress,
+          hasMultipleIPs: uniqueIPs.size > 1,
+          disconnections: connectivity.disconnections,
+          disconnectionDuration: connectivity.duration,
+          violations,
+          violationCount: violations.length,
+        };
+      });
+
+      // console.log(`📊 [DEBUG] FINAL SUMMARY: present=${presentCount}, absent=${absentCount}, enrolled=${totalEnrolled}, submitted=${submittedCount}, avgProgress=${avgProgress}, violations=${totalViolations}, violationStudents=${violationStudentIds.size}, disconnMinutes=${Math.round(totalDisconnectionSeconds / 60)}, disconnTimes=${totalDisconnectionTimes}, connectivityUsers=${connectivityMap.size}, pageStudents=${students.length}, page=${page}/${totalPages}`);
+
+      return {
+        summary: {
+          presentCount,
+          absentCount,
+          totalEnrolled,
+          attendancePercent: totalEnrolled > 0 ? Math.round((presentCount / totalEnrolled) * 100) : 0,
+          examStatus,
+          submittedCount,
+          avgProgress,
+          totalViolations,
+          violationStudentCount: violationStudentIds.size,
+          totalDisconnectionMinutes: Math.round(totalDisconnectionSeconds / 60),
+          totalDisconnectionTimes,
+          affectedUsersPercent: presentCount > 0 ? Math.round((connectivityMap.size / presentCount) * 100) : 0,
+          progressPercent: Math.round(progressPercent),
+          elapsedMinutes,
+          remainingMinutes,
+          mode: exam.mode || 'online',
+          totalQuestions,
+          durationMinutes,
+        },
+        students,
+        pagination: {
+          page,
+          pageSize,
+          totalStudents: totalForFilter,
+          totalPages,
+          hasMore: page < totalPages,
+        },
+      };
+    } catch (error: any) {
+      console.error('❌ getLiveExamStats error:', error);
+      if (error instanceof functions.https.HttpsError) throw error;
+      throw new functions.https.HttpsError('internal', error.message || 'Failed to fetch live stats');
+    }
+  });
+
+// ============================================
+// 📊 GET EXAM STUDENTS PAGINATED - Server-side pagination + search
+// Single Cloud Function for all student list operations in Result.tsx
+// Supports: browsing (cursor pagination), search (name/roll prefix), tabs (all/present/absent)
+// ============================================
+export const getExamStudentsPaginated = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 60, memory: '512MB' })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const {
+      examId,
+      pageSize = 20,
+      page = 1,          // page number (1-indexed)
+      filter = 'all',    // 'all' | 'present' | 'absent'
+      searchQuery = '',  // name/roll/email search
+    } = data;
+
+    if (!examId) {
+      throw new functions.https.HttpsError('invalid-argument', 'examId is required');
+    }
+
+    const db = admin.firestore();
+    const search = (searchQuery || '').trim().toLowerCase();
+
+    // console.log(`📊 [getExamStudentsPaginated] examId=${examId}, page=${page}, pageSize=${pageSize}, filter=${filter}, search="${search}"`);
+
+    try {
+      // ──────────────────────────────────────────
+      // 0. FETCH EXAM CONFIG (for duration cap)
+      // ──────────────────────────────────────────
+      const examDoc = await db.collection(COLLECTIONS.EXAMS).doc(examId).get();
+      const examConfig = examDoc.exists ? examDoc.data()! : null;
+      const examDurationSeconds = (parseInt(examConfig?.duration) || 0) * 60;
+
+      // console.log(`📊 [getExamStudentsPaginated] examId=${examId}, duration=${examDurationSeconds}s`);
+
+      // ──────────────────────────────────────────
+      // 1. Get ALL attendance records for this exam (lightweight docs)
+      // ──────────────────────────────────────────
+      const attendanceSnap = await db.collection(COLLECTIONS.ATTENDANCE)
+        .where('examId', '==', examId)
+        .get();
+
+      const attendanceMap = new Map<string, any>(); // studentId -> attendance info
+      const presentStudentIds = new Set<string>();
+      attendanceSnap.docs.forEach(d => {
+        const rec = d.data();
+        const sid = rec.studentId || rec.userId;
+        if (sid) {
+          attendanceMap.set(sid, {
+            studentName: rec.studentName || '',
+            studentEmail: rec.studentEmail || '',
+            rollNumber: rec.studentRollNumber || '',
+            status: rec.status || 'absent',
+          });
+          if (rec.status === 'present') presentStudentIds.add(sid);
+        }
+      });
+
+      // ──────────────────────────────────────────
+      // 2. Get ALL attempts for this exam (dedupe: latest per student)
+      // ──────────────────────────────────────────
+      const attemptsSnap = await db.collection(COLLECTIONS.EXAM_ATTEMPTS)
+        .where('examId', '==', examId)
+        .get();
+
+      const attemptsByStudent = new Map<string, { doc: any; data: any }>();
+      attemptsSnap.docs.forEach(d => {
+        const aData = d.data();
+        const sid = aData.studentId;
+        if (!sid) return;
+        const existing = attemptsByStudent.get(sid);
+        if (!existing) {
+          attemptsByStudent.set(sid, { doc: d, data: aData });
+        } else {
+          const toMs = (t: any) => t?.toDate ? t.toDate().getTime() : new Date(t || 0).getTime();
+          if (toMs(aData.startTime) > toMs(existing.data.startTime)) {
+            attemptsByStudent.set(sid, { doc: d, data: aData });
+          }
+        }
+        // Students with attempts are considered present
+        presentStudentIds.add(sid);
+      });
+
+      // ──────────────────────────────────────────
+      // 3. Get enrolled students not in attendance/attempts
+      // ──────────────────────────────────────────
+      const enrollSnap = await db.collection(COLLECTIONS.EXAM_ENROLLMENTS)
+        .where('examId', '==', examId)
+        .where('status', '==', 'active')
+        .get();
+
+      const allEnrolledIds = new Set<string>();
+      enrollSnap.docs.forEach(d => {
+        const sid = d.data().studentId;
+        if (sid) allEnrolledIds.add(sid);
+      });
+
+      // Find enrolled students with no attendance AND no attempt (truly absent)
+      const unknownStudentIds: string[] = [];
+      allEnrolledIds.forEach(sid => {
+        if (!attendanceMap.has(sid) && !attemptsByStudent.has(sid)) {
+          unknownStudentIds.push(sid);
+        }
+      });
+
+      // Fetch user profiles for unknown students
+      const userProfileMap = new Map<string, any>();
+      const batchSize = 25;
+      for (let i = 0; i < unknownStudentIds.length; i += batchSize) {
+        const batch = unknownStudentIds.slice(i, i + batchSize);
+        const userSnaps = await Promise.all(
+          batch.map(uid => db.collection('users').doc(uid).get())
+        );
+        userSnaps.forEach((snap, idx) => {
+          if (snap.exists) {
+            const uData = snap.data()!;
+            userProfileMap.set(batch[idx], {
+              studentName: uData.fullName || uData.name || uData.displayName || '',
+              studentEmail: uData.email || '',
+              rollNumber: uData.studentRoll || uData.rollNumber || '',
+            });
+          }
+        });
+      }
+
+      // ──────────────────────────────────────────
+      // 4. Build unified student list
+      // ──────────────────────────────────────────
+      const allStudentIds = new Set<string>();
+      presentStudentIds.forEach(id => allStudentIds.add(id));
+      attendanceMap.forEach((_v, id) => allStudentIds.add(id));
+      allEnrolledIds.forEach(id => allStudentIds.add(id));
+
+      const toMs = (t: any) => {
+        if (!t) return 0;
+        if (t.toDate) return t.toDate().getTime();
+        if (t instanceof Date) return t.getTime();
+        if (typeof t === 'number') return t;
+        return new Date(t).getTime();
+      };
+
+      // Helper to build lightweight student object
+      const buildStudentObj = (studentId: string) => {
+        const attempt = attemptsByStudent.get(studentId);
+        const attendanceInfo = attendanceMap.get(studentId);
+        const userProfile = userProfileMap.get(studentId);
+        const attemptData = attempt?.data;
+        const isPresent = presentStudentIds.has(studentId);
+
+        if (attemptData) {
+          // ✅ Compute violationCount from responses before stripping them
+          let violationCount = 0;
+          if (attemptData.responses && Array.isArray(attemptData.responses)) {
+            violationCount = attemptData.responses.reduce((t: number, r: any) => t + (r.violations?.length || 0), 0);
+          } else if (typeof attemptData.violationCount === 'number') {
+            violationCount = attemptData.violationCount;
+          } else if (attemptData.violationSummary?.total) {
+            violationCount = attemptData.violationSummary.total;
+          } else if (attemptData.violations && Array.isArray(attemptData.violations)) {
+            violationCount = attemptData.violations.length;
+          }
+
+          // ✅ Compute timeSpent from startTime→submitTime, cap at exam duration
+          let timeSpent = 0;
+          if (attemptData.startTime && attemptData.submitTime) {
+            const start = toMs(attemptData.startTime);
+            const end = toMs(attemptData.submitTime);
+            if (start > 0 && end > start) timeSpent = Math.floor((end - start) / 1000);
+          }
+          if (timeSpent === 0) timeSpent = attemptData.timeSpent || 0;
+          if (examDurationSeconds > 0 && timeSpent > examDurationSeconds) {
+            timeSpent = examDurationSeconds;
+          }
+
+          // Strip heavy arrays, pass through everything else as-is from Firestore
+          const { responses, violations, ...lightData } = attemptData;
+          return {
+            studentId,
+            studentName: attemptData.studentName || attendanceInfo?.studentName || userProfile?.studentName || 'Unknown',
+            studentEmail: attemptData.studentEmail || attendanceInfo?.studentEmail || userProfile?.studentEmail || '',
+            rollNumber: attemptData.rollNumber || attendanceInfo?.rollNumber || userProfile?.rollNumber || '',
+            hasAttempt: true,
+            isPresent,
+            attemptData: {
+              ...lightData,
+              attemptId: attempt!.doc.id,
+              violationCount,
+              timeSpent,
+              likertResponses: attemptData.likertResponses || null,
+            }
+          };
+        } else {
+          return {
+            studentId,
+            studentName: attendanceInfo?.studentName || userProfile?.studentName || 'Unknown',
+            studentEmail: attendanceInfo?.studentEmail || userProfile?.studentEmail || '',
+            rollNumber: attendanceInfo?.rollNumber || userProfile?.rollNumber || '',
+            hasAttempt: false,
+            isPresent,
+            attemptData: null
+          };
+        }
+      };
+
+      // Build full list
+      const allStudents: any[] = [];
+      allStudentIds.forEach(sid => {
+        allStudents.push(buildStudentObj(sid));
+      });
+
+      // ──────────────────────────────────────────
+      // 5. Filter by tab (present/absent)
+      // ──────────────────────────────────────────
+      let filtered: any[];
+      if (filter === 'present') {
+        filtered = allStudents.filter(s => s.isPresent);
+      } else if (filter === 'absent') {
+        filtered = allStudents.filter(s => !s.isPresent);
+      } else {
+        filtered = allStudents;
+      }
+
+      // ──────────────────────────────────────────
+      // 6. Apply search filter
+      // ──────────────────────────────────────────
+      if (search) {
+        filtered = filtered.filter(s => {
+          const name = (s.studentName || '').toLowerCase();
+          const roll = String(s.rollNumber || '').toLowerCase();
+          const email = (s.studentEmail || '').toLowerCase();
+          return name.includes(search) || roll.includes(search) || email.includes(search);
+        });
+      }
+
+      // ──────────────────────────────────────────
+      // 7. Sort: present students with attempts first (by percentage desc),
+      //    then present without attempts, then absent
+      // ──────────────────────────────────────────
+      filtered.sort((a, b) => {
+        // Present before absent
+        if (a.isPresent && !b.isPresent) return -1;
+        if (!a.isPresent && b.isPresent) return 1;
+        // With attempt before without
+        if (a.hasAttempt && !b.hasAttempt) return -1;
+        if (!a.hasAttempt && b.hasAttempt) return 1;
+        // By percentage desc
+        const pA = a.attemptData?.percentage || 0;
+        const pB = b.attemptData?.percentage || 0;
+        return pB - pA;
+      });
+
+      // ──────────────────────────────────────────
+      // 8. Paginate
+      // ──────────────────────────────────────────
+      const totalFiltered = filtered.length;
+      const totalPages = Math.ceil(totalFiltered / pageSize);
+      const startIndex = (page - 1) * pageSize;
+      const pageStudents = filtered.slice(startIndex, startIndex + pageSize);
+
+      // Strip isPresent from response (client uses present/absent arrays)
+      const presentOnPage = pageStudents.filter(s => s.isPresent).map(({ isPresent, ...rest }) => rest);
+      const absentOnPage = pageStudents.filter(s => !s.isPresent).map(({ isPresent, ...rest }) => rest);
+
+      // Counts
+      const totalPresent = allStudents.filter(s => s.isPresent).length;
+      const totalAbsent = allStudents.filter(s => !s.isPresent).length;
+      const totalAll = allStudents.length;
+
+      // console.log(`✅ [getExamStudentsPaginated] page=${page}/${totalPages}, results=${pageStudents.length}, present=${totalPresent}, absent=${totalAbsent}, search="${search}"`);
+
+      return {
+        present: presentOnPage,
+        absent: absentOnPage,
+        pagination: {
+          page,
+          pageSize,
+          totalFiltered,
+          totalPages,
+          hasMore: page < totalPages,
+        },
+        counts: {
+          totalAll,
+          totalPresent,
+          totalAbsent,
+        },
+      };
+    } catch (error: any) {
+      console.error('❌ getExamStudentsPaginated error:', error);
+      if (error instanceof functions.https.HttpsError) throw error;
+      throw new functions.https.HttpsError('internal', error.message || 'Failed to fetch students');
+    }
+  });

@@ -1,18 +1,17 @@
 /**
- * Fix Failed Tests - v2 (Streamlined)
+ * Fix Failed Tests - v3
  * 
  * Strategy (in order):
- *   1. Auto-fix known C issues (strtok parsing, stack overflow)
- *   2. Fix blank/empty test cases
+ *   1. Auto-fix known C issues (strtok parsing, stack overflow, N-ary tree)
+ *   2. Fix blank/empty/corrupted test cases (including wrong expected values)
  *   3. Run ALL approach/lang combos through Judge0 to find which pass
- *   4. If same TC fails across ALL languages → fix the test case (not code)
- *   5. Intelligent per-language fix (when a passing reference exists):
- *      A. Self-diagnose: Ask AI to analyze the failing code + errors, fix it without showing reference
- *      B. Test Phase A fix via Judge0 — if all TCs pass, done for that lang
- *      C. Reference-fix: If Phase A failed, show the working reference code and ask AI to fix
- *   6. If NO language passes → validate test cases via AI, then fix code via AI
- *   7. Final validation
- *   8. Still-failing langs get Phase A/B retry (self-fix → reference-fix)
+ *   4. Per approach — two-path strategy:
+ *      PATH A: At least one lang passes → TCs are correct → translate to failing langs
+ *              (batch translate → compile → error-feedback retry x3 per lang)
+ *      PATH B: No lang passes → fix code+TCs together until one lang passes
+ *              (send problem+code+TCs to AI, ask to fix both → compile → retry x3)
+ *              → once one passes, translate to all other langs (same as Path A)
+ *   5. Final validation
  *
  * Usage:
  *   node fix_failed_tests.js --test <problem_id>
@@ -229,6 +228,262 @@ function autoFixCStackOverflow(problem) {
   return { problem, fixes };
 }
 
+
+// ==================== C N-ARY TREE AUTO-FIX ====================
+
+/**
+ * Detects broken N-ary tree buildTree/printTree in C code and replaces both
+ * with correct BFS-based implementations.
+ *
+ * Broken buildTree: two-pass (create all nodes, then link) — wrong for N-ary format.
+ * Broken printTree: adds null after every individual node instead of after each
+ *   node's children group.
+ *
+ * Correct serialization format: root_val, children_of_root..., null, children_of_c1..., null, ...
+ *   - null comes AFTER each node's children group, not before
+ *   - Trailing nulls stripped except the one null after the last non-null value
+ */
+function fixCNaryTree(code) {
+  if (!code || typeof code !== 'string') return { code, fixed: false };
+
+  const hasBrokenBuildTree = (
+    /First pass.*create.*node/i.test(code) ||
+    /Second pass.*build.*parent/i.test(code) ||
+    (/buildTree\s*\(\s*\)/.test(code) && /nodesCount\s*=\s*0/.test(code) && /nodeIdx/.test(code))
+  );
+
+  const hasBrokenPrintTree = (
+    /childrenSize\s*>\s*0[\s\S]{0,200}printf.*null/m.test(code) &&
+    /front\s*<\s*rear[\s\S]{0,100}printf.*null/m.test(code)
+  );
+
+  if (!hasBrokenBuildTree && !hasBrokenPrintTree) return { code, fixed: false };
+
+  const maxNMatch = code.match(/#define\s+MAX[_N]*\s+(\d+)/);
+  const maxN = maxNMatch ? Math.max(parseInt(maxNMatch[1]), 1000) : 1000;
+
+  const correctBuildTree = `
+/* ---- FIXED buildTree: BFS-based N-ary deserialization ---- */
+/* Format: root, children_of_root..., null, children_of_c1..., null, ... */
+struct Node* buildTree() {
+    if (dataSize == 0 || isNullData[0]) return NULL;
+    nodesCount = 0;
+    nodes[nodesCount] = createNode(parseData[0]);
+    nodesCount++;
+
+    struct Node* bfsQ[${maxN}];
+    int bfsF = 0, bfsR = 0;
+    bfsQ[bfsR++] = nodes[0];
+
+    int i = 1;
+    while (bfsF < bfsR && i < dataSize) {
+        struct Node* cur = bfsQ[bfsF++];
+        while (i < dataSize && !isNullData[i]) {
+            struct Node* child = createNode(parseData[i++]);
+            addChild(cur, child);
+            nodes[nodesCount++] = child;
+            bfsQ[bfsR++] = child;
+        }
+        if (i < dataSize && isNullData[i]) i++;
+    }
+    return nodes[0];
+}`;
+
+  const correctPrintTree = `
+/* ---- FIXED printTree: BFS N-ary serialization ---- */
+/* Format: root_val, children_of_root..., null, children_of_c1..., null, ... */
+void printTree(struct Node* root) {
+    if (!root) { printf("[]"); return; }
+
+    static int outVals[${maxN * 4}];
+    static int outIsNull[${maxN * 4}];
+    int outSize = 0;
+
+    outIsNull[outSize] = 0; outVals[outSize] = root->val; outSize++;
+
+    struct Node* bfsQ[${maxN}];
+    int bfsF = 0, bfsR = 0;
+    bfsQ[bfsR++] = root;
+
+    while (bfsF < bfsR) {
+        struct Node* node = bfsQ[bfsF++];
+        for (int ci = 0; ci < node->childrenSize; ci++) {
+            struct Node* child = node->children[ci];
+            outIsNull[outSize] = 0; outVals[outSize] = child->val; outSize++;
+            bfsQ[bfsR++] = child;
+        }
+        outIsNull[outSize] = 1; outVals[outSize] = 0; outSize++;
+    }
+
+    /* Keep through null after last non-null value, drop the rest */
+    int lastVal = -1;
+    for (int i = outSize - 1; i >= 0; i--) { if (!outIsNull[i]) { lastVal = i; break; } }
+    if (lastVal >= 0 && lastVal + 1 < outSize && outIsNull[lastVal + 1]) outSize = lastVal + 2;
+    else if (lastVal >= 0) outSize = lastVal + 1;
+    else { printf("[]"); return; }
+
+    printf("[");
+    for (int i = 0; i < outSize; i++) {
+        if (i) printf(",");
+        if (outIsNull[i]) printf("null"); else printf("%d", outVals[i]);
+    }
+    printf("]");
+}`;
+
+  let fixed = code;
+  if (hasBrokenBuildTree) {
+    fixed = fixed.replace(
+      /struct\s+Node\*\s+buildTree\s*\(\s*\)\s*\{[\s\S]*?\n\}/,
+      correctBuildTree
+    );
+  }
+  if (hasBrokenPrintTree) {
+    fixed = fixed.replace(
+      /void\s+printTree\s*\(\s*struct\s+Node\*\s+\w+\s*\)\s*\{[\s\S]*?\n\}/,
+      correctPrintTree
+    );
+  }
+
+  const wasFixed = fixed !== code;
+  if (wasFixed) {
+    const opens = (fixed.match(/\{/g) || []).length;
+    const closes = (fixed.match(/\}/g) || []).length;
+    if (Math.abs(opens - closes) > 3) return { code, fixed: false };
+  }
+  return { code: fixed, fixed: wasFixed };
+}
+
+function autoFixCNaryTree(problem) {
+  const fixes = [];
+  if (!problem.approaches) return { problem, fixes };
+  for (const [approach, data] of Object.entries(problem.approaches)) {
+    if (!data.code?.c) continue;
+    const result = fixCNaryTree(data.code.c);
+    if (result.fixed) {
+      problem.approaches[approach].code.c = result.code;
+      fixes.push(`${approach}/c`);
+    }
+  }
+  if (fixes.length > 0) {
+    console.log(`    🔧 Auto-fixed N-ary tree buildTree/printTree in: ${fixes.join(', ')}`);
+  }
+  return { problem, fixes };
+}
+
+/**
+ * Returns true if the problem appears to use N-ary tree node/children structure.
+ */
+function isNaryTreeProblem(problem) {
+  const code = Object.values(problem.approaches || {})
+    .flatMap(a => Object.values(a.code || {})).join('\n');
+  return /struct\s+Node/.test(code) && /children/.test(code) && /buildTree|printTree/.test(code);
+}
+
+function parseNaryTree(s) {
+  s = (s || '').trim();
+  if (s === '[]') return { children: {}, root: null };
+  const raw = s.slice(1, -1).split(',').map(t => t.trim() === 'null' ? null : parseInt(t.trim()));
+  if (!raw.length || raw[0] === null) return { children: {}, root: null };
+  const root = raw[0];
+  const children = { [root]: [] };
+  const queue = [root];
+  let front = 0, i = 1;
+  while (front < queue.length && i < raw.length) {
+    const cur = queue[front++];
+    if (!children[cur]) children[cur] = [];
+    while (i < raw.length && raw[i] !== null) {
+      const child = raw[i++];
+      children[cur].push(child);
+      if (!children[child]) children[child] = [];
+      queue.push(child);
+    }
+    if (i < raw.length && raw[i] === null) i++;
+  }
+  return { children, root };
+}
+
+function serializeNaryTree(children, root) {
+  if (root === null || root === undefined) return '[]';
+  const out = [root];
+  const queue = [root]; let front = 0;
+  while (front < queue.length) {
+    const node = queue[front++];
+    for (const child of (children[node] || [])) { out.push(child); queue.push(child); }
+    out.push(null);
+  }
+  let lastVal = -1;
+  for (let i = out.length - 1; i >= 0; i--) { if (out[i] !== null) { lastVal = i; break; } }
+  if (lastVal < 0) return '[]';
+  const trimmed = (lastVal + 1 < out.length && out[lastVal + 1] === null)
+    ? out.slice(0, lastVal + 2) : out.slice(0, lastVal + 1);
+  return '[' + trimmed.map(x => x === null ? 'null' : String(x)).join(',') + ']';
+}
+
+function computeNaryMoveResult(rootStr, p, q) {
+  try {
+    let { children, root } = parseNaryTree(rootStr);
+    if (root === null) return null;
+    p = parseInt(p); q = parseInt(q);
+    if (p === q) return serializeNaryTree(children, root);
+
+    let pParent = null;
+    for (const [node, ch] of Object.entries(children)) {
+      if (ch.includes(p)) { pParent = parseInt(node); break; }
+    }
+    if (pParent === q) return serializeNaryTree(children, root); // already direct child of q
+
+    // Is q in p's subtree?
+    const subtree = new Set();
+    const stk = [p];
+    while (stk.length) { const n = stk.pop(); subtree.add(n); for (const c of (children[n] || [])) stk.push(c); }
+
+    if (subtree.has(q)) {
+      if (pParent !== null) children[pParent] = children[pParent].filter(c => c !== p);
+      children[q].push(p);
+      return serializeNaryTree(children, pParent === null ? q : root);
+    } else {
+      if (pParent !== null) children[pParent] = children[pParent].filter(c => c !== p);
+      children[q].push(p);
+      return serializeNaryTree(children, root);
+    }
+  } catch (e) { return null; }
+}
+
+/**
+ * Recomputes correct expected values for all N-ary tree test cases.
+ * Returns array of { index, expected } fixes for any that are wrong.
+ */
+function autoFixNaryTestCases(problem) {
+  if (!isNaryTreeProblem(problem)) return [];
+  const testCases = problem.testCases || [];
+  if (!testCases.length) return [];
+
+  const paramOrder = problem.paramOrder || [];
+  const rootKey = paramOrder.find(k => /root/i.test(k)) || 'root';
+  const pKey = paramOrder.find(k => k === 'p') || 'p';
+  const qKey = paramOrder.find(k => k === 'q') || 'q';
+
+  const fixes = [];
+  for (let i = 0; i < testCases.length; i++) {
+    const tc = testCases[i];
+    const input = tc.input || {};
+    const rootStr = input[rootKey];
+    const p = input[pKey];
+    const q = input[qKey];
+    if (!rootStr || p === undefined || q === undefined) continue;
+
+    const correct = computeNaryMoveResult(rootStr, p, q);
+    if (correct === null) continue;
+
+    const current = String(tc.expected || '').trim();
+    if (current !== correct) {
+      console.log(`    🔧 N-ary TC${i + 1}: expected="${current}" → correct="${correct}"`);
+      fixes.push({ index: i, expected: correct });
+    }
+  }
+  return fixes;
+}
+
 // ==================== TEST CASE SANITIZATION ====================
 
 function isInputValueBlank(value) {
@@ -395,11 +650,17 @@ async function judge0Poll(token, maxWait = 30000) {
   throw new Error('Judge0 poll timeout');
 }
 
-function buildStdin(testCase) {
+function buildStdin(testCase, problem) {
   const input = testCase.input;
   if (!input) return '';
   if (typeof input === 'string') return input;
-  return Object.values(input).join('\n');
+  // Use paramOrder to guarantee correct key ordering (Object.values insertion order is unreliable)
+  const order = (problem && problem.paramOrder && problem.paramOrder.length > 0)
+    ? problem.paramOrder
+    : (testCase.paramOrder && testCase.paramOrder.length > 0)
+      ? testCase.paramOrder
+      : Object.keys(input);
+  return order.map(k => (input[k] !== undefined ? input[k] : '')).join('\n');
 }
 
 function compareOutputs(actual, expected) {
@@ -418,8 +679,12 @@ function compareOutputs(actual, expected) {
       const e = JSON.parse(expected);
       if (JSON.stringify(a) === JSON.stringify(e)) return true;
       if (Array.isArray(a) && Array.isArray(e) && a.length === e.length) {
-        const sortKey = (item) => JSON.stringify(Array.isArray(item) ? [...item].sort() : item);
-        if (JSON.stringify([...a].map(sortKey).sort()) === JSON.stringify([...e].map(sortKey).sort())) return true;
+        // Only sort-compare for flat 1D arrays of primitives.
+        // Do NOT sort 2D arrays (e.g. edge lists) — that corrupts element order.
+        const isFlat = (arr) => arr.every(x => !Array.isArray(x) && typeof x !== 'object');
+        if (isFlat(a) && isFlat(e)) {
+          if (JSON.stringify([...a].sort()) === JSON.stringify([...e].sort())) return true;
+        }
       }
     } catch (e) {}
   }
@@ -435,14 +700,14 @@ function compareOutputs(actual, expected) {
  * Returns { passed: boolean, failedTests: [...] }
  * Each failedTest includes: tc, expected, actual, error, status, memory, time
  */
-async function testCodeAgainstJudge0(code, lang, testCases, { collectAll = false, indent = '      ' } = {}) {
+async function testCodeAgainstJudge0(code, lang, testCases, { collectAll = false, indent = '      ', problem = null } = {}) {
   const langId = LANGUAGE_IDS[lang];
   let allPassed = true;
   const failedTests = [];
 
   for (let i = 0; i < (testCases || []).length; i++) {
     const tc = testCases[i];
-    const stdin = buildStdin(tc);
+    const stdin = buildStdin(tc, problem || { testCases });
     const expected = String(tc.expected ?? '').trim();
     try {
       const result = await judge0Submit(code, langId, stdin);
@@ -559,7 +824,7 @@ async function runFullJudge0Scan(problem, testCaseFixes = [], existingReport = n
 
       for (let i = 0; i < testCases.length; i++) {
         const tc = testCases[i];
-        const stdin = buildStdin(tc);
+        const stdin = buildStdin(tc, problem);
         const expected = String(tc.expected ?? '').trim();
 
         try {
@@ -621,189 +886,6 @@ async function runFullJudge0Scan(problem, testCaseFixes = [], existingReport = n
   return { passingCode, failingCode, tcOutputs, allPassed, report };
 }
 
-// ==================== STEP 4: AUTO-FIX TEST CASES BY CONSENSUS ====================
-
-/**
- * If ALL languages produce the same output for a TC but it differs from expected,
- * the test case expected value is wrong. Fix it.
- */
-function detectAndFixWrongTestCases(tcOutputs, problem) {
-  const testCases = problem.testCases || [];
-  const testCaseFixes = [];
-  const fixedTcIndices = new Set();
-
-  // Count total approach/lang combos
-  const allApproachLangs = [];
-  for (const [approach, approachData] of Object.entries(problem.approaches || {})) {
-    for (const lang of Object.keys(approachData.code || {})) {
-      if (LANGUAGE_IDS[lang]) allApproachLangs.push(`${approach}/${lang}`);
-    }
-  }
-  const totalCombos = allApproachLangs.length;
-
-  // --- Pass 1: Global consensus (all approaches agree on same output) ---
-  for (const [tcNumStr, approaches] of Object.entries(tcOutputs)) {
-    const tcNum = parseInt(tcNumStr);
-    const tcIndex = tcNum - 1;
-    if (tcIndex < 0 || tcIndex >= testCases.length) continue;
-    const expected = String(testCases[tcIndex].expected ?? '').trim();
-
-    const outputCounts = new Map();
-    const rawOutputs = new Map();
-    let totalTested = 0;
-
-    for (const [approach, langs] of Object.entries(approaches)) {
-      for (const [lang, data] of Object.entries(langs)) {
-        if (data.statusId !== 3) continue;
-        totalTested++;
-        const actual = data.actual;
-        if (!actual && actual !== '0') continue;
-        
-        let normalized = actual;
-        // Normalize arrays: remove spaces after commas/brackets
-        if (actual.startsWith('[') || actual.startsWith('{')) {
-          normalized = actual.replace(/\s+/g, '');
-        } else {
-          const numVal = parseFloat(actual);
-          if (!isNaN(numVal) && actual.trim() === String(actual).trim()) {
-            normalized = String(Math.round(numVal * 100000) / 100000);
-          }
-        }
-        
-        outputCounts.set(normalized, (outputCounts.get(normalized) || 0) + 1);
-        if (!rawOutputs.has(normalized) || actual.length > rawOutputs.get(normalized).length) {
-          rawOutputs.set(normalized, actual);
-        }
-      }
-    }
-
-    if (outputCounts.size === 1 && totalTested >= 3) {
-      const [unanimousOutput, count] = [...outputCounts.entries()][0];
-      const rawOutput = rawOutputs.get(unanimousOutput);
-      // Use compact form (no extra spaces) for the expected value
-      const fixValue = (rawOutput.startsWith('[') || rawOutput.startsWith('{')) ? rawOutput.replace(/\s+/g, '') : rawOutput;
-      
-      if (!compareOutputs(rawOutput, expected)) {
-        console.log(`    🔧 TC${tcNum}: ALL ${count} lang(s) output "${fixValue}" but expected="${expected}" → auto-correcting`);
-        testCaseFixes.push({ index: tcIndex, expected: fixValue });
-        fixedTcIndices.add(tcIndex);
-      }
-    } else if (outputCounts.size === 1 && totalTested >= 2 && totalTested < 3) {
-      const [unanimousOutput, count] = [...outputCounts.entries()][0];
-      const rawOutput = rawOutputs.get(unanimousOutput);
-      if (!compareOutputs(rawOutput, expected)) {
-        console.log(`    ⚠️  TC${tcNum}: ${count} lang(s) output "${rawOutput}" but expected="${expected}" — likely wrong TC (needs ${3 - count} more to auto-correct)`);
-      }
-    }
-  }
-
-  // --- Pass 2: Per-approach consensus (when approaches disagree) ---
-  // If ALL languages within one approach unanimously agree on an output different
-  // from expected, and that approach passes more OTHER test cases than competing
-  // approaches, trust that approach's output and auto-correct the TC.
-  
-  // Compute per-approach pass rates (how many TCs each approach's langs match expected)
-  const approachPassCounts = {};
-  for (const [tcNumStr, approaches] of Object.entries(tcOutputs)) {
-    const tcNum = parseInt(tcNumStr);
-    const tcIndex = tcNum - 1;
-    if (tcIndex < 0 || tcIndex >= testCases.length) continue;
-    const expected = String(testCases[tcIndex].expected ?? '').trim();
-
-    for (const [approach, langs] of Object.entries(approaches)) {
-      if (!approachPassCounts[approach]) approachPassCounts[approach] = 0;
-      const langOutputs = Object.values(langs).filter(d => d.statusId === 3);
-      if (langOutputs.length > 0 && langOutputs.every(d => compareOutputs(d.actual, expected))) {
-        approachPassCounts[approach]++;
-      }
-    }
-  }
-
-  for (const [tcNumStr, approaches] of Object.entries(tcOutputs)) {
-    const tcNum = parseInt(tcNumStr);
-    const tcIndex = tcNum - 1;
-    if (tcIndex < 0 || tcIndex >= testCases.length) continue;
-    if (fixedTcIndices.has(tcIndex)) continue;
-    const expected = String(testCases[tcIndex].expected ?? '').trim();
-
-    // Collect per-approach unanimous outputs
-    const approachOutputs = {};
-    for (const [approach, langs] of Object.entries(approaches)) {
-      const langData = Object.values(langs).filter(d => d.statusId === 3);
-      if (langData.length < 2) continue;
-      
-      const outputs = langData.map(d => d.actual).filter(a => a || a === '0');
-      if (outputs.length === 0) continue;
-
-      const normalized = outputs.map(a => {
-        // Normalize arrays: remove spaces after commas/brackets
-        if (a.startsWith('[') || a.startsWith('{')) {
-          return a.replace(/\s+/g, '');
-        }
-        const numVal = parseFloat(a);
-        if (!isNaN(numVal) && a.trim() === String(a).trim()) {
-          return String(Math.round(numVal * 100000) / 100000);
-        }
-        return a.trim();
-      });
-
-      const unique = [...new Set(normalized)];
-      if (unique.length === 1) {
-        approachOutputs[approach] = {
-          normalized: unique[0],
-          raw: outputs[0],
-          count: outputs.length,
-        };
-      }
-    }
-
-    const approachNames = Object.keys(approachOutputs);
-    if (approachNames.length === 0) continue;
-
-    // Find approaches that disagree with expected
-    const disagreeingApproaches = approachNames.filter(
-      a => !compareOutputs(approachOutputs[a].raw, expected)
-    );
-    if (disagreeingApproaches.length === 0) continue;
-
-    // Pick the best approach (highest pass rate on other TCs)
-    let bestApproach = null;
-    let bestPassCount = -1;
-    let bestOutput = null;
-
-    for (const approach of disagreeingApproaches) {
-      const passCount = approachPassCounts[approach] || 0;
-      if (passCount > bestPassCount) {
-        bestPassCount = passCount;
-        bestApproach = approach;
-        bestOutput = approachOutputs[approach];
-      }
-    }
-
-    const totalTCs = testCases.length;
-    const passPct = totalTCs > 1 ? bestPassCount / (totalTCs - 1) : 0;
-
-    if (bestOutput && bestOutput.count >= 3 && passPct >= 0.5) {
-      // Ensure no other approach with equal/better pass rate agrees with expected
-      const agreesWithExpected = approachNames.filter(
-        a => compareOutputs(approachOutputs[a].raw, expected) && (approachPassCounts[a] || 0) >= bestPassCount
-      );
-      
-      if (agreesWithExpected.length === 0) {
-        const fixValue = (bestOutput.raw.startsWith('[') || bestOutput.raw.startsWith('{')) ? bestOutput.raw.replace(/\s+/g, '') : bestOutput.raw;
-        console.log(`    🔧 TC${tcNum}: "${bestApproach}" (${bestOutput.count} langs, ${bestPassCount}/${totalTCs - 1} other TCs pass) unanimously outputs "${fixValue}" but expected="${expected}" → auto-correcting`);
-        testCaseFixes.push({ index: tcIndex, expected: fixValue });
-        fixedTcIndices.add(tcIndex);
-      }
-    } else if (bestOutput && bestOutput.count >= 2 && !fixedTcIndices.has(tcIndex)) {
-      const displayVal = (bestOutput.raw.startsWith('[') || bestOutput.raw.startsWith('{')) ? bestOutput.raw.replace(/\s+/g, '') : bestOutput.raw;
-      console.log(`    ⚠️  TC${tcNum}: "${bestApproach}" (${bestOutput.count} langs, ${bestPassCount}/${totalTCs - 1} other TCs pass) outputs "${displayVal}" but expected="${expected}" — needs more evidence`);
-    }
-  }
-
-  return testCaseFixes;
-}
-
 // ==================== STEP 5: TRANSLATE FROM PASSING REFERENCE ====================
 
 function generateTranslationPrompt(problem, approach, workingCode, targetLanguages, existingCodes, sourceLang) {
@@ -823,7 +905,7 @@ ${existing}
   }).join('\n');
 
   const stdinSection = (testCases || []).slice(0, 3).map((tc, i) => {
-    const stdin = buildStdin(tc);
+    const stdin = buildStdin(tc, problem);
     return `  TC${i + 1} stdin:\n${stdin.split('\n').map(line => `    | ${line}`).join('\n')}`;
   }).join('\n');
 
@@ -883,360 +965,6 @@ ${targetLanguages.map(l => `          "${l}": "FULL ${l} CODE HERE"`).join(',\n'
 }`;
 }
 
-// ==================== STEP 5A: SELF-DIAGNOSE & FIX (no reference shown) ====================
-
-function generateSelfFixPrompt(problem, approach, lang, code, failedTests) {
-  const { title, description, descriptionText, testCases } = problem;
-
-  const stdinSection = (testCases || []).slice(0, 3).map((tc, i) => {
-    const stdin = buildStdin(tc);
-    return `  TC${i + 1} stdin:\n${stdin.split('\n').map(line => `    | ${line}`).join('\n')}`;
-  }).join('\n');
-
-  const tcSection = (testCases || []).map((tc, i) => {
-    const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input);
-    return `  TC${i + 1}: input=${inputStr} → expected="${String(tc.expected ?? '').trim()}"`;
-  }).join('\n');
-
-  const errorDetails = failedTests.map(ft => {
-    let detail = `  TC${ft.tc}: status="${ft.status}"`;
-    if (ft.expected) detail += `, expected="${ft.expected}"`;
-    if (ft.actual) detail += `, got="${ft.actual || '(empty)'}"`;
-    if (ft.memory) detail += `, memory=${ft.memory}`;
-    if (ft.time) detail += `, time=${ft.time}`;
-    if (ft.error) detail += `\n    Error: ${ft.error}`;
-    return detail;
-  }).join('\n');
-
-  return `You are an expert ${lang} developer. This ${lang} program implements the correct algorithm but FAILS when executed. Diagnose the problem and fix it.
-
-**PROBLEM:** ${title}
-${description || descriptionText || ''}
-
-**STDIN FORMAT:**
-${stdinSection}
-
-**TEST CASES:**
-${tcSection}
-
-## THE FAILING ${lang} CODE:
-\`\`\`${lang}
-${code}
-\`\`\`
-
-## ACTUAL EXECUTION RESULTS (from Judge0 online judge):
-${errorDetails}
-
-## YOUR TASK:
-1. Read the code carefully and identify WHY it fails (compilation error, runtime crash, wrong output, OOM killed, etc.)
-2. ${(() => {
-  const hasOOM = failedTests.some(ft => (ft.status && ft.status.includes('Killed')) || (ft.error && (ft.error.includes('Killed') || ft.error.includes('Out of Memory'))));
-  const hasWrongAnswer = failedTests.some(ft => ft.status === 'Accepted' && ft.actual && ft.actual !== '(empty)' && ft.actual !== ft.expected);
-  const hasEmptyOutput = failedTests.some(ft => ft.status === 'Accepted' && (!ft.actual || ft.actual === '(empty)'));
-  if (hasOOM) return `The program was KILLED due to OUT OF MEMORY. You MUST optimize memory usage:
-   - Replace HashMap/HashSet/LinkedHashSet with primitive int[]/boolean[]/char[] arrays (e.g., int[128] for char-to-digit mapping)
-   - Avoid autoboxing (Integer vs int) — use primitive types everywhere
-   - Minimize object creation inside recursive calls
-   - Add pruning to reduce search space (e.g., weight-based pruning, column-by-column validation)
-   - You ARE allowed to restructure the algorithm to reduce memory — the core problem-solving approach must stay the same but the implementation can change significantly`;
-  if (hasWrongAnswer) return `The program compiles and runs but produces WRONG OUTPUT. The algorithm logic itself is INCORRECT.
-   - You MUST fix the algorithm logic — not just parsing or syntax
-   - Carefully re-read the problem description and trace through the failing test cases
-   - Compare expected vs actual output to understand what the code is doing wrong
-   - You ARE allowed to rewrite the algorithm entirely if needed — just keep the same I/O format (stdin/stdout)`;
-  if (hasEmptyOutput) return `The program compiles and runs (status "Accepted") but produces EMPTY OUTPUT for some test cases.
-   - This is NOT a crash — the program runs but prints nothing for certain inputs
-   - The algorithm or input parsing has a bug that prevents output in some cases
-   - Check: off-by-one errors, input parsing reading wrong number of lines, conditions that skip output
-   - You ARE allowed to rewrite the algorithm if needed — just keep the same I/O format`;
-  return `The ALGORITHM LOGIC is correct — do NOT change the core algorithm. Only fix:
-   - Compilation/syntax errors
-   - Input parsing issues (stdin reading)
-   - Runtime crashes (segfault, stack overflow, null pointer)
-   - Language-specific quirks (imports, type casting, I/O buffering)`;
-})()}
-3. Provide the COMPLETE fixed ${lang} program.
-
-## LANGUAGE-SPECIFIC HINTS:
-- Go: NEVER use fmt.Scanln for complex input (stops at spaces). Use bufio.NewReader(os.Stdin) with ReadString('\\n').
-- Go: For parsing arrays like [1,2,3] or [[1,2],[3,4]], read the full line first then parse character by character.
-- C/C++: NEVER use math.h functions (log, pow, sqrt) — Judge0 may not link -lm. Use integer alternatives.
-- C/C++: Use strtol-based parsing, NOT strtok with "[,]" delimiters.
-- C/C++: Large local arrays cause stack overflow — use static or global.
-- Java: handle empty arrays "[]" gracefully, use BufferedReader for large input.
-- JavaScript: use readline for stdin, handle BigInt for large numbers if needed.
-${failedTests.some(ft => ft.status && ft.status.includes('Compilation')) ? `
-## ⚠️ JUDGE0 COMPILER LIMITATIONS (CRITICAL):
-- C++ compiler: GCC with C++17 support but NO -pthread flag. Threading headers (<thread>, <mutex>, <condition_variable>, <future>, <atomic>) will cause linker errors.
-- If the code uses multithreading/concurrency, you MUST rewrite it as SINGLE-THREADED. Remove all thread/mutex/lock usage and implement a simple sequential solution.
-- C compiler: GCC with -lm flag only. No POSIX threads (pthread).
-- Do NOT use: std::thread, std::mutex, std::async, std::future, pthread_create, or any threading API.
-- Instead: implement the algorithm sequentially (BFS/DFS with a queue/stack).
-` : ''}
-
-Return ONLY valid JSON:
-{
-  "status": "needs_fixes",
-  "summary": "Brief diagnosis of what was wrong and how you fixed it",
-  "fixes": {
-    "approaches": {
-      "${approach}": {
-        "code": {
-          "${lang}": "FULL CORRECTED ${lang} CODE HERE"
-        }
-      }
-    }
-  }
-}`;
-}
-
-// ==================== STEP 5B: FIX WITH WORKING REFERENCE ====================
-
-function generateFixWithReferencePrompt(problem, approach, lang, failingCode, failedTests, refLang, refCode) {
-  const { title, description, descriptionText, testCases } = problem;
-
-  const stdinSection = (testCases || []).slice(0, 3).map((tc, i) => {
-    const stdin = buildStdin(tc);
-    return `  TC${i + 1} stdin:\n${stdin.split('\n').map(line => `    | ${line}`).join('\n')}`;
-  }).join('\n');
-
-  const tcSection = (testCases || []).map((tc, i) => {
-    const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input);
-    return `  TC${i + 1}: input=${inputStr} → expected="${String(tc.expected ?? '').trim()}"`;
-  }).join('\n');
-
-  const errorDetails = failedTests.map(ft => {
-    let detail = `  TC${ft.tc}: status="${ft.status}"`;
-    if (ft.expected) detail += `, expected="${ft.expected}"`;
-    if (ft.actual) detail += `, got="${ft.actual || '(empty)'}"`;
-    if (ft.memory) detail += `, memory=${ft.memory}`;
-    if (ft.time) detail += `, time=${ft.time}`;
-    if (ft.error) detail += `\n    Error: ${ft.error}`;
-    return detail;
-  }).join('\n');
-
-  return `You are an expert ${lang} developer. The ${lang} code below implements the same algorithm as the working ${refLang} code, but the ${lang} version FAILS. Fix the ${lang} code so it produces identical output.
-
-**PROBLEM:** ${title}
-${description || descriptionText || ''}
-
-**STDIN FORMAT:**
-${stdinSection}
-
-**TEST CASES:**
-${tcSection}
-
-## ✅ WORKING ${refLang} CODE (passes ALL tests — this is your reference):
-\`\`\`${refLang}
-${refCode}
-\`\`\`
-
-## ❌ FAILING ${lang} CODE:
-\`\`\`${lang}
-${failingCode}
-\`\`\`
-
-## ACTUAL EXECUTION RESULTS OF THE FAILING CODE:
-${errorDetails}
-
-## YOUR TASK:
-1. Compare the working ${refLang} code with the failing ${lang} code.
-2. The algorithm in ${refLang} is PROVEN correct. Make the ${lang} version behave identically.
-3. Focus on: input parsing, data types, I/O format, language-specific idioms.
-4. ${(() => {
-  const hasOOM = failedTests.some(ft => (ft.status && ft.status.includes('Killed')) || (ft.error && (ft.error.includes('Killed') || ft.error.includes('Out of Memory'))));
-  const hasWrongAnswer = failedTests.some(ft => ft.status === 'Accepted' && ft.actual && ft.actual !== '(empty)' && ft.actual !== ft.expected);
-  const hasEmptyOutput = failedTests.some(ft => ft.status === 'Accepted' && (!ft.actual || ft.actual === '(empty)'));
-  if (hasOOM) return `The ${lang} program was KILLED due to OUT OF MEMORY. The ${refLang} version passes because it uses less memory. You MUST:
-   - Use primitive arrays (int[], boolean[], char[]) instead of HashMap/HashSet/LinkedHashSet
-   - Avoid autoboxing — use int not Integer, boolean not Boolean
-   - Minimize object creation in recursion
-   - Add pruning to cut the search space (e.g., weight-based approach, partial-sum validation)
-   - You ARE allowed to restructure the ${lang} implementation to be more memory-efficient — as long as the algorithm produces the same results as the ${refLang} version`;
-  if (hasWrongAnswer) return `The ${lang} program produces WRONG OUTPUT — the algorithm logic is incorrect. The ${refLang} version is PROVEN correct.
-   - Do NOT try to patch the existing ${lang} code — the algorithm itself is wrong
-   - TRANSLATE the working ${refLang} algorithm directly to ${lang}
-   - Ensure the ${lang} version implements the EXACT same logic as the ${refLang} version
-   - Keep the same I/O format (stdin/stdout parsing) from the existing ${lang} code`;
-  if (hasEmptyOutput) return `The ${lang} program runs (status "Accepted") but produces EMPTY OUTPUT for some test cases. The ${refLang} version works correctly.
-   - Do NOT try to patch the existing code — TRANSLATE the working ${refLang} algorithm directly to ${lang}
-   - The existing ${lang} code has a logic bug causing no output on certain inputs
-   - Pay special attention to how the ${refLang} code reads input and produces output`;
-  return `Keep the same algorithm structure — just make it work correctly in ${lang}.`;
-})()}
-
-## LANGUAGE-SPECIFIC HINTS:
-- Go: NEVER use fmt.Scanln for complex input (stops at spaces). Use bufio.NewReader(os.Stdin) with ReadString('\\n').
-- C/C++: NEVER use math.h functions (log, pow, sqrt) — use integer alternatives.
-- C/C++: Use strtol-based parsing, NOT strtok. Large arrays must be static/global.
-- Java: handle empty arrays "[]", use BufferedReader.
-- JavaScript: use readline, BigInt for large numbers if needed.
-${failedTests.some(ft => ft.status && ft.status.includes('Compilation')) ? `
-## ⚠️ JUDGE0 COMPILER LIMITATIONS (CRITICAL):
-- C++ compiler: GCC with C++17 support but NO -pthread flag. Threading headers (<thread>, <mutex>, <condition_variable>, <future>, <atomic>) will cause linker errors.
-- If the code uses multithreading/concurrency, you MUST rewrite it as SINGLE-THREADED. Remove all thread/mutex/lock usage and implement a simple sequential solution.
-- C compiler: GCC with -lm flag only. No POSIX threads (pthread).
-- Do NOT use: std::thread, std::mutex, std::async, std::future, pthread_create, or any threading API.
-- Instead: implement the algorithm sequentially (BFS/DFS with a queue/stack).
-` : ''}
-
-Return ONLY valid JSON:
-{
-  "status": "needs_fixes",
-  "summary": "Brief description of what was wrong and how you fixed it",
-  "fixes": {
-    "approaches": {
-      "${approach}": {
-        "code": {
-          "${lang}": "FULL CORRECTED ${lang} CODE HERE"
-        }
-      }
-    }
-  }
-}`;
-}
-
-// ==================== STEP 6: FIX CODE VIA AI (no passing reference) ====================
-
-function generateFixPromptFromScan(problem, approach, failingLangs, scanResults) {
-  const { title, description, descriptionText, testCases, examples, paramOrder, constraints } = problem;
-
-  const failingCodes = {};
-  for (const [lang, data] of Object.entries(failingLangs)) {
-    failingCodes[lang] = {
-      code: data.code,
-      failedTests: data.failedTests,
-    };
-  }
-
-  const stdinExamples = (testCases || []).map((tc, i) => {
-    const stdin = buildStdin(tc);
-    return `  TC${i + 1} stdin:\n${stdin.split('\n').map(line => `    | ${line}`).join('\n')}`;
-  }).join('\n');
-
-  const promptData = {
-    title,
-    description: description || descriptionText,
-    paramOrder: paramOrder || [],
-    constraints: constraints || [],
-    examples: examples || [],
-    testCases: testCases || [],
-    approach,
-    failingCodes,
-  };
-
-  return `You are an expert code fixer. Fix ALL the failing code for approach "${approach}".
-
-**PROBLEM DATA:**
-\`\`\`json
-${JSON.stringify(promptData, null, 2)}
-\`\`\`
-
-## STDIN FORMAT:
-${stdinExamples}
-
-## What's happening:
-- Each failing language has the current code and failedTests showing actual Judge0 execution results.
-- Fix the algorithm logic so ALL test cases pass for ALL languages.
-
-## CRITICAL RULES:
-- Keep the same I/O format (stdin/stdout)
-- For Java: handle empty array "[]" gracefully
-- For JavaScript: use BigInt for large numbers if needed
-- For C/C++:
-  * NEVER use math.h functions (log, pow, sqrt, ceil, floor) — Judge0 may not link -lm, causing silent crash with EMPTY output and 0s/0KB. Use integer-only alternatives:
-    - log base B → while loop (n /= B; count++)
-    - pow → for loop multiplying
-    - sqrt → integer binary search
-    - ceil(a/b) → (a + b - 1) / b
-  * Use strtol-based parsing (NOT strtok with "[,]")
-  * Declare large arrays as static/global (stack limit ~8MB)
-  * If output is EMPTY with 0s time → it's a crash, not wrong answer. Check for: missing -lm (math.h), segfault from bad parsing, stack overflow from large arrays
-- Provide COMPLETE corrected code for each language
-- Check that programs read input from STDIN properly — each parameter on a separate line
-
-## Response format:
-Return ONLY valid JSON:
-{
-  "status": "needs_fixes",
-  "summary": "Brief description",
-  "fixes": {
-    "approaches": {
-      "${approach}": {
-        "code": {
-          "language": "FULL CORRECTED CODE"
-        }
-      }
-    },
-    "testCases": []
-  }
-}
-
-Only include "testCases" if expected values are genuinely wrong.
-Begin now.`;
-}
-
-/**
- * Generate a prompt to validate test cases using AI
- * (when no language passes all TCs)
- */
-function generateTestCaseValidationPrompt(problem, approach, tcOutputs) {
-  const { title, description, descriptionText, examples, testCases, paramOrder, constraints } = problem;
-
-  // Build consensus info per TC
-  const tcInfo = (testCases || []).map((tc, i) => {
-    const tcNum = i + 1;
-    const expected = String(tc.expected ?? '').trim();
-    const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input);
-    
-    // Get all outputs for this TC
-    const outputs = {};
-    if (tcOutputs[tcNum]) {
-      for (const [app, langs] of Object.entries(tcOutputs[tcNum])) {
-        for (const [lang, data] of Object.entries(langs)) {
-          if (data.statusId === 3) {
-            outputs[`${app}/${lang}`] = data.actual;
-          }
-        }
-      }
-    }
-    
-    const uniqueOutputs = [...new Set(Object.values(outputs))];
-    return `  TC${tcNum}: input=${inputStr}, expected="${expected}", actual outputs from code: ${JSON.stringify(uniqueOutputs)}`;
-  }).join('\n');
-
-  return `You are a test case validator. Check if the expected values of these test cases are correct for the given problem.
-
-**PROBLEM:**
-- Title: ${title}
-- Description: ${description || descriptionText}
-- Examples: ${JSON.stringify(examples || [])}
-- Constraints: ${JSON.stringify(constraints || [])}
-- Parameter order: ${JSON.stringify(paramOrder || [])}
-
-**TEST CASES (with what ALL language implementations actually output):**
-${tcInfo}
-
-## Your task:
-1. For each test case, manually compute the correct expected output based on the problem description.
-2. Compare with the current expected value AND with what the code implementations output.
-3. If the expected value is wrong, provide the correct value.
-4. If the code outputs are ALL wrong (and agree), the algorithm is wrong — expected value is likely correct.
-
-Return ONLY valid JSON:
-{
-  "status": "validated",
-  "summary": "Brief summary",
-  "fixes": {
-    "testCases": [
-      { "index": 0, "expected": "correct_value", "reason": "why" }
-    ]
-  }
-}
-
-Only include testCases that need fixing. Empty array if all are correct.`;
-}
-
 // ==================== ERROR FEEDBACK FIX PROMPT ====================
 
 /**
@@ -1248,7 +976,7 @@ function generateErrorFeedbackPrompt(problem, approach, lang, code, failedTests,
   const { title, description, descriptionText, testCases } = problem;
 
   const stdinSection = (testCases || []).slice(0, 3).map((tc, i) => {
-    const stdin = buildStdin(tc);
+    const stdin = buildStdin(tc, problem);
     return `  TC${i + 1} stdin:\n${stdin.split('\n').map(line => `    | ${line}`).join('\n')}`;
   }).join('\n');
 
@@ -1385,119 +1113,6 @@ Return ONLY valid JSON:
 }`;
 }
 
-// ==================== BATCH FIX: MULTIPLE LANGS IN ONE CALL ====================
-
-/**
- * Generate a prompt to fix multiple failing languages at once using a working reference.
- * Groups langs with the same error type to save API calls.
- */
-function generateBatchFixPrompt(problem, approach, failingLangsMap, refLang, refCode, errorCategory) {
-  const { title, description, descriptionText, testCases } = problem;
-  const targetLangs = Object.keys(failingLangsMap);
-
-  const stdinSection = (testCases || []).slice(0, 3).map((tc, i) => {
-    const stdin = buildStdin(tc);
-    return `  TC${i + 1} stdin:\n${stdin.split('\n').map(line => `    | ${line}`).join('\n')}`;
-  }).join('\n');
-
-  const tcSection = (testCases || []).map((tc, i) => {
-    const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input);
-    return `  TC${i + 1}: input=${inputStr} → expected="${String(tc.expected ?? '').trim()}"`;
-  }).join('\n');
-
-  // Show each failing lang's code and errors
-  const failingSection = targetLangs.map(lang => {
-    const data = failingLangsMap[lang];
-    const errorDetails = (data.failedTests || []).map(ft => {
-      let detail = `    TC${ft.tc}: status="${ft.status}", expected="${ft.expected}", got="${ft.actual || '(empty)'}"`;
-      if (ft.memory) detail += `, memory=${ft.memory}`;
-      if (ft.time) detail += `, time=${ft.time}`;
-      if (ft.error) detail += `\n      Error: ${ft.error}`;
-      return detail;
-    }).join('\n');
-
-    return `### ❌ ${lang} — ${errorCategory}:
-\`\`\`${lang}
-${data.code}
-\`\`\`
-Errors:
-${errorDetails}`;
-  }).join('\n\n');
-
-  let categoryInstruction = '';
-  if (errorCategory === 'Wrong Answer') {
-    categoryInstruction = `All these languages produce WRONG OUTPUT — the algorithm logic is INCORRECT in each.
-The working ${refLang} code is PROVEN correct. For each failing language:
-- Do NOT try to patch the existing code — the algorithm itself is wrong
-- TRANSLATE the working ${refLang} algorithm directly to each target language
-- Keep the I/O parsing format (stdin reading) from each language's existing code`;
-  } else if (errorCategory === 'Compilation Error') {
-    categoryInstruction = `All these languages have COMPILATION ERRORS. For each:
-- Read the compilation error carefully and fix syntax/imports
-- Keep the same algorithm logic, just fix what doesn't compile
-- For C/C++: Judge0 has NO -pthread. Threading headers cause linker errors. Rewrite as single-threaded.`;
-  } else if (errorCategory === 'OOM/Killed') {
-    categoryInstruction = `All these languages are KILLED due to OUT OF MEMORY. For each:
-- Use primitive arrays instead of HashMap/HashSet
-- Minimize object creation in recursion
-- Add pruning to reduce search space`;
-  } else if (errorCategory === 'Empty Output') {
-    categoryInstruction = `All these languages compile and run (status "Accepted") but produce EMPTY OUTPUT for some test cases.
-This is NOT a crash — the program runs successfully but prints nothing. Common causes:
-- Off-by-one error in line counting or indexing
-- Input parsing reads fewer lines than expected (check stdin format carefully)
-- Condition that prevents output from being printed (e.g., checking wrong variable)
-- Program reads from a file instead of stdin
-The working ${refLang} code handles all test cases correctly. For each failing language:
-- TRANSLATE the working ${refLang} algorithm directly — do not try to patch the broken code
-- Pay special attention to how the ${refLang} code reads input and when it decides to print output
-- Keep each language's I/O style (stdin/stdout) but fix the core logic`;
-  } else {
-    categoryInstruction = `Fix each failing language. The ${refLang} reference is proven correct.`;
-  }
-
-  return `You are an expert multi-language code fixer. Fix ALL ${targetLangs.length} failing languages in ONE response.
-
-**PROBLEM:** ${title}
-${description || descriptionText || ''}
-
-**STDIN FORMAT:**
-${stdinSection}
-
-**TEST CASES:**
-${tcSection}
-
-## ✅ WORKING ${refLang} CODE (passes ALL tests — this is your reference):
-\`\`\`${refLang}
-${refCode}
-\`\`\`
-
-## ${categoryInstruction}
-
-${failingSection}
-
-## Language-specific notes:
-- Java: handle empty array "[]" gracefully, use BufferedReader
-- JavaScript: use readline for stdin, BigInt for large numbers if needed
-- Go: use bufio.NewReader(os.Stdin) with ReadString('\\n'), NOT fmt.Scanln
-- C/C++: NO -pthread (no threading), NO math.h functions (use integer alternatives), use strtol parsing, large arrays as static/global
-
-Return ONLY valid JSON with ALL ${targetLangs.length} languages fixed:
-{
-  "status": "needs_fixes",
-  "summary": "Brief description",
-  "fixes": {
-    "approaches": {
-      "${approach}": {
-        "code": {
-${targetLangs.map(l => `          "${l}": "FULL CORRECTED ${l} CODE HERE"`).join(',\n')}
-        }
-      }
-    }
-  }
-}`;
-}
-
 // ==================== COST TRACKING HELPERS ====================
 
 function calcCost(usage) {
@@ -1546,7 +1161,334 @@ function mergeFixes(prev, next) {
   return merged;
 }
 
+// ==================== CONSENSUS TC AUTO-FIX ====================
+
+/**
+ * If ALL languages produce the same output for a TC but it differs from expected,
+ * the test case expected value is wrong — auto-correct it.
+ * Requires at least 3 languages agreeing (or per-approach consensus with 50%+ pass rate).
+ */
+function detectAndFixWrongTestCases(tcOutputs, problem) {
+  const testCases = problem.testCases || [];
+  const testCaseFixes = [];
+  const fixedTcIndices = new Set();
+
+  const allApproachLangs = [];
+  for (const [approach, approachData] of Object.entries(problem.approaches || {})) {
+    for (const lang of Object.keys(approachData.code || {})) {
+      if (LANGUAGE_IDS[lang]) allApproachLangs.push(`${approach}/${lang}`);
+    }
+  }
+
+  // --- Pass 1: Global consensus (all approaches agree on same output) ---
+  for (const [tcNumStr, approaches] of Object.entries(tcOutputs)) {
+    const tcNum = parseInt(tcNumStr);
+    const tcIndex = tcNum - 1;
+    if (tcIndex < 0 || tcIndex >= testCases.length) continue;
+    const expected = String(testCases[tcIndex].expected ?? '').trim();
+
+    const outputCounts = new Map();
+    const rawOutputs = new Map();
+    let totalTested = 0;
+
+    for (const [approach, langs] of Object.entries(approaches)) {
+      for (const [lang, data] of Object.entries(langs)) {
+        if (data.statusId !== 3) continue;
+        totalTested++;
+        const actual = data.actual;
+        if (!actual && actual !== '0') continue;
+        let normalized = actual;
+        if (actual.startsWith('[') || actual.startsWith('{')) {
+          normalized = actual.replace(/\s+/g, '');
+        } else {
+          const numVal = parseFloat(actual);
+          if (!isNaN(numVal)) normalized = String(Math.round(numVal * 100000) / 100000);
+        }
+        outputCounts.set(normalized, (outputCounts.get(normalized) || 0) + 1);
+        if (!rawOutputs.has(normalized) || actual.length > rawOutputs.get(normalized).length) {
+          rawOutputs.set(normalized, actual);
+        }
+      }
+    }
+
+    if (outputCounts.size === 1 && totalTested >= 3) {
+      const [unanimousOutput] = [...outputCounts.entries()][0];
+      const rawOutput = rawOutputs.get(unanimousOutput);
+      const fixValue = (rawOutput.startsWith('[') || rawOutput.startsWith('{')) ? rawOutput.replace(/\s+/g, '') : rawOutput;
+      if (!compareOutputs(rawOutput, expected)) {
+        console.log(`    🔧 TC${tcNum}: ALL ${totalTested} lang(s) output "${fixValue}" but expected="${expected}" → auto-correcting`);
+        testCaseFixes.push({ index: tcIndex, expected: fixValue });
+        fixedTcIndices.add(tcIndex);
+      }
+    } else if (outputCounts.size === 1 && totalTested === 2) {
+      const rawOutput = rawOutputs.get([...outputCounts.keys()][0]);
+      if (!compareOutputs(rawOutput, expected)) {
+        console.log(`    ⚠️  TC${tcNum}: 2 lang(s) output "${rawOutput}" but expected="${expected}" — needs 1 more to auto-correct`);
+      }
+    }
+  }
+
+  // --- Pass 2: Per-approach consensus ---
+  const approachPassCounts = {};
+  for (const [tcNumStr, approaches] of Object.entries(tcOutputs)) {
+    const tcIndex = parseInt(tcNumStr) - 1;
+    if (tcIndex < 0 || tcIndex >= testCases.length) continue;
+    const expected = String(testCases[tcIndex].expected ?? '').trim();
+    for (const [approach, langs] of Object.entries(approaches)) {
+      if (!approachPassCounts[approach]) approachPassCounts[approach] = 0;
+      const langOutputs = Object.values(langs).filter(d => d.statusId === 3);
+      if (langOutputs.length > 0 && langOutputs.every(d => compareOutputs(d.actual, expected))) {
+        approachPassCounts[approach]++;
+      }
+    }
+  }
+
+  for (const [tcNumStr, approaches] of Object.entries(tcOutputs)) {
+    const tcNum = parseInt(tcNumStr);
+    const tcIndex = tcNum - 1;
+    if (tcIndex < 0 || tcIndex >= testCases.length || fixedTcIndices.has(tcIndex)) continue;
+    const expected = String(testCases[tcIndex].expected ?? '').trim();
+
+    const approachOutputs = {};
+    for (const [approach, langs] of Object.entries(approaches)) {
+      const langData = Object.values(langs).filter(d => d.statusId === 3);
+      if (langData.length < 2) continue;
+      const outputs = langData.map(d => d.actual).filter(a => a || a === '0');
+      if (outputs.length === 0) continue;
+      const normalized = outputs.map(a => {
+        if (a.startsWith('[') || a.startsWith('{')) return a.replace(/\s+/g, '');
+        const n = parseFloat(a);
+        return !isNaN(n) ? String(Math.round(n * 100000) / 100000) : a.trim();
+      });
+      if ([...new Set(normalized)].length === 1) {
+        approachOutputs[approach] = { normalized: normalized[0], raw: outputs[0], count: outputs.length };
+      }
+    }
+
+    const disagreeingApproaches = Object.keys(approachOutputs).filter(a => !compareOutputs(approachOutputs[a].raw, expected));
+    if (disagreeingApproaches.length === 0) continue;
+
+    let bestApproach = null, bestPassCount = -1, bestOutput = null;
+    for (const approach of disagreeingApproaches) {
+      const pc = approachPassCounts[approach] || 0;
+      if (pc > bestPassCount) { bestPassCount = pc; bestApproach = approach; bestOutput = approachOutputs[approach]; }
+    }
+
+    const totalTCs = testCases.length;
+    const passPct = totalTCs > 1 ? bestPassCount / (totalTCs - 1) : 0;
+    if (bestOutput && bestOutput.count >= 3 && passPct >= 0.5) {
+      const agreesWithExpected = Object.keys(approachOutputs).filter(
+        a => compareOutputs(approachOutputs[a].raw, expected) && (approachPassCounts[a] || 0) >= bestPassCount
+      );
+      if (agreesWithExpected.length === 0) {
+        const fixValue = (bestOutput.raw.startsWith('[') || bestOutput.raw.startsWith('{')) ? bestOutput.raw.replace(/\s+/g, '') : bestOutput.raw;
+        console.log(`    🔧 TC${tcNum}: "${bestApproach}" (${bestOutput.count} langs, ${bestPassCount}/${totalTCs - 1} other TCs pass) outputs "${fixValue}" but expected="${expected}" → auto-correcting`);
+        testCaseFixes.push({ index: tcIndex, expected: fixValue });
+        fixedTcIndices.add(tcIndex);
+      }
+    }
+  }
+
+  return testCaseFixes;
+}
+
 // ==================== MAIN FIX STRATEGY ====================
+
+/**
+ * Prompt: send problem + one lang's code + all TCs.
+ * Ask AI to fix BOTH the code AND/OR the test case expected values.
+ */
+function generateVerifyAndFixPrompt(problem, approach, lang, code, failedTests) {
+  const { title, description, descriptionText, testCases, paramOrder, constraints, examples } = problem;
+
+  const tcSection = (testCases || []).map((tc, i) => {
+    const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input);
+    return `  TC${i + 1}: input=${inputStr} → expected="${String(tc.expected ?? '').trim()}"`;
+  }).join('\n');
+
+  const stdinSection = (testCases || []).slice(0, 3).map((tc, i) => {
+    const stdin = buildStdin(tc, problem);
+    return `  TC${i + 1} stdin:\n${stdin.split('\n').map(l => `    | ${l}`).join('\n')}`;
+  }).join('\n');
+
+  const errorSection = failedTests && failedTests.length > 0
+    ? `\n## ERRORS FROM LAST RUN:\n${failedTests.map(ft => {
+        let s = `  TC${ft.tc}: status="${ft.status}", expected="${ft.expected}", got="${ft.actual || '(empty)'}"`;
+        if (ft.error) s += `\n    ${ft.error}`;
+        return s;
+      }).join('\n')}`
+    : '';
+
+  return `You are an expert developer. Analyze this problem, its code, and test cases. Fix whatever is wrong — the code, the test case expected values, or both.
+
+**PROBLEM:** ${title}
+${description || descriptionText || ''}
+${constraints?.length ? `\nConstraints: ${constraints.join(', ')}` : ''}
+${examples?.length ? `\nExamples: ${JSON.stringify(examples)}` : ''}
+
+**STDIN FORMAT (each param on its own line):**
+${stdinSection}
+
+**TEST CASES:**
+${tcSection}
+
+**CURRENT ${lang} CODE:**
+\`\`\`${lang}
+${code}
+\`\`\`
+${errorSection}
+
+## YOUR JOB:
+1. Verify each test case expected value is correct per the problem description. Fix any that are wrong.
+2. Fix the ${lang} code so it passes ALL test cases.
+3. Read from STDIN (one param per line), write to STDOUT.
+
+## LANGUAGE RULES:
+- C/C++: strtol-based parsing (NOT strtok), large arrays static/global, no math.h (log/pow/sqrt) use integer alternatives, no threading
+- Go: bufio.NewReader(os.Stdin) NOT fmt.Scanln for multi-word/array input
+- Java: BufferedReader, handle empty array "[]"
+
+Return ONLY valid JSON:
+{
+  "summary": "what you found and fixed",
+  "fixes": {
+    "approaches": { "${approach}": { "code": { "${lang}": "FULL FIXED CODE" } } },
+    "testCases": [ { "index": 0, "expected": "correct_value", "explanation": "why" } ]
+  }
+}
+Only include testCases entries that actually need changing.`;
+}
+
+/**
+ * Try each language one at a time until one passes all TCs.
+ * For each candidate: ask AI to fix code+TCs → compile → feed errors back → repeat maxRetries times.
+ * Returns { fixedCode, fixedTcChanges, lang, cost } or null.
+ */
+async function getOneLanguagePassing(problem, approach, failingLangs, maxRetries = 3) {
+  let totalCost = 0;
+  const candidates = LANG_PREFERENCE.filter(l => failingLangs[l]?.code);
+  if (candidates.length === 0) return null;
+
+  for (const lang of candidates) {
+    let currentCode = failingLangs[lang].code;
+    let currentTcChanges = [];
+    let lastFailedTests = null;
+    console.log(`    🔧 Trying "${approach}/${lang}" (up to ${maxRetries} attempts)...`);
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) break;
+      console.log(`      🤖 Attempt ${attempt}/${maxRetries}...`);
+
+      let aiFixedCode = null;
+      try {
+        const prompt = generateVerifyAndFixPrompt(problem, approach, lang, currentCode, lastFailedTests);
+        const resp = await anthropic.messages.create({
+          model: MODEL_SONNET, max_tokens: 8000,
+          messages: [{ role: 'user', content: prompt }]
+        });
+        const cost = calcCost(resp.usage);
+        totalCost += cost;
+        console.log(`      📊 AI fix #${attempt}: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
+
+        const parsed = parseJsonResponse(resp.content[0]?.text || '');
+        aiFixedCode = parsed?.fixes?.approaches?.[approach]?.code?.[lang] || null;
+        const aiTcChanges = parsed?.fixes?.testCases || [];
+
+        if (aiTcChanges.length > 0) {
+          console.log(`      🔧 AI updated ${aiTcChanges.length} test case expected value(s)`);
+          for (const fix of aiTcChanges) {
+            if (fix.index >= 0 && fix.index < (problem.testCases || []).length) {
+              problem.testCases[fix.index].expected = fix.expected;
+            }
+            const existing = currentTcChanges.findIndex(f => f.index === fix.index);
+            if (existing >= 0) currentTcChanges[existing] = fix;
+            else currentTcChanges.push(fix);
+          }
+        }
+      } catch (err) {
+        console.log(`      ❌ AI call failed: ${err.message}`);
+        break;
+      }
+
+      if (!aiFixedCode) { console.log(`      ⚠️  AI returned no code`); break; }
+      currentCode = aiFixedCode;
+
+      console.log(`      🧪 Testing ${lang} attempt ${attempt}...`);
+      const testResult = await testCodeAgainstJudge0(currentCode, lang, problem.testCases || [], { collectAll: true, indent: '      ', problem });
+
+      if (testResult.passed) {
+        console.log(`      ✅ ${lang} passes all TCs on attempt ${attempt}!`);
+        return { fixedCode: currentCode, fixedTcChanges: currentTcChanges, lang, cost: totalCost };
+      }
+
+      console.log(`      ❌ Attempt ${attempt} failed — ${testResult.failedTests.length} error(s)`);
+      lastFailedTests = testResult.failedTests;
+      if (attempt < maxRetries) await new Promise(r => setTimeout(r, 300));
+    }
+    console.log(`    ⚠️  "${approach}/${lang}" exhausted retries — trying next language`);
+  }
+  return null;
+}
+
+/**
+ * Given a passing reference lang+code, translate to all targetLangs.
+ * Per lang: batch translate → compile → error-feedback retry (up to 3x).
+ */
+async function translateToOtherLanguages(problem, approach, refLang, refCode, targetLangs, existingCodes) {
+  const langFixes = {};
+  let totalCost = 0;
+  if (targetLangs.length === 0) return { langFixes, cost: totalCost };
+
+  console.log(`    🌐 Translating "${approach}/${refLang}" → [${targetLangs.join(', ')}]...`);
+
+  let batchResult = null;
+  try {
+    const prompt = generateTranslationPrompt(problem, approach, refCode, targetLangs, existingCodes, refLang);
+    const resp = await anthropic.messages.create({
+      model: MODEL_SONNET, max_tokens: 16000,
+      messages: [{ role: 'user', content: prompt }]
+    });
+    const cost = calcCost(resp.usage);
+    totalCost += cost;
+    console.log(`    📊 Translation batch: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
+    batchResult = parseJsonResponse(resp.content[0]?.text || '');
+  } catch (err) {
+    console.log(`    ❌ Translation batch error: ${err.message}`);
+  }
+
+  for (const lang of targetLangs) {
+    if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) break;
+    let lastCode = batchResult?.fixes?.approaches?.[approach]?.code?.[lang] || existingCodes[lang] || '';
+    if (!lastCode) { console.log(`      ⚠️  No code for ${lang} from translation`); continue; }
+
+    let passed = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      console.log(`      🧪 Testing translated ${lang} (attempt ${attempt})...`);
+      const result = await testCodeAgainstJudge0(lastCode, lang, problem.testCases || [], { collectAll: true, indent: '      ', problem });
+      if (result.passed) {
+        console.log(`      ✅ ${lang} translation passed!`);
+        langFixes[lang] = lastCode;
+        passed = true;
+        break;
+      }
+      if (attempt < 3) {
+        console.log(`      ❌ Attempt ${attempt} failed — sending ${result.failedTests.length} error(s) to AI...`);
+        try {
+          const errPrompt = generateErrorFeedbackPrompt(problem, approach, lang, lastCode, result.failedTests, refLang, refCode);
+          const errResp = await anthropic.messages.create({ model: MODEL_SONNET, max_tokens: 8000, messages: [{ role: 'user', content: errPrompt }] });
+          totalCost += calcCost(errResp.usage);
+          const errParsed = parseJsonResponse(errResp.content[0]?.text || '');
+          const newCode = errParsed?.fixes?.approaches?.[approach]?.code?.[lang];
+          if (newCode) lastCode = newCode;
+        } catch (e) { console.log(`      ❌ Error feedback failed: ${e.message}`); break; }
+        await new Promise(r => setTimeout(r, 300));
+      }
+    }
+    if (!passed) console.log(`      ⚠️  ${lang} translation failed after retries`);
+    await new Promise(r => setTimeout(r, 300));
+  }
+  return { langFixes, cost: totalCost };
+}
 
 async function smartFixProblem(problem) {
   let totalCost = 0;
@@ -1555,18 +1497,30 @@ async function smartFixProblem(problem) {
   // === STEP 1: Auto-fix known C issues ===
   const cParsingFix = autoFixCParsing(problem);
   const cStackFix = autoFixCStackOverflow(problem);
+  const cNaryFix = autoFixCNaryTree(problem);
 
-  // Include auto-fixed C code in fixes
-  if (cParsingFix.fixes.length > 0 || cStackFix.fixes.length > 0) {
+  if (cParsingFix.fixes.length > 0 || cStackFix.fixes.length > 0 || cNaryFix.fixes.length > 0) {
     if (!allFixes.approaches) allFixes.approaches = {};
-    for (const key of [...cParsingFix.fixes, ...cStackFix.fixes]) {
+    for (const key of [...cParsingFix.fixes, ...cStackFix.fixes, ...cNaryFix.fixes]) {
       const [approach, lang] = key.split('/');
       if (!allFixes.approaches[approach]) allFixes.approaches[approach] = { code: {} };
       allFixes.approaches[approach].code[lang] = problem.approaches[approach].code[lang];
     }
   }
 
-  // === STEP 2: Fix blank/empty test cases ===
+  // === STEP 1B: Recompute N-ary tree test case expected values ===
+  const naryTcFixes = autoFixNaryTestCases(problem);
+  if (naryTcFixes.length > 0) {
+    allFixes = mergeFixes(allFixes, { testCases: naryTcFixes });
+    for (const fix of naryTcFixes) {
+      if (fix.index >= 0 && fix.index < problem.testCases.length) {
+        problem.testCases[fix.index].expected = fix.expected;
+      }
+    }
+    console.log(`    ✅ Recomputed ${naryTcFixes.length} N-ary tree test case(s)`);
+  }
+
+  // === STEP 2: Fix blank/empty/corrupted test cases ===
   const blankTcResult = await fixBlankTestCases(problem);
   let testCaseFixes = [];
   if (blankTcResult?.fixed) {
@@ -1580,15 +1534,15 @@ async function smartFixProblem(problem) {
     testCaseFixes = blankTcResult.testCaseFixes;
     allFixes.testCases = testCaseFixes;
     totalCost += blankTcResult.cost || 0;
-    console.log(`    ✅ Sanitized ${testCaseFixes.length} blank test case(s)`);
+    console.log(`    ✅ Sanitized ${testCaseFixes.length} test case(s)`);
   }
 
-  // === STEP 3: Run ALL approach/lang combos through Judge0 ===
-  console.log(`    🔍 Running full Judge0 scan...`);
+  // === STEP 3: Scan all approaches/langs through Judge0 ===
+  console.log(`    🔍 Running Judge0 scan...`);
   const scan = await runFullJudge0Scan(problem, testCaseFixes, problem.tests_report || null);
 
   if (scan.allPassed) {
-    console.log(`    ✅ All code passes!`);
+    console.log(`    ✅ All code already passes!`);
     return {
       problemId: problem.id,
       result: { status: 'already_passing', summary: 'All code passes', fixes: allFixes, validationPassed: true },
@@ -1597,17 +1551,16 @@ async function smartFixProblem(problem) {
     };
   }
 
-  // === STEP 4: Auto-fix test cases by consensus ===
+  // === STEP 3B: Auto-fix test cases by consensus ===
+  // If ALL languages agree on the same output for a TC but it differs from expected → fix the TC
   const tcAutoFixes = detectAndFixWrongTestCases(scan.tcOutputs, problem);
   if (tcAutoFixes.length > 0) {
     allFixes = mergeFixes(allFixes, { testCases: tcAutoFixes });
-    // Apply fixes to problem in-memory
     for (const fix of tcAutoFixes) {
       if (fix.index >= 0 && fix.index < problem.testCases.length) {
         problem.testCases[fix.index].expected = fix.expected;
       }
     }
-    // Re-scan after TC fixes
     console.log(`    🔄 Re-scanning after auto-correcting ${tcAutoFixes.length} test case(s)...`);
     const reScan = await runFullJudge0Scan(problem, allFixes.testCases || []);
     if (reScan.allPassed) {
@@ -1619,882 +1572,102 @@ async function smartFixProblem(problem) {
         cost: { total: totalCost },
       };
     }
-    // Update scan results
     Object.assign(scan, reScan);
   }
 
-  // === STEP 5 & 6: Intelligent per-language fix (self-fix → reference-fix → bulk fallback) ===
-  for (const [approach, failingLangs] of Object.entries(scan.failingCode)) {
-    const passingRef = scan.passingCode[approach] || {};
-    const passingLangs = Object.keys(passingRef);
-    const failingLangNames = Object.keys(failingLangs);
-
+  // === STEP 4: Per approach — two-path strategy ===
+  for (const [approach, approachData] of Object.entries(problem.approaches || {})) {
     if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) {
-      console.log(`    💰 Cost cap reached ($${totalCost.toFixed(4)}). Skipping "${approach}".`);
-      continue;
+      console.log(`    💰 Cost cap reached. Stopping.`);
+      break;
     }
 
-    // If NO language passes at all within this approach, check for cross-approach reference
-    if (passingLangs.length === 0) {
-      // Look for a passing reference from ANY other approach
-      let crossRefLang = null;
-      let crossRefCode = null;
-      let crossRefApproach = null;
-      for (const [otherApproach, otherPassingLangs] of Object.entries(scan.passingCode)) {
-        if (otherApproach === approach) continue;
-        const otherLangs = Object.keys(otherPassingLangs);
-        if (otherLangs.length > 0) {
-          crossRefLang = LANG_PREFERENCE.find(l => otherLangs.includes(l)) || otherLangs[0];
-          crossRefCode = otherPassingLangs[crossRefLang];
-          crossRefApproach = otherApproach;
-          break;
-        }
-      }
+    const allLangs = Object.keys(approachData.code || {}).filter(l => LANGUAGE_IDS[l]);
+    if (allLangs.length === 0) continue;
 
-      if (crossRefCode) {
-        // Another approach passes all TCs — TCs are validated, skip TC validation
-        // Use cross-approach reference to fix each failing lang via Phase A then Phase B
-        console.log(`    📝 "${approach}": No passing language — but "${crossRefApproach}" passes all TCs. Skipping TC validation.`);
-        console.log(`    🔍 Fixing "${approach}" langs using "${crossRefApproach}/${crossRefLang}" as cross-approach reference...`);
+    const passing = allLangs.filter(l => scan.report?.[approach]?.[l]?.passed === true);
+    const failing  = allLangs.filter(l => !passing.includes(l));
 
-        // === BATCH FIX: Group failing langs by error category ===
-        const crossBatchGroups = {};
-        for (const lang of failingLangNames) {
-          const failData = failingLangs[lang];
-          const fts = failData.failedTests || [];
-          if (!failData.code || fts.length === 0) continue;
+    console.log(`\n  📌 "${approach}": ${passing.length} passing [${passing.join(', ') || 'none'}], ${failing.length} failing [${failing.join(', ')}]`);
+    if (failing.length === 0) continue;
 
-          const hasWrongAnswer = fts.some(ft => ft.status === 'Accepted' && ft.actual && ft.actual !== '(empty)' && ft.actual !== ft.expected);
-          const hasCompileError = fts.some(ft => ft.status && ft.status.includes('Compilation'));
-          const hasOOM = fts.some(ft => (ft.status && ft.status.includes('Killed')) || (ft.error && (ft.error.includes('Killed') || ft.error.includes('Out of Memory'))));
-          const hasEmptyOutput = fts.some(ft => ft.status === 'Accepted' && (!ft.actual || ft.actual === '(empty)'));
+    // ── PATH A: at least one lang passes → TCs are valid → translate to the rest ──
+    if (passing.length > 0) {
+      const refLang = LANG_PREFERENCE.find(l => passing.includes(l)) || passing[0];
+      const refCode = approachData.code[refLang];
+      const existingCodes = Object.fromEntries(failing.map(l => [l, approachData.code[l] || '']));
 
-          let category = 'other';
-          if (hasWrongAnswer) category = 'Wrong Answer';
-          else if (hasCompileError) category = 'Compilation Error';
-          else if (hasOOM) category = 'OOM/Killed';
-          else if (hasEmptyOutput) category = 'Empty Output';
+      const { langFixes, cost } = await translateToOtherLanguages(problem, approach, refLang, refCode, failing, existingCodes);
+      totalCost += cost;
 
-          if (!crossBatchGroups[category]) crossBatchGroups[category] = {};
-          crossBatchGroups[category][lang] = failData;
-        }
-
-        const crossBatchFixed = new Set();
-        for (const [category, langsMap] of Object.entries(crossBatchGroups)) {
-          const batchLangs = Object.keys(langsMap);
-          if (batchLangs.length < 2) continue;
-          if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) break;
-
-          console.log(`    📦 Batch fixing ${batchLangs.length} ${category} langs: ${batchLangs.join(', ')} (using ${crossRefApproach}/${crossRefLang} reference)...`);
-
-          try {
-            const batchPrompt = generateBatchFixPrompt(problem, approach, langsMap, crossRefLang, crossRefCode, category);
-            const resp = await anthropic.messages.create({
-              model: MODEL_SONNET, max_tokens: 16000,
-              messages: [{ role: 'user', content: batchPrompt }]
-            });
-            const cost = calcCost(resp.usage);
-            totalCost += cost;
-            console.log(`      📊 Batch fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-            const parsed = parseJsonResponse(resp.content[0]?.text || '');
-
-            for (const lang of batchLangs) {
-              const fixedCode = parsed?.fixes?.approaches?.[approach]?.code?.[lang];
-              if (!fixedCode) {
-                console.log(`      ⚠️  ${lang}: no code in batch response`);
-                continue;
-              }
-
-              console.log(`      🧪 Testing batch-fixed ${lang}...`);
-              const testResult = await testCodeAgainstJudge0(fixedCode, lang, problem.testCases || [], { collectAll: false, indent: '      ' });
-
-              if (testResult.passed) {
-                console.log(`      ✅ ${lang} batch-fixed successfully!`);
-                allFixes = mergeFixes(allFixes, { approaches: { [approach]: { code: { [lang]: fixedCode } } } });
-                crossBatchFixed.add(lang);
-              } else {
-                console.log(`      ❌ ${lang} batch fix failed — will retry individually`);
-              }
-              await new Promise(r => setTimeout(r, 300));
-            }
-          } catch (err) {
-            console.log(`      ❌ Batch fix error: ${err.message}`);
-          }
-        }
-
-        for (const lang of failingLangNames) {
-          if (crossBatchFixed.has(lang)) continue;
-          if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) {
-            console.log(`    💰 Cost cap reached. Skipping ${approach}/${lang}.`);
-            break;
-          }
-
-          const failData = failingLangs[lang];
-          const failingCode = failData.code || '';
-          const failedTests = failData.failedTests || [];
-          if (!failingCode || failedTests.length === 0) continue;
-
-          // Phase A: Self-diagnose
-          const errorTypes = [...new Set(failedTests.map(ft => ft.status))].join(', ');
-          console.log(`    🔧 "${approach}/${lang}": Phase A — self-diagnosis [${errorTypes}]...`);
-
-          let phaseAFixed = false;
-          try {
-            const selfFixPrompt = generateSelfFixPrompt(problem, approach, lang, failingCode, failedTests);
-            const resp = await anthropic.messages.create({
-              model: MODEL_SONNET, max_tokens: 8000,
-              messages: [{ role: 'user', content: selfFixPrompt }]
-            });
-            const cost = calcCost(resp.usage);
-            totalCost += cost;
-            console.log(`      📊 Self-fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-            const parsed = parseJsonResponse(resp.content[0]?.text || '');
-            if (parsed?.fixes?.approaches?.[approach]?.code?.[lang]) {
-              const fixedCode = parsed.fixes.approaches[approach].code[lang];
-              console.log(`      🧪 Testing self-fixed ${lang}...`);
-
-              let selfFixPassed = true;
-              for (let i = 0; i < (problem.testCases || []).length; i++) {
-                const tc = problem.testCases[i];
-                const stdin = buildStdin(tc);
-                const expected = String(tc.expected ?? '').trim();
-                try {
-                  const result = await judge0Submit(fixedCode, LANGUAGE_IDS[lang], stdin);
-                  const actual = (result.stdout || '').trim();
-                  const passed = result.status.id === 3 && compareOutputs(actual, expected);
-                  if (!passed) {
-                    selfFixPassed = false;
-                    console.log(`      ❌ TC${i + 1}: expected="${expected}" got="${actual || '(empty)'}" [${result.status.description}]`);
-                    break;
-                  } else {
-                    console.log(`      ✅ TC${i + 1} passed`);
-                  }
-                } catch (err) {
-                  selfFixPassed = false;
-                  console.log(`      ❌ TC${i + 1}: ERROR - ${err.message}`);
-                  break;
-                }
-                if (i < (problem.testCases || []).length - 1) await new Promise(r => setTimeout(r, 300));
-              }
-
-              if (selfFixPassed) {
-                console.log(`      ✅ Phase A success — ${lang} self-fixed!`);
-                allFixes = mergeFixes(allFixes, parsed.fixes);
-                phaseAFixed = true;
-              } else {
-                console.log(`      ⚠️  Phase A failed — moving to Phase B (with ${crossRefApproach}/${crossRefLang} reference)...`);
-              }
-            }
-          } catch (err) {
-            console.log(`      ❌ Phase A error: ${err.message}`);
-          }
-
-          if (phaseAFixed) continue;
-          if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) continue;
-
-          // Phase B: Fix using cross-approach reference
-          console.log(`    🚀 "${approach}/${lang}": Phase B — fix using ${crossRefApproach}/${crossRefLang} reference...`);
-          try {
-            const refFixPrompt = generateFixWithReferencePrompt(problem, approach, lang, failingCode, failedTests, crossRefLang, crossRefCode);
-            const resp = await anthropic.messages.create({
-              model: MODEL_SONNET, max_tokens: 8000,
-              messages: [{ role: 'user', content: refFixPrompt }]
-            });
-            const cost = calcCost(resp.usage);
-            totalCost += cost;
-            console.log(`      📊 Reference fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-            const parsed = parseJsonResponse(resp.content[0]?.text || '');
-            if (parsed?.fixes?.approaches?.[approach]?.code?.[lang]) {
-              const fixedCode = parsed.fixes.approaches[approach].code[lang];
-              console.log(`      🧪 Testing reference-fixed ${lang}...`);
-
-              let phaseBPassed = true;
-              const phaseBFailedTests = [];
-              for (let i = 0; i < (problem.testCases || []).length; i++) {
-                const tc = problem.testCases[i];
-                const stdin = buildStdin(tc);
-                const expected = String(tc.expected ?? '').trim();
-                try {
-                  const result = await judge0Submit(fixedCode, LANGUAGE_IDS[lang], stdin);
-                  const actual = (result.stdout || '').trim();
-                  const passed = result.status.id === 3 && compareOutputs(actual, expected);
-                  if (!passed) {
-                    phaseBPassed = false;
-                    const error = result.compile_output || result.stderr || result.message || null;
-                    phaseBFailedTests.push({ tc: i + 1, expected, actual: actual || '(empty)', error: error ? error.substring(0, result.status?.description?.includes('Compilation') ? 800 : 300) : null, status: result.status.description, memory: result.memory ? `${(result.memory / 1024).toFixed(2)}MB` : undefined, time: result.time ? `${result.time}s` : undefined });
-                    console.log(`      ❌ TC${i + 1}: expected="${expected}" got="${actual || '(empty)'}" [${result.status.description}]`);
-                  } else {
-                    console.log(`      ✅ TC${i + 1} passed`);
-                  }
-                } catch (err) {
-                  phaseBPassed = false;
-                  phaseBFailedTests.push({ tc: i + 1, expected, actual: '', error: err.message, status: 'Error' });
-                  console.log(`      ❌ TC${i + 1}: ERROR - ${err.message}`);
-                }
-                if (i < (problem.testCases || []).length - 1) await new Promise(r => setTimeout(r, 300));
-              }
-
-              if (phaseBPassed) {
-                console.log(`      ✅ Phase B success — ${lang} fixed!`);
-                allFixes = mergeFixes(allFixes, parsed.fixes);
-              } else if (!(MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) && phaseBFailedTests.length > 0) {
-                // Phase C: Error feedback retry loop (up to 3 attempts)
-                let lastCode = fixedCode;
-                let lastFailedTests = phaseBFailedTests;
-                let retrySolved = false;
-
-                const maxRetries = 3;
-                for (let retryNum = 1; retryNum <= maxRetries; retryNum++) {
-                  if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) break;
-
-                  console.log(`      🔄 Phase C attempt ${retryNum}/${maxRetries} — sending Judge0 errors to AI...`);
-                  try {
-                    const errPrompt = generateErrorFeedbackPrompt(problem, approach, lang, lastCode, lastFailedTests, crossRefLang, crossRefCode);
-                    const errResp = await anthropic.messages.create({
-                      model: MODEL_SONNET, max_tokens: 8000,
-                      messages: [{ role: 'user', content: errPrompt }]
-                    });
-                    const errCost = calcCost(errResp.usage);
-                    totalCost += errCost;
-                    console.log(`      📊 Error feedback fix #${retryNum}: ${fmtTokens(errResp.usage)} ($${errCost.toFixed(4)})`);
-
-                    const errParsed = parseJsonResponse(errResp.content[0]?.text || '');
-                    if (errParsed?.fixes?.approaches?.[approach]?.code?.[lang]) {
-                      const retryCode = errParsed.fixes.approaches[approach].code[lang];
-                      console.log(`      🧪 Testing error-feedback-fixed ${lang} (attempt ${retryNum})...`);
-
-                      const retryResult = await testCodeAgainstJudge0(retryCode, lang, problem.testCases || [], { collectAll: true, indent: '      ' });
-
-                      if (retryResult.passed) {
-                        console.log(`      ✅ Phase C attempt ${retryNum} success — ${lang} fixed!`);
-                        allFixes = mergeFixes(allFixes, errParsed.fixes);
-                        retrySolved = true;
-                        break;
-                      } else {
-                        console.log(`      ❌ Phase C attempt ${retryNum} failed for ${lang}`);
-                        lastCode = retryCode;
-                        lastFailedTests = retryResult.failedTests;
-                      }
-                    } else {
-                      console.log(`      ⚠️  Phase C attempt ${retryNum}: AI returned no code`);
-                      break;
-                    }
-                  } catch (err) {
-                    console.log(`      ❌ Phase C attempt ${retryNum} error: ${err.message}`);
-                    break;
-                  }
-                  await new Promise(r => setTimeout(r, 300));
-                }
-
-                if (!retrySolved) {
-                  allFixes = mergeFixes(allFixes, parsed.fixes);
-                }
-              } else {
-                // Merge anyway for final validation
-                allFixes = mergeFixes(allFixes, parsed.fixes);
-              }
-            } else if (parsed?.fixes) {
-              allFixes = mergeFixes(allFixes, parsed.fixes);
-            }
-          } catch (err) {
-            console.log(`      ❌ Phase B error: ${err.message}`);
-          }
-
-          await new Promise(r => setTimeout(r, 300));
-        }
-        continue; // Done with this approach via cross-reference path
-      }
-
-      // No cross-approach reference available — fall back to TC validation + bulk AI fix
-      console.log(`    📝 "${approach}": No passing language — validating test cases first...`);
-
-      // Validate test cases via AI
-      const tcValPrompt = generateTestCaseValidationPrompt(problem, approach, scan.tcOutputs);
-      try {
-        const tcResp = await anthropic.messages.create({
-          model: MODEL_SONNET, max_tokens: 4000,
-          messages: [{ role: 'user', content: tcValPrompt }]
-        });
-        const cost = calcCost(tcResp.usage);
-        totalCost += cost;
-        console.log(`    📊 TC Validation: ${fmtTokens(tcResp.usage)} ($${cost.toFixed(4)})`);
-
-        const tcParsed = parseJsonResponse(tcResp.content[0]?.text || '');
-        if (tcParsed?.fixes?.testCases?.length > 0) {
-          console.log(`    🔧 AI found ${tcParsed.fixes.testCases.length} wrong test case(s)`);
-          allFixes = mergeFixes(allFixes, { testCases: tcParsed.fixes.testCases });
-          for (const fix of tcParsed.fixes.testCases) {
-            if (fix.index >= 0 && fix.index < problem.testCases.length) {
-              problem.testCases[fix.index].expected = fix.expected;
-            }
-          }
-        }
-      } catch (err) {
-        console.log(`    ⚠️  TC validation error: ${err.message}`);
-      }
-
-      if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) {
-        console.log(`    💰 Cost cap reached. Skipping AI code fix for "${approach}".`);
-        continue;
-      }
-
-      console.log(`    🔍 Fixing code for "${approach}" via AI (no reference)...`);
-      const fixPrompt = generateFixPromptFromScan(problem, approach, failingLangs, scan);
-      try {
-        const resp = await anthropic.messages.create({
-          model: MODEL_SONNET, max_tokens: 16000,
-          messages: [{ role: 'user', content: fixPrompt }]
-        });
-        const cost = calcCost(resp.usage);
-        totalCost += cost;
-        console.log(`    📊 Fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-        const parsed = parseJsonResponse(resp.content[0]?.text || '');
-        if (parsed?.fixes) allFixes = mergeFixes(allFixes, parsed.fixes);
-      } catch (err) {
-        console.log(`    ❌ Fix error: ${err.message}`);
+      for (const [lang, code] of Object.entries(langFixes)) {
+        if (!allFixes.approaches) allFixes.approaches = {};
+        if (!allFixes.approaches[approach]) allFixes.approaches[approach] = { code: {} };
+        allFixes.approaches[approach].code[lang] = code;
       }
       continue;
     }
 
-    // We have passing reference — fix each failing lang individually
-    const refLang = LANG_PREFERENCE.find(l => passingLangs.includes(l)) || passingLangs[0];
-    const refCode = passingRef[refLang];
+    // ── PATH B: nothing passes → fix code+TCs until one lang passes → then translate ──
+    console.log(`    🔧 No language passes for "${approach}" — entering fix loop...`);
 
-    // === BATCH FIX: Group failing langs by error category and fix together ===
-    const batchGroups = {}; // { category: { lang: failData } }
-
-    for (const lang of failingLangNames) {
-      const failData = failingLangs[lang];
-      const fts = failData.failedTests || [];
-      if (!failData.code || fts.length === 0) continue;
-
-      const hasWrongAnswer = fts.some(ft => ft.status === 'Accepted' && ft.actual && ft.actual !== '(empty)' && ft.actual !== ft.expected);
-      const hasCompileError = fts.some(ft => ft.status && ft.status.includes('Compilation'));
-      const hasOOM = fts.some(ft => (ft.status && ft.status.includes('Killed')) || (ft.error && (ft.error.includes('Killed') || ft.error.includes('Out of Memory'))));
-      const hasEmptyOutput = fts.some(ft => ft.status === 'Accepted' && (!ft.actual || ft.actual === '(empty)'));
-
-      let category = 'other';
-      if (hasWrongAnswer) category = 'Wrong Answer';
-      else if (hasCompileError) category = 'Compilation Error';
-      else if (hasOOM) category = 'OOM/Killed';
-      else if (hasEmptyOutput) category = 'Empty Output';
-
-      if (!batchGroups[category]) batchGroups[category] = {};
-      batchGroups[category][lang] = failData;
+    const failingLangsMap = {};
+    for (const l of failing) {
+      failingLangsMap[l] = {
+        code: approachData.code[l] || '',
+        failedTests: scan.failingCode?.[approach]?.[l]?.failedTests || [],
+      };
     }
 
-    // Batch fix each category with 2+ langs in one API call
-    const batchFixedLangs = new Set();
-    for (const [category, langsMap] of Object.entries(batchGroups)) {
-      const batchLangs = Object.keys(langsMap);
-      if (batchLangs.length < 2) continue;
-      if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) break;
+    const fixResult = await getOneLanguagePassing(problem, approach, failingLangsMap);
+    if (!fixResult) {
+      console.log(`    ❌ Could not get any language passing for "${approach}"`);
+      continue;
+    }
+    totalCost += fixResult.cost;
 
-      console.log(`    📦 Batch fixing ${batchLangs.length} ${category} langs: ${batchLangs.join(', ')} (using ${refLang} reference)...`);
+    if (!allFixes.approaches) allFixes.approaches = {};
+    if (!allFixes.approaches[approach]) allFixes.approaches[approach] = { code: {} };
+    allFixes.approaches[approach].code[fixResult.lang] = fixResult.fixedCode;
 
-      try {
-        const batchPrompt = generateBatchFixPrompt(problem, approach, langsMap, refLang, refCode, category);
-        const resp = await anthropic.messages.create({
-          model: MODEL_SONNET, max_tokens: 16000,
-          messages: [{ role: 'user', content: batchPrompt }]
-        });
-        const cost = calcCost(resp.usage);
-        totalCost += cost;
-        console.log(`      📊 Batch fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-        const parsed = parseJsonResponse(resp.content[0]?.text || '');
-
-        // Test each lang from the batch
-        for (const lang of batchLangs) {
-          const fixedCode = parsed?.fixes?.approaches?.[approach]?.code?.[lang];
-          if (!fixedCode) {
-            console.log(`      ⚠️  ${lang}: no code in batch response`);
-            continue;
-          }
-
-          console.log(`      🧪 Testing batch-fixed ${lang}...`);
-          const testResult = await testCodeAgainstJudge0(fixedCode, lang, problem.testCases || [], { collectAll: false, indent: '      ' });
-
-          if (testResult.passed) {
-            console.log(`      ✅ ${lang} batch-fixed successfully!`);
-            allFixes = mergeFixes(allFixes, { approaches: { [approach]: { code: { [lang]: fixedCode } } } });
-            batchFixedLangs.add(lang);
-          } else {
-            console.log(`      ❌ ${lang} batch fix failed — will retry individually`);
-          }
-          await new Promise(r => setTimeout(r, 300));
-        }
-      } catch (err) {
-        console.log(`      ❌ Batch fix error: ${err.message}`);
-      }
+    for (const fix of fixResult.fixedTcChanges) {
+      if (!allFixes.testCases) allFixes.testCases = [];
+      const idx = allFixes.testCases.findIndex(f => f.index === fix.index);
+      if (idx >= 0) allFixes.testCases[idx] = fix; else allFixes.testCases.push(fix);
     }
 
-    // Per-lang fix: skip batch-fixed langs, process remaining individually
-    for (const lang of failingLangNames) {
-      if (batchFixedLangs.has(lang)) continue;
-      if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) {
-        console.log(`    💰 Cost cap reached. Skipping ${approach}/${lang}.`);
-        break;
+    const otherLangs = failing.filter(l => l !== fixResult.lang);
+    if (otherLangs.length > 0) {
+      const existingCodes = Object.fromEntries(otherLangs.map(l => [l, approachData.code[l] || '']));
+      const { langFixes, cost } = await translateToOtherLanguages(problem, approach, fixResult.lang, fixResult.fixedCode, otherLangs, existingCodes);
+      totalCost += cost;
+      for (const [lang, code] of Object.entries(langFixes)) {
+        allFixes.approaches[approach].code[lang] = code;
       }
-
-      const failData = failingLangs[lang];
-      const failingCode = failData.code || '';
-      const failedTests = failData.failedTests || [];
-      if (!failingCode || failedTests.length === 0) continue;
-
-      // --- PHASE A: Self-diagnose & fix (no reference shown) ---
-      const errorTypes = [...new Set(failedTests.map(ft => ft.status))].join(', ');
-      console.log(`    🔧 "${approach}/${lang}": Phase A — self-diagnosis [${errorTypes}]...`);
-
-      let phaseAFixed = false;
-      try {
-        const selfFixPrompt = generateSelfFixPrompt(problem, approach, lang, failingCode, failedTests);
-        const resp = await anthropic.messages.create({
-          model: MODEL_SONNET, max_tokens: 8000,
-          messages: [{ role: 'user', content: selfFixPrompt }]
-        });
-        const cost = calcCost(resp.usage);
-        totalCost += cost;
-        console.log(`      📊 Self-fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-        const parsed = parseJsonResponse(resp.content[0]?.text || '');
-        if (parsed?.fixes?.approaches?.[approach]?.code?.[lang]) {
-          const fixedCode = parsed.fixes.approaches[approach].code[lang];
-          console.log(`      🧪 Testing self-fixed ${lang}...`);
-
-          // Quick-test the fixed code against all TCs
-          let selfFixPassed = true;
-          for (let i = 0; i < (problem.testCases || []).length; i++) {
-            const tc = problem.testCases[i];
-            const stdin = buildStdin(tc);
-            const expected = String(tc.expected ?? '').trim();
-            try {
-              const result = await judge0Submit(fixedCode, LANGUAGE_IDS[lang], stdin);
-              const actual = (result.stdout || '').trim();
-              const passed = result.status.id === 3 && compareOutputs(actual, expected);
-              if (!passed) {
-                selfFixPassed = false;
-                console.log(`      ❌ TC${i + 1}: expected="${expected}" got="${actual || '(empty)'}" [${result.status.description}]`);
-                break;
-              } else {
-                console.log(`      ✅ TC${i + 1} passed`);
-              }
-            } catch (err) {
-              selfFixPassed = false;
-              console.log(`      ❌ TC${i + 1}: ERROR - ${err.message}`);
-              break;
-            }
-            if (i < (problem.testCases || []).length - 1) await new Promise(r => setTimeout(r, 300));
-          }
-
-          if (selfFixPassed) {
-            console.log(`      ✅ Phase A success — ${lang} self-fixed!`);
-            allFixes = mergeFixes(allFixes, parsed.fixes);
-            phaseAFixed = true;
-          } else {
-            console.log(`      ⚠️  Phase A failed — moving to Phase B (with ${refLang} reference)...`);
-          }
-        }
-      } catch (err) {
-        console.log(`      ❌ Phase A error: ${err.message}`);
-      }
-
-      if (phaseAFixed) continue;
-      if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) continue;
-
-      // --- PHASE B: Show working reference and ask to fix ---
-      console.log(`    🚀 "${approach}/${lang}": Phase B — fix using working ${refLang} reference...`);
-
-      try {
-        const refFixPrompt = generateFixWithReferencePrompt(problem, approach, lang, failingCode, failedTests, refLang, refCode);
-        const resp = await anthropic.messages.create({
-          model: MODEL_SONNET, max_tokens: 8000,
-          messages: [{ role: 'user', content: refFixPrompt }]
-        });
-        const cost = calcCost(resp.usage);
-        totalCost += cost;
-        console.log(`      📊 Reference fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-        const parsed = parseJsonResponse(resp.content[0]?.text || '');
-        if (parsed?.fixes?.approaches?.[approach]?.code?.[lang]) {
-          const fixedCode = parsed.fixes.approaches[approach].code[lang];
-          console.log(`      🧪 Testing reference-fixed ${lang}...`);
-
-          // Quick-test the fixed code against all TCs
-          let phaseBPassed = true;
-          const phaseBFailedTests = [];
-          for (let i = 0; i < (problem.testCases || []).length; i++) {
-            const tc = problem.testCases[i];
-            const stdin = buildStdin(tc);
-            const expected = String(tc.expected ?? '').trim();
-            try {
-              const result = await judge0Submit(fixedCode, LANGUAGE_IDS[lang], stdin);
-              const actual = (result.stdout || '').trim();
-              const passed = result.status.id === 3 && compareOutputs(actual, expected);
-              if (!passed) {
-                phaseBPassed = false;
-                const error = result.compile_output || result.stderr || result.message || null;
-                phaseBFailedTests.push({
-                  tc: i + 1, expected, actual: actual || '(empty)',
-                  error: error ? error.substring(0, result.status?.description?.includes('Compilation') ? 800 : 300) : null,
-                  status: result.status.description,
-                  memory: result.memory ? `${(result.memory / 1024).toFixed(2)}MB` : undefined,
-                  time: result.time ? `${result.time}s` : undefined,
-                });
-                console.log(`      ❌ TC${i + 1}: expected="${expected}" got="${actual || '(empty)'}" [${result.status.description}]`);
-                // Don't break — collect all failures for error feedback
-              } else {
-                console.log(`      ✅ TC${i + 1} passed`);
-              }
-            } catch (err) {
-              phaseBPassed = false;
-              phaseBFailedTests.push({ tc: i + 1, expected, actual: '', error: err.message, status: 'Error' });
-              console.log(`      ❌ TC${i + 1}: ERROR - ${err.message}`);
-            }
-            if (i < (problem.testCases || []).length - 1) await new Promise(r => setTimeout(r, 300));
-          }
-
-          if (phaseBPassed) {
-            console.log(`      ✅ Phase B success — ${lang} fixed with ${refLang} reference!`);
-            allFixes = mergeFixes(allFixes, parsed.fixes);
-          } else if (!(MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) && phaseBFailedTests.length > 0) {
-            // Phase C: Error feedback retry loop (up to 3 attempts)
-            let lastCode = fixedCode;
-            let lastFailedTests = phaseBFailedTests;
-            let retrySolved = false;
-
-            const maxRetries = 3;
-            for (let retryNum = 1; retryNum <= maxRetries; retryNum++) {
-              if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) break;
-
-              console.log(`      🔄 Phase C attempt ${retryNum}/${maxRetries} — sending Judge0 errors to AI...`);
-              try {
-                const errPrompt = generateErrorFeedbackPrompt(problem, approach, lang, lastCode, lastFailedTests, refLang, refCode);
-                const errResp = await anthropic.messages.create({
-                  model: MODEL_SONNET, max_tokens: 8000,
-                  messages: [{ role: 'user', content: errPrompt }]
-                });
-                const errCost = calcCost(errResp.usage);
-                totalCost += errCost;
-                console.log(`      📊 Error feedback fix #${retryNum}: ${fmtTokens(errResp.usage)} ($${errCost.toFixed(4)})`);
-
-                const errParsed = parseJsonResponse(errResp.content[0]?.text || '');
-                if (errParsed?.fixes?.approaches?.[approach]?.code?.[lang]) {
-                  const retryCode = errParsed.fixes.approaches[approach].code[lang];
-                  console.log(`      🧪 Testing error-feedback-fixed ${lang} (attempt ${retryNum})...`);
-
-                  const retryResult = await testCodeAgainstJudge0(retryCode, lang, problem.testCases || [], { collectAll: true, indent: '      ' });
-
-                  if (retryResult.passed) {
-                    console.log(`      ✅ Phase C attempt ${retryNum} success — ${lang} fixed!`);
-                    allFixes = mergeFixes(allFixes, errParsed.fixes);
-                    retrySolved = true;
-                    break;
-                  } else {
-                    console.log(`      ❌ Phase C attempt ${retryNum} failed for ${lang}`);
-                    // Update lastCode and lastFailedTests for next retry with fresh errors
-                    lastCode = retryCode;
-                    lastFailedTests = retryResult.failedTests;
-                  }
-                } else {
-                  console.log(`      ⚠️  Phase C attempt ${retryNum}: AI returned no code`);
-                  break;
-                }
-              } catch (err) {
-                console.log(`      ❌ Phase C attempt ${retryNum} error: ${err.message}`);
-                break;
-              }
-              await new Promise(r => setTimeout(r, 300));
-            }
-
-            if (!retrySolved) {
-              // Merge the best attempt (Phase B output) so final validation can try
-              allFixes = mergeFixes(allFixes, parsed.fixes);
-            }
-          } else {
-            // Merge Phase B attempt anyway for final validation
-            allFixes = mergeFixes(allFixes, parsed.fixes);
-          }
-        } else if (parsed?.fixes) {
-          allFixes = mergeFixes(allFixes, parsed.fixes);
-        }
-      } catch (err) {
-        console.log(`      ❌ Phase B error: ${err.message}`);
-      }
-
-      await new Promise(r => setTimeout(r, 300));
     }
   }
 
-  const hasCodeFixes = allFixes.approaches && Object.keys(allFixes.approaches).length > 0;
-  const hasTcFixes = allFixes.testCases?.length > 0;
-  const hasPassingCode = Object.keys(scan.passingCode).length > 0;
+  // === STEP 5: Final validation ===
+  console.log(`\n    🧪 Final validation...`);
+  const finalScan = await runFullJudge0Scan(applyFixesToProblemInMemory(problem, allFixes), allFixes.testCases || []);
 
-  if (!hasCodeFixes && !hasTcFixes && !hasPassingCode) {
-    console.log(`    ❌ No fixes produced and no passing code`);
-    return null;
-  }
-
-  if (!hasCodeFixes && !hasTcFixes) {
-    // Most/all langs already pass, only a few failed and couldn't be fixed
-    // Still proceed to final validation to confirm passing state
-    console.log(`    ⚠️  No code fixes produced for failing lang(s), but other langs pass — proceeding to validation`);
-  }
-
-  // === STEP 7: Final validation ===
-  console.log(`    🧪 Final validation...`);
-  // Pass scan.report so already-passing combos (that weren't fixed) are skipped
-  let finalScan = await runFullJudge0Scan(
-    applyFixesToProblemInMemory(problem, allFixes),
-    allFixes.testCases || [],
-    scan.report
-  );
-
-  // One more auto-correct pass on final results
-  if (!finalScan.allPassed) {
-    const finalTcFixes = detectAndFixWrongTestCases(finalScan.tcOutputs, applyFixesToProblemInMemory(problem, allFixes));
-    if (finalTcFixes.length > 0) {
-      allFixes = mergeFixes(allFixes, { testCases: finalTcFixes });
-      console.log(`    🔧 Final auto-correct: ${finalTcFixes.length} TC(s)`);
-      for (const fix of finalTcFixes) {
-        if (fix.index >= 0 && fix.index < problem.testCases.length) {
-          problem.testCases[fix.index].expected = fix.expected;
-        }
-      }
-      finalScan = await runFullJudge0Scan(
-        applyFixesToProblemInMemory(problem, allFixes),
-        allFixes.testCases || []
-      );
-    }
-  }
-
-  // === STEP 8: Phase A/B fix for still-failing langs (uses final scan results) ===
-  if (!finalScan.allPassed && !(MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM)) {
-    const stillFailingCount = Object.keys(finalScan.failingCode).reduce((sum, a) => sum + Object.keys(finalScan.failingCode[a]).length, 0);
-    console.log(`    🔄 Phase A/B retry: ${stillFailingCount} lang(s) still failing after initial fixes...`);
-
-    for (const [approach, failingLangs] of Object.entries(finalScan.failingCode)) {
-      if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) {
-        console.log(`    💰 Cost cap reached. Stopping retry.`);
-        break;
-      }
-
-      // Find a passing reference for this approach (if any)
-      let refLang = null, refCode = null;
-      const passingRef = finalScan.passingCode[approach] || {};
-      const passingRefLangs = Object.keys(passingRef);
-      if (passingRefLangs.length > 0) {
-        refLang = LANG_PREFERENCE.find(l => passingRefLangs.includes(l)) || passingRefLangs[0];
-        refCode = passingRef[refLang];
-      }
-
-      // === BATCH FIX in retry: Group failing langs by error category ===
-      if (refLang && refCode) {
-        const retryBatchGroups = {};
-        for (const [lang, data] of Object.entries(failingLangs)) {
-          const fts = data.failedTests || [];
-          const currentCode = allFixes.approaches?.[approach]?.code?.[lang] || 
-                             problem.approaches?.[approach]?.code?.[lang] || data.code || '';
-          if (!currentCode || fts.length === 0) continue;
-
-          const hasWA = fts.some(ft => ft.status === 'Accepted' && ft.actual && ft.actual !== '(empty)' && ft.actual !== ft.expected);
-          const hasCompile = fts.some(ft => ft.status && ft.status.includes('Compilation'));
-          const hasOOM = fts.some(ft => (ft.status && ft.status.includes('Killed')) || (ft.error && (ft.error.includes('Killed') || ft.error.includes('Out of Memory'))));
-          const hasEmpty = fts.some(ft => ft.status === 'Accepted' && (!ft.actual || ft.actual === '(empty)'));
-
-          let category = 'other';
-          if (hasWA) category = 'Wrong Answer';
-          else if (hasCompile) category = 'Compilation Error';
-          else if (hasOOM) category = 'OOM/Killed';
-          else if (hasEmpty) category = 'Empty Output';
-
-          if (!retryBatchGroups[category]) retryBatchGroups[category] = {};
-          retryBatchGroups[category][lang] = { code: currentCode, failedTests: fts };
-        }
-
-        for (const [category, langsMap] of Object.entries(retryBatchGroups)) {
-          const batchLangs = Object.keys(langsMap);
-          if (batchLangs.length < 2) continue;
-          if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) break;
-
-          console.log(`      📦 Batch retry fixing ${batchLangs.length} ${category} langs: ${batchLangs.join(', ')}...`);
-
-          try {
-            const batchPrompt = generateBatchFixPrompt(problem, approach, langsMap, refLang, refCode, category);
-            const resp = await anthropic.messages.create({
-              model: MODEL_SONNET, max_tokens: 16000,
-              messages: [{ role: 'user', content: batchPrompt }]
-            });
-            const cost = calcCost(resp.usage);
-            totalCost += cost;
-            console.log(`        📊 Batch retry fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-            const parsed = parseJsonResponse(resp.content[0]?.text || '');
-
-            for (const lang of batchLangs) {
-              const fixedCode = parsed?.fixes?.approaches?.[approach]?.code?.[lang];
-              if (!fixedCode) continue;
-
-              console.log(`        🧪 Testing batch-retry-fixed ${lang}...`);
-              const testResult = await testCodeAgainstJudge0(fixedCode, lang, problem.testCases || [], { collectAll: false, indent: '        ' });
-
-              if (testResult.passed) {
-                console.log(`        ✅ ${lang} batch-retry-fixed!`);
-                allFixes = mergeFixes(allFixes, { approaches: { [approach]: { code: { [lang]: fixedCode } } } });
-                delete failingLangs[lang];
-              } else {
-                console.log(`        ❌ ${lang} batch retry failed`);
-              }
-              await new Promise(r => setTimeout(r, 300));
-            }
-          } catch (err) {
-            console.log(`        ❌ Batch retry error: ${err.message}`);
-          }
-        }
-      }
-
-      for (const [lang, data] of Object.entries(failingLangs)) {
-        if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) break;
-
-        const failedTests = data.failedTests || [];
-        if (failedTests.length === 0) continue;
-
-        // Get the current code (with any fixes applied)
-        const currentCode = allFixes.approaches?.[approach]?.code?.[lang] || 
-                           problem.approaches?.[approach]?.code?.[lang] || data.code || '';
-        if (!currentCode) continue;
-
-        const errorTypes = [...new Set(failedTests.map(ft => ft.status))].join(', ');
-
-        // --- PHASE A: Self-diagnose & fix (no reference) ---
-        console.log(`      🔧 ${approach}/${lang}: Phase A — self-diagnosis [${errorTypes}]...`);
-
-        let phaseAFixed = false;
-        try {
-          const selfFixPrompt = generateSelfFixPrompt(problem, approach, lang, currentCode, failedTests);
-          const resp = await anthropic.messages.create({
-            model: MODEL_SONNET, max_tokens: 8000,
-            messages: [{ role: 'user', content: selfFixPrompt }]
-          });
-          const cost = calcCost(resp.usage);
-          totalCost += cost;
-          console.log(`        📊 Self-fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-          const parsed = parseJsonResponse(resp.content[0]?.text || '');
-          if (parsed?.fixes?.approaches?.[approach]?.code?.[lang]) {
-            const fixedCode = parsed.fixes.approaches[approach].code[lang];
-            console.log(`        🧪 Testing self-fixed ${lang}...`);
-
-            let selfFixPassed = true;
-            for (let i = 0; i < (problem.testCases || []).length; i++) {
-              const tc = problem.testCases[i];
-              const stdin = buildStdin(tc);
-              const expected = String(tc.expected ?? '').trim();
-              try {
-                const result = await judge0Submit(fixedCode, LANGUAGE_IDS[lang], stdin);
-                const actual = (result.stdout || '').trim();
-                const passed = result.status.id === 3 && compareOutputs(actual, expected);
-                if (!passed) {
-                  selfFixPassed = false;
-                  console.log(`        ❌ TC${i + 1}: expected="${expected}" got="${actual || '(empty)'}" [${result.status.description}]`);
-                  break;
-                } else {
-                  console.log(`        ✅ TC${i + 1} passed`);
-                }
-              } catch (err) {
-                selfFixPassed = false;
-                console.log(`        ❌ TC${i + 1}: ERROR - ${err.message}`);
-                break;
-              }
-              if (i < (problem.testCases || []).length - 1) await new Promise(r => setTimeout(r, 300));
-            }
-
-            if (selfFixPassed) {
-              console.log(`        ✅ Phase A success — ${lang} self-fixed!`);
-              allFixes = mergeFixes(allFixes, parsed.fixes);
-              phaseAFixed = true;
-            } else {
-              console.log(`        ⚠️  Phase A failed — moving to Phase B...`);
-            }
-          }
-        } catch (err) {
-          console.log(`        ❌ Phase A error: ${err.message}`);
-        }
-
-        if (phaseAFixed) continue;
-        if (MAX_COST_PER_PROBLEM > 0 && totalCost >= MAX_COST_PER_PROBLEM) continue;
-
-        // --- PHASE B: Fix with working reference (if available) ---
-        if (refLang && refCode) {
-          console.log(`      🚀 ${approach}/${lang}: Phase B — fix using working ${refLang} reference...`);
-          try {
-            const refFixPrompt = generateFixWithReferencePrompt(problem, approach, lang, currentCode, failedTests, refLang, refCode);
-            const resp = await anthropic.messages.create({
-              model: MODEL_SONNET, max_tokens: 8000,
-              messages: [{ role: 'user', content: refFixPrompt }]
-            });
-            const cost = calcCost(resp.usage);
-            totalCost += cost;
-            console.log(`        📊 Reference fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-            const parsed = parseJsonResponse(resp.content[0]?.text || '');
-            if (parsed?.fixes) {
-              allFixes = mergeFixes(allFixes, parsed.fixes);
-            }
-          } catch (err) {
-            console.log(`        ❌ Phase B error: ${err.message}`);
-          }
-        } else {
-          // No reference available — use generic error feedback prompt
-          console.log(`      🔧 ${approach}/${lang}: No reference — sending error feedback to AI...`);
-          try {
-            const errorPrompt = generateErrorFeedbackPrompt(problem, approach, lang, currentCode, failedTests, null, null);
-            const resp = await anthropic.messages.create({
-              model: MODEL_SONNET, max_tokens: 8000,
-              messages: [{ role: 'user', content: errorPrompt }]
-            });
-            const cost = calcCost(resp.usage);
-            totalCost += cost;
-            console.log(`        📊 Error fix: ${fmtTokens(resp.usage)} ($${cost.toFixed(4)})`);
-
-            const parsed = parseJsonResponse(resp.content[0]?.text || '');
-            if (parsed?.fixes) {
-              allFixes = mergeFixes(allFixes, parsed.fixes);
-            }
-          } catch (err) {
-            console.log(`        ❌ Error fix failed: ${err.message}`);
-          }
-        }
-        await new Promise(r => setTimeout(r, 300));
-      }
-    }
-
-    // Re-validate after Phase A/B fixes
-    console.log(`    🧪 Re-validating after Phase A/B retry...`);
-    finalScan = await runFullJudge0Scan(
-      applyFixesToProblemInMemory(problem, allFixes),
-      allFixes.testCases || []
-    );
-  }
-
-  if (finalScan.allPassed) {
-    console.log(`    ✅ All tests passed!`);
-  } else {
-    const failCount = Object.keys(finalScan.failingCode).reduce((sum, a) => sum + Object.keys(finalScan.failingCode[a]).length, 0);
-    console.log(`    ⚠️  ${failCount} approach/lang combo(s) still failing`);
-  }
+  const passCount = Object.values(finalScan.report || {}).reduce((s, a) => s + Object.values(a).filter(r => r.passed).length, 0);
+  const totalCount = Object.values(finalScan.report || {}).reduce((s, a) => s + Object.keys(a).length, 0);
+  console.log(`    ${finalScan.allPassed ? '✅' : '⚠️ '} Final: ${passCount}/${totalCount} passing`);
 
   return {
     problemId: problem.id,
-    result: { status: 'needs_fixes', summary: 'Smart fix applied', fixes: allFixes, validationPassed: finalScan.allPassed },
+    result: {
+      status: Object.keys(allFixes).length > 0 ? 'needs_fixes' : 'already_passing',
+      summary: `${passCount}/${totalCount} passing after fix`,
+      fixes: allFixes,
+      validationPassed: finalScan.allPassed,
+    },
     validationReport: finalScan.report,
     cost: { total: totalCost },
   };
 }
+
 
 /**
  * Apply code fixes to a problem object in-memory (for validation).
@@ -2754,7 +1927,7 @@ async function createBatch(limit, skip = 0, reverse = false) {
     }
 
     const stdinExamples = (problem.testCases || []).map((tc, i) => {
-      const stdin = buildStdin(tc);
+      const stdin = buildStdin(tc, problem);
       return `  TC${i + 1} stdin:\n${stdin.split('\n').map(line => `    | ${line}`).join('\n')}`;
     }).join('\n');
 

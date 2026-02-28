@@ -96,6 +96,7 @@ export default function BulkUploadQuestions({
       [QUESTION_TYPES.DESCRIPTIVE]: QUESTION_TYPES.DESCRIPTIVE,
       [QUESTION_TYPES.CODE]: QUESTION_TYPES.CODE,
       [QUESTION_TYPES.SQL]: QUESTION_TYPES.SQL,
+      [QUESTION_TYPES.LIKERT]: QUESTION_TYPES.LIKERT,
     };
     
     const standardType = typeMap[normalizedType];
@@ -158,6 +159,7 @@ export default function BulkUploadQuestions({
       // MCQ Questions
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
@@ -177,6 +179,7 @@ export default function BulkUploadQuestions({
       },
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'Generic',
         subject: 'Java',
@@ -197,6 +200,7 @@ export default function BulkUploadQuestions({
       // Fill in the Blank Questions
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'MCA-1|MCA-2',
         subject: 'Java',
@@ -216,6 +220,7 @@ export default function BulkUploadQuestions({
       },
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
@@ -236,6 +241,7 @@ export default function BulkUploadQuestions({
       // Jumbled Quiz Questions
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'Generic',
         subject: 'Java',
@@ -255,6 +261,7 @@ export default function BulkUploadQuestions({
       },
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'MCA-1|MCA-2|MCA-3',
         subject: 'Java',
@@ -275,6 +282,7 @@ export default function BulkUploadQuestions({
       // Descriptive Questions
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
@@ -294,6 +302,7 @@ export default function BulkUploadQuestions({
       },
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'Generic',
         subject: 'Java',
@@ -314,6 +323,7 @@ export default function BulkUploadQuestions({
       // Code Questions
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
@@ -348,6 +358,7 @@ export default function BulkUploadQuestions({
       },
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'MCA-1',
         subject: 'Java',
@@ -383,7 +394,8 @@ export default function BulkUploadQuestions({
       // SQL Questions
       {
         board: 'TPX',
-        is_public: false,
+        college_id: 'TPX',
+        is_public: true,
         class: 'MCA-1|MCA-2',
         subject: 'Database',
         chapter: 'SQL Query',
@@ -437,6 +449,7 @@ export default function BulkUploadQuestions({
       // SQL Question with Two Tables (JOIN)
       {
         board: 'TPX',
+        college_id: 'TPX',
         is_public: true,
         class: 'Generic',
         subject: 'Database',
@@ -535,6 +548,167 @@ export default function BulkUploadQuestions({
           }
         ]),
         tags: 'sql,join,inner-join,multi-table,ordering'
+      },
+      // Likert Questions (Personality Assessment) - One example per Big-8 trait
+      {
+        board: 'TPX',
+        college_id: 'TPX',
+        is_public: true,
+        class: 'Generic',
+        subject: 'Personality Assessment',
+        chapter: 'Openness',
+        type: QUESTION_TYPES.LIKERT,
+        question_text: 'I enjoy exploring new ideas and unconventional approaches to problems',
+        question_image_urls: '',
+        options: 'Strongly Disagree|Disagree|Neutral|Agree|Strongly Agree',
+        correct_answers: '1|2|3|4|5',
+        maximum_marks: 0,
+        difficulty_level: COMPLEXITY_LEVELS.EASY,
+        hint: '',
+        test_cases: '',
+        starter_codes: '',
+        sql_schema: '',
+        tags: 'personality'
+      },
+      {
+        board: 'TPX',
+        college_id: 'TPX',
+        is_public: true,
+        class: 'Generic',
+        subject: 'Personality Assessment',
+        chapter: 'Conscientiousness',
+        type: QUESTION_TYPES.LIKERT,
+        question_text: 'I tend to leave tasks incomplete when I lose interest',
+        question_image_urls: '',
+        options: 'Strongly Disagree|Disagree|Neutral|Agree|Strongly Agree',
+        correct_answers: '5|4|3|2|1',
+        maximum_marks: 0,
+        difficulty_level: COMPLEXITY_LEVELS.EASY,
+        hint: '',
+        test_cases: '',
+        starter_codes: '',
+        sql_schema: '',
+        tags: 'personality'
+      },
+      {
+        board: 'TPX',
+        college_id: 'TPX',
+        is_public: true,
+        class: 'Generic',
+        subject: 'Personality Assessment',
+        chapter: 'Extraversion',
+        type: QUESTION_TYPES.LIKERT,
+        question_text: 'I feel energized after spending time with a group of people',
+        question_image_urls: '',
+        options: 'Strongly Disagree|Disagree|Neutral|Agree|Strongly Agree',
+        correct_answers: '1|2|3|4|5',
+        maximum_marks: 0,
+        difficulty_level: COMPLEXITY_LEVELS.EASY,
+        hint: '',
+        test_cases: '',
+        starter_codes: '',
+        sql_schema: '',
+        tags: 'personality'
+      },
+      {
+        board: 'TPX',
+        college_id: 'TPX',
+        is_public: true,
+        class: 'Generic',
+        subject: 'Personality Assessment',
+        chapter: 'Agreeableness',
+        type: QUESTION_TYPES.LIKERT,
+        question_text: 'I believe winning an argument is more important than keeping harmony',
+        question_image_urls: '',
+        options: 'Strongly Disagree|Disagree|Neutral|Agree|Strongly Agree',
+        correct_answers: '5|4|3|2|1',
+        maximum_marks: 0,
+        difficulty_level: COMPLEXITY_LEVELS.EASY,
+        hint: '',
+        test_cases: '',
+        starter_codes: '',
+        sql_schema: '',
+        tags: 'personality'
+      },
+      {
+        board: 'TPX',
+        college_id: 'TPX',
+        is_public: true,
+        class: 'Generic',
+        subject: 'Personality Assessment',
+        chapter: 'Emotional Stability',
+        type: QUESTION_TYPES.LIKERT,
+        question_text: 'I remain calm and composed even under high pressure situations',
+        question_image_urls: '',
+        options: 'Strongly Disagree|Disagree|Neutral|Agree|Strongly Agree',
+        correct_answers: '1|2|3|4|5',
+        maximum_marks: 0,
+        difficulty_level: COMPLEXITY_LEVELS.EASY,
+        hint: '',
+        test_cases: '',
+        starter_codes: '',
+        sql_schema: '',
+        tags: 'personality'
+      },
+      {
+        board: 'TPX',
+        college_id: 'TPX',
+        is_public: true,
+        class: 'Generic',
+        subject: 'Personality Assessment',
+        chapter: 'Leadership',
+        type: QUESTION_TYPES.LIKERT,
+        question_text: 'I prefer someone else to take the lead rather than stepping up myself',
+        question_image_urls: '',
+        options: 'Strongly Disagree|Disagree|Neutral|Agree|Strongly Agree',
+        correct_answers: '5|4|3|2|1',
+        maximum_marks: 0,
+        difficulty_level: COMPLEXITY_LEVELS.EASY,
+        hint: '',
+        test_cases: '',
+        starter_codes: '',
+        sql_schema: '',
+        tags: 'personality'
+      },
+      {
+        board: 'TPX',
+        college_id: 'TPX',
+        is_public: true,
+        class: 'Generic',
+        subject: 'Personality Assessment',
+        chapter: 'Problem Solving',
+        type: QUESTION_TYPES.LIKERT,
+        question_text: 'I enjoy breaking down complex problems into manageable parts',
+        question_image_urls: '',
+        options: 'Strongly Disagree|Disagree|Neutral|Agree|Strongly Agree',
+        correct_answers: '1|2|3|4|5',
+        maximum_marks: 0,
+        difficulty_level: COMPLEXITY_LEVELS.EASY,
+        hint: '',
+        test_cases: '',
+        starter_codes: '',
+        sql_schema: '',
+        tags: 'personality'
+      },
+      {
+        board: 'TPX',
+        college_id: 'TPX',
+        is_public: true,
+        class: 'Generic',
+        subject: 'Personality Assessment',
+        chapter: 'Communication',
+        type: QUESTION_TYPES.LIKERT,
+        question_text: 'I often find it difficult to explain my thoughts to others',
+        question_image_urls: '',
+        options: 'Strongly Disagree|Disagree|Neutral|Agree|Strongly Agree',
+        correct_answers: '5|4|3|2|1',
+        maximum_marks: 0,
+        difficulty_level: COMPLEXITY_LEVELS.EASY,
+        hint: '',
+        test_cases: '',
+        starter_codes: '',
+        sql_schema: '',
+        tags: 'personality'
       }
     ];
 
@@ -587,6 +761,17 @@ export default function BulkUploadQuestions({
       [QUESTION_TYPES.JUMBLED],
       [QUESTION_TYPES.CODE],
       [QUESTION_TYPES.SQL],
+      [QUESTION_TYPES.LIKERT],
+      [''],
+      ['Likert Personality Traits (Use as chapter for Likert questions):'],
+      ['Openness'],
+      ['Conscientiousness'],
+      ['Extraversion'],
+      ['Agreeableness'],
+      ['Emotional Stability'],
+      ['Leadership'],
+      ['Problem Solving'],
+      ['Communication'],
       [''],
       ['Difficulty Levels (Select from these):'],
       [COMPLEXITY_LEVELS.EASY],
@@ -595,7 +780,13 @@ export default function BulkUploadQuestions({
       [''],
       ['Question Visibility (Select from these):'],
       ['true (Public - shared with all colleges)'],
-      ['false (Private - your college only)']
+      ['false (Private - your college only)'],
+      [''],
+      ['College ID (Optional):'],
+      [`Your college: ${activeCollegeId}`],
+      ['Leave empty to use your current college.'],
+      ['Super users can specify any college ID.'],
+      ['Regular users can only upload to their own college.']
     ];
 
     const wsReference = XLSX.utils.aoa_to_sheet(referenceData);
@@ -611,7 +802,7 @@ export default function BulkUploadQuestions({
       ['class', 'Class level. Use "Generic" for all classes. For multiple classes use | separator (e.g., MCA-1|MCA-2). Single class: MCA-1, 10th, 11th'],
       ['subject', 'Subject name (e.g., Java, Mathematics, Computer Science)'],
       ['chapter', 'Chapter or topic name (e.g., Java Loops, Quadratic Equations)'],
-      ['type', `Question type: ${QUESTION_TYPES.MCQ}, ${QUESTION_TYPES.FITB}, ${QUESTION_TYPES.DESCRIPTIVE}, ${QUESTION_TYPES.JUMBLED}, ${QUESTION_TYPES.CODE}, ${QUESTION_TYPES.SQL}`],
+      ['type', `Question type: ${QUESTION_TYPES.MCQ}, ${QUESTION_TYPES.FITB}, ${QUESTION_TYPES.DESCRIPTIVE}, ${QUESTION_TYPES.JUMBLED}, ${QUESTION_TYPES.CODE}, ${QUESTION_TYPES.SQL}, ${QUESTION_TYPES.LIKERT}`],
       ['question_text', 'The actual question text. Supports HTML tags like <h2>, <p>, <code>, <strong> for rich formatting'],
       ['options', 'For MCQ & JUMBLED: separate options/items with | (e.g., "Option 1|Option 2|Option 3|Option 4")'],
       ['correct_answers', 'For MCQ: Single OR multiple correct answers separated by | | For FITB: answers for each blank separated by | | For JUMBLED: correct sequence separated by |'],
@@ -639,6 +830,7 @@ export default function BulkUploadQuestions({
       [QUESTION_TYPES.JUMBLED, 'Requires: options (items to arrange) and correct_answers (correct sequence). Both separated by |'],
       [QUESTION_TYPES.CODE, 'Requires: test_cases (JSON) and starter_codes (JSON array of multi-language code).'],
       [QUESTION_TYPES.SQL, 'Requires: sql_schema (JSON) and test_cases (JSON with SQL format). Subject must be "Database".'],
+      [QUESTION_TYPES.LIKERT, 'Personality assessment. options: always "Strongly Disagree|Disagree|Neutral|Agree|Strongly Agree". correct_answers: scores per option (e.g., "1|2|3|4|5" for positive, "5|4|3|2|1" for reverse). chapter = trait name. maximum_marks = 0.'],
       [''],
       ['Code Question Format:'],
       ['test_cases', 'JSON array format: [{"input":"John\\n101\\n85.5","expected_output":"Name: John, Roll: 101, Marks: 85.5\\n","marks":0.4}]'],
@@ -654,7 +846,8 @@ export default function BulkUploadQuestions({
       ['Jumbled', 'Code arrangement: options = "System.out.println(i);|}|for (int i = 1; i <= 5; i++) {"  |  correct_answers = "for (int i = 1; i <= 5; i++) {|System.out.println(i);|}"'],
       ['Descriptive', 'Open-ended questions where students write full answers. No options or correct_answers needed.'],
       ['Code', 'Complete programming problems with automated testing. Requires test_cases JSON and starter_codes.'],
-      ['SQL', 'Database query problems. Requires sql_schema JSON (table definitions) and test_cases JSON (SQL format with table_data + expected_output).']
+      ['SQL', 'Database query problems. Requires sql_schema JSON (table definitions) and test_cases JSON (SQL format with table_data + expected_output).'],
+      ['Likert', 'Personality statements. Positive: correct_answers = "1|2|3|4|5". Reverse: correct_answers = "5|4|3|2|1". chapter = trait (Openness, Leadership, etc.). maximum_marks = 0 (scored separately).']
     ];
 
     const wsInstructions = XLSX.utils.aoa_to_sheet(instructions);
@@ -843,6 +1036,15 @@ export default function BulkUploadQuestions({
           }
         }
         
+        if (qType === QUESTION_TYPES.LIKERT) {
+          if (!question.correct_answers || !question.correct_answers.toString().trim()) {
+            validationErrors.push('correct_answers is required for Likert (pipe-separated scores e.g., "1|2|3|4|5")');
+          } else {
+            const scores = question.correct_answers.split(DELIMITERS.PIPE).map(s => s.trim());
+            if (scores.length !== 5) validationErrors.push('Likert correct_answers must have exactly 5 pipe-separated scores');
+          }
+        }
+        
         if (validationErrors.length > 0) {
           results.failed++;
           results.errors.push(`${rowLabel}: ${validationErrors.join('; ')}`);
@@ -859,8 +1061,21 @@ export default function BulkUploadQuestions({
           }
         }
         
-        // Determine college ID
-        const collegeId = isPublic ? SPECIAL_IDS.TUTORIALS_POINT : (question.college_id || activeCollegeId);
+        // Determine college ID - Excel value takes preference
+        const excelCollegeId = question.college_id?.toString().trim();
+        let collegeId: string;
+        
+        if (isPublic) {
+          collegeId = SPECIAL_IDS.TUTORIALSPOINT;
+        } else if (excelCollegeId) {
+          // Validate permission: only superUser can upload for other colleges
+          if (excelCollegeId !== activeCollegeId && !isSuperUser) {
+            throw new Error(`You can only upload questions for your own college (${activeCollegeId}). Cannot upload for "${excelCollegeId}".`);
+          }
+          collegeId = excelCollegeId;
+        } else {
+          collegeId = activeCollegeId || SPECIAL_IDS.TUTORIALSPOINT;
+        }
         
         // Prepare input in CreateQuestionInput format
         const questionInput = {
@@ -876,7 +1091,7 @@ export default function BulkUploadQuestions({
           chapter: question.chapter?.toString().trim() || '',
           year: new Date().getFullYear().toString(),
           type: mapQuestionType(question.type),
-          maximum_marks: parseFloat(question.maximum_marks.toString()) || QUESTION_DEFAULTS.MARKS,
+          maximum_marks: mapQuestionType(question.type) === QUESTION_TYPES.LIKERT ? 0 : (parseFloat(question.maximum_marks.toString()) || QUESTION_DEFAULTS.MARKS),
           difficulty_level: normalizeComplexity(question.difficulty_level),
           hint: question.hint || QUESTION_DEFAULTS.EMPTY_STRING,
           
@@ -890,8 +1105,8 @@ export default function BulkUploadQuestions({
           
           // Organization
           is_public: isPublic,
-          college_id: isSuperUser ? 'tutorialspoint' : collegeId,
-          college_name: isSuperUser ? 'Tutorials Point' : activeCollegeName,
+          college_id: collegeId,
+          college_name: collegeId === activeCollegeId ? activeCollegeName : collegeId,
           created_by: currentUser?.userId || 'unknown',
           created_by_name: currentUser?.fullName || 'Unknown User',
           
@@ -958,7 +1173,16 @@ export default function BulkUploadQuestions({
               sql_schema: parsedSchema,
               sql_test_cases: parsedSqlTestCases
             };
-          })())
+          })()),
+          
+          ...(mapQuestionType(question.type) === QUESTION_TYPES.LIKERT && {
+            options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
+            correct_answers: question.correct_answers
+              ? question.correct_answers.split(DELIMITERS.PIPE).map(a => a.trim())
+              : ['1', '2', '3', '4', '5'],
+            likertTrait: question.chapter?.toString().trim() || '',
+            likertDirection: question.correct_answers?.startsWith('1') ? 'positive' : 'reverse'
+          })
         };
         
         // Create question using unified service
@@ -1041,6 +1265,7 @@ export default function BulkUploadQuestions({
       [QUESTION_TYPES.JUMBLED]: QUESTION_TYPES.JUMBLED,
       [QUESTION_TYPES.CODE]: QUESTION_TYPES.CODE,
       [QUESTION_TYPES.SQL]: QUESTION_TYPES.SQL,
+      [QUESTION_TYPES.LIKERT]: QUESTION_TYPES.LIKERT,
     };
     
     return typeMap[normalizedType] || QUESTION_TYPES.DESCRIPTIVE;
@@ -1192,7 +1417,7 @@ export default function BulkUploadQuestions({
                     <ul className="space-y-2 text-xs text-gray-700">
                       <li className="flex items-start"><span className="mr-2">•</span><span>Check the <strong>"Reference"</strong> sheet for all allowed values</span></li>
                       <li className="flex items-start"><span className="mr-2">•</span><span><strong>Required columns:</strong> class, subject, chapter, question_text, type, maximum_marks, difficulty_level</span></li>
-                      <li className="flex items-start"><span className="mr-2">•</span><span><strong>Optional:</strong> board (empty if not provided), hint</span></li>
+                      <li className="flex items-start"><span className="mr-2">•</span><span><strong>Optional:</strong> board, hint, college_id (defaults to your current college if empty)</span></li>
                       <li className="flex items-start"><span className="mr-2">•</span><span><strong>MCQ with multiple correct answers:</strong> Separate correct answers with | (e.g., "Answer1|Answer2")</span></li>
                       <li className="flex items-start"><span className="mr-2">•</span><span><strong>CODE questions:</strong> Must include test_cases (JSON) and starter_codes (JSON)</span></li>
                     </ul>

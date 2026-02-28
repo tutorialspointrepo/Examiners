@@ -28,6 +28,7 @@ export const QUESTION_TYPE_ICONS: Record<QuestionType, string> = {
   [QUESTION_TYPES.FITB]: '✍️',
   [QUESTION_TYPES.JUMBLED]: '🔀',
   [QUESTION_TYPES.DESCRIPTIVE]: '📄',
+  [QUESTION_TYPES.LIKERT]: '🧠',
   [QUESTION_TYPES.CODE]: '💻',
   [QUESTION_TYPES.SQL]: '🗃️'
 };
@@ -897,7 +898,8 @@ export function generateQuestionStatistics(questions: Question[]): QuestionStati
       [QUESTION_TYPES.JUMBLED]: 0,
       [QUESTION_TYPES.DESCRIPTIVE]: 0,
       [QUESTION_TYPES.CODE]: 0,
-      [QUESTION_TYPES.SQL]: 0
+      [QUESTION_TYPES.SQL]: 0,
+      [QUESTION_TYPES.LIKERT]: 0
     },
     byComplexity: {
       [COMPLEXITY_LEVELS.EASY]: 0,

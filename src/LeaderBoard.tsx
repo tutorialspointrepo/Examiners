@@ -39,7 +39,7 @@ const getStarColor = (rating: number): string => {
   if (rating === 4) return 'text-yellow-500';
   if (rating === 3) return 'text-orange-400';
   if (rating === 2) return 'text-orange-500';
-  return 'text-gray-400';
+  return 'text-red-400';
 };
 
 /**
@@ -111,6 +111,11 @@ function LeaderBoard({
   // Data state
   const [students, setStudents] = useState<Student[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [lastDocId, setLastDocId] = useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const PAGE_SIZE = 20;
   
   // Dropdown states
   const [showYearDropdown, setShowYearDropdown] = useState(false);
@@ -160,40 +165,19 @@ function LeaderBoard({
       if (!activeCollegeId) return;
       
       setIsLoading(true);
+      setStudents([]);
+      setLastDocId(null);
+      setHasMore(false);
       try {
-        // Build filters object
-        const filters: any = {};
-        
-        if (filterYear && filterYear !== 'all') {
-          filters.academicYear = filterYear;
-        }
-        
-        if (filterClass && filterClass !== 'all') {
-          filters.class = filterClass;
-        }
-        
-        if (filterSubject && filterSubject !== 'all') {
-          filters.subject = filterSubject;
-        }
-        
-        // Fetch leaderboard data from Firebase using the new method
-        // Fetch leaderboard data from Firebase using the new method
-        let leaderboardData = await firebaseService.getLeaderboard(activeCollegeId, filters);
+        const result = await firebaseService.getLeaderboardPaginated(activeCollegeId, {
+          academicYear: filterYear !== 'all' ? filterYear : undefined,
+          class: filterClass !== 'all' ? filterClass : undefined,
+          subject: filterSubject !== 'all' ? filterSubject : undefined,
+          pageSize: PAGE_SIZE,
+          lastDocId: null,
+        });
 
-        // TEMPORARY DEBUG - Remove after checking
-        console.log('🔍 Filters applied:', filters);
-        console.log('🔍 Leaderboard data received:', leaderboardData);
-        console.log('🔍 First student data:', leaderboardData[0]);
-        
-        // If student, only show their data
-        if (isStudent && currentUser) {
-          leaderboardData = leaderboardData.filter(student => 
-            student.userId === currentUser.userId
-          );
-        }
-        
-        // Convert to Student interface format
-        const studentsArray: Student[] = leaderboardData.map(student => ({
+        const studentsArray: Student[] = result.students.map((student, index) => ({
           userId: student.userId,
           name: student.userName,
           rollNumber: student.rollNumber,
@@ -203,13 +187,15 @@ function LeaderBoard({
           totalMarks: student.totalMarks,
           totalExams: student.totalExams,
           averagePercentage: student.averagePercentage,
-          rank: student.rank
+          rank: index + 1
         }));
         
         setStudents(studentsArray);
+        setHasMore(result.hasMore);
+        setLastDocId(result.lastDocId);
+        setTotalCount(result.totalCount);
       } catch (error) {
         console.error('Error fetching leaderboard:', error);
-        // Show user-friendly error message
         setStudents([]);
       } finally {
         setIsLoading(false);
@@ -219,17 +205,55 @@ function LeaderBoard({
     fetchLeaderBoard();
   }, [activeCollegeId, filterYear, filterClass, filterSubject, currentUser, isStudent]);
 
+  // Load more handler
+  const loadMore = async () => {
+    if (!activeCollegeId || !hasMore || isLoadingMore) return;
+    
+    setIsLoadingMore(true);
+    try {
+      const result = await firebaseService.getLeaderboardPaginated(activeCollegeId, {
+        academicYear: filterYear !== 'all' ? filterYear : undefined,
+        class: filterClass !== 'all' ? filterClass : undefined,
+        subject: filterSubject !== 'all' ? filterSubject : undefined,
+        pageSize: PAGE_SIZE,
+        lastDocId,
+      });
+
+      const currentCount = students.length;
+      const newStudents: Student[] = result.students.map((student, index) => ({
+        userId: student.userId,
+        name: student.userName,
+        rollNumber: student.rollNumber,
+        collegeId: student.collegeId,
+        class: student.class,
+        board: student.board,
+        totalMarks: student.totalMarks,
+        totalExams: student.totalExams,
+        averagePercentage: student.averagePercentage,
+        rank: currentCount + index + 1
+      }));
+      
+      setStudents(prev => [...prev, ...newStudents]);
+      setHasMore(result.hasMore);
+      setLastDocId(result.lastDocId);
+    } catch (error) {
+      console.error('Error loading more leaderboard data:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
   // Get top 3 students
   const topThree = useMemo(() => students.slice(0, 3), [students]);
 
-  // Get filter description
-  const getFilterDescription = () => {
-    const parts = [];
-    if (filterYear !== 'all') parts.push(`Year: ${filterYear}`);
-    if (filterClass !== 'all') parts.push(`Class: ${filterClass}`);
-    if (filterSubject !== 'all') parts.push(`Subject: ${filterSubject}`);
-    return parts.length > 0 ? parts.join(' • ') : 'All Students';
-  };
+  // Get filter description (reserved for future use)
+  // const getFilterDescription = () => {
+  //   const parts = [];
+  //   if (filterYear !== 'all') parts.push(`Year: ${filterYear}`);
+  //   if (filterClass !== 'all') parts.push(`Class: ${filterClass}`);
+  //   if (filterSubject !== 'all') parts.push(`Subject: ${filterSubject}`);
+  //   return parts.length > 0 ? parts.join(' • ') : 'All Students';
+  // };
 
   // Get medal color
   const getMedalColor = (rank: number) => {
@@ -306,10 +330,6 @@ function LeaderBoard({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Academic Year Filter */}
           <div className="relative">
-            <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
-              <FontAwesomeIcon icon={faGraduationCap} className="mr-1" />
-              Academic Year
-            </label>
             <div className="relative" ref={yearDropdownRef}>
               <button
                 onClick={() => setShowYearDropdown(!showYearDropdown)}
@@ -318,7 +338,8 @@ function LeaderBoard({
                   ['--tw-ring-color' as any]: brandTheme.colors.primary + '40'
                 }}
               >
-                <span className="text-gray-900 font-medium">
+                <span className="text-gray-900 font-medium flex items-center gap-2">
+                  <FontAwesomeIcon icon={faGraduationCap} className="text-gray-400" />
                   {filterYear === 'all' ? 'All Years' : filterYear}
                 </span>
                 <FontAwesomeIcon 
@@ -365,10 +386,6 @@ function LeaderBoard({
 
           {/* Class Filter */}
           <div className="relative">
-            <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
-              <FontAwesomeIcon icon={faBookOpen} className="mr-1" />
-              Class
-            </label>
             <div className="relative" ref={classDropdownRef}>
               <button
                 onClick={() => setShowClassDropdown(!showClassDropdown)}
@@ -377,7 +394,8 @@ function LeaderBoard({
                   ['--tw-ring-color' as any]: brandTheme.colors.primary + '40'
                 }}
               >
-                <span className="text-gray-900 font-medium">
+                <span className="text-gray-900 font-medium flex items-center gap-2">
+                  <FontAwesomeIcon icon={faBookOpen} className="text-gray-400" />
                   {filterClass === 'all' ? 'All Classes' : `Class ${filterClass}`}
                 </span>
                 <FontAwesomeIcon 
@@ -422,10 +440,6 @@ function LeaderBoard({
 
           {/* Subject Filter */}
           <div className="relative">
-            <label className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
-              <FontAwesomeIcon icon={faChartLine} className="mr-1" />
-              Subject
-            </label>
             <div className="relative" ref={subjectDropdownRef}>
               <button
                 onClick={() => setShowSubjectDropdown(!showSubjectDropdown)}
@@ -434,7 +448,8 @@ function LeaderBoard({
                   ['--tw-ring-color' as any]: brandTheme.colors.primary + '40'
                 }}
               >
-                <span className="text-gray-900 font-medium">
+                <span className="text-gray-900 font-medium flex items-center gap-2">
+                  <FontAwesomeIcon icon={faChartLine} className="text-gray-400" />
                   {filterSubject === 'all' ? 'All Subjects' : filterSubject}
                 </span>
                 <FontAwesomeIcon 
@@ -476,21 +491,7 @@ function LeaderBoard({
           </div>
         </div>
 
-        {/* Filter Description */}
-        <div className="mt-3 flex items-center justify-between">
-          <div className="text-sm text-gray-600">
-            <FontAwesomeIcon icon={faRankingStar} className="mr-2" />
-            Showing: <span className="font-semibold">{getFilterDescription()}</span>
-          </div>
-          <div className="text-sm font-semibold text-gray-700">
-            Total Students: <span 
-              className="px-2 py-1 rounded-md text-white"
-              style={{ background: brandTheme.gradients.primary }}
-            >
-              {students.length}
-            </span>
-          </div>
-        </div>
+        {/* Filter Description removed - Total Students moved to Rankings header */}
       </div>
 
       {/* Content */}
@@ -526,7 +527,13 @@ function LeaderBoard({
                   style={{ background: brandTheme.gradients.primary }}
                 >
                   <span className="text-lg">Rankings</span>
-                  <FontAwesomeIcon icon={faRankingStar} className="text-xl" />
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium opacity-90">Total Students:</span>
+                    <span className="bg-white/20 px-2.5 py-0.5 rounded-md text-sm font-bold">
+                      {totalCount || students.length}
+                    </span>
+                    <FontAwesomeIcon icon={faRankingStar} className="text-xl ml-1" />
+                  </div>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto">
@@ -550,6 +557,9 @@ function LeaderBoard({
                         </th>
                         <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                           Average %
+                        </th>
+                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                          Rating
                         </th>
                       </tr>
                     </thead>
@@ -608,11 +618,27 @@ function LeaderBoard({
                               {student.averagePercentage.toFixed(1)}%
                             </span>
                           </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <StarsDisplay rating={getStarRating(student.averagePercentage)} size="sm" />
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                {/* Load More */}
+                {hasMore && (
+                  <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 text-center">
+                    <button
+                      onClick={loadMore}
+                      disabled={isLoadingMore}
+                      className="text-sm font-semibold px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                      style={{ color: brandTheme?.colors?.primary || '#6366f1' }}
+                    >
+                      {isLoadingMore ? 'Loading...' : `Load More (${totalCount - students.length} remaining)`}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Top 3 Champions - Takes 1 column */}

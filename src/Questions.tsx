@@ -15,7 +15,7 @@ import { QUESTION_TYPES, QUESTION_TYPE_LABELS } from './constants';
 
 interface QuestionsProps {
   activeCollegeId?: string;
-  onSubjectSelect?: (subject: SubjectQuestionStats | null, questionType: 'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code' | 'sql') => void;
+  onSubjectSelect?: (subject: SubjectQuestionStats | null, questionType: 'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code' | 'sql' | 'likert') => void;
   selectedSubject?: SubjectQuestionStats | null;
   onCollapse?: () => void;
   refreshTrigger?: number; // Increment this to force reload of question stats
@@ -24,7 +24,7 @@ interface QuestionsProps {
 
 export default function Questions({ activeCollegeId, onSubjectSelect, selectedSubject: externalSelectedSubject, onCollapse, refreshTrigger }: QuestionsProps) {
   const brandTheme = useBrand();
-  const [questionFilter, setQuestionFilter] = useState<'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code' | 'sql'>('all');
+  const [questionFilter, setQuestionFilter] = useState<'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code' | 'sql' | 'likert'>('all');
   
   // Map filter to question type constant
   const getQuestionType = (filter: typeof questionFilter): string | undefined => {
@@ -35,6 +35,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
     if (filter === 'descriptive') return QUESTION_TYPES.DESCRIPTIVE; // 'descriptive'
     if (filter === 'code') return QUESTION_TYPES.CODE;         // 'code'
     if (filter === 'sql') return QUESTION_TYPES.SQL;           // 'sql'
+    if (filter === 'likert') return QUESTION_TYPES.LIKERT;     // 'likert'
     return undefined;
   };
   
@@ -47,6 +48,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
     if (filter === 'descriptive') return QUESTION_TYPE_LABELS[QUESTION_TYPES.DESCRIPTIVE];
     if (filter === 'code') return QUESTION_TYPE_LABELS[QUESTION_TYPES.CODE];
     if (filter === 'sql') return QUESTION_TYPE_LABELS[QUESTION_TYPES.SQL];
+    if (filter === 'likert') return QUESTION_TYPE_LABELS[QUESTION_TYPES.LIKERT];
     return 'All';
   };
   
@@ -186,11 +188,23 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
       if (questionFilter === 'jumbled') return subject.jumbledCount > 0;
       if (questionFilter === 'code') return subject.codeCount > 0;
       if (questionFilter === 'sql') return (subject.sqlCount || 0) > 0;
+      if (questionFilter === 'likert') return (subject.likertCount || 0) > 0;
       return true;
     });
     
     // Auto-select the first subject when data arrives
     if (filteredStats.length > 0) {
+      // If there's a currently selected subject, try to keep it selected
+      if (externalSelectedSubject) {
+        const currentStillExists = filteredStats.find(
+          s => s.subject === externalSelectedSubject.subject
+        );
+        if (currentStillExists) {
+          console.log('🔄 Keeping current subject selected after refresh:', currentStillExists.subject);
+          onSubjectSelect?.(currentStillExists, questionFilter);
+          return;
+        }
+      }
       console.log('🔄 Auto-selecting first subject after data load:', filteredStats[0].subject, filteredStats[0].class, questionFilter);
       onSubjectSelect?.(filteredStats[0], questionFilter);
     } else {
@@ -211,6 +225,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
     if (questionFilter === 'jumbled') return subject.jumbledCount > 0;
     if (questionFilter === 'code') return subject.codeCount > 0;
     if (questionFilter === 'sql') return (subject.sqlCount || 0) > 0;
+    if (questionFilter === 'likert') return (subject.likertCount || 0) > 0;
     
     return true;
   });
@@ -228,6 +243,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
       jumbledCount: number;
       codeCount: number;
       sqlCount: number;
+      likertCount: number;
       proprietaryQuestions: number;
       easyQuestions: number;
       mediumQuestions: number;
@@ -249,6 +265,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
           jumbledCount: 0,
           codeCount: 0,
           sqlCount: 0,
+          likertCount: 0,
           proprietaryQuestions: 0,
           easyQuestions: 0,
           mediumQuestions: 0,
@@ -273,6 +290,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
       grouped[key].jumbledCount += stat.jumbledCount;
       grouped[key].codeCount += stat.codeCount;
       grouped[key].sqlCount += (stat.sqlCount || 0);
+      grouped[key].likertCount += (stat.likertCount || 0);
       grouped[key].proprietaryQuestions += (stat.proprietaryQuestions || 0);
       grouped[key].easyQuestions += (stat.easyQuestions || 0);
       grouped[key].mediumQuestions += (stat.mediumQuestions || 0);
@@ -291,7 +309,8 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
     descriptive: allSubjectStats.reduce((sum, s) => sum + (s.descriptiveCount || 0), 0),
     jumbled: allSubjectStats.reduce((sum, s) => sum + s.jumbledCount, 0),
     code: allSubjectStats.reduce((sum, s) => sum + (s.codeCount || 0), 0),
-    sql: allSubjectStats.reduce((sum, s) => sum + (s.sqlCount || 0), 0)
+    sql: allSubjectStats.reduce((sum, s) => sum + (s.sqlCount || 0), 0),
+    likert: allSubjectStats.reduce((sum, s) => sum + (s.likertCount || 0), 0)
   };
 
   return (
@@ -469,6 +488,22 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
               <span>SQL</span>
               <span className="ml-1 text-xs font-semibold">{totalQuestionsByType.sql}</span>
             </button>
+            <button 
+              onClick={() => setQuestionFilter('likert')}
+              className={`flex items-center space-x-2 px-3 py-2 rounded-xl font-medium transition-colors text-xs flex-shrink-0 ${
+                questionFilter === 'likert' ? '' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              style={questionFilter === 'likert' ? { 
+                backgroundColor: `${brandTheme.colors.primary}20`, 
+                color: brandTheme.colors.primary 
+              } : {}}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+              <span>Likert</span>
+              <span className="ml-1 text-xs font-semibold">{totalQuestionsByType.likert}</span>
+            </button>
             </div>
           </div>
         </div>
@@ -524,6 +559,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
                                questionFilter === 'descriptive' ? group.descriptiveCount :
                                questionFilter === 'jumbled' ? group.jumbledCount :
                                questionFilter === 'code' ? group.codeCount :
+                               questionFilter === 'likert' ? group.likertCount :
                                group.sqlCount;
 
             // Check if this grouped subject is selected
@@ -557,7 +593,7 @@ export default function Questions({ activeCollegeId, onSubjectSelect, selectedSu
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                      {group.subject}
+                      {group.subject}{group.likertCount > 0 && group.likertCount === group.totalQuestions ? ' (Likert)' : ''}
                     </h3>
                   </div>
                   <div className="flex-shrink-0 bg-gray-100 px-4 py-2 rounded-lg">

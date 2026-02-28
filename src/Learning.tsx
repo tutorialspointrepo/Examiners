@@ -27,6 +27,8 @@ import {
   faBrain,
   faRotateRight,
   faRobot,
+  faCertificate,
+  faScroll,
 } from '@fortawesome/sharp-light-svg-icons';
 import Courses from './Courses';
 import LearningHome from './LearningHome';
@@ -39,6 +41,8 @@ import LogicBuilder from './LogicBuilder';
 import AIInterviewPractice from './AIInterviewPractice';
 import JobListing from './JobListing';
 import LearningPaths from './LearningPaths';
+import Marksheet from './Marksheet';
+import CourseCertificate from './CourseCertificate';
 import type { Job } from './JobListing';
 import { firebaseService } from './services/firebase_service';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -251,9 +255,13 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const isSystemAdmin = currentUser?.userType === 'system_admin';
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+  const [showMarksheet, setShowMarksheet] = useState(false);
+  const [showCertificate, setShowCertificate] = useState(false);
   const [pendingCourseOpen, setPendingCourseOpen] = useState<{ lectureId?: number; trigger: number } | null>(null);
   const [isCoursesCollapsed, setIsCoursesCollapsed] = useState(false);
   const [isLearningPathsCollapsed, setIsLearningPathsCollapsed] = useState(false);
+  const [learningPathCourseIds, setLearningPathCourseIds] = useState<number[] | undefined>(undefined);
+  const [learningPathName, setLearningPathName] = useState<string | undefined>(undefined);
   const [isJobsCollapsed, setIsJobsCollapsed] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [isToolsCollapsed, setIsToolsCollapsed] = useState(false); // Tools section expanded by default
@@ -425,6 +433,9 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
 
     // Otherwise fetch from college_courses or course_enrollments
     const fetchCount = async () => {
+      // Only fetch administrative enrollment counts if the user is NOT a student
+      if (currentUser?.userType === 'student') return;
+      
       try {
         const collegeId = currentUser?.userType === 'system_admin' 
           ? (selectedCollege?.id || '') 
@@ -1332,7 +1343,11 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               return (
                 <div key={item.id} className="relative mb-1">
                   <button
-                    onClick={() => setActiveMenuItem(item.id)}
+                    onClick={() => { 
+                      setActiveMenuItem(item.id); 
+                      setIsLeftCollapsed(true); 
+                      if (item.id === 'courses') { setLearningPathCourseIds(undefined); setLearningPathName(undefined); }
+                    }}
                     onMouseEnter={() => setHoveredItem(item.id)}
                     onMouseLeave={() => setHoveredItem(null)}
                     className={`w-full flex items-center ${isLeftCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-3 rounded-lg transition-all relative hover:bg-gray-100`}
@@ -1386,8 +1401,8 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
             })}
           </div>
 
-          {/* Tools Section - Show if college has ResumeBuilder, LogicBuilder, or CodingLab features */}
-          {(collegeFeatures.includes('ResumeBuilder') || collegeFeatures.includes('LogicBuilder') || collegeFeatures.includes('CodingLab')) && (
+          {/* Tools Section - Show if college has ResumeBuilder, LogicBuilder, or CodePractice features */}
+          {(collegeFeatures.includes('ResumeBuilder') || collegeFeatures.includes('LogicBuilder') || collegeFeatures.includes('CodePractice')) && (
             <>
               {/* Tools Header - Clickable to toggle */}
               {!isLeftCollapsed && (
@@ -1465,7 +1480,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 </div>
 
                 {/* Coding Lab */}
-                {collegeFeatures.includes('CodingLab') && (
+                {collegeFeatures.includes('CodePractice') && (
                   <div className="relative mb-1">
                     <button
                       onClick={() => {
@@ -1724,6 +1739,14 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                   setSelectedCourse(courses[0]);
                 }
               }}
+              learningPathCourseIds={learningPathCourseIds}
+              learningPathName={learningPathName}
+              onBackFromPath={() => {
+                setLearningPathCourseIds(undefined);
+                setLearningPathName(undefined);
+                setSelectedCourse(null);
+                setActiveMenuItem('learningpaths');
+              }}
             />
           </div>
         )
@@ -1738,7 +1761,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
               {/* Header */}
               <div className="relative px-6 py-6 border-b border-gray-100">
-                {/* Back, Curriculum & Enroll Buttons - Top Right */}
+                {/* Back, Certificate, Marksheet, Curriculum & Enroll Buttons - Top Right */}
                 <div className="absolute top-4 right-4 flex items-center gap-2">
                   <button
                     onClick={() => setSelectedCourse(null)}
@@ -1748,6 +1771,26 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                     <span>←</span>
                     <span className="hidden 2xl:inline">Back</span>
                   </button>
+                  {isStudent && (
+                    <>
+                      <button
+                        onClick={() => setShowCertificate(true)}
+                        className="h-10 w-10 rounded-lg text-sm font-medium transition-all flex items-center justify-center hover:opacity-80"
+                        style={{ backgroundColor: '#ECFDF5', color: '#059669' }}
+                        title="Completion Certificate"
+                      >
+                        <FontAwesomeIcon icon={faCertificate} className="text-base" />
+                      </button>
+                      <button
+                        onClick={() => setShowMarksheet(true)}
+                        className="h-10 w-10 rounded-lg text-sm font-medium transition-all flex items-center justify-center hover:opacity-80"
+                        style={{ backgroundColor: '#EFF6FF', color: '#2563EB' }}
+                        title="Marksheet"
+                      >
+                        <FontAwesomeIcon icon={faScroll} className="text-base" />
+                      </button>
+                    </>
+                  )}
                   <button
                     onClick={() => openCurriculumPage()}
                     className="h-10 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2"
@@ -2899,6 +2942,12 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
           isCollapsed={isLearningPathsCollapsed}
           onCollapse={() => setIsLearningPathsCollapsed(true)}
           onExpand={() => setIsLearningPathsCollapsed(false)}
+          onOpenPathCourses={(courseIds, pathName) => {
+            setLearningPathCourseIds(courseIds);
+            setLearningPathName(pathName);
+            setSelectedCourse(null);
+            setActiveMenuItem('courses');
+          }}
         />
       )}
 
@@ -4376,6 +4425,28 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
         onClose={() => setShowAISupportFromSidebar(false)}
         userName={currentUser?.displayName?.split(' ')[0] || ''}
       />
+
+      {/* Marksheet Modal */}
+      {selectedCourse && (
+        <Marksheet
+          isOpen={showMarksheet}
+          onClose={() => setShowMarksheet(false)}
+          course={selectedCourse}
+          currentUser={currentUser}
+          selectedCollege={selectedCollege}
+          brandTheme={brandTheme}
+        />
+      )}
+      {selectedCourse && (
+        <CourseCertificate
+          isOpen={showCertificate}
+          onClose={() => setShowCertificate(false)}
+          course={selectedCourse}
+          currentUser={currentUser}
+          selectedCollege={selectedCollege}
+          brandTheme={brandTheme}
+        />
+      )}
     </div>
   );
 };

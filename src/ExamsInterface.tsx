@@ -92,7 +92,8 @@ const normalizeQuestionType = (type: string): QuestionType => {
     'descriptive': QUESTION_TYPES.DESCRIPTIVE,
     'jumbled': QUESTION_TYPES.JUMBLED,
     'code': QUESTION_TYPES.CODE,
-    'sql': QUESTION_TYPES.SQL
+    'sql': QUESTION_TYPES.SQL,
+    'likert': QUESTION_TYPES.LIKERT
   };
   return typeMap[normalized] || type as QuestionType;
 };
@@ -185,6 +186,7 @@ interface ExamsInterfaceProps {
   // Callbacks
   onSubmitExam: (attempt: any) => void;
   onExitExam: () => void;
+  onDirectExit?: () => void;
 }
 
 // Drag and Drop Component for Jumbled Questions
@@ -352,20 +354,20 @@ const selectQuestionsFromPool = (
   userId: string,
   examId: string
 ): any[] => {
-  console.log('\n🎲 QUESTION POOL SELECTION:');
-  console.log('  - Pool size:', questionPool.length);
-  console.log('  - Questions to pick:', pickRandomCount);
-  console.log('  - Marks per question:', poolQuestionMarks);
+  // console.log('\n🎲 QUESTION POOL SELECTION:');
+  // console.log('  - Pool size:', questionPool.length);
+  // console.log('  - Questions to pick:', pickRandomCount);
+  // console.log('  - Marks per question:', poolQuestionMarks);
   
   // Edge case: If pool is empty, return empty
   if (!questionPool || questionPool.length === 0) {
-    console.warn('  ⚠️ Question pool is empty');
+    // console.warn('  ⚠️ Question pool is empty');
     return [];
   }
   
   // Edge case: If need more than available, take all
   if (pickRandomCount >= questionPool.length) {
-    console.warn(`  ⚠️ Picking all ${questionPool.length} questions (requested ${pickRandomCount})`);
+    // console.warn(`  ⚠️ Picking all ${questionPool.length} questions (requested ${pickRandomCount})`);
     return questionPool.map(q => ({
       ...q,
       maxMarks: poolQuestionMarks,
@@ -386,26 +388,25 @@ const selectQuestionsFromPool = (
     questionsByChapter.get(chapter)!.push(q);
   });
   
-  console.log('  - Chapters/topics found:', questionsByChapter.size);
-  questionsByChapter.forEach((questions, chapter) => {
-    console.log(`    • ${chapter}: ${questions.length} questions`);
+  // console.log('  - Chapters/topics found:', questionsByChapter.size);
+  questionsByChapter.forEach((_questions, _chapter) => {
+    // console.log(`    • ${chapter}: ${questions.length} questions`);
   });
   
   // Step 2: Calculate fair distribution
   const totalChapters = questionsByChapter.size;
   const baseQuota = Math.floor(pickRandomCount / totalChapters);
-  const remainder = pickRandomCount % totalChapters;
   
-  console.log('\n  📊 Distribution calculation:');
-  console.log(`    - Base quota per chapter: ${baseQuota}`);
-  console.log(`    - Remainder to distribute: ${remainder}`);
+  // console.log('\n  📊 Distribution calculation:');
+  // console.log(`    - Base quota per chapter: ${baseQuota}`);
+  // console.log(`    - Remainder to distribute: ${remainder}`);
   
   // Step 3: Select questions from each chapter
   const selectedQuestions: any[] = [];
   let remainingToSelect = pickRandomCount;
   
   // Round 1: Give each chapter its base quota
-  console.log('\n  🔄 Round 1: Base distribution');
+  // console.log('\n  🔄 Round 1: Base distribution');
   const chaptersArray = Array.from(questionsByChapter.entries());
   
   chaptersArray.forEach(([chapter, questions]) => {
@@ -416,7 +417,7 @@ const selectQuestionsFromPool = (
       const shuffled = seededShuffle(questions, `${userId}_${examId}_${chapter}`);
       const selected = shuffled.slice(0, quota);
       
-      console.log(`    • ${chapter}: Selected ${selected.length}/${questions.length} questions`);
+      // console.log(`    • ${chapter}: Selected ${selected.length}/${questions.length} questions`);
       selectedQuestions.push(...selected);
       remainingToSelect -= quota;
     }
@@ -424,7 +425,7 @@ const selectQuestionsFromPool = (
   
   // Round 2: Distribute remainder to chapters with capacity
   if (remainingToSelect > 0) {
-    console.log(`\n  🔄 Round 2: Distributing remainder (${remainingToSelect} questions)`);
+    // console.log(`\n  🔄 Round 2: Distributing remainder (${remainingToSelect} questions)`);
     
     // Sort chapters by size (largest first) to prefer chapters with more questions
     const chaptersWithCapacity = chaptersArray
@@ -453,7 +454,7 @@ const selectQuestionsFromPool = (
         const notYetSelected = shuffled.filter(q => !alreadySelectedIds.has(q.id));
         
         const selected = notYetSelected.slice(0, quota);
-        console.log(`    • ${chapter}: +${selected.length} additional question(s)`);
+        // console.log(`    • ${chapter}: +${selected.length} additional question(s)`);
         selectedQuestions.push(...selected);
         remainingToSelect -= selected.length;
       }
@@ -468,16 +469,16 @@ const selectQuestionsFromPool = (
     fromPool: true
   }));
   
-  console.log('\n  ✅ Pool selection complete:');
-  console.log(`    - Selected: ${poolQuestions.length} questions`);
-  console.log(`    - Distribution:`, 
-    Array.from(questionsByChapter.keys()).map(chapter => {
-      const count = poolQuestions.filter(q => 
-        (q.chapter || q.board || q.subject || 'General') === chapter
-      ).length;
-      return `${chapter}(${count})`;
-    }).join(', ')
-  );
+  // console.log('\n  ✅ Pool selection complete:');
+  // console.log(`    - Selected: ${poolQuestions.length} questions`);
+  // console.log(`    - Distribution:`, 
+    // Array.from(questionsByChapter.keys()).map(chapter => {
+      // const count = poolQuestions.filter(q => 
+        // (q.chapter || q.board || q.subject || 'General') === chapter
+      // ).length;
+      // return `${chapter}(${count})`;
+    // }).join(', ')
+  // );
   
   return poolQuestions;
 };
@@ -496,7 +497,7 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
   userEmail,
   userStudentRoll,
   userStudentClass,
-  userType,
+  userType: _userType,
   proctoringPhotos,
   examTitle,
   examSubject,
@@ -512,8 +513,59 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
   collegeName,
   selectedAudioDeviceId,
   onSubmitExam,
-  onExitExam
+  onExitExam,
+  onDirectExit
 }) => {
+
+  // ==================== 🔒 SECURITY: Suppress console in production ====================
+  // Prevents question text, answers, and exam data from leaking to DevTools console
+  useEffect(() => {
+    const isProduction = window.location.hostname !== 'localhost' && !window.location.hostname.includes('127.0.0.1');
+    if (!isProduction) return; // Allow logging in development
+    
+    const originalConsole = {
+      log: console.log,
+      warn: console.warn,
+      error: console.error,
+      info: console.info,
+      debug: console.debug,
+      table: console.table,
+      dir: console.dir,
+      dirxml: console.dirxml,
+      trace: console.trace,
+      group: console.group,
+      groupEnd: console.groupEnd,
+    };
+    
+    const noop = () => {};
+    // Suppress all console output during exam
+    console.log = noop;
+    console.warn = noop;
+    console.info = noop;
+    console.debug = noop;
+    console.table = noop;
+    console.dir = noop;
+    console.dirxml = noop;
+    console.trace = noop;
+    console.group = noop;
+    console.groupEnd = noop;
+    // Keep console.error for critical errors only
+    console.error = (...args: any[]) => {
+      // Filter out anything containing question/answer data
+      const str = args.map(a => String(a)).join(' ');
+      if (str.includes('questionText') || str.includes('correctAnswer') || str.includes('starterCode')) return;
+      originalConsole.error(...args);
+    };
+    
+    // Show a single warning that console is suppressed
+    originalConsole.log('%c⛔ Console output disabled during exam for security.', 
+      'color: red; font-size: 16px; font-weight: bold;');
+    
+    return () => {
+      // Restore console on unmount (exam end)
+      Object.assign(console, originalConsole);
+    };
+  }, []);
 
   // ==================== TIME EXPIRED OVERLAY STATE ====================
   const [showTimeExpiredOverlay, setShowTimeExpiredOverlay] = useState(false);
@@ -523,70 +575,82 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
   // ==================== FETCH ACTUAL QUESTIONS FROM EXAM ====================
   const [questions, setQuestions] = useState<Question[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(true);
+  const poolQuestionIdsRef = useRef<string[]>([]);
+  const poolQuestionMarksRef = useRef<number>(0);
+
+  // ── TWO-PHASE LIKERT STATE ─────────────────────────────────────────────
+  // examPhase: 'likert' = showing personality questions, 'exam' = actual exam
+  const [examPhase, setExamPhase] = useState<'likert' | 'exam'>('exam');
+  const [likertOnlyQuestions, setLikertOnlyQuestions] = useState<Question[]>([]);
+  const [likertDurationMins, setLikertDurationMins] = useState(0);
+  const [likertTimeLeft, setLikertTimeLeft] = useState(0);
+  const [_likertCurrentIndex, setLikertCurrentIndex] = useState(0);
+  const [likertAnswers, setLikertAnswers] = useState<Record<string, string>>({});
+  const likertAnswersRef = useRef<Record<string, string>>({});
+  const likertAutoAdvanced = React.useRef(false);
+  // ──────────────────────────────────────────────────────────────────────
   
-  // Fetch questions from exam on mount
+  // Fetch questions from exam on mount (with retry to wait for attempt creation)
   useEffect(() => {
     const fetchExamQuestions = async () => {
       try {
-        console.log('\n' + '='.repeat(80));
-        console.log('🔍 FETCHING QUESTIONS FOR EXAM:', examId);
-        console.log('⏰ Fetch timestamp:', new Date().toISOString());
-        console.log('='.repeat(80));
+        // console.log('\n' + '='.repeat(80));
+        // console.log('🔍 FETCHING QUESTIONS FOR EXAM:', examId);
+        // console.log('⏰ Fetch timestamp:', new Date().toISOString());
+        // console.log('='.repeat(80));
         setQuestionsLoading(true);
         
-        // Get exam data from Firebase (forces fresh fetch)
-        const exam = await firebaseService.getExamById(examId);
+        // 🔒 SECURITY: Fetch questions via getExamQuestionsList
+        // Cloud Function only returns questions if student has an active attempt
+        // Retry up to 5 times with delay to wait for attempt creation by useExamAttempt hook
+        let examData = null;
+        let lastError = null;
+        for (let retryCount = 0; retryCount < 5; retryCount++) {
+          try {
+            examData = await firebaseService.getExamQuestionsList(examId);
+            break; // Success, exit retry loop
+          } catch (err: any) {
+            lastError = err;
+            // If it's "No active attempt" error, wait and retry (attempt is being created)
+            if (err?.message?.includes('No active attempt') || err?.code === 'permission-denied') {
+              console.log(`⏳ Waiting for exam attempt to be created... (retry ${retryCount + 1}/5)`);
+              await new Promise(resolve => setTimeout(resolve, 1500 * (retryCount + 1)));
+            } else {
+              throw err; // Different error, don't retry
+            }
+          }
+        }
         
-        if (!exam) {
-          console.error('❌ Exam not found:', examId);
+        if (!examData) {
+          if (lastError) {
+            console.error('❌ Failed to fetch questions after retries:', lastError);
+          } else {
+            console.error('❌ No questions returned for exam:', examId);
+          }
           setQuestionsLoading(false);
           return;
         }
         
-        console.log('\n📋 EXAM DATA RECEIVED:');
-        console.log('  - Exam ID:', exam.id);
-        console.log('  - Exam Title:', exam.title);
-        console.log('  - Questions List exists?', !!exam.questionsList);
-        console.log('  - Questions count:', exam.questionsList?.length || 0);
-        console.log('  - Questions List type:', Array.isArray(exam.questionsList) ? 'Array' : typeof exam.questionsList);
+        const { questionsList, questionPool, likertQuestions, enableQuestionPool: _enableQuestionPool, pickRandomCount, poolQuestionMarks, personalityAssessment, likertDuration: lDuration } = examData;
         
-        // 🔥 CRITICAL DEBUG: Log raw questionsList
-        if (exam.questionsList && exam.questionsList.length > 0) {
-          console.log('\n📝 DETAILED QUESTIONS BREAKDOWN:');
-          (exam.questionsList || []).forEach((q: any, idx: number) => {
-            console.log(`\n  Question ${idx + 1}:`);
-            console.log('    - Raw question object keys:', Object.keys(q));
-            console.log('    - id:', q.id);
-            console.log('    - questionText:', q.questionText);
-            console.log('    - description:', q.description);
-            console.log('    - type:', q.type);
-            console.log('    - maxMarks:', q.maxMarks);
-            console.log('    - marks:', q.marks);
-            console.log('    - complexity:', q.complexity);
-          });
-        }
+        // Check if exam has any questions
+        const hasQuestionsList = questionsList && questionsList.length > 0;
+        const hasPoolQuestions = questionPool && questionPool.length > 0 && pickRandomCount > 0;
+        const hasLikertQuestions = personalityAssessment && likertQuestions && likertQuestions.length > 0;
         
-        // Check if exam has any questions (either in questionsList OR questionPool OR both)
-        const hasQuestionsList = exam.questionsList && exam.questionsList.length > 0;
-        const hasPoolQuestions = (exam as any).questionPool && 
-                               Array.isArray((exam as any).questionPool) &&
-                               (exam as any).questionPool.length > 0 &&
-                               (exam as any).pickRandomCount &&
-                               (exam as any).pickRandomCount > 0;
-        
-        if (!hasQuestionsList && !hasPoolQuestions) {
-          console.error('❌ No questions found in exam (neither in questionsList nor questionPool)');
+        if (!hasQuestionsList && !hasPoolQuestions && !hasLikertQuestions) {
+          console.error('❌ No questions found in exam (neither in questionsList nor questionPool nor likertQuestions)');
           setQuestionsLoading(false);
           return;
         }
         
         // 🚨 CHECK FOR DUPLICATES IN SOURCE DATA
-        console.log('\n🔍 CHECKING FOR DUPLICATES IN SOURCE:');
-        const sourceIds = (exam.questionsList || []).map((q: any) => q.id).filter(Boolean);
+        // console.log('\n🔍 CHECKING FOR DUPLICATES IN SOURCE:');
+        const sourceIds = (questionsList || []).map((q: any) => q.id).filter(Boolean);
         const uniqueSourceIds = new Set(sourceIds);
         if (sourceIds.length !== uniqueSourceIds.size) {
           console.error('❌ DUPLICATE IDs FOUND IN FIREBASE DATA!');
-          console.error(`  Total questions: ${exam.questionsList?.length || 0}`);
+          console.error(`  Total questions: ${questionsList?.length || 0}`);
           console.error(`  Unique IDs: ${uniqueSourceIds.size}`);
           console.error(`  Duplicates: ${sourceIds.length - uniqueSourceIds.size}`);
           
@@ -601,23 +665,23 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
             }
           });
         } else {
-          console.log('  ✅ All questions have unique IDs in source data');
+          // console.log('  ✅ All questions have unique IDs in source data');
         }
         
         // Check for duplicate content
-        const contentHashes = (exam.questionsList || []).map((q: any) => 
+        const contentHashes = (questionsList || []).map((q: any) => 
           `${q.questionText}_${q.description}_${q.type}`.toLowerCase()
         );
         const uniqueContentHashes = new Set(contentHashes);
         if (contentHashes.length !== uniqueContentHashes.size) {
-          console.warn('⚠️ DUPLICATE CONTENT FOUND IN FIREBASE DATA!');
-          console.warn(`  Total questions: ${exam.questionsList?.length || 0}`);
-          console.warn(`  Unique content: ${uniqueContentHashes.size}`);
-          console.warn(`  Same content appears multiple times: ${contentHashes.length - uniqueContentHashes.size}`);
+          // console.warn('⚠️ DUPLICATE CONTENT FOUND IN FIREBASE DATA!');
+          // console.warn(`  Total questions: ${questionsList?.length || 0}`);
+          // console.warn(`  Unique content: ${uniqueContentHashes.size}`);
+          // console.warn(`  Same content appears multiple times: ${contentHashes.length - uniqueContentHashes.size}`);
           
           // Find duplicate content
           const contentCounts = new Map<string, {count: number, questionTexts: string[]}>();
-          (exam.questionsList || []).forEach((q: any, idx: number) => {
+          (questionsList || []).forEach((q: any, idx: number) => {
             const hash = `${q.questionText}_${q.description}_${q.type}`.toLowerCase();
             const existing = contentCounts.get(hash) || {count: 0, questionTexts: []};
             existing.count++;
@@ -627,74 +691,68 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
           
           contentCounts.forEach((data) => {
             if (data.count > 1) {
-              console.warn(`  - Content appears ${data.count} times: "${data.questionTexts[0]}"`);
+              // console.warn(`  - Content appears ${data.count} times: "${data.questionTexts[0]}"`);
             }
           });
         } else {
-          console.log('  ✅ All questions have unique content');
+          // console.log('  ✅ All questions have unique content');
         }
-        console.log('='.repeat(80));
+        // console.log('='.repeat(80));
         
         // ✅ NEW: Check for Question Pool configuration
-        console.log('\n🎯 QUESTION POOL CHECK:');
-        const hasQuestionPool = !!(exam as any).questionPool && 
-                                Array.isArray((exam as any).questionPool) &&
-                                (exam as any).questionPool.length > 0 &&
-                                (exam as any).pickRandomCount &&
-                                (exam as any).pickRandomCount > 0;
-        
-        if (hasQuestionPool) {
-          console.log('  ✅ Question Pool enabled!');
-          console.log(`    - Pool size: ${(exam as any).questionPool.length}`);
-          console.log(`    - Pick random count: ${(exam as any).pickRandomCount}`);
-          console.log(`    - Pool question marks: ${(exam as any).poolQuestionMarks || 'N/A'}`);
+        // console.log('\n🎯 QUESTION POOL CHECK:');
+        if (hasPoolQuestions) {
+          // console.log('  ✅ Question Pool enabled!');
+          // console.log(`    - Pool size: ${questionPool.length}`);
+          // console.log(`    - Pick random count: ${pickRandomCount}`);
+          // console.log(`    - Pool question marks: ${poolQuestionMarks || 'N/A'}`);
           
           // Log chapter distribution in pool
           const poolChapters = new Map<string, number>();
-          (exam as any).questionPool.forEach((q: any) => {
+          questionPool.forEach((q: any) => {
             const chapter = q.chapter || q.board || q.subject || 'General';
             poolChapters.set(chapter, (poolChapters.get(chapter) || 0) + 1);
           });
-          console.log('    - Chapters in pool:');
-          poolChapters.forEach((count, chapter) => {
-            console.log(`      • ${chapter}: ${count} questions`);
+          // console.log('    - Chapters in pool:');
+          poolChapters.forEach((_count, _chapter) => {
+            // console.log(`      • ${chapter}: ${count} questions`);
           });
         } else {
-          console.log('  ℹ️ No question pool configured - using only questionsList');
+          // console.log('  ℹ️ No question pool configured - using only questionsList');
         }
-        console.log('='.repeat(80));
+        // console.log('='.repeat(80));
         
         // Map exam questions to Question interface
-        const examQuestions: Question[] = (exam.questionsList || []).map((q: any, index: number) => {
-          console.log(`\n  🔍 Raw Question ${index + 1} from backend:`, {
-            id: q.id,
-            type: q.type,
-            chapter: q.chapter, // ✅ DEBUG: Check chapter in raw data
-            complexity: q.complexity, // ✅ DEBUG: Check complexity in raw data
-            hasTestStub: !!q.testStub,
-            testStubLength: q.testStub?.length || 0,
-            hasSolution: !!q.solution,
-            solutionLength: q.solution?.length || 0,
-            hasBoilerplate: !!q.boilerplate
-          });
+        const examQuestions: Question[] = (questionsList || []).map((q: any, index: number) => {
+          // console.log(`\n  🔍 Raw Question ${index + 1} from backend:`, {
+            // id: q.id,
+            // type: q.type,
+            // chapter: q.chapter, // ✅ DEBUG: Check chapter in raw data
+            // complexity: q.complexity, // ✅ DEBUG: Check complexity in raw data
+            // hasTestStub: !!q.testStub,
+            // testStubLength: q.testStub?.length || 0,
+            // hasSolution: !!q.solution,
+            // solutionLength: q.solution?.length || 0,
+            // hasBoilerplate: !!q.boilerplate
+          // });
 
           // ✅ DEBUG EVERY QUESTION'S CHAPTER
-          console.log(`\n📖 Question ${index + 1} RAW chapter:`, {
-            id: q.id,
-            'q.chapter': q.chapter,
-            'has chapter?': !!q.chapter,
-            'all keys': Object.keys(q).slice(0, 10)
-          });
+          // console.log(`\n📖 Question ${index + 1} RAW chapter:`, {
+            // id: q.id,
+            // 'q.chapter': q.chapter,
+            // 'has chapter?': !!q.chapter,
+            // 'all keys': Object.keys(q).slice(0, 10)
+          // });
           
           // ✅ DEBUG: Detailed chapter check
-          console.log(`  📖 CHAPTER DEBUG for Question ${index + 1}:`, {
-            'q.chapter value': q.chapter,
-            'typeof chapter': typeof q.chapter,
-            'chapter === undefined': q.chapter === undefined,
-            'chapter === null': q.chapter === null,
-            'chapter === ""': q.chapter === '',
-            'chapter length': q.chapter?.length
-          });
+          // console.log(`  📖 CHAPTER DEBUG for Question ${index + 1}:`, {
+            // 'q.chapter value': q.chapter,
+            // 'typeof chapter': typeof q.chapter,
+            // 'chapter === undefined': q.chapter === undefined,
+            // 'chapter === null': q.chapter === null,
+            // 'chapter === ""': q.chapter === '',
+            // 'chapter length': q.chapter?.length
+          // });
           
           // Normalize question type using constants
           let questionType: QuestionType = QUESTION_TYPES.DESCRIPTIVE; // default
@@ -757,9 +815,9 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
             jumbledOptions: q.jumbledOptions || q.jumbledItems || [],
             jumbledItems: q.jumbledItems || q.jumbledOptions || [], // Also set jumbledItems for compatibility
             // Coding specific - CRITICAL: Never load solution, only testStub
-            starterCodes: q.starterCodes || [],
-            boilerplate: q.starterCodes?.length > 0
-              ? (q.starterCodes[0].code || '')
+            starterCodes: q.starterCodes || q.starter_codes || [],
+            boilerplate: (q.starterCodes || q.starter_codes)?.length > 0
+              ? ((q.starterCodes || q.starter_codes)[0].code || '')
               : (q.testStub || q.boilerplate || ''),
             testCases: questionType === QUESTION_TYPES.SQL
               ? (q.sqlTestCases || q.sql_test_cases || []).map((tc: any) => ({
@@ -771,8 +829,8 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
               : (q.testCases || []),
             language: typeStr === QUESTION_TYPES.SQL
               ? 'sql'
-              : q.starterCodes?.length > 0
-                ? q.starterCodes[0].language.toLowerCase()
+              : (q.starterCodes || q.starter_codes)?.length > 0
+                ? (q.starterCodes || q.starter_codes)[0].language.toLowerCase()
                 : (q.programmingLanguage || q.programming_language || 'javascript').toLowerCase(),
             solution: q.solution || '', // ONLY for grading reference, NEVER shown to student
             hint: q.hint || '', // Optional hint
@@ -782,45 +840,45 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
             fromPool: false // Flag to identify regular questions (not from pool)
           };
           
-          console.log(`\n  ✅ Mapped Question ${index + 1}:`);
-          console.log('    - ID:', mappedQuestion.id);
-          console.log('    - Question Text:', mappedQuestion.questionText);
-          console.log('    - Type (from backend):', q.type);
-          console.log('    - Type (detected):', mappedQuestion.type);
-          console.log('    - Max Marks:', mappedQuestion.maxMarks);
+          // console.log(`\n  ✅ Mapped Question ${index + 1}:`);
+          // console.log('    - ID:', mappedQuestion.id);
+          // console.log('    - Question Text:', mappedQuestion.questionText);
+          // console.log('    - Type (from backend):', q.type);
+          // console.log('    - Type (detected):', mappedQuestion.type);
+          // console.log('    - Max Marks:', mappedQuestion.maxMarks);
           
           // ✅ DEBUG: Chapter after mapping
-          console.log('    📖 CHAPTER AFTER MAPPING:');
-          console.log('       - mappedQuestion.chapter:', mappedQuestion.chapter);
-          console.log('       - typeof chapter:', typeof mappedQuestion.chapter);
-          console.log('       - chapter === undefined:', mappedQuestion.chapter === undefined);
-          console.log('       - Complexity:', mappedQuestion.complexity);
+          // console.log('    📖 CHAPTER AFTER MAPPING:');
+          // console.log('       - mappedQuestion.chapter:', mappedQuestion.chapter);
+          // console.log('       - typeof chapter:', typeof mappedQuestion.chapter);
+          // console.log('       - chapter === undefined:', mappedQuestion.chapter === undefined);
+          // console.log('       - Complexity:', mappedQuestion.complexity);
           
-          console.log('    - Detection flags:', {
-            hasJumbledOptions: !!(q.jumbledOptions || q.jumbledItems),
-            hasTestCases: !!(q.testCases && q.testCases.length > 0),
-            hasOptions: !!(q.options && q.options.length > 0),
-            hasCorrectAnswers: !!(q.correctAnswers && Array.isArray(q.correctAnswers))
-          });
+          // console.log('    - Detection flags:', {
+            // hasJumbledOptions: !!(q.jumbledOptions || q.jumbledItems),
+            // hasTestCases: !!(q.testCases && q.testCases.length > 0),
+            // hasOptions: !!(q.options && q.options.length > 0),
+            // hasCorrectAnswers: !!(q.correctAnswers && Array.isArray(q.correctAnswers))
+          // });
           
           // Log type-specific fields
           if (questionType === QUESTION_TYPES.MCQ) {
-            console.log('    - Options count:', mappedQuestion.options.length);
-            console.log('    - Correct Answer index:', mappedQuestion.correctAnswer);
+            // console.log('    - Options count:', mappedQuestion.options.length);
+            // console.log('    - Correct Answer index:', mappedQuestion.correctAnswer);
           } else if (questionType === QUESTION_TYPES.FITB) {
-            console.log('    - Number of blanks:', (mappedQuestion as any).blanksCount || mappedQuestion.correctAnswers?.length || 0);
-            console.log('    - Correct answers:', mappedQuestion.correctAnswers);
+            // console.log('    - Number of blanks:', (mappedQuestion as any).blanksCount || mappedQuestion.correctAnswers?.length || 0);
+            // console.log('    - Correct answers:', mappedQuestion.correctAnswers);
           } else if (questionType === QUESTION_TYPES.JUMBLED) {
-            console.log('    🔀 JUMBLED QUESTION DETAILS:');
-            console.log('       Raw from Firebase:');
-            console.log('         - q.jumbledOptions:', q.jumbledOptions);
-            console.log('         - q.jumbledItems:', q.jumbledItems);
-            console.log('         - q.correctAnswers:', q.correctAnswers);
-            console.log('       After mapping:');
-            console.log('         - mappedQuestion.jumbledOptions:', mappedQuestion.jumbledOptions);
-            console.log('         - mappedQuestion.jumbledItems:', mappedQuestion.jumbledItems);
-            console.log('         - Items count:', mappedQuestion.jumbledOptions.length);
-            console.log('         - Correct sequence (from correctAnswers):', mappedQuestion.correctAnswers);
+            // console.log('    🔀 JUMBLED QUESTION DETAILS:');
+            // console.log('       Raw from Firebase:');
+            // console.log('         - q.jumbledOptions:', q.jumbledOptions);
+            // console.log('         - q.jumbledItems:', q.jumbledItems);
+            // console.log('         - q.correctAnswers:', q.correctAnswers);
+            // console.log('       After mapping:');
+            // console.log('         - mappedQuestion.jumbledOptions:', mappedQuestion.jumbledOptions);
+            // console.log('         - mappedQuestion.jumbledItems:', mappedQuestion.jumbledItems);
+            // console.log('         - Items count:', mappedQuestion.jumbledOptions.length);
+            // console.log('         - Correct sequence (from correctAnswers):', mappedQuestion.correctAnswers);
             
             // ⚠️ WARNING: Check if jumbled items are empty
             if (mappedQuestion.jumbledOptions.length === 0 && mappedQuestion.jumbledItems.length === 0) {
@@ -829,26 +887,26 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
               console.error('          Please check Firebase data for this question.');
             }
         } else if (questionType === QUESTION_TYPES.CODE || questionType === QUESTION_TYPES.SQL) {
-            console.log('    - Programming language:', mappedQuestion.language);
-            console.log('    - Has boilerplate/testStub:', !!mappedQuestion.boilerplate);
-            console.log('    - Boilerplate length:', mappedQuestion.boilerplate?.length || 0);
-            console.log('    - Has solution:', !!mappedQuestion.solution);
-            console.log('    - Solution length:', mappedQuestion.solution?.length || 0);
-            console.log('    - Test cases count:', mappedQuestion.testCases.length);
+            // console.log('    - Programming language:', mappedQuestion.language);
+            // console.log('    - Has boilerplate/testStub:', !!mappedQuestion.boilerplate);
+            // console.log('    - Boilerplate length:', mappedQuestion.boilerplate?.length || 0);
+            // console.log('    - Has solution:', !!mappedQuestion.solution);
+            // console.log('    - Solution length:', mappedQuestion.solution?.length || 0);
+            // console.log('    - Test cases count:', mappedQuestion.testCases.length);
             
             // ✅ LOG TEST CASE DETAILS TO CHECK expectedOutput
             if (mappedQuestion.testCases.length > 0) {
-              console.log('    📊 TEST CASE DETAILS:');
-              console.log('       - First test case:', mappedQuestion.testCases[0]);
-              console.log('       - Has expectedOutput field?', 'expectedOutput' in mappedQuestion.testCases[0]);
-              console.log('       - expectedOutput value:', mappedQuestion.testCases[0].expectedOutput);
-              console.log('       - All fields in first test case:', Object.keys(mappedQuestion.testCases[0]));
+              // console.log('    📊 TEST CASE DETAILS:');
+              // console.log('       - First test case:', mappedQuestion.testCases[0]);
+              // console.log('       - Has expectedOutput field?', 'expectedOutput' in mappedQuestion.testCases[0]);
+              // console.log('       - expectedOutput value:', mappedQuestion.testCases[0].expectedOutput);
+              // console.log('       - All fields in first test case:', Object.keys(mappedQuestion.testCases[0]));
             }
             
             // CRITICAL CHECK: Warn if testStub looks like full solution
             if (mappedQuestion.boilerplate && mappedQuestion.solution && 
                 mappedQuestion.boilerplate.length > mappedQuestion.solution.length * 0.8) {
-              console.warn('⚠️ WARNING: testStub is very long (similar to solution length). Check if testStub contains solution!');
+              // console.warn('⚠️ WARNING: testStub is very long (similar to solution length). Check if testStub contains solution!');
             }
           }
           
@@ -858,13 +916,13 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
         // ✅ NEW: Add questions from Question Pool (if configured)
         let allQuestions = examQuestions;
         
-        if (hasQuestionPool) {
-          console.log('\n🎯 ADDING QUESTIONS FROM POOL:');
+        if (hasPoolQuestions) {
+          // console.log('\n🎯 ADDING QUESTIONS FROM POOL:');
           
           const poolQuestions = selectQuestionsFromPool(
-            (exam as any).questionPool,
-            (exam as any).pickRandomCount,
-            (exam as any).poolQuestionMarks || 5,
+            questionPool,
+            pickRandomCount,
+            poolQuestionMarks || 5,
             userId,
             examId
           );
@@ -872,15 +930,15 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
           // Map pool questions to the same Question interface
           const mappedPoolQuestions = poolQuestions.map((q: any, index: number) => {
             // ✅ DEBUG: Log raw pool question data
-            console.log(`\n  🔍 Pool Question ${index + 1} RAW data from Firebase:`);
-            console.log('    - id:', q.id);
-            console.log('    - chapter (raw):', q.chapter);
-            console.log('    - complexity (raw):', q.complexity);
-            console.log('    - typeof chapter:', typeof q.chapter);
-            console.log('    - typeof complexity:', typeof q.complexity);
-            console.log('    - chapter === undefined:', q.chapter === undefined);
-            console.log('    - chapter === null:', q.chapter === null);
-            console.log('    - chapter === "":', q.chapter === '');
+            // console.log(`\n  🔍 Pool Question ${index + 1} RAW data from Firebase:`);
+            // console.log('    - id:', q.id);
+            // console.log('    - chapter (raw):', q.chapter);
+            // console.log('    - complexity (raw):', q.complexity);
+            // console.log('    - typeof chapter:', typeof q.chapter);
+            // console.log('    - typeof complexity:', typeof q.complexity);
+            // console.log('    - chapter === undefined:', q.chapter === undefined);
+            // console.log('    - chapter === null:', q.chapter === null);
+            // console.log('    - chapter === "":', q.chapter === '');
             
             // Normalize question type
             let questionType: QuestionType = QUESTION_TYPES.DESCRIPTIVE;
@@ -907,7 +965,7 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
               questionText: q.questionText || `Question ${index + 1}`,
               description: q.description || '',
               type: questionType,
-              maxMarks: q.maxMarks || (exam as any).poolQuestionMarks || 5,
+              maxMarks: q.maxMarks || poolQuestionMarks || 5,
               chapter: q.chapter || undefined, 
               complexity: complexity,
               imageUrls: q.imageUrls,
@@ -920,9 +978,9 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
               correctBlanks: q.correctAnswers || [],
               jumbledOptions: q.jumbledOptions || q.jumbledItems || [],
               jumbledItems: q.jumbledItems || q.jumbledOptions || [],
-              starterCodes: q.starterCodes || [],
-              boilerplate: q.starterCodes?.length > 0
-                ? (q.starterCodes[0].code || '')
+              starterCodes: q.starterCodes || q.starter_codes || [],
+              boilerplate: (q.starterCodes || q.starter_codes)?.length > 0
+                ? ((q.starterCodes || q.starter_codes)[0].code || '')
                 : (q.testStub || q.boilerplate || ''),
               testCases: questionType === QUESTION_TYPES.SQL
                 ? (q.sqlTestCases || q.sql_test_cases || []).map((tc: any) => ({
@@ -934,8 +992,8 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
                 : (q.testCases || []),
               language: typeStr === QUESTION_TYPES.SQL
                 ? 'sql'
-                : q.starterCodes?.length > 0
-                  ? q.starterCodes[0].language.toLowerCase()
+                : (q.starterCodes || q.starter_codes)?.length > 0
+                  ? (q.starterCodes || q.starter_codes)[0].language.toLowerCase()
                   : (q.programmingLanguage || q.programming_language || 'javascript').toLowerCase(),
               solution: q.solution || '',
               hint: q.hint || '',
@@ -945,30 +1003,35 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
             };
             
             // ✅ DEBUG: Log mapped pool question
-            console.log(`  ✅ Pool Question ${index + 1} AFTER mapping:`);
-            console.log('    - id:', mappedQuestion.id);
-            console.log('    - chapter (mapped):', mappedQuestion.chapter);
-            console.log('    - complexity (mapped):', mappedQuestion.complexity);
-            console.log('    - fromPool:', mappedQuestion.fromPool);
+            // console.log(`  ✅ Pool Question ${index + 1} AFTER mapping:`);
+            // console.log('    - id:', mappedQuestion.id);
+            // console.log('    - chapter (mapped):', mappedQuestion.chapter);
+            // console.log('    - complexity (mapped):', mappedQuestion.complexity);
+            // console.log('    - fromPool:', mappedQuestion.fromPool);
             
             return mappedQuestion;
           });
           
-          console.log(`  ✅ Mapped ${mappedPoolQuestions.length} pool questions`);
-          console.log(`  📊 Total questions: ${examQuestions.length} (fixed) + ${mappedPoolQuestions.length} (pool) = ${examQuestions.length + mappedPoolQuestions.length}`);
+          // console.log(`  ✅ Mapped ${mappedPoolQuestions.length} pool questions`);
+          // console.log(`  📊 Total questions: ${examQuestions.length} (fixed) + ${mappedPoolQuestions.length} (pool) = ${examQuestions.length + mappedPoolQuestions.length}`);
           
           // Merge questionsList and pool questions
           allQuestions = [...examQuestions, ...mappedPoolQuestions];
+          
+          // ✅ Store presented pool question IDs and marks for saving to attempt
+          poolQuestionIdsRef.current = mappedPoolQuestions.map(q => q.id);
+          poolQuestionMarksRef.current = poolQuestionMarks || 5;
+          // console.log(`  📋 Stored ${poolQuestionIdsRef.current.length} pool question IDs (${poolQuestionMarksRef.current} marks each) for attempt`);
         }
         
         // 🎲 RANDOMIZE QUESTION ORDER FOR EACH STUDENT
         // Each student gets a different random order, but consistent for the same student
         const shuffledQuestions = seededShuffle(allQuestions, userId + examId);
         
-        console.log('\n🎲 RANDOMIZATION:');
-        console.log('  ✅ Original question order (before shuffle):', allQuestions.map(q => q.id));
-        console.log('  🎲 Randomized question order for user', userId, ':', shuffledQuestions.map(q => q.id));
-        console.log('  📝 Randomized questions:', shuffledQuestions.map(q => q.questionText.substring(0, 50) + '...'));
+        // console.log('\n🎲 RANDOMIZATION:');
+        // console.log('  ✅ Original question order (before shuffle):', allQuestions.map(q => q.id));
+        // console.log('  🎲 Randomized question order for user', userId, ':', shuffledQuestions.map(q => q.id));
+        // console.log('  📝 Randomized questions:', shuffledQuestions.map(q => q.questionText.substring(0, 50) + '...'));
         
         // 🚨 DUPLICATE DETECTION: Check for duplicate questions
         const seenIds = new Set<string>();
@@ -992,11 +1055,11 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
           const contentHash = `${q.questionText}_${q.description}_${q.type}`;
 
           if (seenContent.has(contentHash)) {
-            const originalIndex = seenContent.get(contentHash)!;
-            console.warn(`⚠️ DUPLICATE CONTENT detected at position ${index + 1}, original at ${originalIndex + 1}`);
-            console.warn(`   Question Text: \"${q.questionText}\"`);
-            console.warn(`   Type: ${q.type}`);
-            console.warn(`   This question may be a duplicate!`);
+            // const _originalIndex = seenContent.get(contentHash)!;
+            // console.warn(`⚠️ DUPLICATE CONTENT detected at position ${index + 1}, original at ${originalIndex + 1}`);
+            // console.warn(`   Question Text: \"${q.questionText}\"`);
+            // console.warn(`   Type: ${q.type}`);
+            // console.warn(`   This question may be a duplicate!`);
           }
           seenContent.set(contentHash, index);
         });
@@ -1024,31 +1087,59 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
           questionNo: index + 1
         }));
         
-        console.log('\n✅ QUESTIONS LOADED SUCCESSFULLY');
-        console.log('  - Total questions loaded:', finalQuestions.length);
-        console.log('  - Fetch completed at:', new Date().toISOString());
+        // console.log('\n✅ QUESTIONS LOADED SUCCESSFULLY');
+        // console.log('  - Total questions loaded:', finalQuestions.length);
+        // console.log('  - Fetch completed at:', new Date().toISOString());
         
         // ✅ DEBUG: Final chapter check before setting state
-        console.log('\n📖 FINAL CHAPTER CHECK - Before setQuestions():');
-        console.log('  - Total questions:', finalQuestions.length);
-        finalQuestions.slice(0, 3).forEach((q, i) => {
-          console.log(`  - Question ${i + 1}:`, {
-            id: q.id,
-            questionNo: q.questionNo,
-            chapter: q.chapter,
-            complexity: q.complexity,
-            fromPool: q.fromPool,
-            'typeof chapter': typeof q.chapter,
-            'chapter === undefined': q.chapter === undefined
-          });
+        // console.log('\n📖 FINAL CHAPTER CHECK - Before setQuestions():');
+        // console.log('  - Total questions:', finalQuestions.length);
+        finalQuestions.slice(0, 3).forEach((_q, _i) => {
+          // console.log(`  - Question ${i + 1}:`, {
+            // id: q.id,
+            // questionNo: q.questionNo,
+            // chapter: q.chapter,
+            // complexity: q.complexity,
+            // fromPool: q.fromPool,
+            // 'typeof chapter': typeof q.chapter,
+            // 'chapter === undefined': q.chapter === undefined
+          // });
         });
         if (finalQuestions.length > 3) {
-          console.log('  ... (showing first 3 of', finalQuestions.length, 'questions)');
+          // console.log('  ... (showing first 3 of', finalQuestions.length, 'questions)');
         }
         
-        console.log('='.repeat(80) + '\n');
+        // console.log('='.repeat(80) + '\n');
         
         setQuestions(finalQuestions);
+
+        // ── DETECT LIKERT PHASE ────────────────────────────────────────────
+        if (personalityAssessment && likertQuestions.length > 0 && lDuration > 0) {
+          const likertMapped: Question[] = likertQuestions.map((lq: any, idx: number) => ({
+            id: lq.id || `likert_${idx}`,
+            questionNo: idx + 1,
+            questionText: lq.questionText || lq.statement || lq.text || `Statement ${idx + 1}`,
+            description: lq.description || '',
+            type: QUESTION_TYPES.LIKERT as QuestionType,
+            options: lq.options || [],
+            correctAnswer: '',
+            maxMarks: 0,
+            marks: 0,
+            complexity: 'easy' as any,
+            chapter: lq.trait || lq.chapter || 'Personality',
+            likertTrait: lq.trait || lq.likertTrait || '',
+            likertDirection: lq.direction || lq.likertDirection || 'positive',
+          }));
+          setLikertOnlyQuestions(likertMapped);
+          setLikertDurationMins(lDuration);
+          // Prepend likert questions into main questions array so they use the normal interface
+          const likertWithFlag = likertMapped.map(q => ({ ...q, isFromLikert: true }));
+          setQuestions(prev => [...likertWithFlag, ...prev.map((q, i) => ({ ...q, questionNo: likertMapped.length + i + 1 }))]);
+          // Phase & timer will be resolved in loadAnswers (after attempt is ready)
+          // so we can check how much time has already elapsed
+        }
+        // ──────────────────────────────────────────────────────────────────
+
         setQuestionsLoading(false);
         
       } catch (error) {
@@ -1062,16 +1153,16 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
   
   // 🔥 DEBUG: Track component lifecycle
   useEffect(() => {
-    console.log('🚀🚀🚀 ExamsInterface MOUNTED 🚀🚀🚀');
-    console.log('📋 examId:', examId, '| userId:', userId);
+    // console.log('🚀🚀🚀 ExamsInterface MOUNTED 🚀🚀🚀');
+    // console.log('📋 examId:', examId, '| userId:', userId);
     return () => {
-      console.log('💀💀💀 ExamsInterface UNMOUNTED 💀💀💀');
+      // console.log('💀💀💀 ExamsInterface UNMOUNTED 💀💀💀');
     };
   }, []);
   
   // 🔥 CLEANUP: Reset all state when examId changes (entering a new exam)
   useEffect(() => {
-    console.log('🔄 examId changed, resetting all state:', examId);
+    // console.log('🔄 examId changed, resetting all state:', examId);
     setCurrentQuestionIndex(0);
     setAnswers({});
     setCodeInput('');
@@ -1079,10 +1170,20 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
     setDescriptiveAnswer('');
     setFillBlanksAnswers([]);
     setJumbledAnswers([]);
-    setBookmarkedQuestions(new Set());
+    // ✅ FIX: Reload bookmarks from localStorage instead of wiping them
+    const saved = localStorage.getItem(`examBookmarks_${examId}_${userId}`);
+    if (saved) {
+      try {
+        setBookmarkedQuestions(new Set(JSON.parse(saved)));
+      } catch {
+        setBookmarkedQuestions(new Set());
+      }
+    } else {
+      setBookmarkedQuestions(new Set());
+    }
     setAnswersInitialized(false); // ✅ Reset answers initialized flag
     setIsCleanupComplete(false); // ✅ Reset cleanup flag for new exam
-    console.log('✅ State reset complete');
+    // console.log('✅ State reset complete');
   }, [examId]);
   
   // 1. Memoize User Object (Stable Reference)
@@ -1133,29 +1234,43 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
 
 // ==================== DEBUG: Track isAlreadySubmitted from hook ====================
 useEffect(() => {
-  console.log('\n' + '🎯'.repeat(40));
-  console.log('🎯 ExamsInterface RECEIVED isAlreadySubmitted from hook');
-  console.log('  - Value:', isAlreadySubmitted);
-  console.log('  - Type:', typeof isAlreadySubmitted);
-  console.log('  - Has attempt:', !!attempt);
-  console.log('  - Attempt ID:', attempt?.attemptId || 'none');
-  console.log('  - Attempt status:', attempt?.status || 'none');
-  console.log('🎯'.repeat(40) + '\n');
+  // console.log('\n' + '🎯'.repeat(40));
+  // console.log('🎯 ExamsInterface RECEIVED isAlreadySubmitted from hook');
+  // console.log('  - Value:', isAlreadySubmitted);
+  // console.log('  - Type:', typeof isAlreadySubmitted);
+  // console.log('  - Has attempt:', !!attempt);
+  // console.log('  - Attempt ID:', attempt?.attemptId || 'none');
+  // console.log('  - Attempt status:', attempt?.status || 'none');
+  // console.log('🎯'.repeat(40) + '\n');
 }, [isAlreadySubmitted, attempt?.attemptId, attempt?.status]);
+
+// ✅ Save presented pool question IDs to attempt document (once both are ready)
+const poolIdsSavedRef = useRef(false);
+useEffect(() => {
+  if (
+    attempt?.attemptId && 
+    poolQuestionIdsRef.current.length > 0 && 
+    !poolIdsSavedRef.current &&
+    !isAlreadySubmitted
+  ) {
+    poolIdsSavedRef.current = true;
+    firebaseService.savePoolQuestionIds(attempt.attemptId, poolQuestionIdsRef.current, poolQuestionMarksRef.current);
+  }
+}, [attempt?.attemptId, questions.length, isAlreadySubmitted]);
 
 // ==================== REGISTER VIOLATION QUEUE SYNC CALLBACK ====================
 useEffect(() => {
   // Register callback to sync violations from queue to Firebase
   violationQueueService.setSyncCallback(async (queuedViolation) => {
     try {
-      console.log(`🔄 Syncing queued violation from offline storage: ${queuedViolation.type}`);
+      // console.log(`🔄 Syncing queued violation from offline storage: ${queuedViolation.type}`);
       
       // Upload proof if exists
       let proofUrl: string | undefined = undefined;
       const proofBlob = queuedViolation.videoProof || queuedViolation.frameProof;
       if (proofBlob) {
         try {
-          console.log(`📤 Uploading proof for ${queuedViolation.type}... (examId=${queuedViolation.examId})`);
+          // console.log(`📤 Uploading proof for ${queuedViolation.type}... (examId=${queuedViolation.examId})`);
           const uploadResult = await firebaseService.uploadViolationProof(
             queuedViolation.examId,
             proofBlob
@@ -1163,9 +1278,9 @@ useEffect(() => {
           
           if (uploadResult.success) {
             proofUrl = uploadResult.url;
-            console.log(`✅ Proof uploaded successfully for ${queuedViolation.type}`);
+            // console.log(`✅ Proof uploaded successfully for ${queuedViolation.type}`);
           } else {
-            console.warn(`⚠️ Failed to upload proof for ${queuedViolation.type}, will save violation without proof`);
+            // console.warn(`⚠️ Failed to upload proof for ${queuedViolation.type}, will save violation without proof`);
           }
         } catch (uploadError) {
           console.error('❌ Failed to upload queued violation proof:', uploadError);
@@ -1190,7 +1305,7 @@ useEffect(() => {
 
       // Add to Firebase
       await addViolationToAttempt(violation);
-      console.log(`✅ Successfully synced queued violation: ${queuedViolation.type} on Q${currentQuestionNo}${proofUrl ? ' (with proof)' : ' (no proof)'}`);
+      // console.log(`✅ Successfully synced queued violation: ${queuedViolation.type} on Q${currentQuestionNo}${proofUrl ? ' (with proof)' : ' (no proof)'}`);
       return true;
     } catch (error) {
       console.error('❌ Failed to sync queued violation:', error);
@@ -1242,6 +1357,8 @@ useEffect(() => {
   const [showTestCasesPanel, setShowTestCasesPanel] = useState(false);
   const [customInput, setCustomInput] = useState('');
   const [show15MinWarning, setShow15MinWarning] = useState(false);
+  const [showPhaseTransition, setShowPhaseTransition] = useState(false);
+  const [phaseTransitionCount, setPhaseTransitionCount] = useState(60);
   const [has15MinWarningShown, setHas15MinWarningShown] = useState(false);
   
   // ==================== TIME TRACKING STATE ====================
@@ -1268,6 +1385,9 @@ useEffect(() => {
   
   const [isMonitoringActive, setIsMonitoringActive] = useState(false);
   const [fullscreenRequested, setFullscreenRequested] = useState(false);
+  const fullscreenEnteredRef = useRef(false);
+  const [showFullscreenOverlay, setShowFullscreenOverlay] = useState(false);
+  const [showDevToolsOverlay, setShowDevToolsOverlay] = useState(false);
   const [baselineDescriptors, setBaselineDescriptors] = useState<Float32Array[]>([]);
   const [faceMonitoringEnabled, setFaceMonitoringEnabled] = useState(false);
   const [currentIpAddress, setCurrentIpAddress] = useState<string>('');
@@ -1288,7 +1408,7 @@ useEffect(() => {
         id: questions[currentQuestionIndex]?.id || 'unknown',
         no: questions[currentQuestionIndex]?.questionNo || currentQuestionIndex + 1
       };
-      console.log(`📌 Question ref initialized: Q${currentQuestionRef.current.no}`);
+      // console.log(`📌 Question ref initialized: Q${currentQuestionRef.current.no}`);
     }
   }, [questions.length, currentQuestionIndex]);
   const monitoringStartTime = useRef<number>(0); // Track when monitoring actually starts
@@ -1327,7 +1447,7 @@ useEffect(() => {
       if (storedTimeTracking) {
         const parsed = JSON.parse(storedTimeTracking);
         setQuestionTimeTracking(parsed);
-        console.log('⏱️ Loaded time tracking from storage:', Object.keys(parsed).length, 'questions');
+        // console.log('⏱️ Loaded time tracking from storage:', Object.keys(parsed).length, 'questions');
       }
     } catch (error) {
       console.error('❌ Error loading time tracking from storage:', error);
@@ -1343,7 +1463,7 @@ useEffect(() => {
         : (attempt.startTime as any).toDate().getTime();
       
       setQuestionStartTime(examStartTime);
-      console.log('⏱️ Initialized questionStartTime to exam start time');
+      // console.log('⏱️ Initialized questionStartTime to exam start time');
     }
   }, [attempt, questionStartTime]);
   
@@ -1357,24 +1477,24 @@ useEffect(() => {
     const currentQ = questions[currentQuestionIndex];
     if (currentQ && attempt?.attemptId) {
       const hasResponse = attempt.responses.some(
-        (r) => r.questionNo === currentQ.questionNo
+        (r) => r.questionId === currentQ.id
       );
       
       if (!hasResponse) {
-        console.log(`📝 Creating placeholder for Q${currentQ.questionNo} (on-demand)`);
+        // console.log(`📝 Creating placeholder for Q${currentQ.questionNo} (on-demand)`);
         
         // 🐛 DEBUG: Log all parameters
-        console.log('🐛 DEBUG - Placeholder Parameters:');
-        console.log('  attemptId:', attempt.attemptId);
-        console.log('  questionNo:', currentQ.questionNo);
-        console.log('  questionId:', currentQ.id);
-        console.log('  type:', currentQ.type);
-        console.log('  maxMarks:', currentQ.maxMarks);
-        console.log('  questionText:', currentQ.questionText, '(type:', typeof currentQ.questionText, ')');
-        console.log('  options:', currentQ.options, '(type:', typeof currentQ.options, ')');
-        console.log('  complexity:', currentQ.complexity, '(type:', typeof currentQ.complexity, ')');
-        console.log('  chapter:', currentQ.chapter, '(type:', typeof currentQ.chapter, ')');
-        console.log('  fromPool:', currentQ.fromPool, '(type:', typeof currentQ.fromPool, ')');
+        // console.log('🐛 DEBUG - Placeholder Parameters:');
+        // console.log('  attemptId:', attempt.attemptId);
+        // console.log('  questionNo:', currentQ.questionNo);
+        // console.log('  questionId:', currentQ.id);
+        // console.log('  type:', currentQ.type);
+        // console.log('  maxMarks:', currentQ.maxMarks);
+        // console.log('  questionText:', currentQ.questionText, '(type:', typeof currentQ.questionText, ')');
+        // console.log('  options:', currentQ.options, '(type:', typeof currentQ.options, ')');
+        // console.log('  complexity:', currentQ.complexity, '(type:', typeof currentQ.complexity, ')');
+        // console.log('  chapter:', currentQ.chapter, '(type:', typeof currentQ.chapter, ')');
+        // console.log('  fromPool:', currentQ.fromPool, '(type:', typeof currentQ.fromPool, ')');
         
         firebaseService.createPlaceholderResponse(
           attempt.attemptId,
@@ -1393,7 +1513,7 @@ useEffect(() => {
     
     // ✅ FIX: Don't calculate time if questionStartTime hasn't been initialized
     if (questionStartTime === 0) {
-      console.log('⏱️ Skipping time calculation - questionStartTime not initialized yet');
+      // console.log('⏱️ Skipping time calculation - questionStartTime not initialized yet');
       setPreviousQuestionId(currentQuestionId);
       return;
     }
@@ -1411,7 +1531,7 @@ useEffect(() => {
       // If questionStartTime is before exam start, only count from exam start
       if (questionStartTime < examStartTime) {
         timeSpentOnPrevious = Math.floor((now - examStartTime) / 1000);
-        console.log(`⏱️ Adjusted time: not counting ${Math.floor((examStartTime - questionStartTime) / 1000)}s before exam started`);
+        // console.log(`⏱️ Adjusted time: not counting ${Math.floor((examStartTime - questionStartTime) / 1000)}s before exam started`);
       }
     }
     
@@ -1432,8 +1552,8 @@ useEffect(() => {
           console.error('❌ Error saving time tracking to storage:', error);
         }
         
-        const prevQuestionNo = questions.find(q => q.id === previousQuestionId)?.questionNo || '?';
-        console.log(`⏱️ Q${prevQuestionNo}: Added ${timeSpentOnPrevious}s (total: ${updated[previousQuestionId]}s)`);
+        // const _prevQuestionNo = questions.find(q => q.id === previousQuestionId)?.questionNo || '?';
+        // console.log(`⏱️ Q${prevQuestionNo}: Added ${timeSpentOnPrevious}s (total: ${updated[previousQuestionId]}s)`);
         return updated;
       });
     }
@@ -1443,13 +1563,13 @@ useEffect(() => {
     
     // Reset timer for NEW question
     setQuestionStartTime(now);
-    console.log(`⏱️ Started timer for Q${currentQuestionIndex + 1} (ID: ${currentQuestionId})`);
+    // console.log(`⏱️ Started timer for Q${currentQuestionIndex + 1} (ID: ${currentQuestionId})`);
     
     // Cleanup function - runs when component unmounts or before next effect
     return () => {
       // ✅ FIX: Don't calculate time if questionStartTime hasn't been initialized
       if (questionStartTime === 0) {
-        console.log('⏱️ Cleanup skipped - questionStartTime not initialized');
+        // console.log('⏱️ Cleanup skipped - questionStartTime not initialized');
         return;
       }
       
@@ -1494,20 +1614,20 @@ useEffect(() => {
     
     // 🔥 CRITICAL: Only load once to prevent overwriting during active session
     if (violationsLoaded) {
-      console.log('⏭️ Violations already loaded, skipping to prevent overwrite');
+      // console.log('⏭️ Violations already loaded, skipping to prevent overwrite');
       return;
     }
     
     if (!attempt || !attempt.responses) {
-      console.log('⏳ No attempt or responses to load yet');
+      // console.log('⏳ No attempt or responses to load yet');
       return;
     }
     
     try {
-      console.log('\n' + '='.repeat(80));
-      console.log('🚨 LOADING VIOLATIONS FROM QUESTION-LEVEL DATA (INITIAL LOAD ONLY)');
-      console.log('  - Attempt ID:', attempt.attemptId);
-      console.log('='.repeat(80));
+      // console.log('\n' + '='.repeat(80));
+      // console.log('🚨 LOADING VIOLATIONS FROM QUESTION-LEVEL DATA (INITIAL LOAD ONLY)');
+      // console.log('  - Attempt ID:', attempt.attemptId);
+      // console.log('='.repeat(80));
       
       // ✅ Load violations from question-level responses
       const groupedViolations: Record<string, Violation[]> = {};
@@ -1520,9 +1640,25 @@ useEffect(() => {
             const questionId = response.questionId || 'unknown';
             
             response.violations.forEach((v: any) => {
+              // Parse timestamp — handle IST strings, ISO strings, Firestore Timestamps, Date objects
+              let parsedTimestamp: Date;
+              const ts = v.timestamp;
+              if (ts instanceof Date && !isNaN(ts.getTime())) {
+                parsedTimestamp = ts;
+              } else if (typeof ts === 'string' && ts.includes(' IST')) {
+                parsedTimestamp = new Date(ts.replace(' IST', '+05:30').replace(' ', 'T'));
+              } else if (typeof ts === 'object' && ts !== null && 'seconds' in ts) {
+                parsedTimestamp = new Date(ts.seconds * 1000);
+              } else if (typeof ts === 'string') {
+                parsedTimestamp = new Date(ts);
+              } else {
+                parsedTimestamp = new Date();
+              }
+              if (isNaN(parsedTimestamp.getTime())) parsedTimestamp = new Date();
+              
               const violation = {
                 type: v.type,
-                timestamp: v.timestamp instanceof Date ? v.timestamp : new Date(v.timestamp),
+                timestamp: parsedTimestamp.toISOString(),
                 details: v.details,
                 severity: v.severity,
                 questionNo: response.questionNo || 0,
@@ -1543,8 +1679,8 @@ useEffect(() => {
         });
       }
       
-      console.log('  - Total violations found:', totalViolationCount);
-      console.log('  - Questions affected:', Object.keys(groupedViolations).length);
+      // console.log('  - Total violations found:', totalViolationCount);
+      // console.log('  - Questions affected:', Object.keys(groupedViolations).length);
       
       if (totalViolationCount > 0) {
         setQuestionViolations(groupedViolations);
@@ -1553,9 +1689,9 @@ useEffect(() => {
         // ✅ Save to localStorage as backup
         localStorage.setItem(VIOLATIONS_TRACKING_KEY, JSON.stringify(groupedViolations));
         
-        console.log('✅ Loaded', totalViolationCount, 'violations from question-level data');
+        // console.log('✅ Loaded', totalViolationCount, 'violations from question-level data');
       } else {
-        console.log('📭 No violations found in responses');
+        // console.log('📭 No violations found in responses');
         // Clear localStorage if no violations
         localStorage.removeItem(VIOLATIONS_TRACKING_KEY);
         setQuestionViolations({});
@@ -1565,7 +1701,7 @@ useEffect(() => {
       // 🔥 MARK AS LOADED: Prevent future overwrites
       setViolationsLoaded(true);
       
-      console.log('='.repeat(80) + '\n');
+      // console.log('='.repeat(80) + '\n');
       
     } catch (error) {
       console.error('❌ Error loading violations from question-level data:', error);
@@ -1578,15 +1714,15 @@ useEffect(() => {
   useEffect(() => {
     // Only setup refresh if there are pending evaluations
     if (attempt && attempt.pendingEvaluations && attempt.pendingEvaluations > 0) {
-      console.log(`🔄 Setting up auto-refresh for ${attempt.pendingEvaluations} pending evaluations`);
+      // console.log(`🔄 Setting up auto-refresh for ${attempt.pendingEvaluations} pending evaluations`);
       
       const interval = setInterval(() => {
-        console.log(`🔄 Auto-refreshing attempt to check evaluation status...`);
+        // console.log(`🔄 Auto-refreshing attempt to check evaluation status...`);
         refreshAttempt();
       }, 3000); // Refresh every 3 seconds
       
       return () => {
-        console.log('🛑 Clearing auto-refresh interval (no pending evaluations)');
+        // console.log('🛑 Clearing auto-refresh interval (no pending evaluations)');
         clearInterval(interval);
       };
     }
@@ -1597,7 +1733,7 @@ useEffect(() => {
     if (attempt) {
       const backup = offlineQueueService.loadAnswersFromBackup(attempt.attemptId);
       if (Object.keys(backup).length > 0) {
-        console.log(`📦 Enhanced backup restored: ${Object.keys(backup).length} answers`);
+        // console.log(`📦 Enhanced backup restored: ${Object.keys(backup).length} answers`);
       }
     }
  }, [attempt?.attemptId]); // ✅ REMOVED questions.length to prevent constant re-loading
@@ -1614,7 +1750,7 @@ useEffect(() => {
 useEffect(() => {
   // ✅ DON'T load queue if exam is already submitted
   if (isAlreadySubmitted) {
-    console.log('⚠️ Exam already submitted, skipping queue load');
+    // console.log('⚠️ Exam already submitted, skipping queue load');
     // Clear any existing queue
     localStorage.removeItem(`examOfflineQueue_${examId}_${userId}`);
     setOfflineEventQueue([]);
@@ -1648,10 +1784,10 @@ useEffect(() => {
           const isExamSubmit = event.type === 'exam_submit';
           
           if (isStale) {
-            console.log('🧹 Removing stale queue event:', event.type, 'age:', Math.round(eventAge / 1000 / 60), 'minutes');
+            // console.log('🧹 Removing stale queue event:', event.type, 'age:', Math.round(eventAge / 1000 / 60), 'minutes');
           }
           if (isExamSubmit) {
-            console.log('🧹 Removing exam_submit event (should not persist):', event.type);
+            // console.log('🧹 Removing exam_submit event (should not persist):', event.type);
           }
           
           return !isStale && !isExamSubmit; // ✅ Filter out both stale and exam_submit
@@ -1659,18 +1795,18 @@ useEffect(() => {
         
         if (freshEvents.length > 0) {
           setOfflineEventQueue(freshEvents);
-          console.log('📦 ✅ Restored offline queue from localStorage:', freshEvents.length, 'events');
-          console.log('📦 Event details:', freshEvents.map(e => ({ 
-            type: e.type, 
-            timestamp: e.timestamp,
-            age: Math.round((now - e.timestamp.getTime()) / 1000 / 60) + ' minutes ago'
-          })));
+          // console.log('📦 ✅ Restored offline queue from localStorage:', freshEvents.length, 'events');
+          // console.log('📦 Event details:', freshEvents.map(e => ({ 
+            // type: e.type, 
+            // timestamp: e.timestamp,
+            // age: Math.round((now - e.timestamp.getTime()) / 1000 / 60) + ' minutes ago'
+          // })));
         } else {
-          console.log('📦 All queue events were stale or invalid, clearing localStorage');
+          // console.log('📦 All queue events were stale or invalid, clearing localStorage');
           localStorage.removeItem(`examOfflineQueue_${examId}_${userId}`);
         }
       } else {
-        console.warn('⚠️ Invalid queue data format, clearing localStorage');
+        // console.warn('⚠️ Invalid queue data format, clearing localStorage');
         localStorage.removeItem(`examOfflineQueue_${examId}_${userId}`);
       }
     } catch (error) {
@@ -1678,7 +1814,7 @@ useEffect(() => {
       localStorage.removeItem(`examOfflineQueue_${examId}_${userId}`);
     }
   } else {
-    console.log('📦 No saved offline queue found');
+    // console.log('📦 No saved offline queue found');
   }
 }, [examId, userId, isAlreadySubmitted]);
 
@@ -1687,10 +1823,10 @@ useEffect(() => {
     try {
       if (offlineEventQueue.length > 0) {
         localStorage.setItem(`examOfflineQueue_${examId}_${userId}`, JSON.stringify(offlineEventQueue));
-        console.log('📦 ✅ Saved offline queue to localStorage:', offlineEventQueue.length, 'events');
+        // console.log('📦 ✅ Saved offline queue to localStorage:', offlineEventQueue.length, 'events');
       } else {
         localStorage.removeItem(`examOfflineQueue_${examId}_${userId}`);
-        console.log('📦 ✅ Cleared offline queue from localStorage (empty)');
+        // console.log('📦 ✅ Cleared offline queue from localStorage (empty)');
       }
     } catch (error) {
       console.error('❌ Failed to save offline queue:', error);
@@ -1704,161 +1840,263 @@ useEffect(() => {
 // Load saved answers when attempt is initialized OR when responses change
   useEffect(() => {
     if (!attempt) {
-      console.log('⏳ No attempt yet, waiting...');
+      // console.log('⏳ No attempt yet, waiting...');
       return;
     }
     
     // ✅ Wait for cleanup to complete before loading answers
     if (!isCleanupComplete) {
-      console.log('⏳ Waiting for cleanup to complete before loading answers...');
+      // console.log('⏳ Waiting for cleanup to complete before loading answers...');
       return;
     }
     
     const loadAnswers = async () => {
-      // ✅ CRITICAL: Wait for questions to load before mapping answers
       if (questions.length === 0) {
-        console.log('⏳ Waiting for questions to load before mapping answers...');
+        // console.log('⏳ Waiting for questions to load before mapping answers...');
         return;
       }
       
-      console.log('\n' + '='.repeat(80));
-      console.log('🔍 LOADING SAVED ANSWERS');
-      console.log('  - Attempt ID:', attempt.attemptId);
-      console.log('  - Questions loaded:', questions.length);
-      console.log('  - Has responses?', !!attempt.responses);
-      console.log('  - Responses count:', attempt.responses?.length || 0);
-      console.log('  - answersInitialized:', answersInitialized);
-      console.log('='.repeat(80));
+      // console.log('\n' + '='.repeat(80));
+      // console.log('🔍 LOADING SAVED ANSWERS');
+      // console.log('  - Attempt ID:', attempt.attemptId);
+      // console.log('  - Questions loaded:', questions.length);
+      // console.log('  - Responses count:', attempt.responses?.length || 0);
+      // console.log('='.repeat(80));
       
-      // ✅ CRITICAL: Only skip reload during evaluation if answers already initialized
-      // This prevents infinite loops while still allowing initial load
       const hasActiveEvaluation = attempt.responses?.some(
         r => r.evaluationStatus === 'evaluating' || r.evaluationStatus === 'pending'
       );
       
       if (hasActiveEvaluation && answersInitialized) {
-        console.log('⏭️ Skipping answer reload - evaluation in progress (answers already loaded)');
+        // console.log('⏭️ Skipping answer reload - evaluation in progress (answers already loaded)');
         return;
       }
       
-      if (hasActiveEvaluation) {
-        console.log('⚠️ Evaluation in progress, but loading answers for first time');
-      }
-      
-      // STEP 1: Get responses from Firebase attempt
+      // ==================== STEP 1: Load from Firebase (DB) — PRIMARY SOURCE ====================
       let answersMap: Record<string, any> = {};
       
       if (attempt.responses && attempt.responses.length > 0) {
-        console.log('\n📥 LOADING FROM FIREBASE:', attempt.responses.length, 'responses');
+        // console.log('\n📥 STEP 1: Loading from Firebase (DB):', attempt.responses.length, 'responses');
         
-        answersMap = attempt.responses.reduce((acc, response) => {
-          if (response.studentAnswer !== null && response.studentAnswer !== undefined) {
-            const questionId = (response as any).questionId;
-            
-            if (!questionId) {
-              console.error(`  ❌ ERROR: Response missing questionId for questionNo ${response.questionNo}`);
-              console.error(`  This response will be SKIPPED!`);
-              return acc;
-            }
-            
-            const question = questions.find(q => q.id === questionId);
-            
-            if (!question) {
-              console.error(`  ❌ ERROR: Question not found for questionId: ${questionId}`);
-              console.error(`  Response questionNo: ${response.questionNo}`);
-              console.error(`  Available question IDs:`, questions.map(q => q.id));
-              console.error(`  This answer will be SKIPPED!`);
-              return acc;
-            }
-            
-            console.log(`  ✅ Mapping answer to Q${question.questionNo} (ID: ${question.id})`);
-            acc[question.id] = response.studentAnswer;
+        for (const response of attempt.responses) {
+          if (response.studentAnswer === null || response.studentAnswer === undefined) continue;
+          
+          const questionId = (response as any).questionId;
+          if (!questionId) {
+            console.error(`  ❌ Response missing questionId for questionNo ${response.questionNo} — SKIPPED`);
+            continue;
           }
-          return acc;
-        }, {} as Record<string, any>);
+          
+          const question = questions.find(q => q.id === questionId);
+          if (!question) {
+            console.error(`  ❌ Question not found for questionId: ${questionId} — SKIPPED`);
+            continue;
+          }
+          
+          answersMap[questionId] = response.studentAnswer;
+          // console.log(`  ✅ DB → Q${question.questionNo} (ID: ${questionId})`);
+        }
         
-        console.log('\n✅ Loaded', Object.keys(answersMap).length, 'answers from Firebase');
-        console.log('  Answer IDs:', Object.keys(answersMap));
+        // console.log(`\n✅ Loaded ${Object.keys(answersMap).length} answers from DB`);
       } else {
-        console.log('📭 No responses in Firebase attempt');
+        // console.log('📭 No responses in Firebase');
       }
       
-      // STEP 2: Check for any newer localStorage backups (for offline answers)
+      // ==================== STEP 2: localStorage fallback — ONLY for questions NOT in DB ====================
+      // Check offline queue backup (keyed by questionId)
       try {
-        // ✅ CRITICAL: Use correct backup key format that matches where it's saved
+        const offlineBackup = offlineQueueService.loadAnswersFromBackup(attempt.attemptId);
+        if (Object.keys(offlineBackup).length > 0) {
+          // console.log('\n📦 STEP 2: Checking offline backup (by questionId):', Object.keys(offlineBackup).length, 'entries');
+          
+          for (const [questionId, entry] of Object.entries(offlineBackup)) {
+            // Only use backup if DB doesn't have this answer
+            if (!answersMap[questionId]) {
+              const question = questions.find(q => q.id === questionId);
+              if (question) {
+                const backupAnswer = entry?.answer !== undefined ? entry.answer : entry;
+                answersMap[questionId] = backupAnswer;
+                // console.log(`  ✅ Offline backup → Q${question.questionNo} (ID: ${questionId}) — not in DB`);
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ Failed to load offline backup:', error);
+      }
+      
+      // Also check periodic backup (keyed by questionId)
+      try {
         const backupKey = `examBackup_${examId}_${userId}`;
         const backup = localStorage.getItem(backupKey);
         
-        console.log('\n📦 CHECKING LOCALSTORAGE:');
-        console.log('  - Backup key:', backupKey);
-        console.log('  - Has backup?', !!backup);
-        
         if (backup) {
           const backupData = JSON.parse(backup);
-          console.log('  - Backup structure:', Object.keys(backupData));
-          
-          // ✅ CRITICAL: Backup stores answers with questionId as keys
           if (backupData.answers && typeof backupData.answers === 'object') {
-            const backupAnswers = backupData.answers;
-            console.log('  - Backup question IDs:', Object.keys(backupAnswers));
-            let restoredCount = 0;
+            // console.log('\n📦 STEP 2b: Checking periodic backup:', Object.keys(backupData.answers).length, 'entries');
             
-            // Merge backup answers (they might be newer if saved while offline)
-            Object.entries(backupAnswers).forEach(([questionId, answer]: [string, any]) => {
-              // ✅ ONLY use questionId - verify question exists
-              const question = questions.find(q => q.id === questionId);
-              
-              if (question) {
-                console.log(`  ✅ Restoring Q${question.questionNo} (ID: ${questionId}) from localStorage`);
-                // Always use backup (it's the latest local state)
-                answersMap[questionId] = answer;
-                restoredCount++;
-              } else {
-                console.error(`  ❌ ERROR: Question not found for backup questionId: ${questionId}`);
-                console.error(`  This backup answer will be LOST!`);
+            for (const [questionId, backupEntry] of Object.entries(backupData.answers as Record<string, any>)) {
+              // Only use backup if DB doesn't have this answer
+              if (!answersMap[questionId]) {
+                const question = questions.find(q => q.id === questionId);
+                if (question) {
+                  const backupAnswer = backupEntry?.answer !== undefined ? backupEntry.answer : backupEntry;
+                  answersMap[questionId] = backupAnswer;
+                  // console.log(`  ✅ Periodic backup → Q${question.questionNo} (ID: ${questionId}) — not in DB`);
+                }
               }
-            });
-            
-            if (restoredCount > 0) {
-              console.log(`\n📦 Restored ${restoredCount} answers from localStorage backup`);
             }
-          } else {
-            console.warn('  ⚠️ Backup data does not have expected "answers" structure');
           }
-        } else {
-          console.log('  📭 No localStorage backup found');
         }
       } catch (error) {
-        console.error('❌ Failed to load from localStorage backup:', error);
+        console.error('❌ Failed to load periodic backup:', error);
       }
       
-      console.log('\n🎯 FINAL ANSWERS STATE:');
-      console.log('  - Total answers:', Object.keys(answersMap).length);
-      console.log('  - Answer question IDs:', Object.keys(answersMap));
-      console.log('  - Answers detail:', answersMap);
+      // console.log('\n🎯 FINAL ANSWERS STATE:');
+      // console.log('  - Total answers:', Object.keys(answersMap).length);
+      // Object.entries(answersMap).forEach(([qId, _ans]) => {
+        // const _q = questions.find(q => q.id === qId);
+        // console.log(`  - Q${q?.questionNo || '?'} (${qId}): ${typeof ans === 'string' ? ans.slice(0, 50) + '...' : JSON.stringify(ans)}`);
+      // });
       
-      setAnswers(answersMap);
-      setAnswersInitialized(true); // ✅ Mark answers as loaded
-      console.log('✅ answersInitialized set to TRUE');
-      console.log('='.repeat(80) + '\n');
+      // ✅ FIX: Merge Firebase answers with existing local answers instead of full replacement
+      // This prevents locally-submitted answers from being lost when Firebase listener 
+      // triggers a reload before the write is reflected back
+      setAnswers(prev => {
+        let result: Record<string, any>;
+        if (!answersInitialized) {
+          // First load (or after reset): Firebase is the source of truth
+          // console.log('  📥 First load — using Firebase answers as base');
+          result = answersMap;
+        } else {
+          // Subsequent reloads (triggered by responses.length change):
+          // Keep ALL local answers, only ADD new answers from Firebase that don't exist locally
+          result = { ...prev };
+          for (const [qId, firebaseAnswer] of Object.entries(answersMap)) {
+            if (!(qId in prev)) {
+              // New answer from Firebase that we don't have locally (e.g., from another device/tab)
+              result[qId] = firebaseAnswer;
+              // const _q = questions.find(q => q.id === qId);
+              // console.log(`  📥 Added new Firebase answer for Q${q?.questionNo || '?'}`);
+            }
+            // If local already has this answer, keep local version (it's more recent)
+          }
+        }
+        // 🔥 CRITICAL: Sync answersRef immediately so useLayoutEffect reads fresh data
+        answersRef.current = result;
+        return result;
+      });
+      setAnswersInitialized(true);
+      // console.log('✅ answersInitialized set to TRUE');
+      // console.log('='.repeat(80) + '\n');
+
+      // ✅ Restore bookmarks from attempt responses (markedForReview field)
+      if (attempt.responses && attempt.responses.length > 0) {
+        const restoredBookmarks = new Set<string>();
+        // First load from localStorage
+        const savedBookmarks = localStorage.getItem(`examBookmarks_${examId}_${userId}`);
+        if (savedBookmarks) {
+          try {
+            JSON.parse(savedBookmarks).forEach((id: string) => restoredBookmarks.add(id));
+          } catch { /* ignore */ }
+        }
+        // Merge with Firestore markedForReview
+        for (const response of attempt.responses) {
+          if (response.markedForReview && response.questionId) {
+            restoredBookmarks.add(response.questionId);
+          }
+        }
+        if (restoredBookmarks.size > 0) {
+          setBookmarkedQuestions(restoredBookmarks);
+          // console.log('🔖 Restored', restoredBookmarks.size, 'bookmarks from attempt responses');
+        }
+      }
+
+      // ✅ Restore likert answers from answersMap into likertAnswers state/ref
+      const restoredLikertAnswers: Record<string, string> = {};
+      Object.entries(answersMap).forEach(([questionId, answer]) => {
+        const q = questions.find(q => q.id === questionId);
+        if (q && (q as any).type === 'likert' && answer !== null && answer !== undefined && answer !== '') {
+          restoredLikertAnswers[questionId] = String(answer);
+        }
+      });
+      if (Object.keys(restoredLikertAnswers).length > 0) {
+        likertAnswersRef.current = restoredLikertAnswers;
+        setLikertAnswers(restoredLikertAnswers);
+        // console.log('✅ Restored', Object.keys(restoredLikertAnswers).length, 'likert answers');
+      }
+
+      // ── DETERMINE EXAM PHASE ON (RE-)ENTRY ────────────────────────────
+      // Only relevant for exams that have both likert AND actual questions
+      if (likertOnlyQuestions.length > 0 && questions.length > 0 && likertDurationMins > 0 && attempt.startTime) {
+        const [eh, em] = examTime.split(':').map(Number);
+        const scheduledStart = new Date(examDate);
+        scheduledStart.setHours(eh, em, 0, 0);
+
+        // Compute when likert window ends:
+        // strict  → scheduledStart + likertDuration (fixed wall-clock)
+        // flexible → attempt.startTime + likertDuration (student gets full time)
+        const st = attempt.startTime instanceof Date
+          ? attempt.startTime
+          : (attempt.startTime as any).toDate();
+
+        const likertWindowEnd = completionPolicy === 'flexible'
+          ? new Date(st.getTime() + likertDurationMins * 60 * 1000)
+          : new Date(scheduledStart.getTime() + likertDurationMins * 60 * 1000);
+
+        const nowMs = Date.now();
+        const secsRemaining = Math.floor((likertWindowEnd.getTime() - nowMs) / 1000);
+
+        if (secsRemaining > 0 && !likertAutoAdvanced.current) {
+          // Likert window still open → show likert phase
+          setExamPhase('likert');
+          setLikertTimeLeft(secsRemaining);
+          setLikertCurrentIndex(0);
+          setCurrentQuestionIndex(0);
+          // console.log(`🧠 Starting LIKERT phase — ${secsRemaining}s remaining`);
+        } else {
+          // Likert window closed → go straight to actual exam
+          setExamPhase('exam');
+          setCurrentQuestionIndex(likertOnlyQuestions.length); // skip past likert questions
+          // console.log(`⏭️ LIKERT window expired — entering EXAM phase directly`);
+        }
+      }
+      // ──────────────────────────────────────────────────────────────────
     };
     
     loadAnswers();
-  }, [attempt?.attemptId, attempt?.responses?.length, isCleanupComplete, questions.length]); // ✅ REMOVED questions.length - answers only reload when attempt or responses change
+  }, [attempt?.attemptId, attempt?.responses?.length, isCleanupComplete, questions.length, likertOnlyQuestions.length, likertDurationMins]); // includes likert phase deps
 
   // ✅ Initialize answersInitialized even without attempt (for editor rendering)
   useEffect(() => {
     if (questions.length > 0 && !answersInitialized && !attempt?.attemptId) {
-      console.log('✅ No attempt yet - initializing answersInitialized for editor rendering');
+      // console.log('✅ No attempt yet - initializing answersInitialized for editor rendering');
       setAnswersInitialized(true);
+
+      // Initialize phase based on current time (same logic as with attempt)
+      if (likertOnlyQuestions.length > 0 && likertDurationMins > 0) {
+        const [eh, em] = (examTime || '00:00').split(':').map(Number);
+        const scheduledStart = new Date(examDate);
+        scheduledStart.setHours(eh, em, 0, 0);
+        const likertWindowEnd = new Date(scheduledStart.getTime() + likertDurationMins * 60 * 1000);
+        const secsRemaining = Math.floor((likertWindowEnd.getTime() - Date.now()) / 1000);
+        if (secsRemaining > 0) {
+          setExamPhase('likert');
+          setLikertTimeLeft(secsRemaining);
+          setCurrentQuestionIndex(0);
+        } else {
+          setExamPhase('exam');
+          setCurrentQuestionIndex(likertOnlyQuestions.length);
+        }
+      }
     }
-  }, [questions.length, answersInitialized, attempt?.attemptId]);
+  }, [questions.length, answersInitialized, attempt?.attemptId, likertOnlyQuestions.length, likertDurationMins, examDate, examTime]);
 
   // Save bookmarks to localStorage whenever they change
   useEffect(() => {
     try {
       localStorage.setItem(`examBookmarks_${examId}_${userId}`, JSON.stringify([...bookmarkedQuestions]));
-      console.log('💾 Bookmarks saved:', bookmarkedQuestions.size);
+      // console.log('💾 Bookmarks saved:', bookmarkedQuestions.size);
     } catch (error) {
       console.error('❌ Failed to save bookmarks:', error);
     }
@@ -1892,6 +2130,11 @@ useEffect(() => {
   
   // 🔥 Track initial code length for stable editor key (doesn't change while typing)
   const initialCodeLengthRef = useRef<Record<string, number>>({});
+  const codeInputRef = useRef<string>('');
+  
+  // 🔥 Track which question the user has actively modified (dirty flag per question ID)
+  // Prevents late-arriving Firebase data from overwriting in-progress typing
+  const dirtyQuestionsRef = useRef<Set<string>>(new Set());
   
   // 🔥 Track answer load version for RichTextEditor key (increments only when loading from Firebase)
   const answerLoadVersionRef = useRef<Record<string, number>>({});
@@ -1907,6 +2150,8 @@ useEffect(() => {
   const [codeOutput, setCodeOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('cpp'); // Default to C++
+  const selectedLanguagePerQuestion = useRef<Record<string, string>>({}); // ✅ Track language per question
+  const [langSwitchConfirm, setLangSwitchConfirm] = useState<{ newLang: string; starterCode: string } | null>(null);
   const [activeCodeTab, setActiveCodeTab] = useState<'output' | 'stdin'>('output'); // Tabbed panel
   
   // Resizer states
@@ -1921,6 +2166,7 @@ useEffect(() => {
   const [executionMemory, setExecutionMemory] = useState('0KB');
 
   const currentQuestion = questions[currentQuestionIndex];
+
   const handleViewImages = () => {
     if (currentQuestion.imageUrls && currentQuestion.imageUrls.length > 0) {
       setCarouselImages(currentQuestion.imageUrls);
@@ -1945,16 +2191,16 @@ useEffect(() => {
   // Clear old offline queue and backups when starting/resuming exam
   const clearOldData = () => {
     try {
-      console.log('🧹 Starting cleanup of old exam data...');
+      // console.log('🧹 Starting cleanup of old exam data...');
       
       // ✅ CRITICAL: Reset answers initialized flag to force fresh load
       setAnswersInitialized(false);
-      console.log('  🔄 Reset answersInitialized to force fresh answer load');
+      // console.log('  🔄 Reset answersInitialized to force fresh answer load');
       
       // ✅ CRITICAL: Clear answer submission queue (offlineQueueService)
       const oldAnswerQueue = localStorage.getItem('exam_answer_queue');
       if (oldAnswerQueue) {
-        console.log('  🗑️ Clearing answer submission queue');
+        // console.log('  🗑️ Clearing answer submission queue');
         localStorage.removeItem('exam_answer_queue');
         offlineQueueService.clearQueue();
       }
@@ -1963,7 +2209,7 @@ useEffect(() => {
       if (isAlreadySubmitted) {
         const oldEventQueue = localStorage.getItem(`examOfflineQueue_${examId}_${userId}`);
         if (oldEventQueue) {
-          console.log('  🗑️ Clearing event queue (exam already submitted)');
+          // console.log('  🗑️ Clearing event queue (exam already submitted)');
           localStorage.removeItem(`examOfflineQueue_${examId}_${userId}`);
           setOfflineEventQueue([]);
         }
@@ -1973,7 +2219,7 @@ useEffect(() => {
       const backupKeys = Object.keys(localStorage).filter(key => key.startsWith('exam_backup_'));
       backupKeys.forEach(key => {
         if (attempt && !key.includes(attempt.attemptId)) {
-          console.log('  🗑️ Clearing old backup:', key);
+          // console.log('  🗑️ Clearing old backup:', key);
           localStorage.removeItem(key);
         }
       });
@@ -1982,10 +2228,10 @@ useEffect(() => {
       const answerKeys = Object.keys(localStorage).filter(key => key.startsWith('examAnswers_'));
       answerKeys.forEach(key => {
         if (!key.includes(`${examId}_${userId}`)) {
-          console.log('  🗑️ Clearing old answers:', key);
+          // console.log('  🗑️ Clearing old answers:', key);
           localStorage.removeItem(key);
         } else {
-          console.log('  ✅ Keeping current exam answers:', key);
+          // console.log('  ✅ Keeping current exam answers:', key);
         }
       });
       
@@ -1993,10 +2239,10 @@ useEffect(() => {
       const violationKeys = Object.keys(localStorage).filter(key => key.startsWith('exam_violations_'));
       violationKeys.forEach(key => {
         if (!key.includes(`${examId}_${userId}`)) {
-          console.log('  🗑️ Clearing old violations:', key);
+          // console.log('  🗑️ Clearing old violations:', key);
           localStorage.removeItem(key);
         } else {
-          console.log('  ✅ Keeping current exam violations:', key);
+          // console.log('  ✅ Keeping current exam violations:', key);
         }
       });
       
@@ -2004,14 +2250,14 @@ useEffect(() => {
       const timeKeys = Object.keys(localStorage).filter(key => key.startsWith('exam_time_tracking_'));
       timeKeys.forEach(key => {
         if (!key.includes(`${examId}_${userId}`)) {
-          console.log('  🗑️ Clearing old time tracking:', key);
+          // console.log('  🗑️ Clearing old time tracking:', key);
           localStorage.removeItem(key);
         } else {
-          console.log('  ✅ Keeping current exam time tracking:', key);
+          // console.log('  ✅ Keeping current exam time tracking:', key);
         }
       });
       
-      console.log('✅ Old data cleared, starting fresh exam session');
+      // console.log('✅ Old data cleared, starting fresh exam session');
       setIsCleanupComplete(true); // ✅ Signal that cleanup is done
     } catch (error) {
       console.error('❌ Error clearing old data:', error);
@@ -2024,7 +2270,7 @@ useEffect(() => {
     clearOldData();
   } else if (attempt) {
     // ✅ If exam is already submitted, skip cleanup and proceed
-    console.log('⏭️ Exam already submitted, skipping cleanup');
+    // console.log('⏭️ Exam already submitted, skipping cleanup');
     setIsCleanupComplete(true);
   }
 }, [attempt?.attemptId, examId, userId, isAlreadySubmitted]);
@@ -2033,11 +2279,11 @@ useEffect(() => {
 useEffect(() => {
   const initializeMonitoring = async () => {
     try {
-      console.log('🚀 Initializing exam monitoring...');
+      // console.log('🚀 Initializing exam monitoring...');
         
         // Check if Firebase is initialized
         if (!firebaseService.isInitialized()) {
-          console.warn('⚠️ Firebase not initialized yet, enabling local monitoring');
+          // console.warn('⚠️ Firebase not initialized yet, enabling local monitoring');
           setIsMonitoringActive(true);
           entryTimeRef.current = new Date();
           return;
@@ -2046,7 +2292,7 @@ useEffect(() => {
         // Check if user is authenticated
         const currentUserId = firebaseService.getCurrentUserId();
         if (!currentUserId) {
-          console.warn('⚠️ No authenticated user, enabling local monitoring only');
+          // console.warn('⚠️ No authenticated user, enabling local monitoring only');
           setIsMonitoringActive(true);
           entryTimeRef.current = new Date();
           return;
@@ -2056,8 +2302,8 @@ useEffect(() => {
         const ipAddress = await getCurrentIpAddress();
         setCurrentIpAddress(ipAddress);
         
-        console.log('👤 User:', userFullName, '| Email:', userEmail, '| Type:', userType);
-        console.log('📊 IP:', ipAddress);
+        // console.log('👤 User:', userFullName, '| Email:', userEmail, '| Type:', userType);
+        // console.log('📊 IP:', ipAddress);
         
         // Log 'enter' activity - Firebase will check for duplicates within 10 seconds
         if (attempt && attempt.attemptId) {
@@ -2070,27 +2316,27 @@ useEffect(() => {
         monitoringStartTime.current = Date.now(); // ✅ Record when monitoring started
         
         // 🎥 Initialize face-api and load baseline descriptors if proctoring photos exist
-        console.log('🔍 Checking proctoring photos:', {
-          hasFront: !!proctoringPhotos?.front,
-          hasLeft: !!proctoringPhotos?.left,
-          hasRight: !!proctoringPhotos?.right,
-          proctoringPhotos
-        });
+        // console.log('🔍 Checking proctoring photos:', {
+          // hasFront: !!proctoringPhotos?.front,
+          // hasLeft: !!proctoringPhotos?.left,
+          // hasRight: !!proctoringPhotos?.right,
+          // proctoringPhotos
+        // });
         
         if (proctoringPhotos?.front && proctoringPhotos?.left && proctoringPhotos?.right) {
-          console.log('🎥 Initializing face-api for proctoring...');
+          // console.log('🎥 Initializing face-api for proctoring...');
           try {
             // Check if face-api models are already loaded from PreExamVerification
-            console.log('📦 Checking face-api models...');
-            console.log('  - SsdMobilenetv1:', faceapi.nets.ssdMobilenetv1.isLoaded ? '✅ Loaded' : '❌ Not loaded');
-            console.log('  - TinyFaceDetector:', faceapi.nets.tinyFaceDetector.isLoaded ? '✅ Loaded' : '❌ Not loaded');
-            console.log('  - FaceLandmark68Net:', faceapi.nets.faceLandmark68Net.isLoaded ? '✅ Loaded' : '❌ Not loaded');
-            console.log('  - FaceRecognitionNet:', faceapi.nets.faceRecognitionNet.isLoaded ? '✅ Loaded' : '❌ Not loaded');
+            // console.log('📦 Checking face-api models...');
+            // console.log('  - SsdMobilenetv1:', faceapi.nets.ssdMobilenetv1.isLoaded ? '✅ Loaded' : '❌ Not loaded');
+            // console.log('  - TinyFaceDetector:', faceapi.nets.tinyFaceDetector.isLoaded ? '✅ Loaded' : '❌ Not loaded');
+            // console.log('  - FaceLandmark68Net:', faceapi.nets.faceLandmark68Net.isLoaded ? '✅ Loaded' : '❌ Not loaded');
+            // console.log('  - FaceRecognitionNet:', faceapi.nets.faceRecognitionNet.isLoaded ? '✅ Loaded' : '❌ Not loaded');
             
             // Warn if SsdMobilenetv1 not loaded (should be loaded by PreExamVerification)
             if (!faceapi.nets.ssdMobilenetv1.isLoaded) {
-              console.warn('⚠️ SsdMobilenetv1 not loaded - using TinyFaceDetector (less accurate)');
-              console.warn('   This may cause false NO_FACE violations. Ensure SsdMobilenetv1 loads in PreExamVerification.');
+              // console.warn('⚠️ SsdMobilenetv1 not loaded - using TinyFaceDetector (less accurate)');
+              // console.warn('   This may cause false NO_FACE violations. Ensure SsdMobilenetv1 loads in PreExamVerification.');
             }
             
             // All models MUST be loaded by PreExamVerification before starting exam
@@ -2102,7 +2348,7 @@ useEffect(() => {
               throw new Error('No face detector loaded. Please complete PreExamVerification first.');
             }
             
-            console.log('✅ All required face-api models are loaded from PreExamVerification');
+            // console.log('✅ All required face-api models are loaded from PreExamVerification');
             
             // Load baseline descriptors
             const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -2127,7 +2373,7 @@ useEffect(() => {
                     
                     // Prefer SsdMobilenetv1 (more accurate) if loaded
                     if (faceapi.nets.ssdMobilenetv1.isLoaded) {
-                      console.log('    - Using SsdMobilenetv1 for baseline detection');
+                      // console.log('    - Using SsdMobilenetv1 for baseline detection');
                       detection = await faceapi
                         .detectSingleFace(canvas, new faceapi.SsdMobilenetv1Options({
                           minConfidence: 0.3
@@ -2135,7 +2381,7 @@ useEffect(() => {
                         .withFaceLandmarks()
                         .withFaceDescriptor();
                     } else if (faceapi.nets.tinyFaceDetector.isLoaded) {
-                      console.log('    - Using TinyFaceDetector for baseline detection');
+                      // console.log('    - Using TinyFaceDetector for baseline detection');
                       detection = await faceapi
                         .detectSingleFace(canvas, new faceapi.TinyFaceDetectorOptions({
                           inputSize: 416,
@@ -2153,7 +2399,7 @@ useEffect(() => {
                   
                   // Prefer SsdMobilenetv1 (more accurate) if loaded
                   if (faceapi.nets.ssdMobilenetv1.isLoaded) {
-                    console.log('    - Using SsdMobilenetv1 for baseline detection');
+                    // console.log('    - Using SsdMobilenetv1 for baseline detection');
                     detection = await faceapi
                       .detectSingleFace(img, new faceapi.SsdMobilenetv1Options({
                         minConfidence: 0.3
@@ -2161,7 +2407,7 @@ useEffect(() => {
                       .withFaceLandmarks()
                       .withFaceDescriptor();
                   } else if (faceapi.nets.tinyFaceDetector.isLoaded) {
-                    console.log('    - Using TinyFaceDetector for baseline detection');
+                    // console.log('    - Using TinyFaceDetector for baseline detection');
                     detection = await faceapi
                       .detectSingleFace(img, new faceapi.TinyFaceDetectorOptions({
                         inputSize: 416,
@@ -2185,31 +2431,31 @@ useEffect(() => {
             if (descriptors.length > 0) {
               setBaselineDescriptors(descriptors);
               setFaceMonitoringEnabled(true);
-              console.log(`✅ Loaded ${descriptors.length} baseline descriptors, face monitoring enabled`);
-              console.log('🎥 ExamMonitor should now be active with monitoring:', {
-                descriptorsCount: descriptors.length,
-                monitoringEnabled: true,
-                isMonitoringActive
-              });
+              // console.log(`✅ Loaded ${descriptors.length} baseline descriptors, face monitoring enabled`);
+              // console.log('🎥 ExamMonitor should now be active with monitoring:', {
+                // descriptorsCount: descriptors.length,
+                // monitoringEnabled: true,
+                // isMonitoringActive
+              // });
             } else {
-              console.warn('⚠️ No baseline descriptors loaded, face monitoring disabled');
+              // console.warn('⚠️ No baseline descriptors loaded, face monitoring disabled');
             }
           } catch (error) {
             console.error('❌ Failed to initialize face monitoring:', error);
           }
         } else {
-          console.log('⏭️ Proctoring disabled - skipping face-api model checks and face monitoring');
+          // console.log('⏭️ Proctoring disabled - skipping face-api model checks and face monitoring');
         }
         
         // 🔥 Note: Fullscreen will be requested on first user interaction
         // Browser security prevents automatic fullscreen in useEffect
-        console.log('ℹ️ Fullscreen will be activated on first user interaction');
+        // console.log('ℹ️ Fullscreen will be activated on first user interaction');
         
-        console.log('🔒 Exam monitoring enabled');
+        // console.log('🔒 Exam monitoring enabled');
         
       } catch (error) {
         console.error('❌ Failed to initialize monitoring:', error);
-        console.log('📝 Enabling local monitoring only');
+        // console.log('📝 Enabling local monitoring only');
         // Enable monitoring anyway for local tracking
         setIsMonitoringActive(true);
         entryTimeRef.current = new Date();
@@ -2222,11 +2468,22 @@ useEffect(() => {
     }
   }, [attempt?.attemptId]); // Only trigger when attemptId changes
 
+  // ==================== BLOCK RIGHT-CLICK IMMEDIATELY ON MOUNT ====================
+  useEffect(() => {
+    const blockContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      // Don't stopPropagation — let the monitoring handler in setupMonitoring also fire to log the violation
+      return false;
+    };
+    document.addEventListener('contextmenu', blockContextMenu, true); // capture phase
+    return () => document.removeEventListener('contextmenu', blockContextMenu, true);
+  }, []);
+
   // ==================== SETUP MONITORING ====================
   useEffect(() => {
     if (!isMonitoringActive) return;
     
-    console.log('🔒 Setting up exam monitoring...');
+    // console.log('🔒 Setting up exam monitoring...');
     const cleanup = setupMonitoring();
     return cleanup;
   }, [isMonitoringActive]);
@@ -2238,7 +2495,7 @@ useEffect(() => {
     
     const requestFullscreenOnce = async () => {
       try {
-        console.log('🎬 Requesting fullscreen...');
+        // console.log('🎬 Requesting fullscreen...');
         const elem = document.documentElement;
         
         if (elem.requestFullscreen) {
@@ -2253,12 +2510,13 @@ useEffect(() => {
         
         // ✅ SUCCESS: Only set this to true if the promise actually resolves
         setFullscreenRequested(true);
-        console.log('✅ Fullscreen activated successfully');
+        fullscreenEnteredRef.current = true;
+        // console.log('✅ Fullscreen activated successfully');
         
       } catch (error) {
         // ❌ FAIL: Do NOT set fullscreenRequested(true) here. 
         // Let the listener stay attached so it retries on the next click.
-        console.warn('⚠️ Fullscreen request failed (will retry on next interaction):', error);
+        // console.warn('⚠️ Fullscreen request failed (will retry on next interaction):', error);
       }
     };
     
@@ -2276,7 +2534,7 @@ useEffect(() => {
       );
       
       if (!isCurrentlyFullscreen && !fullscreenRequested) {
-        console.log('🖱️ User interaction detected - requesting fullscreen...');
+        // console.log('🖱️ User interaction detected - requesting fullscreen...');
         requestFullscreenOnce();
       }
     };
@@ -2313,57 +2571,61 @@ useEffect(() => {
   }, [imageCarouselOpen, carouselImages.length]);
 
   // ==================== SAVE CURRENT ANSWER ====================
-  const saveCurrentAnswer = useCallback(async (syncToBackend: boolean = false) => {
+  const saveCurrentAnswer = useCallback(async (_syncToBackend: boolean = false) => {
 
-  // 🔥 SAFETY CHECK: Ensure currentQuestion exists
-  if (!currentQuestion) {
-    console.warn('⚠️ Cannot save answer: currentQuestion is undefined');
+  // 🔥 CAPTURE ID IMMEDIATELY — prevents saving Question A's answer into Question B's slot
+  // if the user navigates while this async function is still executing
+  const savingQuestion = currentQuestion;
+  const savingQuestionId = currentQuestion?.id;
+
+  if (!savingQuestion || !savingQuestionId) {
+    // console.warn('⚠️ Cannot save answer: currentQuestion is undefined');
     return;
   }
 
   let answer: any;
   
   // Normalize question type to lowercase for matching
-  const questionType = currentQuestion.type.toLowerCase();
+  const questionType = savingQuestion.type.toLowerCase();
   
   switch (questionType) {
     case QUESTION_TYPES.SQL:
     case QUESTION_TYPES.CODE:
-      answer = editorRef.current ? editorRef.current.getValue() : codeInput;
+      answer = codeInputRef.current || (editorRef.current ? editorRef.current.getValue() : codeInput);
       break;
     case QUESTION_TYPES.MCQ:
       answer = mcqAnswerRef.current;
-      console.log('🔍 MCQ Answer Debug:');
-      console.log('  - mcqAnswer state:', mcqAnswer);
-      console.log('  - Array?', Array.isArray(mcqAnswer));
-      console.log('  - Length:', mcqAnswer.length);
+      // console.log('🔍 MCQ Answer Debug:');
+      // console.log('  - mcqAnswer state:', mcqAnswer);
+      // console.log('  - Array?', Array.isArray(mcqAnswer));
+      // console.log('  - Length:', mcqAnswer.length);
       if (mcqAnswer.length > 0) {
-        console.log('  - First item:', mcqAnswer[0]);
-        console.log('  - First item type:', typeof mcqAnswer[0]);
-        console.log('  - Is valid option?', currentQuestion.options?.includes(mcqAnswer[0]));
+        // console.log('  - First item:', mcqAnswer[0]);
+        // console.log('  - First item type:', typeof mcqAnswer[0]);
+        // console.log('  - Is valid option?', savingQuestion.options?.includes(mcqAnswer[0]));
         
         // ✅ CRITICAL: Validate MCQ answer is actually from the options array
-        const invalidAnswers = mcqAnswer.filter(ans => !currentQuestion.options?.includes(ans));
+        const invalidAnswers = mcqAnswer.filter(ans => !savingQuestion.options?.includes(ans));
         if (invalidAnswers.length > 0) {
           console.error('❌ CRITICAL ERROR: MCQ answer contains invalid options!');
-          console.error('   Question:', currentQuestion.questionNo);
+          console.error('   Question:', savingQuestion.questionNo);
           console.error('   Invalid answers:', invalidAnswers);
-          console.error('   Valid options:', currentQuestion.options);
+          console.error('   Valid options:', savingQuestion.options);
           console.error('   All states:');
           console.error('   - mcqAnswer:', mcqAnswer);
           console.error('   - jumbledAnswers:', jumbledAnswers);
           console.error('   - fillBlanksAnswers:', fillBlanksAnswers);
-          alert(`ERROR: Invalid MCQ answer detected for Q${currentQuestion.questionNo}. Please reselect your answer.`);
+          alert(`ERROR: Invalid MCQ answer detected for Q${savingQuestion.questionNo}. Please reselect your answer.`);
           return; // Don't save invalid answer
         }
       }
       break;
     case QUESTION_TYPES.DESCRIPTIVE:
       answer = descriptiveAnswerRef.current;
-      console.log('📝 DESCRIPTIVE Answer Details:');
-      console.log('  - Full HTML:', descriptiveAnswer);
-      console.log('  - Contains <span data-latex:', descriptiveAnswer.includes('data-latex'));
-      console.log('  - Contains <span class="math:', descriptiveAnswer.includes('class="math'));
+      // console.log('📝 DESCRIPTIVE Answer Details:');
+      // console.log('  - Full HTML:', descriptiveAnswer);
+      // console.log('  - Contains <span data-latex:', descriptiveAnswer.includes('data-latex'));
+      // console.log('  - Contains <span class="math:', descriptiveAnswer.includes('class="math'));
       break;
     case QUESTION_TYPES.FITB:
       answer = fillBlanksAnswersRef.current;  // ✅ Use REF for latest value
@@ -2371,30 +2633,33 @@ useEffect(() => {
     case QUESTION_TYPES.JUMBLED:
       answer = jumbledAnswersRef.current;
       break;
+    case QUESTION_TYPES.LIKERT:
+      answer = likertAnswersRef.current[savingQuestion.id] || '';
+      break;
   }
   
   // Validate answer is not empty
   let isEmptyAnswer = false;
   
   // 🔍 DEBUG: Log the answer we're trying to save
-  console.log('🔍 DEBUG - saveCurrentAnswer called:');
-  console.log('  Question type:', currentQuestion.type);
-  console.log('  Answer value:', answer);
-  console.log('  Answer type:', typeof answer);
-  console.log('  Answer length:', typeof answer === 'string' ? answer.length : 'N/A');
-  console.log('  descriptiveAnswer state:', descriptiveAnswer);
+  // console.log('🔍 DEBUG - saveCurrentAnswer called:');
+  // console.log('  Question type:', savingQuestion.type);
+  // console.log('  Answer value:', answer);
+  // console.log('  Answer type:', typeof answer);
+  // console.log('  Answer length:', typeof answer === 'string' ? answer.length : 'N/A');
+  // console.log('  descriptiveAnswer state:', descriptiveAnswer);
 
-  console.log(`Answer: ${answer})`);
+  // console.log(`Answer: ${answer})`);
 
 
   if (!answer) {
     isEmptyAnswer = true;
   } else if (typeof answer === 'string') {
     // String answer (Descriptive, Coding)
-    if (currentQuestion.type === QUESTION_TYPES.CODE || currentQuestion.type === QUESTION_TYPES.SQL) {
+    if (savingQuestion.type === QUESTION_TYPES.CODE || savingQuestion.type === QUESTION_TYPES.SQL) {
       // For coding, allow submission even if code matches boilerplate (student may want partial credit)
       isEmptyAnswer = !answer.trim();
-    } else if (currentQuestion.type === QUESTION_TYPES.DESCRIPTIVE) {
+    } else if (savingQuestion.type === QUESTION_TYPES.DESCRIPTIVE) {
       // For descriptive (HTML from RichTextEditor), strip HTML tags and check content
       const textContent = answer.replace(/<[^>]*>/g, '').trim();
       isEmptyAnswer = !textContent || textContent === '';
@@ -2405,7 +2670,7 @@ useEffect(() => {
     // Array answer (MCQ, Fill in the Blank, Jumbled)
     if (answer.length === 0) {
       isEmptyAnswer = true;
-    } else if (currentQuestion.type === QUESTION_TYPES.FITB) {
+    } else if (savingQuestion.type === QUESTION_TYPES.FITB) {
       // For FITB, check if at least one blank is filled
       isEmptyAnswer = !answer.some((item: string) => item && item.trim() !== '');
     }
@@ -2413,16 +2678,20 @@ useEffect(() => {
   }
   
   if (isEmptyAnswer) {
-    console.log('📭 Clearing answer for Q' + currentQuestion.questionNo);
+    // console.log('📭 Clearing answer for Q' + savingQuestion.questionNo);
     
     // ✅ Show saving state
     setIsSavingAnswer(true);
     
-    // ✅ Clear from local state
+    // ✅ Clear from local state and ref
+    const updatedRef = { ...answersRef.current };
+    delete updatedRef[savingQuestion.id];
+    answersRef.current = updatedRef;
+    
     setAnswers(prev => {
-      if (prev[currentQuestion.id] !== undefined) {
+      if (prev[savingQuestion.id] !== undefined) {
         const newAnswers = { ...prev };
-        delete newAnswers[currentQuestion.id];
+        delete newAnswers[savingQuestion.id];
         return newAnswers;
       }
       return prev;
@@ -2431,19 +2700,20 @@ useEffect(() => {
     // ✅ Also clear from Firebase if online
     if (isOnline && attempt) {
       try {
-        const questionData = questions.find(q => q.id === currentQuestion.id);
+        const questionData = questions.find(q => q.id === savingQuestion.id);
         if (questionData) {
-          console.log(`🌐 Clearing answer for Q${currentQuestion.questionNo} from Firebase...`);
+          // console.log(`🌐 Clearing answer for Q${savingQuestion.questionNo} from Firebase...`);
           // ✅ Send empty value based on question type to clear the answer
           const emptyAnswer = 
-            currentQuestion.type === QUESTION_TYPES.MCQ ? [] :
-            currentQuestion.type === QUESTION_TYPES.FITB ? [] :
-            currentQuestion.type === QUESTION_TYPES.JUMBLED ? [] :
+            savingQuestion.type === QUESTION_TYPES.MCQ ? [] :
+            savingQuestion.type === QUESTION_TYPES.FITB ? [] :
+            savingQuestion.type === QUESTION_TYPES.JUMBLED ? [] :
             '';  // For CODE and DESCRIPTIVE
           
           await offlineQueueService.queueAnswer(
             attempt.attemptId,
-            currentQuestion.questionNo,
+            savingQuestion.id,
+            savingQuestion.questionNo,
             emptyAnswer,
             {
               id: questionData.id,
@@ -2459,11 +2729,11 @@ useEffect(() => {
               chapter: questionData.chapter,
             } as any,
             0,
-            bookmarkedQuestions.has(currentQuestion.id),
+            bookmarkedQuestions.has(savingQuestion.id),
             undefined,
-            []
+            undefined // ✅ Violations handled by dedicated addViolation()
           );
-          console.log(`✅ Answer cleared for Q${currentQuestion.questionNo}`);
+          // console.log(`✅ Answer cleared for Q${savingQuestion.questionNo}`);
         }
       } catch (error) {
         console.error(`❌ Error clearing answer:`, error);
@@ -2471,7 +2741,7 @@ useEffect(() => {
     }
     
     // ✅ Show visual feedback
-    setLastSavedQuestion(currentQuestion.id);
+    setLastSavedQuestion(savingQuestion.id);
     setTimeout(() => setLastSavedQuestion(null), 2000);
     
     setIsSavingAnswer(false);
@@ -2480,14 +2750,17 @@ useEffect(() => {
 
   setIsSavingAnswer(true);
   
+  // 🔥 CRITICAL: Update answersRef IMMEDIATELY (before async setAnswers) so navigation reads latest value
+  answersRef.current = { ...answersRef.current, [savingQuestion.id]: answer };
+  
   setAnswers(prev => {
-    return { ...prev, [currentQuestion.id]: answer };
+    return { ...prev, [savingQuestion.id]: answer };
   });
   
   // ✅ Mark question as viewed when answered
-  setViewedQuestions(prev => new Set([...prev, currentQuestion.id]));
+  setViewedQuestions(prev => new Set([...prev, savingQuestion.id]));
   
-  console.log('💾 Saving Q' + currentQuestion.questionNo + ':', { isOnline, syncToBackend });
+  // console.log('💾 Saving Q' + savingQuestion.questionNo + ':', { isOnline, syncToBackend });
   
   // ==================== HELPER: GET TIME SPENT ON CURRENT QUESTION ====================
   /**
@@ -2496,7 +2769,7 @@ useEffect(() => {
   const getTotalTimeSpent = (questionId: string): number => {
     // ✅ FIX: Return 0 if questionStartTime hasn't been initialized
     if (questionStartTime === 0) {
-      console.log('⏱️ getTotalTimeSpent called before initialization - returning 0');
+      // console.log('⏱️ getTotalTimeSpent called before initialization - returning 0');
       return 0;
     }
     
@@ -2512,7 +2785,7 @@ useEffect(() => {
       // If questionStartTime is before exam start, only count from exam start
       if (questionStartTime < examStartTime) {
         currentSessionTime = Math.floor((now - examStartTime) / 1000);
-        console.log(`⏱️ Adjusted time: not counting ${Math.floor((examStartTime - questionStartTime) / 1000)}s before exam started`);
+        // console.log(`⏱️ Adjusted time: not counting ${Math.floor((examStartTime - questionStartTime) / 1000)}s before exam started`);
       }
     }
     
@@ -2527,33 +2800,32 @@ useEffect(() => {
   // ==================== ONLINE: Save to Firebase ====================
   if (isOnline && attempt) {
     try {
-      const questionData = questions.find(q => q.id === currentQuestion.id);
+      const questionData = questions.find(q => q.id === savingQuestion.id);
       if (questionData) {
-        console.log(`🌐 ONLINE: Submitting Q${currentQuestion.questionNo} (ID: ${questionData.id}) to Firebase...`);
+        // console.log(`🌐 ONLINE: Submitting Q${savingQuestion.questionNo} (ID: ${questionData.id}) to Firebase...`);
         
         // ✅ DEBUG: Track chapter field through the entire flow
-        console.log('📖 CHAPTER DEBUG - Start of submission:');
-        console.log('  1. questionData object:', questionData);
-        console.log('  2. questionData.chapter value:', questionData.chapter);
-        console.log('  3. typeof chapter:', typeof questionData.chapter);
-        console.log('  3. typeof chapter:', typeof currentQuestion.chapter);
-        console.log('  4. Is undefined?', questionData.chapter === undefined);
-        console.log('  5. Is null?', questionData.chapter === null);
-        console.log('  6. Is empty string?', questionData.chapter === '');
-        console.log('  7. Complexity:', COMPLEXITY_LEGACY_MAP[questionData.complexity] || COMPLEXITY_LEVELS.EASY);
+        // console.log('📖 CHAPTER DEBUG - Start of submission:');
+        // console.log('  1. questionData object:', questionData);
+        // console.log('  2. questionData.chapter value:', questionData.chapter);
+        // console.log('  3. typeof chapter:', typeof questionData.chapter);
+        // console.log('  3. typeof chapter:', typeof savingQuestion.chapter);
+        // console.log('  4. Is undefined?', questionData.chapter === undefined);
+        // console.log('  5. Is null?', questionData.chapter === null);
+        // console.log('  6. Is empty string?', questionData.chapter === '');
+        // console.log('  7. Complexity:', COMPLEXITY_LEGACY_MAP[questionData.complexity] || COMPLEXITY_LEVELS.EASY);
         
         // Get violations for current question
-        const currentViolations = questionViolations[currentQuestion.id] || [];
         
         // ✅ DEBUG: Log what's being passed to questionBankItem
         const questionBankItemParam = {
           complexity: COMPLEXITY_LEGACY_MAP[questionData.complexity] || COMPLEXITY_LEVELS.EASY,
-          chapter: currentQuestion.chapter || questionData?.chapter, 
+          chapter: savingQuestion.chapter || questionData?.chapter, 
         };
-        console.log('📦 CHAPTER DEBUG - questionBankItem parameter:', questionBankItemParam);
-        console.log('  - chapter value being passed:', questionBankItemParam.chapter);
-        console.log('  - chapter !== undefined:', questionBankItemParam.chapter !== undefined);
-        console.log('  - complexity value:', questionBankItemParam.complexity);
+        // console.log('📦 CHAPTER DEBUG - questionBankItem parameter:', questionBankItemParam);
+        // console.log('  - chapter value being passed:', questionBankItemParam.chapter);
+        // console.log('  - chapter !== undefined:', questionBankItemParam.chapter !== undefined);
+        // console.log('  - complexity value:', questionBankItemParam.complexity);
         
         // ✅ DEBUG: Log the complete Question parameter object
         const questionParam = {
@@ -2567,98 +2839,103 @@ useEffect(() => {
               questionData.type.toLowerCase() === QUESTION_TYPES.SQL) && questionData.solution
             ? [questionData.solution]
             : (questionData as any).correctAnswers,
-          programmingLanguage: questionData.language,
+          programmingLanguage: (questionData.type.toLowerCase() === QUESTION_TYPES.CODE || questionData.type.toLowerCase() === QUESTION_TYPES.SQL)
+            ? selectedLanguage
+            : questionData.language,
           testCases: questionData.testCases,
           testStub: questionData.boilerplate,
           fromPool: questionData.fromPool || false,
+          likertTrait: (questionData as any).likertTrait,
+          likertDirection: (questionData as any).likertDirection,
         };
-        console.log('📋 CHAPTER DEBUG - Question parameter being passed:', {
-          id: questionParam.id,
-          type: questionParam.type,
-          fromPool: questionParam.fromPool,
-          hasChapter: 'chapter' in questionParam, // This will be false since we don't include chapter in Question param
-        });
-        console.log('  ⚠️ NOTE: Chapter is passed via questionBankItem, not Question parameter');
+        // console.log('📋 CHAPTER DEBUG - Question parameter being passed:', {
+          // id: questionParam.id,
+          // type: questionParam.type,
+          // fromPool: questionParam.fromPool,
+          // hasChapter: 'chapter' in questionParam, // This will be false since we don't include chapter in Question param
+        // });
+        // console.log('  ⚠️ NOTE: Chapter is passed via questionBankItem, not Question parameter');
         
         const result = await offlineQueueService.queueAnswer(
           attempt.attemptId,
-          currentQuestion.questionNo,
+          savingQuestion.id,
+          savingQuestion.questionNo,
           answer,
           questionParam as any,
           questionBankItemParam as any,
-          getTotalTimeSpent(currentQuestion.id),
-          bookmarkedQuestions.has(currentQuestion.id),
+          getTotalTimeSpent(savingQuestion.id),
+          bookmarkedQuestions.has(savingQuestion.id),
           undefined,
-          currentViolations
+          undefined // ✅ Violations handled by dedicated addViolation() — not answer saves
         );
 
         // Handle the result
         if (result.success) {
           if (!result.queued) {
-            console.log(`✅ Q${currentQuestion.questionNo} saved to Firebase immediately`);
+            // console.log(`✅ Q${savingQuestion.questionNo} saved to Firebase immediately`);
           } else {
-            console.log(`📦 Q${currentQuestion.questionNo} queued for later sync`);
+            // console.log(`📦 Q${savingQuestion.questionNo} queued for later sync`);
           }
           
           // 🔥 DIRTY FLAG: Update last saved answer to prevent re-saving unchanged content
           setLastSavedAnswers(prev => ({
             ...prev,
-            [currentQuestion.id]: answer
+            [savingQuestion.id]: answer
           }));
           
           // Show success feedback
-          setLastSavedQuestion(currentQuestion.id);
+          setLastSavedQuestion(savingQuestion.id);
           setTimeout(() => setLastSavedQuestion(null), 2000);
         }
       }
     } catch (error) {
-      console.error(`❌ Error saving Q${currentQuestion.questionNo}:`, error);
+      console.error(`❌ Error saving Q${savingQuestion.questionNo}:`, error);
     }
   } 
   // ==================== OFFLINE: Save to queue (which handles localStorage) ====================
   else if (!isOnline && attempt) {
-    console.log(`📴 OFFLINE: Saving Q${currentQuestion.questionNo} to queue`);
+    // console.log(`📴 OFFLINE: Saving Q${savingQuestion.questionNo} to queue`);
     
     // Queue for sync when online (offlineQueueService handles localStorage backup)
-    const questionData = questions.find(q => q.id === currentQuestion.id);
+    const questionData = questions.find(q => q.id === savingQuestion.id);
     if (questionData) {
       // Get violations for current question
-      const currentViolations = questionViolations[currentQuestion.id] || [];
       
 
       // 🔍 COMPREHENSIVE CHAPTER DEBUG
-      console.log('\n========== CHAPTER DEBUG ==========');
-      console.log('1. Current Question:', {
-        id: currentQuestion?.id,
-        questionNo: currentQuestion?.questionNo,
-        chapter: currentQuestion?.chapter,
-        hasChapter: !!currentQuestion?.chapter,
-        complexity: currentQuestion?.complexity,
-        allKeys: Object.keys(currentQuestion || {})
-      });
+      // console.log('\n========== CHAPTER DEBUG ==========');
+      // console.log('1. Current Question:', {
+        // id: currentQuestion?.id,
+        // questionNo: currentQuestion?.questionNo,
+        // chapter: currentQuestion?.chapter,
+        // hasChapter: !!currentQuestion?.chapter,
+        // complexity: currentQuestion?.complexity,
+        // allKeys: Object.keys(currentQuestion || {})
+      // });
 
-      console.log('2. Question Data:', {
-        id: questionData.id,
-        chapter: questionData.chapter,
-        hasChapter: !!questionData.chapter,
-        complexity: questionData.complexity
-      });
+      // console.log('2. Question Data:', {
+        // id: questionData.id,
+        // chapter: questionData.chapter,
+        // hasChapter: !!questionData.chapter,
+        // complexity: questionData.complexity
+      // });
 
-      console.log('3. Will pass to Firebase as questionBankItem:', {
-        chapter: questionData.chapter || currentQuestion.chapter,
-        complexity: COMPLEXITY_LEGACY_MAP[questionData.complexity] || COMPLEXITY_LEVELS.EASY
-      });
+      // console.log('3. Will pass to Firebase as questionBankItem:', {
+        // chapter: questionData.chapter || savingQuestion.chapter,
+        // complexity: COMPLEXITY_LEGACY_MAP[questionData.complexity] || COMPLEXITY_LEVELS.EASY
+      // });
 
-      console.log('4. Is chapter defined?', {
-        'questionData.chapter': questionData.chapter !== undefined,
-        'currentQuestion.chapter': currentQuestion.chapter !== undefined,
-        'value': questionData.chapter || currentQuestion.chapter || 'UNDEFINED'
-      });
-      console.log('===================================\n');
+      // console.log('4. Is chapter defined?', {
+        // 'questionData.chapter': questionData.chapter !== undefined,
+        // 'savingQuestion.chapter': savingQuestion.chapter !== undefined,
+        // 'value': questionData.chapter || savingQuestion.chapter || 'UNDEFINED'
+      // });
+      // console.log('===================================\n');
 
       await offlineQueueService.queueAnswer(
         attempt.attemptId,
-        currentQuestion.questionNo,
+        savingQuestion.id,
+        savingQuestion.questionNo,
         answer,
         {
           id: questionData.id,
@@ -2671,31 +2948,33 @@ useEffect(() => {
                 questionData.type === QUESTION_TYPES.SQL) && questionData.solution
               ? [questionData.solution]  // ✅ For Descriptive & Code: use solution field
               : (questionData as any).correctAnswers,  // ✅ For MCQ, FITB, Jumbled: use correctAnswers array
-          programmingLanguage: questionData.language,
+          programmingLanguage: (questionData.type === QUESTION_TYPES.CODE || questionData.type === QUESTION_TYPES.SQL)
+            ? selectedLanguage
+            : questionData.language,
           testCases: questionData.testCases,
           testStub: questionData.boilerplate,
           fromPool: questionData.fromPool || false,  // ✅ ADD: Pass pool flag
         } as any,
         {
           complexity: COMPLEXITY_LEGACY_MAP[questionData.complexity] || COMPLEXITY_LEVELS.EASY,
-          chapter: questionData.chapter || currentQuestion.chapter, 
+          chapter: questionData.chapter || savingQuestion.chapter, 
         } as any,
-        getTotalTimeSpent(currentQuestion.id),
-        bookmarkedQuestions.has(currentQuestion.id),
+        getTotalTimeSpent(savingQuestion.id),
+        bookmarkedQuestions.has(savingQuestion.id),
         undefined,
-        currentViolations
+        undefined // ✅ Violations handled by dedicated addViolation() — not answer saves
       );
-      console.log(`📦 Q${currentQuestion.questionNo} queued for sync when online`);
+      // console.log(`📦 Q${savingQuestion.questionNo} queued for sync when online`);
       
       // 🔥 DIRTY FLAG: Update last saved answer even when offline
       setLastSavedAnswers(prev => ({
         ...prev,
-        [currentQuestion.id]: answer
+        [savingQuestion.id]: answer
       }));
     }
     
     // Show success feedback
-    setLastSavedQuestion(currentQuestion.id);
+    setLastSavedQuestion(savingQuestion.id);
     setTimeout(() => setLastSavedQuestion(null), 2000);
   }
   
@@ -2704,6 +2983,7 @@ useEffect(() => {
   currentQuestion,
   editorRef,
   codeInput,
+  selectedLanguage,
   mcqAnswer,
   descriptiveAnswer,
   fillBlanksAnswers,
@@ -2725,7 +3005,7 @@ useEffect(() => {
 
   // ==================== CHECK IF OFFLINE ====================
   if (!isOnline) {
-    console.log('🚫 Cannot submit exam - offline');
+    // console.log('🚫 Cannot submit exam - offline');
     setSubmitStatus(SUBMIT_STATUS.ERROR);
     setSubmitMessage('Cannot submit exam while offline. Please check your internet connection.');
     return;
@@ -2755,7 +3035,7 @@ useEffect(() => {
           [currentQuestionId]: (prev[currentQuestionId] || 0) + finalTime
         };
         localStorage.setItem(TIME_TRACKING_KEY, JSON.stringify(updated));
-        console.log(`⏱️ Saved final time for Q${currentQuestionIndex + 1}: ${finalTime}s (total: ${updated[currentQuestionId]}s)`);
+        // console.log(`⏱️ Saved final time for Q${currentQuestionIndex + 1}: ${finalTime}s (total: ${updated[currentQuestionId]}s)`);
         return updated;
       });
     }
@@ -2790,18 +3070,19 @@ useEffect(() => {
   
   // ==================== LOG EXAM COMPLETION ====================
   // Exit activity is automatically logged in submitExam function
-  console.log('✅ Exam will be submitted');
-  console.log('📊 Total questions answered:', Object.keys(finalAnswers).length);
-  console.log('⚠️ Total violations:', violations.length);
+  // console.log('✅ Exam will be submitted');
+  // console.log('📊 Total questions answered:', Object.keys(finalAnswers).length);
+  // console.log('⚠️ Total violations:', violations.length);
   
   setIsMonitoringActive(false);
+  (window as any).__EXAMINERS_STUDENT_IN_EXAM = false; // ✅ Clear secure browser token on submission
   
   // ==================== SYNC PENDING VIOLATIONS ====================
   // ✅ Force sync any pending violations before submission via violationQueueService
-  console.log('🔄 Force syncing all pending violations before submission...');
+  // console.log('🔄 Force syncing all pending violations before submission...');
   try {
     await violationQueueService.forceSyncNow();
-    console.log('✅ Successfully synced all pending violations');
+    // console.log('✅ Successfully synced all pending violations');
   } catch (error) {
     console.error('❌ Failed to sync some violations before submission:', error);
     // Continue with submission anyway - violations are saved in localStorage
@@ -2810,18 +3091,18 @@ useEffect(() => {
   // ==================== ENHANCED SUBMISSION ====================
   // Force sync queued answers
   if (syncStatus.queueLength > 0) {
-    console.log('🔄 Syncing queued answers...');
+    // console.log('🔄 Syncing queued answers...');
     await offlineQueueService.forceSyncNow();
   }
 
   // Submit exam (we already checked isOnline above)
   if (attempt) {
     try {
-      console.log('📤 Submitting exam with AI evaluation...');
+      // console.log('📤 Submitting exam with AI evaluation...');
       const result = await submitExamToFirebase(false);
       
       if (result.success) {
-        console.log('✅ Exam submitted successfully');
+        // console.log('✅ Exam submitted successfully');
         
         // Clear ALL offline data after successful submission
         offlineQueueService.clearBackup(attempt.attemptId);
@@ -2849,11 +3130,11 @@ useEffect(() => {
             localStorage.removeItem('activeExamTabs');
           }
           
-          console.log('🧹 All offline data cleared after successful submission');
-          console.log('⏱️ Time tracking data cleared');
-          console.log('🚨 Violations data cleared');
-          console.log('📑 Exam backup data cleared');
-          console.log('🪟 Active tab tracking cleared');
+          // console.log('🧹 All offline data cleared after successful submission');
+          // console.log('⏱️ Time tracking data cleared');
+          // console.log('🚨 Violations data cleared');
+          // console.log('📑 Exam backup data cleared');
+          // console.log('🪟 Active tab tracking cleared');
         } catch (error) {
           console.error('❌ Error clearing localStorage:', error);
         }
@@ -2862,7 +3143,7 @@ useEffect(() => {
         setSubmitStatus(SUBMIT_STATUS.SUCCESS);
         setSubmitMessage('Your exam has been submitted successfully!');
         
-        console.log('🟢 SUCCESS STATUS SET, showSubmitDialog should be:', showSubmitDialog); // ADD THIS
+        // console.log('🟢 SUCCESS STATUS SET, showSubmitDialog should be:', showSubmitDialog); // ADD THIS
         // Helper function to safely convert timestamps
         const toDate = (timestamp: any): Date => {
           if (!timestamp) return new Date();
@@ -2902,7 +3183,7 @@ useEffect(() => {
         
         // ✅ Store attempt data for manual navigation - NO AUTO REDIRECT
         submittedAttemptData.current = attemptWithDates;
-        console.log('✅ Exam submitted - waiting for user to click Go to Home');
+        // console.log('✅ Exam submitted - waiting for user to click Go to Home');
       } else {
         setSubmitStatus(SUBMIT_STATUS.ERROR);
         setSubmitMessage(result.message || 'Failed to submit exam. Please try again.');
@@ -2913,7 +3194,12 @@ useEffect(() => {
     }
   } else {
     setSubmitStatus(SUBMIT_STATUS.ERROR);
-    setSubmitMessage('No active exam attempt found. Please refresh and try again.');
+    const isStudentUser = !!(userStudentRoll && userStudentRoll.trim() !== '' && userStudentRoll !== 'N/A');
+    setSubmitMessage(
+      isStudentUser
+        ? 'No active exam attempt found. Please refresh and try again.'
+        : 'You are viewing this exam in preview mode. Only students can submit exams.'
+    );
   }
 }, [
   isOnline, 
@@ -2945,14 +3231,21 @@ useEffect(() => {
     const studentStartTime = attempt?.startTime instanceof Date 
       ? attempt.startTime 
       : new Date((attempt?.startTime as any)?.toDate?.() || Date.now());
-    
+
     // Calculate this student's end time
+    // duration is the actual exam duration (separate from likertDuration)
+    // The exam timer starts from when likert phase ends, so offset startTime by likertDurationMins
+    const effectiveStartTime = (likertOnlyQuestions.length > 0 && likertDurationMins > 0)
+      ? new Date(studentStartTime.getTime() + likertDurationMins * 60 * 1000)
+      : studentStartTime;
+
     const endTime = calculateStudentEndTime(
       examDate,
       examTime || '00:00',
       duration,
       completionPolicy,
-      studentStartTime
+      effectiveStartTime,
+      likertDurationMins
     );
     
     const now = new Date().getTime();
@@ -2963,12 +3256,18 @@ useEffect(() => {
     
     if (secondsLeft <= 0) {
       setTimeLeft(0);
+      
+      // ✅ Don't trigger time expired or auto-submit during likert phase
+      // The main exam timer should not fire while student is still in personality assessment
+      if (examPhase === 'likert') return;
+      
       setShowTimeExpiredOverlay(true);
       
       // Auto-submit logic (existing code)
       if (!autoSubmitTriggered.current && questions.length > 0 && attempt?.attemptId && isOnline && !isAlreadySubmitted) {
         autoSubmitTriggered.current = true;
-        console.log(`⏰ TIME EXPIRED (${completionPolicy} mode) - Auto-submitting exam...`);
+        (window as any).__EXAMINERS_STUDENT_IN_EXAM = false; // ✅ Clear token on auto-submit so student can exit
+        // console.log(`⏰ TIME EXPIRED (${completionPolicy} mode) - Auto-submitting exam...`);
         handleSubmitExam().catch(err => {
           console.error('❌ Auto-submit failed:', err);
           autoSubmitTriggered.current = false;
@@ -2991,14 +3290,51 @@ useEffect(() => {
   const timer = setInterval(calculateTimeLeft, 1000);
 
   return () => clearInterval(timer);
-}, [examDate, examTime, duration, completionPolicy, attempt?.startTime, has15MinWarningShown, questions.length, attempt?.attemptId, isOnline, isAlreadySubmitted, handleSubmitExam]);
+}, [examDate, examTime, duration, completionPolicy, attempt?.startTime, has15MinWarningShown, questions.length, attempt?.attemptId, isOnline, isAlreadySubmitted, handleSubmitExam, likertOnlyQuestions.length, likertDurationMins, examPhase]);
+
+  // ── LIKERT PHASE TIMER ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (examPhase !== 'likert' || likertTimeLeft <= 0) return;
+    const t = setInterval(() => {
+      setLikertTimeLeft(prev => {
+        if (prev <= 1) { clearInterval(t); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [examPhase]); // only restart when phase changes, not on every tick
+
+  // Auto-advance to exam when likert timer hits 0
+  useEffect(() => {
+    if (examPhase === 'likert' && likertTimeLeft === 0 && likertOnlyQuestions.length > 0 && !likertAutoAdvanced.current) {
+      likertAutoAdvanced.current = true;
+      // console.log('⏰ Likert timer expired — advancing to EXAM phase');
+      setShowPhaseTransition(true);
+      setPhaseTransitionCount(60);
+      const countInterval = setInterval(() => {
+        setPhaseTransitionCount(prev => {
+          if (prev <= 1) { clearInterval(countInterval); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+      setTimeout(() => {
+        clearInterval(countInterval);
+        setExamPhase('exam');
+        setTimeLeft(duration * 60);
+        setCurrentQuestionIndex(likertOnlyQuestions.length);
+        setShowPhaseTransition(false);
+      }, 60000);
+    }
+  }, [examPhase, likertTimeLeft, likertOnlyQuestions.length]);
+  // ──────────────────────────────────────────────────────────────────────
+
   // ==================== OFFLINE QUEUE MANAGEMENT ====================
   
   // Queue complete connectivity cycle when reconnection happens
   const queueConnectivityCycle = (disconnectionTime: Date, reconnectionTime: Date) => {
     // Prevent duplicate connectivity cycle events
     if (isProcessingReconnection.current) {
-      console.log('⚠️ Connectivity cycle already queued, skipping duplicate');
+      // console.log('⚠️ Connectivity cycle already queued, skipping duplicate');
       return;
     }
     
@@ -3017,25 +3353,25 @@ useEffect(() => {
     };
     
     setOfflineEventQueue(prev => [...prev, connectivityEvent]);
-    console.log('📦 Complete connectivity cycle queued:', connectivityEvent.data.internetUnavailableDuration, 'seconds');
+    // console.log('📦 Complete connectivity cycle queued:', connectivityEvent.data.internetUnavailableDuration, 'seconds');
   };
 
   // Process offline queue when internet is restored
   const processOfflineQueue = async () => {
     if (offlineEventQueue.length === 0) {
-      console.log('📡 No events in offline queue to process');
+      // console.log('📡 No events in offline queue to process');
       return;
     }
     
-    console.log('\n🔍 ========== OFFLINE QUEUE PROCESSING DEBUG ==========');
-    console.log('📡 🔄 Processing offline queue:', offlineEventQueue.length, 'events');
-    console.log('📡 Queue contents:', offlineEventQueue.map(e => ({ 
-      type: e.type, 
-      timestamp: e.timestamp,
-      data: e.data,
-      failedAttempts: (e as any).failedAttempts || 0
-    })));
-    console.log('🔍 ===================================================\n');
+    // console.log('\n🔍 ========== OFFLINE QUEUE PROCESSING DEBUG ==========');
+    // console.log('📡 🔄 Processing offline queue:', offlineEventQueue.length, 'events');
+    // console.log('📡 Queue contents:', offlineEventQueue.map(e => ({ 
+      // type: e.type, 
+      // timestamp: e.timestamp,
+      // data: e.data,
+      // failedAttempts: (e as any).failedAttempts || 0
+    // })));
+    // console.log('🔍 ===================================================\n');
     
     try {
       const processedEvents: typeof offlineEventQueue = [];
@@ -3049,24 +3385,24 @@ useEffect(() => {
         
         // If event has failed 3+ times, just remove it
         if (currentAttempts >= 3) {
-          console.log(`🗑️ Removing event after ${currentAttempts} failed attempts:`, event.type);
+          // console.log(`🗑️ Removing event after ${currentAttempts} failed attempts:`, event.type);
           processedEvents.push(event); // Mark for removal
           removedCount++;
           continue;
         }
         
-        console.log(`📡 Processing event ${processedCount + failedCount + 1}/${offlineEventQueue.length}:`, event.type);
+        // console.log(`📡 Processing event ${processedCount + failedCount + 1}/${offlineEventQueue.length}:`, event.type);
         
         if (event.type === 'connectivity_cycle') {
           try {
-            console.log('🔍 Processing connectivity_cycle event:', {
-              examId: event.data.examId,
-              userId: event.data.userId,
-              disconnectionTimestamp: event.data.disconnectionTimestamp,
-              reconnectionTimestamp: event.data.reconnectionTimestamp,
-              disconnectionType: typeof event.data.disconnectionTimestamp,
-              reconnectionType: typeof event.data.reconnectionTimestamp
-            });
+            // console.log('🔍 Processing connectivity_cycle event:', {
+              // examId: event.data.examId,
+              // userId: event.data.userId,
+              // disconnectionTimestamp: event.data.disconnectionTimestamp,
+              // reconnectionTimestamp: event.data.reconnectionTimestamp,
+              // disconnectionType: typeof event.data.disconnectionTimestamp,
+              // reconnectionType: typeof event.data.reconnectionTimestamp
+            // });
             
             // ✅ FIX: Convert timestamps to Date objects if they're strings (from localStorage)
             const disconnectionTimestamp = event.data.disconnectionTimestamp instanceof Date 
@@ -3077,21 +3413,21 @@ useEffect(() => {
               ? event.data.reconnectionTimestamp
               : new Date(event.data.reconnectionTimestamp);
             
-            console.log('🔍 Converted timestamps:', {
-              disconnectionTimestamp,
-              reconnectionTimestamp,
-              duration: Math.round((reconnectionTimestamp.getTime() - disconnectionTimestamp.getTime()) / 1000) + 's'
-            });
+            // console.log('🔍 Converted timestamps:', {
+              // disconnectionTimestamp,
+              // reconnectionTimestamp,
+              // duration: Math.round((reconnectionTimestamp.getTime() - disconnectionTimestamp.getTime()) / 1000) + 's'
+            // });
             
             // Send complete connectivity cycle to Firebase in ONE operation
-            const entryId = await firebaseService.logConnectivityCycle(
+            await firebaseService.logConnectivityCycle(
               event.data.examId,
               event.data.userId,
               disconnectionTimestamp,
               reconnectionTimestamp
             );
-            console.log('✅ Connectivity cycle logged successfully:', entryId);
-            console.log('   Internet unavailable for:', event.data.internetUnavailableDuration, 'seconds');
+            // console.log('✅ Connectivity cycle logged successfully:', entryId);
+            // console.log('   Internet unavailable for:', event.data.internetUnavailableDuration, 'seconds');
             processedEvents.push(event);
             processedCount++;
             isProcessingReconnection.current = false; // Reset the flag
@@ -3104,11 +3440,11 @@ useEffect(() => {
           }
         } else if (event.type === 'answer_save') {
           try {
-            console.log('💾 Processing queued answer save:', event.data.questionId);
+            // console.log('💾 Processing queued answer save:', event.data.questionId);
             // For now, just mark as processed since answers are already in localStorage
             processedEvents.push(event);
             processedCount++;
-            console.log('✅ Answer save processed successfully');
+            // console.log('✅ Answer save processed successfully');
           } catch (error) {
             console.error('❌ Failed to save queued answer (attempt', currentAttempts + 1, '):', error);
             failedEvents.push({ ...event, failedAttempts: currentAttempts + 1 });
@@ -3116,11 +3452,11 @@ useEffect(() => {
           }
         } else if (event.type === 'exam_submit') {
           try {
-            console.log('📤 Processing queued exam submission');
+            // console.log('📤 Processing queued exam submission');
             onSubmitExam(event.data.answers);
             localStorage.removeItem(`examAnswers_${examId}_${userId}`);
             localStorage.removeItem(`examBackup_${examId}_${userId}`);
-            console.log('✅ Queued exam submission processed successfully');
+            // console.log('✅ Queued exam submission processed successfully');
             processedEvents.push(event);
             processedCount++;
           } catch (error) {
@@ -3131,7 +3467,7 @@ useEffect(() => {
           }
         } else {
           // Unknown event type - remove it
-          console.warn('⚠️ Unknown event type:', event.type, '- removing from queue');
+          // console.warn('⚠️ Unknown event type:', event.type, '- removing from queue');
           processedEvents.push(event);
           removedCount++;
         }
@@ -3141,10 +3477,10 @@ useEffect(() => {
       const remainingEvents = failedEvents;
       setOfflineEventQueue(remainingEvents);
       
-      console.log(`📡 Processing complete: ${processedCount} succeeded, ${failedCount} will retry, ${removedCount} removed`);
+      // console.log(`📡 Processing complete: ${processedCount} succeeded, ${failedCount} will retry, ${removedCount} removed`);
       
       if (remainingEvents.length === 0) {
-        console.log('✅ 🎉 All offline events processed successfully!');
+        // console.log('✅ 🎉 All offline events processed successfully!');
         
         // Show success message if exam was submitted
         const hadExamSubmission = processedEvents.some(e => e.type === 'exam_submit');
@@ -3152,9 +3488,9 @@ useEffect(() => {
           alert('✅ Your exam has been successfully submitted!');
         }
       } else if (processedCount > 0) {
-        console.log(`⚠️ Partially processed: ${processedCount} successful, ${remainingEvents.length} remain for retry.`);
+        // console.log(`⚠️ Partially processed: ${processedCount} successful, ${remainingEvents.length} remain for retry.`);
       } else {
-        console.log('❌ No events could be processed. Will retry later (attempt counts updated).');
+        // console.log('❌ No events could be processed. Will retry later (attempt counts updated).');
       }
       
     } catch (error) {
@@ -3166,18 +3502,18 @@ useEffect(() => {
 useEffect(() => {
   // Don't process queue if exam is already submitted
   if (isAlreadySubmitted) {
-    console.log('⚠️ Exam already submitted, ignoring offline queue');
+    // console.log('⚠️ Exam already submitted, ignoring offline queue');
     // Clear the queue since exam is done
     if (offlineEventQueue.length > 0) {
       setOfflineEventQueue([]);
       localStorage.removeItem(`examOfflineQueue_${examId}_${userId}`);
-      console.log('🧹 Cleared offline queue (exam already submitted)');
+      // console.log('🧹 Cleared offline queue (exam already submitted)');
     }
     return;
   }
   
   if (isOnline && offlineEventQueue.length > 0 && !isProcessingQueue.current) {
-    console.log('🔄 Auto-processing triggered: online with', offlineEventQueue.length, 'queued events');
+    // console.log('🔄 Auto-processing triggered: online with', offlineEventQueue.length, 'queued events');
     isProcessingQueue.current = true;
     
     // Small delay to ensure component is fully mounted
@@ -3206,7 +3542,7 @@ useEffect(() => {
     const MAX_EVENT_AGE = 10 * 60 * 1000; // 10 minutes
     const MAX_CONNECTIVITY_EVENT_AGE = 5 * 60 * 1000; // 5 minutes for connectivity events
     
-    console.log('🧹 Running automatic queue cleanup...');
+    // console.log('🧹 Running automatic queue cleanup...');
     
     const cleanedQueue = offlineEventQueue.filter((event) => {
       const eventAge = now - (typeof event.timestamp === 'number' ? event.timestamp : event.timestamp.getTime());
@@ -3214,20 +3550,20 @@ useEffect(() => {
       // Remove old connectivity events (not critical)
       if (event.type === 'connectivity_cycle') {
         if (eventAge > MAX_CONNECTIVITY_EVENT_AGE) {
-          console.log(`🗑️ Removing old connectivity event (${Math.round(eventAge / 1000)}s old)`);
+          // console.log(`🗑️ Removing old connectivity event (${Math.round(eventAge / 1000)}s old)`);
           return false;
         }
       }
       
       // Remove events that failed 3+ times
       if ((event.failedAttempts || 0) >= 3) {
-        console.log(`🗑️ Removing event after ${event.failedAttempts} failed attempts:`, event.type);
+        // console.log(`🗑️ Removing event after ${event.failedAttempts} failed attempts:`, event.type);
         return false;
       }
       
       // Remove very old events (regardless of type)
       if (eventAge > MAX_EVENT_AGE) {
-        console.log(`🗑️ Removing stale event (${Math.round(eventAge / 1000)}s old):`, event.type);
+        // console.log(`🗑️ Removing stale event (${Math.round(eventAge / 1000)}s old):`, event.type);
         return false;
       }
       
@@ -3235,8 +3571,8 @@ useEffect(() => {
     });
     
     if (cleanedQueue.length !== offlineEventQueue.length) {
-      const removedCount = offlineEventQueue.length - cleanedQueue.length;
-      console.log(`🧹 Cleanup removed ${removedCount} stuck event(s)`);
+      // const _removedCount = offlineEventQueue.length - cleanedQueue.length;
+      // console.log(`🧹 Cleanup removed ${removedCount} stuck event(s)`);
       setOfflineEventQueue(cleanedQueue);
       
       // Update localStorage
@@ -3246,7 +3582,7 @@ useEffect(() => {
         localStorage.setItem(`examOfflineQueue_${examId}_${userId}`, JSON.stringify(cleanedQueue));
       }
     } else {
-      console.log('✅ Queue is clean - no stuck events found');
+      // console.log('✅ Queue is clean - no stuck events found');
     }
   }, [offlineEventQueue, examId, userId]);
 
@@ -3257,11 +3593,11 @@ useEffect(() => {
     let cleanupTimer: number | null = null;
     
     if (isOnline && offlineEventQueue.length > 0) {
-      console.log('🌐 Connection restored - will check for stuck events in 30 seconds...');
+      // console.log('🌐 Connection restored - will check for stuck events in 30 seconds...');
       
       // Wait 30 seconds after connection restoration, then cleanup
       cleanupTimer = window.setTimeout(() => {
-        console.log('⏰ 30 seconds passed since reconnection - running safety cleanup...');
+        // console.log('⏰ 30 seconds passed since reconnection - running safety cleanup...');
         cleanupOfflineQueue();
       }, 1 * 60 * 1000);
     }
@@ -3280,20 +3616,20 @@ useEffect(() => {
     return;
   }
   
-  console.log('⏰ AUTO-SAVE STARTED at', new Date().toLocaleTimeString(), '- Will save every 60 seconds');
+  // console.log('⏰ AUTO-SAVE STARTED at', new Date().toLocaleTimeString(), '- Will save every 60 seconds');
   
   const autoSaveInterval = setInterval(() => {
-    const triggerTime = new Date().toLocaleTimeString();
+    // const _triggerTime = new Date().toLocaleTimeString();
     
     // ✅ FIX: Get current question index from REF (not stale closure)
     const currentIdx = currentQuestionRef.current.index;
     const currentQ = questions[currentIdx];
     if (!currentQ) {
-      console.log('⏭️ Auto-save skipped - no current question');
+      // console.log('⏭️ Auto-save skipped - no current question');
       return;
     }
     
-    console.log('\n⏰ AUTO-SAVE TRIGGER at', triggerTime, '- Question', currentQ.questionNo);
+    // console.log('\n⏰ AUTO-SAVE TRIGGER at', triggerTime, '- Question', currentQ.questionNo);
     
     // ✅ FIX: Get current answer from REFS (not stale closure values)
     let currentAnswer: any;
@@ -3341,7 +3677,7 @@ useEffect(() => {
     }
     
     if (!hasAnswer) {
-      console.log('⏭️ Auto-save skipped for Q' + currentQ.questionNo + ' - no answer');
+      // console.log('⏭️ Auto-save skipped for Q' + currentQ.questionNo + ' - no answer');
       return;
     }
     
@@ -3351,21 +3687,21 @@ useEffect(() => {
     const lastSavedSerialized = JSON.stringify(lastSaved);
     
     if (currentSerialized === lastSavedSerialized) {
-      const skipTime = new Date().toLocaleTimeString();
-      console.log('⏭️ Auto-save SKIPPED at', skipTime, '- Q' + currentQ.questionNo + ' - no changes since last save');
+      // const _skipTime = new Date().toLocaleTimeString();
+      // console.log('⏭️ Auto-save SKIPPED at', skipTime, '- Q' + currentQ.questionNo + ' - no changes since last save');
       return;
     }
 
-    const saveTime = new Date().toLocaleTimeString();
-    console.log('⏰ Auto-save triggered for Q' + currentQ.questionNo + ' - answer changed!');
-    console.log('💾 SAVING NOW at', saveTime);
-    console.log('  - Code length:', currentQ.type === QUESTION_TYPES.CODE || currentQ.type === QUESTION_TYPES.SQL ? currentAnswer?.length : 'N/A');
-    console.log('  - Last saved length:', currentQ.type === QUESTION_TYPES.CODE || currentQ.type === QUESTION_TYPES.SQL ? lastSaved?.length : 'N/A');
+    // const _saveTime = new Date().toLocaleTimeString();
+    // console.log('⏰ Auto-save triggered for Q' + currentQ.questionNo + ' - answer changed!');
+    // console.log('💾 SAVING NOW at', saveTime);
+    // console.log('  - Code length:', currentQ.type === QUESTION_TYPES.CODE || currentQ.type === QUESTION_TYPES.SQL ? currentAnswer?.length : 'N/A');
+    // console.log('  - Last saved length:', currentQ.type === QUESTION_TYPES.CODE || currentQ.type === QUESTION_TYPES.SQL ? lastSaved?.length : 'N/A');
     saveCurrentAnswer(true);
   }, 60000); // 60 seconds
 
   return () => {
-    console.log('⏰ AUTO-SAVE INTERVAL CLEARED');
+    // console.log('⏰ AUTO-SAVE INTERVAL CLEARED');
     clearInterval(autoSaveInterval);
   };
 }, [isOnline, attempt?.attemptId, attemptLoading, answersInitialized]); // ✅ MINIMAL DEPENDENCIES - only recreate when these critical values change
@@ -3388,7 +3724,7 @@ useEffect(() => {
           userId
         };
         localStorage.setItem(`examBackup_${examId}_${userId}`, JSON.stringify(backup));
-        console.log('💾 🔒 Backup save completed:', Object.keys(currentAnswers).length, 'answers');
+        // console.log('💾 🔒 Backup save completed:', Object.keys(currentAnswers).length, 'answers');
       } catch (error) {
         console.error('❌ Backup save failed:', error);
       }
@@ -3450,9 +3786,9 @@ useEffect(() => {
         if (!wasOnline && disconnectionStartTime.current) {
           const reconnectionTime = new Date();
           
-          console.log('✅ Internet reconnected! Creating connectivity cycle event...');
-          console.log('   Disconnection:', disconnectionStartTime.current);
-          console.log('   Reconnection:', reconnectionTime);
+          // console.log('✅ Internet reconnected! Creating connectivity cycle event...');
+          // console.log('   Disconnection:', disconnectionStartTime.current);
+          // console.log('   Reconnection:', reconnectionTime);
           
           // Queue complete connectivity cycle (disconnection + reconnection in ONE entry)
           queueConnectivityCycle(disconnectionStartTime.current, reconnectionTime);
@@ -3483,7 +3819,7 @@ useEffect(() => {
           // Track disconnection time locally (don't queue yet, wait for reconnection)
           if (wasOnline && !disconnectionStartTime.current) {
             disconnectionStartTime.current = new Date();
-            console.log('📡 Internet disconnected at:', disconnectionStartTime.current);
+            // console.log('📡 Internet disconnected at:', disconnectionStartTime.current);
           }
           
           // Update local tracking flag
@@ -3530,48 +3866,48 @@ useEffect(() => {
   useEffect(() => {
     (window as any).debugOfflineQueue = {
       viewQueue: () => {
-        console.log('\n📋 ========== OFFLINE EVENT QUEUE ==========');
-        console.log('Total events:', offlineEventQueue.length);
-        console.log('Events:', offlineEventQueue.map((e, i) => ({
-          index: i,
-          type: e.type,
-          timestamp: e.timestamp,
-          data: e.data,
-          failedAttempts: (e as any).failedAttempts || 0
-        })));
-        console.log('📋 =========================================\n');
+        // console.log('\n📋 ========== OFFLINE EVENT QUEUE ==========');
+        // console.log('Total events:', offlineEventQueue.length);
+        // console.log('Events:', offlineEventQueue.map((e, i) => ({
+          // index: i,
+          // type: e.type,
+          // timestamp: e.timestamp,
+          // data: e.data,
+          // failedAttempts: (e as any).failedAttempts || 0
+        // })));
+        // console.log('📋 =========================================\n');
         
-        console.log('\n📋 ========== ANSWER QUEUE (offlineQueueService) ==========');
-        const answerQueueStatus = offlineQueueService.getStatus();
-        console.log('Status:', answerQueueStatus);
-        console.log('Items:', offlineQueueService.getQueue());
-        console.log('📋 ======================================================\n');
+        // console.log('\n📋 ========== ANSWER QUEUE (offlineQueueService) ==========');
+        // const _answerQueueStatus = offlineQueueService.getStatus();
+        // console.log('Status:', answerQueueStatus);
+        // console.log('Items:', offlineQueueService.getQueue());
+        // console.log('📋 ======================================================\n');
       },
       processQueue: async () => {
-        console.log('\n🔧 Manually triggering queue processing...');
+        // console.log('\n🔧 Manually triggering queue processing...');
         await processOfflineQueue();
-        console.log('🔧 Processing complete\n');
+        // console.log('🔧 Processing complete\n');
       },
       clearQueue: () => {
-        console.log('\n🗑️ Manually clearing offline event queue...');
+        // console.log('\n🗑️ Manually clearing offline event queue...');
         setOfflineEventQueue([]);
         localStorage.removeItem(`examOfflineQueue_${examId}_${userId}`);
-        console.log('🗑️ Queue cleared\n');
+        // console.log('🗑️ Queue cleared\n');
       },
       testConnectivity: () => {
-        console.log('\n🧪 Testing connectivity cycle...');
+        // console.log('\n🧪 Testing connectivity cycle...');
         const now = new Date();
         const before = new Date(now.getTime() - 30000); // 30 seconds ago
         queueConnectivityCycle(before, now);
-        console.log('🧪 Connectivity cycle queued\n');
+        // console.log('🧪 Connectivity cycle queued\n');
       }
     };
     
-    console.log('🔧 Debug functions available: window.debugOfflineQueue');
-    console.log('   - window.debugOfflineQueue.viewQueue() - View both queues');
-    console.log('   - window.debugOfflineQueue.processQueue() - Process queue manually');
-    console.log('   - window.debugOfflineQueue.clearQueue() - Clear event queue');
-    console.log('   - window.debugOfflineQueue.testConnectivity() - Test connectivity cycle');
+    // console.log('🔧 Debug functions available: window.debugOfflineQueue');
+    // console.log('   - window.debugOfflineQueue.viewQueue() - View both queues');
+    // console.log('   - window.debugOfflineQueue.processQueue() - Process queue manually');
+    // console.log('   - window.debugOfflineQueue.clearQueue() - Clear event queue');
+    // console.log('   - window.debugOfflineQueue.testConnectivity() - Test connectivity cycle');
     
     return () => {
       delete (window as any).debugOfflineQueue;
@@ -3644,70 +3980,131 @@ useEffect(() => {
     }
   }, []);
 
-  // Load saved answer when question changes OR when answers state updates
-// Load saved answer when question changes OR when answers state updates
+  // ==================== UNIFIED ANSWER LOAD + CLEAR EFFECT ====================
+  // 🔥 REFACTORED: Single useLayoutEffect that:
+  //   1. FIRST clears ALL input fields to prevent cross-contamination
+  //   2. THEN loads the correct answer for the current question using answersRef (never stale)
+  //   3. Eliminates race conditions between separate clear/load effects
+  //   4. Protects user's in-progress typing from late Firebase sync
+  const lastLoadedQuestionIdRef = useRef<string | null>(null);
+  
   useLayoutEffect(() => {
     if (!currentQuestion) {
-      console.log('⏳ No current question yet...');
+      // console.log('⏳ No current question yet...');
       return;
     }
-    
-    // ✅ Allow loading default content immediately without waiting for saved answers
-    const savedAnswer = answers[currentQuestion.id];
+
+    const isQuestionChange = lastLoadedQuestionIdRef.current !== currentQuestion.id;
+
+    // ════════════════════════════════════════════════════════════════════
+    // DIRTY GUARD: If this is NOT a question change (e.g. answersInitialized toggled)
+    // and the user has already started typing on this question, do NOT touch anything
+    // ════════════════════════════════════════════════════════════════════
+    if (!isQuestionChange && dirtyQuestionsRef.current.has(currentQuestion.id)) {
+      // console.log(`⏭️ Skipping re-load for Q${currentQuestion.questionNo} — user has active edits (dirty)`);
+      return;
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // PHASE 1: CLEAR EVERYTHING — prevent any cross-question contamination
+    // ════════════════════════════════════════════════════════════════════
+
+    // 🔥 Destroy PGlite instance (each SQL question has its own schema)
+    if (pgliteRef.current) {
+      // console.log(`🗑️ Destroying PGlite instance for question change to Q${currentQuestion.questionNo}`);
+      try { pgliteRef.current.close(); } catch (e) { /* ignore */ }
+      pgliteRef.current = null;
+    }
+
+    // 🔥 Reset ALL input fields unconditionally — they will be re-populated below
+    setCodeInput('');
+    codeInputRef.current = '';
+    setMcqAnswer([]);
+    mcqAnswerRef.current = [];
+    setDescriptiveAnswer('');
+    descriptiveAnswerRef.current = '';
+    setFillBlanksAnswers([]);
+    fillBlanksAnswersRef.current = [];
+    setJumbledAnswers([]);
+    jumbledAnswersRef.current = [];
+
+    // 🔥 Clear the dirty flag for the NEW question (fresh start)
+    if (isQuestionChange) {
+      dirtyQuestionsRef.current.delete(currentQuestion.id);
+    }
+
+    // Track which question we last loaded
+    lastLoadedQuestionIdRef.current = currentQuestion.id;
+
+    // console.log(`🧹 Cleared ALL answer fields for Q${currentQuestion.questionNo} (type: ${currentQuestion.type})`);
+
+    // ════════════════════════════════════════════════════════════════════
+    // PHASE 2: READ saved answer from REF (always latest, never stale)
+    // ════════════════════════════════════════════════════════════════════
+
+    // 🔥 CRITICAL: Use answersRef instead of answers state to avoid stale closures
+    const savedAnswer = answersRef.current[currentQuestion.id];
 
     if (!answersInitialized && savedAnswer) {
-      console.log('⏳ Waiting for saved answer to be loaded from Firebase...');
+      // console.log('⏳ Waiting for saved answer to be loaded from Firebase...');
       return;
     }
 
-    // ✅ Allow loading default content for CODE, JUMBLED, and DESCRIPTIVE without waiting for attempt
+    // Allow loading default content for all question types without waiting for attempt
     const immediateLoadTypes: QuestionType[] = [
       QUESTION_TYPES.CODE, 
       QUESTION_TYPES.SQL,
       QUESTION_TYPES.JUMBLED, 
-      QUESTION_TYPES.DESCRIPTIVE
+      QUESTION_TYPES.DESCRIPTIVE,
+      QUESTION_TYPES.MCQ,
+      QUESTION_TYPES.FITB
     ];
     const shouldWaitForAttempt = !immediateLoadTypes.includes(currentQuestion.type);
 
     if (shouldWaitForAttempt && (!attempt || attemptLoading)) {
-      console.log('⏳ Waiting for attempt to load before setting question answer...');
+      // console.log('⏳ Waiting for attempt to load before setting question answer...');
       return;
     }
     
     setViewedQuestions(prev => new Set([...prev, currentQuestion.id]));
+
+    // ════════════════════════════════════════════════════════════════════
+    // PHASE 3: LOAD the correct answer for the current question type
+    // ════════════════════════════════════════════════════════════════════
       
-      console.log('\n' + '='.repeat(80));
-      console.log(`📝 LOADING ANSWER FOR CURRENT QUESTION`);
-      console.log(`  - Question No: ${currentQuestion.questionNo}`);
-      console.log(`  - Question ID: ${currentQuestion.id}`);
-      console.log(`  - Question Type: ${currentQuestion.type}`);
-      console.log(`  - Saved answer found?`, savedAnswer ? 'YES' : 'NO');
+      // console.log('\n' + '='.repeat(80));
+      // console.log(`📝 LOADING ANSWER FOR Q${currentQuestion.questionNo}`);
+      // console.log(`  - Question ID: ${currentQuestion.id}`);
+      // console.log(`  - Question Type: ${currentQuestion.type}`);
+      // console.log(`  - Saved answer found?`, savedAnswer ? 'YES' : 'NO');
       if (savedAnswer) {
-        console.log(`  - Saved answer type:`, typeof savedAnswer);
-        console.log(`  - Saved answer length:`, typeof savedAnswer === 'string' ? savedAnswer.length : 
-                                                  Array.isArray(savedAnswer) ? savedAnswer.length : 'N/A');
-        console.log(`  - Saved answer preview:`, typeof savedAnswer === 'string' ? savedAnswer.slice(0, 100) + '...' : savedAnswer);
+        // console.log(`  - Saved answer type:`, typeof savedAnswer);
+        // console.log(`  - Saved answer preview:`, typeof savedAnswer === 'string' ? savedAnswer.slice(0, 100) + '...' : JSON.stringify(savedAnswer));
       }
-      console.log(`  - All answers in state:`, Object.keys(answers));
-      console.log('='.repeat(80) + '\n');
+      // console.log('='.repeat(80) + '\n');
       
       switch (currentQuestion.type) {
         case QUESTION_TYPES.SQL:
     case QUESTION_TYPES.CODE: {
-          // ✅ Auto-set language from question data
+          // Auto-set language: local ref (most recent) > saved response > question data
+          const localLang = selectedLanguagePerQuestion.current[currentQuestion.id];
+          const savedResponse = attempt?.responses?.find((r: any) => r.questionId === currentQuestion.id);
+          const savedLang = savedResponse?.programmingLanguage;
           const defaultLang = currentQuestion.language || 'javascript';
           if (currentQuestion.type === QUESTION_TYPES.SQL) {
             setSelectedLanguage('sql');
+          } else if (localLang) {
+            setSelectedLanguage(localLang.toLowerCase());
+          } else if (savedLang) {
+            setSelectedLanguage(savedLang.toLowerCase());
           } else if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
-            // Use first starterCode language as default
             setSelectedLanguage(currentQuestion.starterCodes[0].language.toLowerCase());
           } else if (defaultLang) {
             setSelectedLanguage(defaultLang);
           }
 
-          // CRITICAL: Load testStub (starter code), NEVER load solution
-          // For starterCodes: load the code for the selected language
-          let newCode = savedAnswer || '';
+          // Determine the code to load: saved answer > starter code > boilerplate
+          let newCode = (savedAnswer && typeof savedAnswer === 'string') ? savedAnswer : '';
           if (!newCode) {
             if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
               const lang = currentQuestion.type === QUESTION_TYPES.SQL ? 'sql'
@@ -3724,13 +4121,10 @@ useEffect(() => {
           // Defensive check: Ensure we're not accidentally loading solution
           if (newCode === currentQuestion.solution && currentQuestion.solution) {
             console.error('⚠️ CRITICAL ERROR: Attempting to load solution instead of testStub!');
-            console.error('This should never happen - check backend data');
-            // Load empty instead of solution
-            setCodeInput('// Error: No starter code available\n');
-            break;
+            newCode = '// Error: No starter code available\n';
           }
           
-          // Store initial length for stable editor key (won't change while typing)
+          // Store initial length for stable editor key
           initialCodeLengthRef.current[currentQuestion.id] = newCode.length;
           
           // SQL: Default placeholder if no code
@@ -3738,232 +4132,240 @@ useEffect(() => {
             newCode = '-- Write your SQL query here\n';
           }
           
-          console.log(`🔧 Setting codeInput for Q${currentQuestion.questionNo}:`, newCode.slice(0, 50) + '...');
-          console.log(`🔑 Editor key will be: ${currentQuestion.id}-${newCode.length} (stable)`);
+          // console.log(`🔧 Setting codeInput for Q${currentQuestion.questionNo}: ${newCode.slice(0, 50)}...`);
           setCodeInput(newCode);
-          console.log('✅ Loaded code for editor:', newCode.length, 'chars');
-          console.log('   - Saved answer?', !!savedAnswer);
-          console.log('   - Boilerplate?', !!currentQuestion.boilerplate);
-          console.log('   - Final code preview:', newCode.slice(0, 50));
+          codeInputRef.current = newCode;
           
-          // ✅ NEW: Auto-populate customInput with first test case input
+          // Auto-populate customInput with first test case input
           if (currentQuestion.testCases && currentQuestion.testCases.length > 0 && currentQuestion.testCases[0].input) {
             const sampleInput = currentQuestion.testCases[0].input;
-            // Unescape newlines and tabs for display
             const unescapedInput = sampleInput.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
             setCustomInput(unescapedInput);
-            console.log('📥 Auto-populated customInput with first test case:', unescapedInput.slice(0, 50) + '...');
           } else {
             setCustomInput('');
-            console.log('📥 No test cases available - cleared customInput');
           }
-          
-          // Editor will remount with new key, no need to setValue
-          break;
-          // Editor will remount with new key, no need to setValue
           break;
         }
-        case QUESTION_TYPES.MCQ:
-          // ✅ UPDATED: MCQ answer should be an array of actual option text (not indices)
+        case QUESTION_TYPES.MCQ: {
+          // MCQ answer should be an array of actual option text (not indices)
           if (savedAnswer !== undefined && Array.isArray(savedAnswer)) {
-            // ✅ Convert old index-based answers to actual option text
-            const convertedAnswer = savedAnswer.map(item => {
-              // ✅ FIX: Only treat as index if the ENTIRE string is a valid number (no spaces, no extra chars)
+            // Convert old index-based answers to actual option text
+            const convertedAnswer = savedAnswer.map((item: any) => {
               if (typeof item === 'string' && /^\d+$/.test(item.trim())) {
-                // Pure numeric string - treat as index
                 const numIndex = parseInt(item);
                 if (currentQuestion.options && currentQuestion.options[numIndex]) {
-                  // Convert index to actual option text
                   return currentQuestion.options[numIndex];
                 }
               } else if (typeof item === 'number') {
-                // Numeric type - treat as index
                 if (currentQuestion.options && currentQuestion.options[item]) {
                   return currentQuestion.options[item];
                 }
               }
-              // Not a valid index - return as is (should be option text)
               return item;
             });
             
-            // ✅ CRITICAL: Filter out invalid options that don't exist in the valid options array
-            const validOptions = convertedAnswer.filter(ans => currentQuestion.options?.includes(ans));
+            // Filter out invalid options
+            const validOptions = convertedAnswer.filter((ans: string) => currentQuestion.options?.includes(ans));
             
-            // Log if we filtered out any invalid data
             if (validOptions.length !== convertedAnswer.length) {
-              const invalidOptions = convertedAnswer.filter(ans => !currentQuestion.options?.includes(ans));
-              console.warn(`⚠️ Filtered out ${invalidOptions.length} invalid MCQ options for Q${currentQuestion.questionNo}:`, invalidOptions);
-              console.log('Valid options for this question:', currentQuestion.options);
-              
-              // ✅ AUTO-FIX: Update the answers state to remove corrupted data
+              // const _invalidOptions = convertedAnswer.filter((ans: string) => !currentQuestion.options?.includes(ans));
+              // console.warn(`⚠️ Filtered out ${invalidOptions.length} invalid MCQ options for Q${currentQuestion.questionNo}:`, invalidOptions);
+              // Auto-fix the answers state
               setAnswers(prev => ({
                 ...prev,
                 [currentQuestion.id]: validOptions
               }));
-              console.log('✅ Auto-fixed: Cleaned answers state for Q' + currentQuestion.questionNo);
+              answersRef.current[currentQuestion.id] = validOptions;
             }
             
             setMcqAnswer(validOptions);
+            mcqAnswerRef.current = validOptions;
+            // console.log(`✅ MCQ Q${currentQuestion.questionNo}: Loaded ${validOptions.length} selected option(s)`);
           } else if (savedAnswer !== undefined && typeof savedAnswer === 'string') {
             // Backward compatibility: convert string to array
-            // ✅ FIX: Only treat as index if the ENTIRE string is numeric
             if (/^\d+$/.test(savedAnswer.trim())) {
               const numIndex = parseInt(savedAnswer);
               if (currentQuestion.options && currentQuestion.options[numIndex]) {
-                setMcqAnswer([currentQuestion.options[numIndex]]);
+                const converted = [currentQuestion.options[numIndex]];
+                setMcqAnswer(converted);
+                mcqAnswerRef.current = converted;
               } else {
-                // Invalid index - clear answer
-                console.warn(`⚠️ Invalid index ${numIndex} for Q${currentQuestion.questionNo}, clearing answer`);
+                // console.warn(`⚠️ Invalid index ${numIndex} for Q${currentQuestion.questionNo}`);
                 setMcqAnswer([]);
+                mcqAnswerRef.current = [];
               }
+            } else if (currentQuestion.options?.includes(savedAnswer)) {
+              const converted = [savedAnswer];
+              setMcqAnswer(converted);
+              mcqAnswerRef.current = converted;
             } else {
-              // Check if the string is a valid option
-              if (currentQuestion.options?.includes(savedAnswer)) {
-                setMcqAnswer([savedAnswer]);
-              } else {
-                // Invalid option - clear answer
-                console.warn(`⚠️ Invalid option "${savedAnswer}" for Q${currentQuestion.questionNo}, clearing answer`);
-                console.log('Valid options:', currentQuestion.options);
-                setMcqAnswer([]);
-              }
+              // console.warn(`⚠️ Invalid option "${savedAnswer}" for Q${currentQuestion.questionNo}`);
+              setMcqAnswer([]);
+              mcqAnswerRef.current = [];
             }
-          } else if (savedAnswer !== undefined) {
-            console.error(`⚠️ WRONG TYPE: MCQ Q${currentQuestion.questionNo} has invalid answer:`, typeof savedAnswer);
-            setMcqAnswer([]);
           } else {
             setMcqAnswer([]);
+            mcqAnswerRef.current = [];
           }
           break;
-        case QUESTION_TYPES.DESCRIPTIVE:
-          // ✅ VALIDATION: Descriptive answer should be a string
-          console.log(`📝 Loading DESCRIPTIVE answer for Q${currentQuestion.questionNo}:`, {
-            hasSavedAnswer: !!savedAnswer,
-            answerType: typeof savedAnswer,
-            answerLength: typeof savedAnswer === 'string' ? savedAnswer.length : 'N/A',
-            answerPreview: typeof savedAnswer === 'string' ? savedAnswer.substring(0, 100) : savedAnswer
-          });
-          
+        }
+        case QUESTION_TYPES.DESCRIPTIVE: {
           if (savedAnswer !== undefined && typeof savedAnswer === 'string') {
             setDescriptiveAnswer(savedAnswer);
-            setAnswersInitialized(true);  // ← ADD THIS LINE
+            descriptiveAnswerRef.current = savedAnswer;
             // Only increment version if answer is different from current (prevents unnecessary remounts)
-            if (savedAnswer !== descriptiveAnswer) {
-              answerLoadVersionRef.current[currentQuestion.id] = (answerLoadVersionRef.current[currentQuestion.id] || 0) + 1;
-              console.log('✅ Descriptive answer SET:', savedAnswer.substring(0, 50) + '...');
-              console.log(`🔑 Answer load version: ${answerLoadVersionRef.current[currentQuestion.id]}`);
-            } else {
-              console.log('⏭️ Answer unchanged, skipping version increment');
-            }
-          } else if (savedAnswer !== undefined) {
-            console.error(`⚠️ WRONG TYPE: Descriptive Q${currentQuestion.questionNo} has non-string answer:`, typeof savedAnswer);
-            setDescriptiveAnswer('');
-            setAnswersInitialized(true);  // ← ADD THIS LINE TOO
             answerLoadVersionRef.current[currentQuestion.id] = (answerLoadVersionRef.current[currentQuestion.id] || 0) + 1;
+            // console.log(`✅ Descriptive Q${currentQuestion.questionNo} loaded: ${savedAnswer.substring(0, 50)}...`);
           } else {
-            console.log('📭 No saved answer for this descriptive question');
+            if (savedAnswer !== undefined) {
+              console.error(`⚠️ WRONG TYPE: Descriptive Q${currentQuestion.questionNo} has non-string answer:`, typeof savedAnswer);
+            }
             setDescriptiveAnswer('');
-            setAnswersInitialized(true);  // ← AND ADD THIS LINE
+            descriptiveAnswerRef.current = '';
             answerLoadVersionRef.current[currentQuestion.id] = (answerLoadVersionRef.current[currentQuestion.id] || 0) + 1;
           }
           break;
-        case QUESTION_TYPES.FITB:
-          // ✅ Use blanksCount from sanitized question, fallback to correctAnswers for backward compatibility
+        }
+        case QUESTION_TYPES.FITB: {
           const blanksCount = currentQuestion.blanksCount || 
                              currentQuestion.correctAnswers?.length || 
-                             // Fallback: count blanks in question text (___  pattern)
                              (currentQuestion.questionText?.match(/_{3,}/g) || []).length || 
                              0;
           
-          console.log(`📝 FITB: Detected ${blanksCount} blanks for Q${currentQuestion.questionNo}`);
-          
-          // ✅ VALIDATION: FITB answer should be an array
           if (savedAnswer && Array.isArray(savedAnswer)) {
-            setFillBlanksAnswers(savedAnswer);
-            console.log(`📝 Loaded ${savedAnswer.length} FITB answers`);
-          } else if (savedAnswer) {
-            console.error(`⚠️ WRONG TYPE: FITB Q${currentQuestion.questionNo} has non-array answer:`, typeof savedAnswer);
-            setFillBlanksAnswers(Array(blanksCount).fill(''));
+            // Ensure the array has the right length
+            const padded = [...savedAnswer];
+            while (padded.length < blanksCount) padded.push('');
+            setFillBlanksAnswers(padded.slice(0, Math.max(blanksCount, padded.length)));
+            fillBlanksAnswersRef.current = padded.slice(0, Math.max(blanksCount, padded.length));
+            // console.log(`✅ FITB Q${currentQuestion.questionNo}: Loaded ${savedAnswer.length} answers for ${blanksCount} blanks`);
           } else {
-            setFillBlanksAnswers(Array(blanksCount).fill(''));
-            console.log(`📝 Initialized ${blanksCount} blanks for FITB`);
+            if (savedAnswer) {
+              console.error(`⚠️ WRONG TYPE: FITB Q${currentQuestion.questionNo} has non-array answer:`, typeof savedAnswer);
+            }
+            const empty = Array(blanksCount).fill('');
+            setFillBlanksAnswers(empty);
+            fillBlanksAnswersRef.current = empty;
+            // console.log(`📝 FITB Q${currentQuestion.questionNo}: Initialized ${blanksCount} blank(s)`);
           }
           break;
-      case QUESTION_TYPES.JUMBLED:
-          // Initialize with jumbledItems OR jumbledOptions from backend, or use saved answer
-          // Check both field names (backend uses jumbledItems, some places use jumbledOptions)
-          console.log('\n🔀🔀🔀 JUMBLED QUESTION INITIALIZATION 🔀🔀🔀');
-          console.log('  Question No:', currentQuestion.questionNo);
-          console.log('  Question ID:', currentQuestion.id);
-          console.log('  Question Type:', currentQuestion.type);
-          console.log('  Has jumbledOptions?', !!currentQuestion.jumbledOptions);
-          console.log('  Has jumbledItems?', !!currentQuestion.jumbledItems);
-          console.log('  jumbledOptions:', currentQuestion.jumbledOptions);
-          console.log('  jumbledItems:', currentQuestion.jumbledItems);
-          
+        }
+      case QUESTION_TYPES.JUMBLED: {
           const jumbledItems = currentQuestion.jumbledOptions || currentQuestion.jumbledItems || [];
           
-          console.log('  Final jumbledItems array:', jumbledItems);
-          console.log('  Array length:', jumbledItems.length);
-          console.log('  Has saved answer?', !!savedAnswer);
-          console.log('  Saved answer:', savedAnswer);
-          console.log('  Saved answer type:', typeof savedAnswer);
-          console.log('  Is array?', Array.isArray(savedAnswer));
-          
-          // ✅ FIXED: Only set jumbled answers if we haven't already set them, or if saved answer is different
           if (savedAnswer && Array.isArray(savedAnswer) && savedAnswer.length > 0) {
-            // Use saved answer (student's arrangement)
             setJumbledAnswers(savedAnswer);
-            console.log(`✅ Loaded saved jumbled answer with ${savedAnswer.length} items`);
+            jumbledAnswersRef.current = savedAnswer;
+            // console.log(`✅ Jumbled Q${currentQuestion.questionNo}: Loaded saved answer with ${savedAnswer.length} items`);
           } else if (savedAnswer && !Array.isArray(savedAnswer)) {
-            // Wrong type - use default
             console.error(`⚠️ WRONG TYPE: Jumbled Q${currentQuestion.questionNo} has non-array answer:`, typeof savedAnswer);
-            console.error(`   This usually means a different question type's answer was mapped to this question`);
-            console.error(`   Using default jumbled items instead`);
             setJumbledAnswers(jumbledItems);
-            console.log(`✅ Set jumbledAnswers to default items: ${jumbledItems.length} items`);
+            jumbledAnswersRef.current = jumbledItems;
           } else {
-            // No saved answer - use original jumbled items from question
             setJumbledAnswers(jumbledItems);
-            console.log(`✅ Initialized jumbled with ${jumbledItems.length} items (no saved answer)`);
+            jumbledAnswersRef.current = jumbledItems;
+            // console.log(`📝 Jumbled Q${currentQuestion.questionNo}: Initialized with ${jumbledItems.length} items`);
           }
-          console.log('🔀🔀🔀 END JUMBLED INITIALIZATION 🔀🔀🔀\n');
           break;
+        }
       }
-  }, [currentQuestionIndex, currentQuestion?.id, answersInitialized]);
-
-  // ✅ CLEAR PREVIOUS QUESTION STATES: Reset all input states when question changes to prevent cross-contamination
-  useLayoutEffect(() => {
-    if (!currentQuestion) return;
-    
-    // Clear states for question types OTHER than the current one
-    if (currentQuestion.type !== QUESTION_TYPES.CODE && currentQuestion.type !== QUESTION_TYPES.SQL) {
-      // Don't clear codeInput as it's managed separately with Monaco editor
-      // Cleanup PGlite when switching away from SQL
-      if (pgliteRef.current) {
-        try { pgliteRef.current.close(); } catch (e) { /* ignore */ }
-        pgliteRef.current = null;
-      }
-    }
-    if (currentQuestion.type !== QUESTION_TYPES.MCQ) {
-      setMcqAnswer([]);
-    }
-    if (currentQuestion.type !== QUESTION_TYPES.DESCRIPTIVE) {
-      setDescriptiveAnswer('');
-    }
-    if (currentQuestion.type !== QUESTION_TYPES.FITB) {
-      setFillBlanksAnswers([]);
-    }
-    if (currentQuestion.type !== QUESTION_TYPES.JUMBLED) {
-      setJumbledAnswers([]);
-    }
-    
-    console.log(`🧹 Cleared unused answer states for Q${currentQuestion.questionNo} (type: ${currentQuestion.type})`);
-  }, [currentQuestion?.id, currentQuestion?.type]); // Run when question changes
+  }, [currentQuestion?.id, answersInitialized]); // 🔥 Only re-run when question ID changes or answers first load
 
   // DEBUG: Track when codeInput actually changes
   useEffect(() => {
-    console.log(`🔄 codeInput state changed for Q${currentQuestion?.questionNo}, length: ${codeInput.length}, preview: ${codeInput.slice(0, 50)}...`);
+    // console.log(`🔄 codeInput state changed for Q${currentQuestion?.questionNo}, length: ${codeInput.length}, preview: ${codeInput.slice(0, 50)}...`);
   }, [codeInput]);
+
+  // ✅ Track selected language per question so navigating back restores the correct dropdown
+  useEffect(() => {
+    if (currentQuestion?.id && (currentQuestion.type === QUESTION_TYPES.CODE || currentQuestion.type === QUESTION_TYPES.SQL)) {
+      selectedLanguagePerQuestion.current[currentQuestion.id] = selectedLanguage;
+    }
+  }, [selectedLanguage, currentQuestion?.id]);
+
+  /**
+   * Smart timestamp parser — handles ALL possible violation timestamp formats
+   * Returns a valid Date object or null if unparseable
+   */
+  const parseViolationTimestamp = (ts: any): Date | null => {
+    try {
+      // 1. null / undefined / empty
+      if (!ts) return null;
+
+      // 2. Already a Date object
+      if (ts instanceof Date) {
+        return isNaN(ts.getTime()) ? null : ts;
+      }
+
+      // 3. Number (Unix ms or seconds)
+      if (typeof ts === 'number') {
+        const ms = ts < 1e10 ? ts * 1000 : ts;
+        const d = new Date(ms);
+        return isNaN(d.getTime()) ? null : d;
+      }
+
+      // 4. String formats
+      if (typeof ts === 'string') {
+        // 4a. IST format: "2026-02-22 00:03:41 IST"
+        if (ts.includes(' IST')) {
+          const d = new Date(ts.replace(' IST', '+05:30').replace(' ', 'T'));
+          if (!isNaN(d.getTime())) return d;
+        }
+        // 4b. ISO format: "2026-02-22T00:03:41.000Z" or "2026-02-22T00:03:41+05:30"
+        if (ts.includes('T') || ts.includes('Z')) {
+          const d = new Date(ts);
+          if (!isNaN(d.getTime())) return d;
+        }
+        // 4c. Space-separated without timezone: "2026-02-22 00:03:41"
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(ts)) {
+          const d = new Date(ts.replace(' ', 'T'));
+          if (!isNaN(d.getTime())) return d;
+        }
+        // 4d. Date-only: "2026-02-22"
+        if (/^\d{4}-\d{2}-\d{2}$/.test(ts)) {
+          const d = new Date(ts);
+          if (!isNaN(d.getTime())) return d;
+        }
+        // 4e. Any other string JS can parse
+        const d = new Date(ts);
+        if (!isNaN(d.getTime())) return d;
+      }
+
+      // 5. Firestore Timestamp object: { seconds: ..., nanoseconds: ... }
+      if (typeof ts === 'object' && ts !== null && 'seconds' in ts) {
+        const d = new Date(ts.seconds * 1000 + (ts.nanoseconds || 0) / 1000000);
+        if (!isNaN(d.getTime())) return d;
+      }
+
+      // 6. Firestore Timestamp with toDate()
+      if (typeof ts === 'object' && ts !== null && typeof ts.toDate === 'function') {
+        const d = ts.toDate();
+        if (d instanceof Date && !isNaN(d.getTime())) return d;
+      }
+
+      // 7. Serialized Firestore Timestamp { _seconds: ... }
+      if (typeof ts === 'object' && ts !== null && '_seconds' in ts) {
+        const d = new Date(ts._seconds * 1000);
+        if (!isNaN(d.getTime())) return d;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  /** Format a violation timestamp for display — returns static string, never changes */
+  const formatViolationTime = (ts: any): string => {
+    const d = parseViolationTimestamp(ts);
+    if (!d) return '—';
+    return d.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  };
 
 const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -4011,7 +4413,7 @@ const formatTime = (seconds: number) => {
     arg3?: Blob | number, // Can be proof blob OR debounce time (blob ignored - handled by ExamMonitor)
     arg4?: number         // Optional debounce time if blob is present
   ) => {
-    console.log(`📝 logViolation called: ${type} (UI update only)`);
+    // console.log(`📝 logViolation called: ${type} (UI update only)`);
     
     // 1. Parse debounce time from overloaded arguments
     let debounceMs = 1000;
@@ -4024,13 +4426,13 @@ const formatTime = (seconds: number) => {
     // Note: proofBlob (arg3 as Blob) is ignored - ExamMonitor handles upload via violationQueueService
 
     if (!isMonitoringActive) {
-      console.log(`⏭️ Skipping ${type} - monitoring not active`);
+      // console.log(`⏭️ Skipping ${type} - monitoring not active`);
       return;
     }
     
     // ✅ Skip violations during exam submission to prevent false fullscreen exit violations
     if (isSubmittingFromOverlay) {
-      console.log(`⏭️ Skipping ${type} - exam submission in progress`);
+      // console.log(`⏭️ Skipping ${type} - exam submission in progress`);
       return;
     }
     
@@ -4040,7 +4442,7 @@ const formatTime = (seconds: number) => {
     const gracePeriodMs = STARTUP_SENSITIVE_VIOLATIONS.includes(type) ? 60000 : 2000; // 60s for startup-sensitive, 2s for others
     
     if (timeSinceMonitoringStart < gracePeriodMs) { 
-      console.log(`⏭️ Skipping ${type} violation - within ${gracePeriodMs/1000}s grace period (${Math.round(timeSinceMonitoringStart/1000)}s elapsed)`);
+      // console.log(`⏭️ Skipping ${type} violation - within ${gracePeriodMs/1000}s grace period (${Math.round(timeSinceMonitoringStart/1000)}s elapsed)`);
       return;
     }
 
@@ -4048,7 +4450,7 @@ const formatTime = (seconds: number) => {
     const totalViolations = Object.values(questionViolations).reduce((sum, arr) => sum + arr.length, 0);
     if (totalViolations >= MAX_VIOLATIONS) {
       if (!violationLimitReached.current) {
-        console.warn(`🚫 VIOLATION LIMIT REACHED: ${MAX_VIOLATIONS} violations logged. No more violations will be recorded.`);
+        // console.warn(`🚫 VIOLATION LIMIT REACHED: ${MAX_VIOLATIONS} violations logged. No more violations will be recorded.`);
         violationLimitReached.current = true;
       }
       return;
@@ -4067,7 +4469,7 @@ const formatTime = (seconds: number) => {
     for (const checkType of typesToCheck) {
       const lastLoggedTime = lastViolationLoggedTime.current.get(checkType);
       if (lastLoggedTime && (Date.now() - lastLoggedTime) < VIOLATION_COOLDOWN_MS) {
-        console.log(`⏭️ Skipping ${type} - related violation ${checkType} within cooldown (${Math.round((Date.now() - lastLoggedTime) / 1000)}s < 30s)`);
+        // console.log(`⏭️ Skipping ${type} - related violation ${checkType} within cooldown (${Math.round((Date.now() - lastLoggedTime) / 1000)}s < 30s)`);
         return;
       }
     }
@@ -4075,7 +4477,7 @@ const formatTime = (seconds: number) => {
     // ✅ FIX: Set cooldown IMMEDIATELY to prevent race conditions from async state updates
     lastViolationLoggedTime.current.set(type, Date.now());
     
-    console.log(`✅ ${type} passed checks - scheduling with ${debounceMs}ms debounce`);
+    // console.log(`✅ ${type} passed checks - scheduling with ${debounceMs}ms debounce`);
 
     // ✅ Determine if this is from ExamMonitor vs browser events
     // ExamMonitor violations: NO_FACE, HEAD_TURNED, MULTIPLE_FACES, FACE_MISMATCH, SUSPICIOUS_MOVEMENT, HUMAN_VOICE_DETECTED
@@ -4094,7 +4496,7 @@ const formatTime = (seconds: number) => {
       const currentQuestionId = currentQuestionRef.current.id;
       const currentQuestionNo = currentQuestionRef.current.no;
       
-      console.log(`🚨 Processing violation: ${type} on Q${currentQuestionNo}`);
+      // console.log(`🚨 Processing violation: ${type} on Q${currentQuestionNo}`);
       
       // Note: Cooldown timestamp already set BEFORE debounce to prevent race conditions
       
@@ -4120,8 +4522,8 @@ const formatTime = (seconds: number) => {
           
           try {
             localStorage.setItem(VIOLATIONS_TRACKING_KEY, JSON.stringify(updated));
-            const newTotal = Object.values(updated).reduce((sum, arr) => sum + arr.length, 0);
-            console.log(`🚨 Q${currentQuestionNo}: Violation tracked - ${type} [Total: ${newTotal}/${MAX_VIOLATIONS}]`);
+            // const _newTotal = Object.values(updated).reduce((sum, arr) => sum + arr.length, 0);
+            // console.log(`🚨 Q${currentQuestionNo}: Violation tracked - ${type} [Total: ${newTotal}/${MAX_VIOLATIONS}]`);
           } catch (error) {
             console.error('❌ Error saving violations to storage:', error);
           }
@@ -4133,18 +4535,18 @@ const formatTime = (seconds: number) => {
       // ✅ 5. Save to Firebase
       // Browser violations (WINDOW_BLUR, TAB_SWITCH, FULLSCREEN_EXIT, etc.) need to be saved here
       // ExamMonitor violations are already saved via violationQueueService syncCallback
-      console.log(`🔍 Firebase save check: isFromExamMonitor=${isFromExamMonitor}, attemptId=${attempt?.attemptId}`);
+      // console.log(`🔍 Firebase save check: isFromExamMonitor=${isFromExamMonitor}, attemptId=${attempt?.attemptId}`);
       
       if (!isFromExamMonitor && attempt?.attemptId) {
         try {
-          console.log(`📤 Saving browser violation to Firebase: ${type}...`);
+          // console.log(`📤 Saving browser violation to Firebase: ${type}...`);
           await addViolationToAttempt(violation);
-          console.log(`✅ Browser violation saved to Firebase: ${type}`);
+          // console.log(`✅ Browser violation saved to Firebase: ${type}`);
         } catch (error) {
           console.error(`❌ Failed to save browser violation to Firebase: ${type}`, error);
         }
       } else {
-        console.log(`⏭️ Skipping Firebase save: isFromExamMonitor=${isFromExamMonitor}, hasAttemptId=${!!attempt?.attemptId}`);
+        // console.log(`⏭️ Skipping Firebase save: isFromExamMonitor=${isFromExamMonitor}, hasAttemptId=${!!attempt?.attemptId}`);
       }
 
       violationTimeouts.current.delete(type);
@@ -4166,11 +4568,22 @@ const formatTime = (seconds: number) => {
   const setupMonitoring = useCallback(() => {
     if (!isMonitoringActive) return;
 
-    console.log('🔒 Exam monitoring activated');
+    // console.log('🔒 Exam monitoring activated');
+
+    // ✅ Set secure browser token so Python app knows student is in active exam
+    const _isStudentInExam = !!(userStudentRoll && userStudentRoll.trim() !== '' && userStudentRoll !== 'N/A');
+    if (_isStudentInExam) {
+      (window as any).__EXAMINERS_STUDENT_IN_EXAM = true;
+      // console.log('🔐 Student-in-exam token SET for secure browser');
+    } else {
+      (window as any).__EXAMINERS_STUDENT_IN_EXAM = false;
+      // console.log('🔐 Non-student user — token remains false');
+    }
 
     // ✅ IMMEDIATE CHECK: DevTools already open?
     const checkDevToolsImmediate = () => {
-      const threshold = 160;
+      // Size-based (docked DevTools)
+      const threshold = 100;
       const widthThreshold = window.outerWidth - window.innerWidth > threshold;
       const heightThreshold = window.outerHeight - window.innerHeight > threshold;
       return widthThreshold || heightThreshold;
@@ -4190,14 +4603,15 @@ const formatTime = (seconds: number) => {
     setTimeout(() => {
       // Check DevTools
       if (checkDevToolsImmediate()) {
-        console.log('🚨 IMMEDIATE: DevTools already open on exam start!');
+        // console.log('🚨 IMMEDIATE: DevTools already open on exam start!');
         logViolation('DEVTOOLS_OPEN', 'DevTools was already open when exam started', 0);
+        setShowDevToolsOverlay(true);
       }
       
       // Check Fullscreen - but don't log if we're still showing the prompt
       // The prompt gives user a chance to enter fullscreen
       if (!checkFullscreenImmediate()) {
-        console.log('⚠️ Not in fullscreen on exam start - prompt should be showing');
+        // console.log('⚠️ Not in fullscreen on exam start - prompt should be showing');
         // Don't log violation immediately - give user time via the prompt
         // Violation will be logged after 1 minute via checkFullscreenStatus
       }
@@ -4210,11 +4624,11 @@ const formatTime = (seconds: number) => {
         // Skip during grace period (first 60 seconds)
         const timeSinceMonitoringStart = Date.now() - monitoringStartTime.current;
         if (timeSinceMonitoringStart < 60000) {
-          console.log('⏭️ Skipping visibility change - within 60s grace period');
+          // console.log('⏭️ Skipping visibility change - within 60s grace period');
           return;
         }
         
-        console.log('👁️ Document hidden - checking for minimize');
+        // console.log('👁️ Document hidden - checking for minimize');
         
         // Check multiple signals for minimize
         const isLikelyMinimized = 
@@ -4225,10 +4639,10 @@ const formatTime = (seconds: number) => {
           window.screenTop < -10000;
         
         if (isLikelyMinimized) {
-          console.log('🚨 WINDOW_MINIMIZE detected - calling logViolation...');
+          // console.log('🚨 WINDOW_MINIMIZE detected - calling logViolation...');
           logViolation(VIOLATION_TYPES.WINDOW_MINIMIZE, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.WINDOW_MINIMIZE], 5000);
         } else {
-          console.log('🚨 TAB_SWITCH detected - calling logViolation...');
+          // console.log('🚨 TAB_SWITCH detected - calling logViolation...');
           logViolation(VIOLATION_TYPES.TAB_SWITCH, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.TAB_SWITCH], 5000);
         }
       } else {
@@ -4268,10 +4682,19 @@ const formatTime = (seconds: number) => {
 
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
-      logViolation('RIGHT_CLICK', undefined, 2000); // 2 second grace period
+      logViolation('RIGHT_CLICK', undefined, 2000);
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // 🔥 BLOCK ESCAPE KEY — prevent students from exiting fullscreen
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        // console.log('🚫 Escape key blocked — fullscreen exit prevented');
+        return;
+      }
+
       // ✅ Allow Ctrl+Z (undo) and Ctrl+Y (redo) to work normally
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
         // Don't prevent default - let undo/redo work in inputs and Monaco editor
@@ -4281,6 +4704,9 @@ const formatTime = (seconds: number) => {
       if (e.key === 'F12') {
         e.preventDefault();
         logViolation('SHORTCUT_F12');
+        setShowDevToolsOverlay(true);
+        // Auto-hide after 5 seconds since they can't actually open DevTools
+        setTimeout(() => setShowDevToolsOverlay(false), 5000);
         return;
       }
 
@@ -4359,6 +4785,8 @@ const formatTime = (seconds: number) => {
           if (['c', 'i', 'j'].includes(e.key.toLowerCase())) {
             e.preventDefault();
             logViolation('SHORTCUT_DEVTOOLS');
+            setShowDevToolsOverlay(true);
+            setTimeout(() => setShowDevToolsOverlay(false), 5000);
           }
         }
       }
@@ -4389,11 +4817,11 @@ const formatTime = (seconds: number) => {
       const widthDiff = Math.abs(width - initialWidth);
       const heightDiff = Math.abs(height - initialHeight);
       
-      console.log('📐 Window resized:', {
-        initial: { width: initialWidth, height: initialHeight },
-        current: { width, height },
-        diff: { widthDiff, heightDiff }
-      });
+      // console.log('📐 Window resized:', {
+        // initial: { width: initialWidth, height: initialHeight },
+        // current: { width, height },
+        // diff: { widthDiff, heightDiff }
+      // });
       
       // Detect minimize by checking multiple signals
       const isMinimized = 
@@ -4402,7 +4830,7 @@ const formatTime = (seconds: number) => {
         (window.screenLeft < -10000 || window.screenTop < -10000);
       
       if (isMinimized) {
-        console.log('🚨 WINDOW MINIMIZED (via resize) - Logging violation!');
+        // console.log('🚨 WINDOW MINIMIZED (via resize) - Logging violation!');
         logViolation(VIOLATION_TYPES.WINDOW_MINIMIZE, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.WINDOW_MINIMIZE]);
         return;
       }
@@ -4412,7 +4840,7 @@ const formatTime = (seconds: number) => {
         const timeSinceMonitoringStart = Date.now() - monitoringStartTime.current;
         // Check if grace period (1st minute) has passed
         if (timeSinceMonitoringStart > 60000) {
-          console.log('🚨 SCREEN_RESIZE detected - Logging violation!');
+          // console.log('🚨 SCREEN_RESIZE detected - Logging violation!');
           logViolation(VIOLATION_TYPES.SCREEN_RESIZE, `Window resized to ${width}x${height}`, 5000);
           screenResizeViolationLogged = true;
         }
@@ -4425,20 +4853,56 @@ const formatTime = (seconds: number) => {
     };
 
     const handleOffline = () => {
-      logViolation(VIOLATION_TYPES.NETWORK_DISCONNECT, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.NETWORK_DISCONNECT], 0);
+      // Network disconnect is NOT counted as a violation - it's a connectivity issue, not cheating
+      // console.log('⚠️ Network disconnected - not counting as violation');
     };
 
     const handleOnline = async () => {
-      console.log('✅ Network reconnected');
+      // console.log('✅ Network reconnected');
     };
 
+    let devToolsWasDetected = false;
+    
     const detectDevTools = () => {
-      const threshold = 160;
+      let detected = false;
+      
+      // Size-based detection (catches docked DevTools — left, right, bottom)
+      const threshold = 100;
       const widthThreshold = window.outerWidth - window.innerWidth > threshold;
       const heightThreshold = window.outerHeight - window.innerHeight > threshold;
-      
       if (widthThreshold || heightThreshold) {
+        detected = true;
+      }
+      
+      // 🔥 ALWAYS clear console and show warning — if DevTools is open they see ONLY this
+      // If DevTools is closed, this is invisible and costs nothing
+      try {
+        console.clear();
+        console.log(
+          '%c ⛔ EXAM IN PROGRESS ',
+          'background: #DC2626; color: white; font-size: 60px; font-weight: 900; padding: 20px 40px; border-radius: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);'
+        );
+        console.log(
+          '%c 🚫 DEVELOPER TOOLS ARE STRICTLY PROHIBITED DURING EXAMS ',
+          'background: #450a0a; color: #fca5a5; font-size: 24px; font-weight: bold; padding: 15px 30px; border: 3px solid #DC2626; border-radius: 8px;'
+        );
+        console.log(
+          '%c ⚠️  This violation has been RECORDED and REPORTED to your examiner. \n ⚠️  Close Developer Tools IMMEDIATELY to continue your exam. \n ⚠️  Repeated violations may result in exam cancellation. ',
+          'color: #DC2626; font-size: 16px; font-weight: bold; background: #FEE2E2; padding: 12px 20px; border-left: 6px solid #DC2626; border-radius: 4px; line-height: 2;'
+        );
+        console.log(
+          '%c' + '█'.repeat(80),
+          'color: #DC2626; font-size: 8px;'
+        );
+      } catch (_) { /* ignore */ }
+      
+      if (detected) {
+        devToolsWasDetected = true;
+        setShowDevToolsOverlay(true);
         logViolation(VIOLATION_TYPES.DEVTOOLS_OPEN, VIOLATION_DESCRIPTIONS[VIOLATION_TYPES.DEVTOOLS_OPEN], 5000);
+      } else if (devToolsWasDetected) {
+        devToolsWasDetected = false;
+        setShowDevToolsOverlay(false);
       }
     };
     
@@ -4492,20 +4956,49 @@ const formatTime = (seconds: number) => {
     document.addEventListener('keydown', handleKeyDown);
     
     // Add all browser-specific fullscreen change events
+    const handleFullscreenChange = () => {
+      const isCurrentlyFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      
+      if (!isCurrentlyFullscreen) {
+        // ✅ Show overlay immediately on any fullscreen exit during monitoring
+        // console.log('🚨 Student exited fullscreen — showing re-entry overlay');
+        setShowFullscreenOverlay(true);
+        logViolation(VIOLATION_TYPES.FULLSCREEN_EXIT, 'Student exited fullscreen mode');
+      } else {
+        // ✅ Track that fullscreen was entered (for any entry method)
+        fullscreenEnteredRef.current = true;
+        setShowFullscreenOverlay(false);
+      }
+    };
+    
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+    
     window.addEventListener('resize', handleResize);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
     
-    console.log('✅ All event listeners attached for exam monitoring');
+    // console.log('✅ All event listeners attached for exam monitoring');
 
     const devToolsInterval = setInterval(() => {
       detectDevTools();
-      checkFullscreenStatus(); // Check fullscreen status every 5 second
-    }, 5000);
+      checkFullscreenStatus(); // Check fullscreen status every 12 seconds
+    }, 12000);
     const multipleTabsInterval = setInterval(checkMultipleTabs, 3000);
 
     return () => {
-      console.log('🔓 Exam monitoring deactivated');
+      // console.log('🔓 Exam monitoring deactivated');
+
+      // ✅ Clear secure browser token
+      (window as any).__EXAMINERS_STUDENT_IN_EXAM = false;
+      // console.log('🔐 Student-in-exam token CLEARED');
       
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       document.removeEventListener('copy', handleCopy);
@@ -4515,6 +5008,10 @@ const formatTime = (seconds: number) => {
       document.removeEventListener('keydown', handleKeyDown);
       
       window.removeEventListener('resize', handleResize);
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
 
@@ -4532,9 +5029,11 @@ const formatTime = (seconds: number) => {
   }, [isMonitoringActive, logViolation]);
 
 
-  const handlePrevious = () => {
-    if (currentQuestionIndex > 0) {
-      saveCurrentAnswer(true);
+  const handlePrevious = async () => {
+    // Phase boundary: during likert phase, don't go below index 0; during exam phase, don't go into likert questions
+    const minIndex = examPhase === 'exam' ? likertOnlyQuestions.length : 0;
+    if (currentQuestionIndex > minIndex) {
+      await saveCurrentAnswer(true);
       const newIndex = currentQuestionIndex - 1;
       setCurrentQuestionIndex(newIndex);
       // Clear terminal output
@@ -4552,9 +5051,13 @@ const formatTime = (seconds: number) => {
     }
   };
 
-  const handleNext = () => {
-    if (currentQuestionIndex < questions.length - 1) {
-      saveCurrentAnswer(true);
+  const handleNext = async () => {
+    // Phase boundary: during likert phase, don't go past last likert question
+    const maxIndex = examPhase === 'likert' && likertOnlyQuestions.length > 0
+      ? likertOnlyQuestions.length - 1
+      : questions.length - 1;
+    if (currentQuestionIndex < maxIndex) {
+      await saveCurrentAnswer(true);
       const newIndex = currentQuestionIndex + 1;
       setCurrentQuestionIndex(newIndex);
       // Clear terminal output
@@ -4572,8 +5075,11 @@ const formatTime = (seconds: number) => {
     }
   };
 
-  const handleQuestionClick = (index: number) => {
-    saveCurrentAnswer(true); // ✅ Save before navigating
+  const handleQuestionClick = async (index: number) => {
+    // Phase boundary: don't allow crossing into the other phase's questions
+    if (examPhase === 'likert' && index >= likertOnlyQuestions.length) return;
+    if (examPhase === 'exam' && index < likertOnlyQuestions.length) return;
+    await saveCurrentAnswer(true); // ✅ Save before navigating
     setCurrentQuestionIndex(index);
     // Clear terminal output
     setCodeOutput('');
@@ -4593,13 +5099,13 @@ const formatTime = (seconds: number) => {
     setBookmarkedQuestions(prev => {
       const newSet = new Set(prev);
       if (newSet.has(currentQuestion.id)) {
-        console.log('🔖 Removing bookmark from question:', currentQuestion.questionNo);
+        // console.log('🔖 Removing bookmark from question:', currentQuestion.questionNo);
         newSet.delete(currentQuestion.id);
       } else {
-        console.log('🔖 Adding bookmark to question:', currentQuestion.questionNo);
+        // console.log('🔖 Adding bookmark to question:', currentQuestion.questionNo);
         newSet.add(currentQuestion.id);
       }
-      console.log('🔖 Total bookmarked questions:', newSet.size);
+      // console.log('🔖 Total bookmarked questions:', newSet.size);
       return newSet;
     });
   };
@@ -4618,17 +5124,18 @@ const calculateStudentEndTime = (
   examTime: string,
   duration: number,
   completionPolicy: string,
-  studentStartTime: Date
+  studentStartTime: Date,
+  likertDurationMins: number = 0
 ): Date => {
   // Parse exam scheduled start time
   const [hours, minutes] = examTime.split(':').map(Number);
   const examStartDate = new Date(examDate);
   examStartDate.setHours(hours, minutes, 0, 0);
   
-  // Calculate scheduled end time (for all students in strict mode)
-  const scheduledEndTime = new Date(examStartDate.getTime() + duration * 60 * 1000);
+  // Calculate scheduled end time — include likert duration since exam starts AFTER likert
+  const scheduledEndTime = new Date(examStartDate.getTime() + (likertDurationMins + duration) * 60 * 1000);
   
-  // STRICT MODE: Everyone ends at scheduled time
+  // STRICT MODE: Everyone ends at scheduled time (likert + exam duration from scheduled start)
   if (completionPolicy === 'strict') {
     return scheduledEndTime;
   }
@@ -4649,26 +5156,34 @@ const calculateStudentEndTime = (
   const gracePeriod = Math.min(lateBy, 30); // Cap at 30 minutes
   const studentEndTime = new Date(scheduledEndTime.getTime() + gracePeriod * 60 * 1000);
   
-  console.log(`📅 Flexible Completion Calculation:
-    - Scheduled Start: ${examStartDate.toLocaleTimeString()}
-    - Student Started: ${studentStartTime.toLocaleTimeString()}
-    - Late By: ${lateBy.toFixed(1)} minutes
-    - Grace Period: ${gracePeriod.toFixed(1)} minutes
-    - Student End Time: ${studentEndTime.toLocaleTimeString()}`);
+  // console.log(`📅 Flexible Completion Calculation:
+    // - Scheduled Start: ${examStartDate.toLocaleTimeString()}
+    // - Student Started: ${studentStartTime.toLocaleTimeString()}
+    // - Late By: ${lateBy.toFixed(1)} minutes
+    // - Grace Period: ${gracePeriod.toFixed(1)} minutes
+    // - Student End Time: ${studentEndTime.toLocaleTimeString()}`);
   
   return studentEndTime;
 };
 
 
+  const phaseQuestions = examPhase === 'likert'
+    ? questions.filter(q => (q as any).isFromLikert)
+    : questions.filter(q => !(q as any).isFromLikert);
+
+  // True when exam has ONLY likert questions and no actual exam questions
+  const isLikertOnlyExam = likertOnlyQuestions.length > 0 && 
+    questions.filter(q => !(q as any).isFromLikert).length === 0;
+
   const stats = {
-    notViewed: questions.filter(q => !viewedQuestions.has(q.id)).length,
-    answered: questions.filter(q => answers[q.id]).length,
-    bookmarked: bookmarkedQuestions.size,
-    skipped: questions.filter(q => 
+    notViewed: phaseQuestions.filter(q => !viewedQuestions.has(q.id)).length,
+    answered: phaseQuestions.filter(q => answers[q.id]).length,
+    bookmarked: phaseQuestions.filter(q => bookmarkedQuestions.has(q.id)).length,
+    skipped: phaseQuestions.filter(q => 
       viewedQuestions.has(q.id) && 
       !answers[q.id] && 
       !bookmarkedQuestions.has(q.id) &&
-      q.id !== questions[currentQuestionIndex]?.id // Exclude current question
+      q.id !== questions[currentQuestionIndex]?.id
     ).length
   };
 
@@ -4681,14 +5196,14 @@ const calculateStudentEndTime = (
     // Current question shows blue gradient with purple border if bookmarked
     if (isCurrent) {
       return isBookmarked 
-        ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg border border-purple-500'
+        ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg border-[4px] border-purple-500'
         : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg';
     }
     
     // Other questions show their status
-    if (isAnswered && isBookmarked) return 'bg-green-500 text-white border border-purple-500 shadow-md'; // Answered + Bookmarked
+    if (isAnswered && isBookmarked) return 'bg-green-500 text-white border-[4px] border-purple-500 shadow-md'; // Answered + Bookmarked
     if (isAnswered) return 'bg-green-500 text-white'; // Just answered
-    if (isBookmarked) return 'bg-purple-500 text-white'; // Just bookmarked
+    if (isBookmarked) return 'bg-purple-500 text-white border-[4px] border-purple-300'; // Just bookmarked
     if (isViewed) return 'bg-orange-400 text-white'; // Skipped
     return 'bg-gray-300 text-gray-700'; // Not viewed
   };
@@ -4698,7 +5213,8 @@ const calculateStudentEndTime = (
     const newAnswers = [...fillBlanksAnswers];
     newAnswers[index] = value;
     setFillBlanksAnswers(newAnswers);
-    fillBlanksAnswersRef.current = newAnswers; // ✅ Sync ref immediately
+    fillBlanksAnswersRef.current = newAnswers;
+    if (currentQuestion?.id) dirtyQuestionsRef.current.add(currentQuestion.id);
   };
 
   // Handle Jumbled drag and drop
@@ -4712,7 +5228,8 @@ const calculateStudentEndTime = (
     newItems.splice(hoverIndex, 0, draggedItem);
     
     setJumbledAnswers(newItems);
-    jumbledAnswersRef.current = newItems; // ✅ Sync ref immediately
+    jumbledAnswersRef.current = newItems;
+    if (currentQuestion?.id) dirtyQuestionsRef.current.add(currentQuestion.id);
   };
 
   // ==================== PGlite SQL Functions ====================
@@ -4753,7 +5270,7 @@ const calculateStudentEndTime = (
           createSQL += ')';
           
           await pgliteRef.current.query(createSQL);
-          console.log(`✅ Table ${tableName} created`);
+          // console.log(`✅ Table ${tableName} created`);
         }
         
         // Insert data from first test case
@@ -4777,7 +5294,7 @@ const calculateStudentEndTime = (
   /** Insert test data into PGlite tables - handles Firebase format:
    *  table_data: { "TableName": [["col1","col2"], ["val1","val2"], ...] }
    *  First row is headers, rest are data rows.
-   *  Also supports CodingLab format with input.tables[].headers/rows */
+   *  Also supports CodePractice format with input.tables[].headers/rows */
   const insertSqlTestData = async (input: any, schemas: any[]) => {
     if (!pgliteRef.current || !input) return;
     
@@ -4804,7 +5321,7 @@ const calculateStudentEndTime = (
       return;
     }
 
-    // CodingLab format: input.tables array
+    // CodePractice format: input.tables array
     if (input.tables && Array.isArray(input.tables)) {
       for (const tableData of input.tables) {
         const tableName = tableData.name;
@@ -4823,7 +5340,7 @@ const calculateStudentEndTime = (
         }
       }
     }
-    // CodingLab single-table format
+    // CodePractice single-table format
     else if (input.headers && input.rows) {
       const tableName = schemas[0]?.tableName || schemas[0]?.table_name || 'Table';
       const headers = input.headers;
@@ -4844,14 +5361,14 @@ const calculateStudentEndTime = (
   
   /** Compare SQL results against expected output
    *  Handles Firebase format: expected_output.columns + expected_output.rows (string[][])
-   *  And CodingLab format: headers + rows (object with i0, i1 keys) */
+   *  And CodePractice format: headers + rows (object with i0, i1 keys) */
   const compareSqlResults = (actualHeaders: string[], actualRows: any[], expectedColumns: string[], expectedRowsRaw: any[]): boolean => {
     const normalizedActualHeaders = actualHeaders.map(h => h.toLowerCase());
     const normalizedExpectedHeaders = expectedColumns.map(h => h.toLowerCase());
     
     if (normalizedActualHeaders.length !== normalizedExpectedHeaders.length) return false;
     
-    // Normalize expected rows - could be string[][] (Firebase) or object[] (CodingLab)
+    // Normalize expected rows - could be string[][] (Firebase) or object[] (CodePractice)
     const expectedRows = Array.isArray(expectedRowsRaw) ? expectedRowsRaw : normalizeRows(expectedRowsRaw);
     if (actualRows.length !== expectedRows.length) return false;
     
@@ -4860,7 +5377,7 @@ const calculateStudentEndTime = (
       const actualRow = actualRows[i];
       
       for (let j = 0; j < expectedColumns.length; j++) {
-        // Firebase format: expectedRow is string[] (array), CodingLab: object with 'i0','i1' keys
+        // Firebase format: expectedRow is string[] (array), CodePractice: object with 'i0','i1' keys
         const expectedVal = Array.isArray(expectedRow) ? expectedRow[j] : expectedRow['i' + j];
         const headerName = expectedColumns[j];
         const actualKey = actualHeaders.find(h => h.toLowerCase() === headerName.toLowerCase()) || actualHeaders[j];
@@ -5036,7 +5553,7 @@ const calculateStudentEndTime = (
       // ✅ Get fresh code from editor
       const freshCode = editorRef.current ? editorRef.current.getValue() : codeInput;
       
-      console.log('🚀 Running with fresh code, length:', freshCode.length);
+      // console.log('🚀 Running with fresh code, length:', freshCode.length);
       
       const result = await judge0Service.executeCode(
         freshCode,  // ✅ FRESH FROM EDITOR
@@ -5067,7 +5584,7 @@ const calculateStudentEndTime = (
     }
   };
 
-  const progress = Math.round((stats.answered / questions.length) * 100);
+  const progress = Math.round((stats.answered / (phaseQuestions.length || 1)) * 100);
 
   // Filter questions based on active filters (OR logic for multiple states)
   const getFilteredQuestions = () => {
@@ -5142,7 +5659,7 @@ const calculateStudentEndTime = (
         }
       }]);
       
-      // Simple protection: if edit starts in protected zone, undo it
+      // 🔥 Protected-line undo logic — only needed when boilerplate has read-only header
       let preventUndo = false;
       
       editor.onDidChangeModelContent((e: any) => {
@@ -5152,7 +5669,6 @@ const calculateStudentEndTime = (
         let hasProtectedEdit = false;
         
         for (const change of changes) {
-          // Check if edit starts in or affects protected lines
           if (change.range.startLineNumber <= protectedEndLine) {
             hasProtectedEdit = true;
             break;
@@ -5164,8 +5680,9 @@ const calculateStudentEndTime = (
           editor.trigger('keyboard', 'undo', {});
           preventUndo = false;
         } else {
-          // Throttle state updates to prevent excessive re-renders
-          setCodeInput(editor.getValue());
+          const val = editor.getValue();
+          setCodeInput(val);
+          codeInputRef.current = val;
         }
       });
       
@@ -5175,11 +5692,8 @@ const calculateStudentEndTime = (
         editor.focus();
       }, 100);
     } else {
-      // No protected region - fully editable
-      editor.onDidChangeModelContent(() => {
-        setCodeInput(editor.getValue());
-      });
-      
+      // No protected region — onChange prop handles state sync
+      // Just focus the editor
       setTimeout(() => {
         editor.focus();
       }, 100);
@@ -5271,23 +5785,44 @@ const calculateStudentEndTime = (
                   value={selectedLanguage}
                   onChange={(e) => {
                     const newLang = e.target.value;
-                    setSelectedLanguage(newLang);
                     // If question has starterCodes, load the matching boilerplate
                     if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
                       const currentCode = editorRef.current ? editorRef.current.getValue() : codeInput;
                       // Only switch boilerplate if current code is empty or matches another starterCode
+                      const normalizeCode = (code: string) => code.replace(/\s+/g, ' ').trim();
+                      const normalizedCurrent = normalizeCode(currentCode);
                       const isBoilerplate = !currentCode.trim() || currentQuestion.starterCodes.some(
-                        (sc: any) => sc.code.trim() === currentCode.trim()
+                        (sc: any) => normalizeCode(sc.code) === normalizedCurrent
                       );
                       if (isBoilerplate) {
+                        // Code is unedited — switch silently
+                        setSelectedLanguage(newLang);
                         const starterCode = currentQuestion.starterCodes.find(
                           (sc: any) => sc.language.toLowerCase() === newLang
                         );
                         if (starterCode) {
                           setCodeInput(starterCode.code);
+                          if (editorRef.current) {
+                            editorRef.current.setValue(starterCode.code);
+                          }
+                          codeInputRef.current = starterCode.code;
                           initialCodeLengthRef.current[currentQuestion.id] = starterCode.code.length;
                         }
+                      } else {
+                        // Code has been edited — show confirmation dialog
+                        const starterCode = currentQuestion.starterCodes.find(
+                          (sc: any) => sc.language.toLowerCase() === newLang
+                        );
+                        if (starterCode) {
+                          setLangSwitchConfirm({ newLang, starterCode: starterCode.code });
+                        } else {
+                          // No starter code for this language — just switch language, keep code
+                          setSelectedLanguage(newLang);
+                        }
                       }
+                    } else {
+                      // No starterCodes — just switch language
+                      setSelectedLanguage(newLang);
                     }
                   }}
                   className={`px-2 py-1 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
@@ -5308,20 +5843,9 @@ const calculateStudentEndTime = (
                         };
                         return <option key={lang} value={lang}>{labels[lang] || lang}</option>;
                       })
-                    : <>
-                        <option value="cpp">C++</option>
-                        <option value="c">C</option>
-                        <option value="java">Java</option>
-                        <option value="python">Python</option>
-                        <option value="javascript">JavaScript</option>
-                        <option value="typescript">TypeScript</option>
-                        <option value="csharp">C#</option>
-                        <option value="go">Go</option>
-                        <option value="rust">Rust</option>
-                        <option value="ruby">Ruby</option>
-                        <option value="kotlin">Kotlin</option>
-                        <option value="swift">Swift</option>
-                      </>
+                    : currentQuestion.language
+                      ? <option value={currentQuestion.language.toLowerCase()}>{currentQuestion.language}</option>
+                      : <option value="javascript">JavaScript</option>
                   }
                 </select>
                 )}
@@ -5375,19 +5899,20 @@ const calculateStudentEndTime = (
               }}
             >
               {(() => {
-                const initialLength = initialCodeLengthRef.current[currentQuestion.id] || 0;
-                const editorKey = `${currentQuestion.id}-${initialLength}`;
-                if (!window.__lastMonacoKey || window.__lastMonacoKey !== editorKey) {
-                  console.log(`🎨 Monaco Editor mounted with stable key: ${editorKey}, language: ${selectedLanguage}`);
-                  window.__lastMonacoKey = editorKey;
-                }
                 return (
                   <Editor
-                    key={editorKey}
+                    key={`editor-${currentQuestion.id}-${selectedLanguage}`}
                     height="100%"
                     language={selectedLanguage}
-                    defaultValue={codeInput}
+                    value={codeInput}
                     onMount={handleEditorMount}
+                    onChange={(val) => {
+                      const newVal = val || '';
+                      setCodeInput(newVal);
+                      codeInputRef.current = newVal;
+                      // 🔥 Mark this question as dirty — user has actively typed
+                      if (currentQuestion?.id) dirtyQuestionsRef.current.add(currentQuestion.id);
+                    }}
                     theme={darkMode ? 'custom-dark' : 'custom-light'}
                     options={{
                       minimap: { enabled: false },
@@ -5404,6 +5929,11 @@ const calculateStudentEndTime = (
                       glyphMargin: false,
                       renderLineHighlight: 'all',
                       renderLineHighlightOnlyWhenFocus: false,
+                      quickSuggestions: false,
+                      suggestOnTriggerCharacters: false,
+                      wordBasedSuggestions: 'off',
+                      parameterHints: { enabled: false },
+                      suggest: { showWords: false },
                       scrollbar: {
                         vertical: 'hidden',
                         horizontal: 'hidden',
@@ -5620,7 +6150,7 @@ const calculateStudentEndTime = (
                   
                   return (
                     <button
-                      key={index}
+                      key={`${currentQuestion.id}-opt-${index}`}
                       onClick={() => {
                         // ✅ CHECKBOX MODE: Always allow multiple selections
                         let newAnswer: string[];
@@ -5629,10 +6159,11 @@ const calculateStudentEndTime = (
                           newAnswer = mcqAnswer.filter(ans => ans !== option);
                         } else {
                           // Add to selection
-                          newAnswer = [...mcqAnswer, option];
+                          newAnswer = currentQuestion.multipleCorrect ? [...mcqAnswer, option] : [option];
                         }
                         setMcqAnswer(newAnswer);
                         mcqAnswerRef.current = newAnswer; // ✅ Sync ref immediately
+                        if (currentQuestion?.id) dirtyQuestionsRef.current.add(currentQuestion.id);
                       }}
                       className={buttonClasses}
                     >
@@ -5746,6 +6277,7 @@ const calculateStudentEndTime = (
                       onChange={(value: string) => {
                         setDescriptiveAnswer(value);
                         descriptiveAnswerRef.current = value; // ✅ Sync ref immediately
+                        if (currentQuestion?.id) dirtyQuestionsRef.current.add(currentQuestion.id);
                       }}
                       darkMode={darkMode}
                       placeholder="Type your answer here... Use the toolbar to format text, add code blocks, images, and more."
@@ -5974,7 +6506,7 @@ const calculateStudentEndTime = (
                 <div className="mt-6">
                   {jumbledAnswers.map((item, index) => (
                     <DraggableItem
-                      key={index}
+                      key={`${currentQuestion.id}-${index}`}
                       item={item}
                       index={index}
                       moveItem={moveJumbledItem}
@@ -5994,6 +6526,95 @@ const calculateStudentEndTime = (
           </div>
         );
 
+      case QUESTION_TYPES.LIKERT: {
+        const LIKERT_OPTIONS = [
+          { value: 1, label: 'Strongly Disagree', emoji: '😤', sel: 'bg-red-500 border-red-500 text-white shadow-md',    hover: 'hover:border-red-300 hover:bg-red-50' },
+          { value: 2, label: 'Disagree',          emoji: '🙁', sel: 'bg-orange-400 border-orange-400 text-white shadow-md', hover: 'hover:border-orange-300 hover:bg-orange-50' },
+          { value: 3, label: 'Neutral',           emoji: '😐', sel: 'bg-yellow-400 border-yellow-400 text-white shadow-md', hover: 'hover:border-yellow-300 hover:bg-yellow-50' },
+          { value: 4, label: 'Agree',             emoji: '🙂', sel: 'bg-lime-500 border-lime-500 text-white shadow-md',     hover: 'hover:border-lime-300 hover:bg-lime-50' },
+          { value: 5, label: 'Strongly Agree',    emoji: '😄', sel: 'bg-green-500 border-green-500 text-white shadow-md',   hover: 'hover:border-green-300 hover:bg-green-50' },
+        ];
+        const subLabels: Record<number,string> = {
+          1: 'I strongly disagree with this statement',
+          2: 'I somewhat disagree with this statement',
+          3: 'I neither agree nor disagree',
+          4: 'I somewhat agree with this statement',
+          5: 'I strongly agree with this statement',
+        };
+        const curVal = likertAnswers[currentQuestion.id] ? parseInt(likertAnswers[currentQuestion.id]) : 0;
+        return (
+          <div className={`flex flex-col h-full ${darkMode ? 'bg-gray-800' : 'bg-gray-50'}`}>
+            <div className={`px-5 py-3 border-b flex-shrink-0 flex items-center justify-between ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'}`}>
+              <h4 className={`text-xs font-bold uppercase tracking-widest ${darkMode ? 'text-gray-300' : 'text-gray-500'}`}>🧠 Rate your agreement</h4>
+              <button
+                onClick={() => saveCurrentAnswer(true)}
+                disabled={isSavingAnswer || !curVal}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center space-x-2 ${
+                  isSavingAnswer || !curVal
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : lastSavedQuestion === currentQuestion.id
+                    ? 'bg-green-500 hover:bg-green-600'
+                    : 'bg-orange-500 hover:bg-orange-600'
+                } text-white`}
+              >
+                {isSavingAnswer ? (
+                  <>
+                    <div className="animate-spin w-4 h-4 border border-white border-t-transparent rounded-full" />
+                    <span>Saving...</span>
+                  </>
+                ) : lastSavedQuestion === currentQuestion.id ? (
+                  <>
+                    <FontAwesomeIcon icon={faCircleCheck} />
+                    <span>Saved!</span>
+                  </>
+                ) : (
+                  <>
+                    <FontAwesomeIcon icon={faPaperPlane} />
+                    <span>Submit</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+              {LIKERT_OPTIONS.map((opt) => {
+                const isSelected = curVal === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      likertAnswersRef.current = { ...likertAnswersRef.current, [currentQuestion.id]: String(opt.value) };
+                      setLikertAnswers(prev => ({ ...prev, [currentQuestion.id]: String(opt.value) }));
+                      saveCurrentAnswer(true);
+                    }}
+                    className={`w-full flex items-center space-x-4 px-4 py-4 rounded-xl border-2 transition-all duration-150 text-left group ${
+                      isSelected
+                        ? opt.sel + ' scale-[1.02]'
+                        : darkMode
+                          ? 'bg-gray-700 border-gray-600 hover:border-gray-400'
+                          : 'bg-white border-gray-200 hover:scale-[1.01] ' + opt.hover
+                    }`}
+                  >
+                    <span className="text-2xl flex-shrink-0 transition-transform duration-150 group-hover:scale-110">{opt.emoji}</span>
+                    <div className="flex-1">
+                      <div className={`text-base font-semibold ${isSelected ? 'text-white' : darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{opt.label}</div>
+                      <div className={`text-xs mt-0.5 ${isSelected ? 'text-white/75' : darkMode ? 'text-gray-500' : 'text-gray-400'}`}>{subLabels[opt.value]}</div>
+                    </div>
+                    {isSelected && (
+                      <svg className="w-5 h-5 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className={`px-5 py-3 border-t flex-shrink-0 ${darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-100 bg-white'}`}>
+              <p className={`text-[11px] text-center italic ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>There are no right or wrong answers — respond honestly</p>
+            </div>
+          </div>
+        );
+      }
+
       default:
         return null;
     }
@@ -6006,6 +6627,17 @@ const calculateStudentEndTime = (
         <div className="text-center">
           <div className="animate-spin w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
           <p className="text-lg text-gray-700">Loading exam questions...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (attemptLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="text-center">
+          <div className="animate-spin w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
+          <p className="text-lg text-gray-700">Loading exam with AI evaluation...</p>
         </div>
       </div>
     );
@@ -6028,18 +6660,8 @@ const calculateStudentEndTime = (
     );
   }
 
-  if (attemptLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-        <div className="text-center">
-          <div className="animate-spin w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-lg text-gray-700">Loading exam with AI evaluation...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (attemptError || !attempt) {
+  const isStudent = !!(userStudentRoll && userStudentRoll.trim() !== '' && userStudentRoll !== 'N/A');
+  if ((attemptError || !attempt) && isStudent) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-red-50 to-orange-100">
         <div className="text-center">
@@ -6058,9 +6680,9 @@ const calculateStudentEndTime = (
 
 
   // ✅ CRITICAL: Prevent re-entry if exam is already submitted
-  // BUT: Don't block if success dialog is currently showing
-  if (isAlreadySubmitted && !(showSubmitDialog && submitStatus === SUBMIT_STATUS.SUCCESS)) {
-    console.log('🚫 BLOCKING ACCESS - Showing "Already Submitted" screen');
+  // BUT: Don't block if success dialog is currently showing OR phase transition is active
+  if (isAlreadySubmitted && !(showSubmitDialog && submitStatus === SUBMIT_STATUS.SUCCESS) && !showPhaseTransition) {
+    // console.log('🚫 BLOCKING ACCESS - Showing "Already Submitted" screen');
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-blue-100">
         <div className="text-center">
@@ -6068,7 +6690,7 @@ const calculateStudentEndTime = (
           <p className="text-lg text-gray-700 mb-4">This exam has already been submitted</p>
           <p className="text-sm text-gray-600 mb-6">You cannot re-enter or make changes to a submitted exam</p>
           <button
-            onClick={onExitExam}
+            onClick={onDirectExit || onExitExam}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Return to Dashboard
@@ -6078,8 +6700,24 @@ const calculateStudentEndTime = (
     );
   }
 
+
   return (
-    <div className={`h-screen w-screen flex ${darkMode ? 'bg-gray-900' : 'bg-white'}`}>
+    <div className={`h-screen w-screen flex ${darkMode ? 'bg-gray-900 exam-dark-mode' : 'bg-white'}`}>
+      {darkMode && (
+        <style>{`
+          .exam-dark-mode .prose, .exam-dark-mode .prose * { color: #f3f4f6 !important; }
+          .exam-dark-mode .prose strong, .exam-dark-mode .prose b { color: #ffffff !important; }
+          .exam-dark-mode .prose h1, .exam-dark-mode .prose h2, .exam-dark-mode .prose h3 { color: #ffffff !important; }
+          .exam-dark-mode .prose code { color: #f3f4f6 !important; background: #374151 !important; }
+          .exam-dark-mode .prose pre { background: #1f2937 !important; color: #f3f4f6 !important; }
+          .exam-dark-mode table { color: #f3f4f6 !important; }
+          .exam-dark-mode table th, .exam-dark-mode table td { color: #f3f4f6 !important; border-color: #4b5563 !important; }
+          .exam-dark-mode table thead { background: #1f2937 !important; }
+          .exam-dark-mode table tbody tr { background: #111827 !important; }
+          .exam-dark-mode [style*="color"] { color: #f3f4f6 !important; }
+          .exam-dark-mode [style*="background-color"] { background-color: rgba(255,255,255,0.1) !important; }
+        `}</style>
+      )}
       {/* Proctoring Monitor - Hidden component */}
       {faceMonitoringEnabled && baselineDescriptors.length > 0 && attempt?.attemptId && (
         <ExamMonitor
@@ -6113,7 +6751,9 @@ const calculateStudentEndTime = (
           className="flex-1 overflow-y-auto py-4 space-y-3 flex flex-col items-center scrollbar-hide"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
-          {filteredQuestions.map((question) => {
+          {filteredQuestions
+            .filter(question => examPhase === 'likert' ? (question as any).isFromLikert : !(question as any).isFromLikert)
+            .map((question) => {
             const actualIndex = questions.findIndex(q => q.id === question.id);
             return (
               <button
@@ -6121,7 +6761,7 @@ const calculateStudentEndTime = (
                 onClick={() => handleQuestionClick(actualIndex)}
                 className={`w-10 h-10 rounded-lg font-bold text-sm transition-all ${getStatusColor(question.id, actualIndex)} hover:scale-110`}
               >
-                {question.questionNo}
+                {examPhase === 'likert' ? question.questionNo : question.questionNo - likertOnlyQuestions.length}
               </button>
             );
           })}
@@ -6151,10 +6791,10 @@ const calculateStudentEndTime = (
                 {/* Question Info */}
                 <div className="flex-shrink-0">
                   <h2 className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    Question No {currentQuestion.questionNo}/{questions.length}
+                    Question No {examPhase === 'likert' ? currentQuestion.questionNo : currentQuestion.questionNo - likertOnlyQuestions.length}/{examPhase === 'likert' ? likertOnlyQuestions.length : questions.length - likertOnlyQuestions.length}
                   </h2>
                   <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                   {(QUESTION_TYPE_LABELS as any)[currentQuestion.type] || currentQuestion.type}, Marks: {currentQuestion.maxMarks}
+                   {currentQuestion.type === QUESTION_TYPES.LIKERT ? 'Personality Assessment' : ((QUESTION_TYPE_LABELS as any)[currentQuestion.type] || currentQuestion.type)}, Marks: {currentQuestion.maxMarks}
                   </p>
                 </div>
 
@@ -6346,7 +6986,8 @@ const calculateStudentEndTime = (
                             [&>pre]:bg-gray-900 [&>pre]:text-gray-100 [&>pre]:p-3 [&>pre]:rounded [&>pre]:my-2
                             [&_code]:bg-gray-100 [&_code]:dark:bg-gray-800 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded"
                           style={{
-                            color: darkMode ? '#f3f4f6' : '#111827'
+                            color: darkMode ? '#f3f4f6' : '#111827',
+                            ...(currentQuestion.type === QUESTION_TYPES.LIKERT && { fontSize: '1.2rem', fontWeight: 500, lineHeight: '1.8' })
                           }}
                           dangerouslySetInnerHTML={{ __html: part }}
                         />
@@ -6495,7 +7136,7 @@ const calculateStudentEndTime = (
                   </svg>
                 )}
               </div>
-              <span className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Not Viewed: {stats.notViewed}/{questions.length}</span>
+              <span className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Not Viewed: {stats.notViewed}/{phaseQuestions.length}</span>
             </label>
 
             {/* Answered Checkbox - Green */}
@@ -6513,7 +7154,7 @@ const calculateStudentEndTime = (
                   </svg>
                 )}
               </div>
-              <span className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Answered: {stats.answered}/{questions.length}</span>
+              <span className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Answered: {stats.answered}/{phaseQuestions.length}</span>
             </label>
 
             {/* Bookmarked Checkbox - Purple */}
@@ -6531,7 +7172,7 @@ const calculateStudentEndTime = (
                   </svg>
                 )}
               </div>
-              <span className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Bookmarked: {stats.bookmarked}/{questions.length}</span>
+              <span className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Bookmarked: {stats.bookmarked}/{phaseQuestions.length}</span>
             </label>
 
             {/* Skipped Checkbox - Orange */}
@@ -6549,7 +7190,7 @@ const calculateStudentEndTime = (
                   </svg>
                 )}
               </div>
-              <span className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Skipped: {stats.skipped}/{questions.length}</span>
+              <span className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Skipped: {stats.skipped}/{phaseQuestions.length}</span>
             </label>
           </div>
 
@@ -6599,8 +7240,8 @@ const calculateStudentEndTime = (
                 darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-200 text-gray-700'
               }`}
             >
-              <FontAwesomeIcon icon={darkMode ? faMoon : faSun} />
-              <span className="text-xs font-medium">Dark</span>
+              <FontAwesomeIcon icon={darkMode ? faSun : faMoon} />
+              <span className="text-xs font-medium">{darkMode ? 'Light' : 'Dark'}</span>
             </button>
 
             {/* Progress */}
@@ -6620,10 +7261,10 @@ const calculateStudentEndTime = (
             <div className="flex items-center space-x-2">
               <FontAwesomeIcon 
                 icon={faHourglass} 
-                className={`${timeLeft < 300 ? 'text-red-500' : darkMode ? 'text-green-400' : 'text-green-600'}`}
+                className={`${(examPhase === 'likert' ? likertTimeLeft : timeLeft) < 300 ? 'text-red-500' : darkMode ? 'text-green-400' : 'text-green-600'}`}
               />
-              <span className={`text-xs font-bold ${timeLeft < 300 ? 'text-red-500' : darkMode ? 'text-green-400' : 'text-green-600'}`}>
-                Time Left: {formatTime(timeLeft)}
+              <span className={`text-xs font-bold ${(examPhase === 'likert' ? likertTimeLeft : timeLeft) < 300 ? 'text-red-500' : darkMode ? 'text-green-400' : 'text-green-600'}`}>
+                Time Left: {formatTime(examPhase === 'likert' ? likertTimeLeft : timeLeft)}
               </span>
             </div>
 
@@ -6646,7 +7287,7 @@ const calculateStudentEndTime = (
 
       {/* Exam Info Dialog */}
       {showExamInfoDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4" onContextMenu={e => e.preventDefault()}>
           <div className={`${darkMode ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'} rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col relative z-10`}>
             {/* Header */}
             <div className={`px-6 py-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between sticky top-0 z-20 ${darkMode ? 'bg-gray-800' : 'bg-white'}`}>
@@ -6654,7 +7295,9 @@ const calculateStudentEndTime = (
                 <h3 className={`text-xl font-bold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
                   {examTitle}
                 </h3>
-               
+                <p className={`text-xs font-medium mt-0.5 ${examPhase === 'likert' ? 'text-purple-500' : 'text-blue-500'}`}>
+                  {examPhase === 'likert' ? '🧠 Personality Assessment Phase' : '📝 Actual Exam Phase'}
+                </p>
               </div>
               <button 
                 onClick={() => setShowExamInfoDialog(false)}
@@ -6670,25 +7313,25 @@ const calculateStudentEndTime = (
                 <div>
                   <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Max Marks</p>
                   <p className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    {questions.reduce((sum, q) => sum + q.maxMarks, 0)}
+                    {phaseQuestions.reduce((sum, q) => sum + q.maxMarks, 0)}
                   </p>
                 </div>
                 <div>
                   <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Total Questions</p>
                   <p className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    {questions.length}
+                    {phaseQuestions.length}
                   </p>
                 </div>
                 <div>
                   <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Duration</p>
                   <p className={`text-lg font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    {duration} min
+                    {examPhase === 'likert' ? likertDurationMins : duration} min
                   </p>
                 </div>
                 <div>
                   <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Time Remaining</p>
-                  <p className={`text-lg font-bold ${timeLeft < 300 ? 'text-red-500' : 'text-green-500'}`}>
-                    {formatTime(timeLeft)}
+                  <p className={`text-lg font-bold ${(examPhase === 'likert' ? likertTimeLeft : timeLeft) < 300 ? 'text-red-500' : 'text-green-500'}`}>
+                    {formatTime(examPhase === 'likert' ? likertTimeLeft : timeLeft)}
                   </p>
                 </div>
               </div>
@@ -6729,11 +7372,11 @@ const calculateStudentEndTime = (
               >
                 <option value="All Questions">All Questions</option>
                 {/* Generate options dynamically based on available question types and complexity */}
-                {Array.from(new Set(questions.map(q => q.type))).sort().map(type => (
+                {Array.from(new Set(phaseQuestions.map(q => q.type))).sort().map(type => (
                   <option key={type} value={type}>{type}</option>
                 ))}
                 <option value="---" disabled>────────</option>
-                {Array.from(new Set(questions.map(q => q.complexity))).sort().map(complexity => (
+                {Array.from(new Set(phaseQuestions.map(q => q.complexity))).sort().map(complexity => (
                   <option key={complexity} value={complexity}>{complexity}</option>
                 ))}
               </select>
@@ -6742,7 +7385,7 @@ const calculateStudentEndTime = (
             {/* Questions List */}
             <div className={`flex-1 overflow-y-auto px-6 pb-4 ${darkMode ? 'bg-gray-900' : 'bg-gray-50'}`}>
               <div className="space-y-2">
-                {questions
+                {phaseQuestions
                   .filter(q => {
                     // Search filter
                     const matchesSearch = searchQuery === '' || 
@@ -6756,15 +7399,17 @@ const calculateStudentEndTime = (
                     
                     return matchesSearch && matchesChapter;
                   })
-                  .map((question, index) => (
+                  .map((question) => {
+                    const actualIndex = questions.findIndex(q => q.id === question.id);
+                    return (
                     <button
                       key={question.id}
                       onClick={() => {
-                        handleQuestionClick(index);
+                        handleQuestionClick(actualIndex);
                         setShowExamInfoDialog(false);
                       }}
                       className={`w-full text-left p-4 rounded-lg border transition-all ${
-                        currentQuestionIndex === index
+                        currentQuestionIndex === actualIndex
                           ? darkMode
                             ? 'bg-blue-900/20 border-blue-500'
                             : 'bg-blue-50 border-blue-500'
@@ -6777,18 +7422,18 @@ const calculateStudentEndTime = (
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center space-x-2">
                           <span className={`font-bold text-sm ${
-                            currentQuestionIndex === index
+                            currentQuestionIndex === actualIndex
                               ? 'text-blue-500'
                               : darkMode
                               ? 'text-gray-400'
                               : 'text-gray-600'
                           }`}>
-                            Q{question.questionNo} -
+                            Q{examPhase === 'likert' ? question.questionNo : question.questionNo - likertOnlyQuestions.length} -
                           </span>
                           <span className={`text-xs px-2 py-0.5 rounded ${
                             darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-600'
                           }`}>
-                            {QUESTION_TYPE_LABELS[question.type] || question.type} • {question.maxMarks} mark{question.maxMarks !== 1 ? 's' : ''}
+                            {question.type === QUESTION_TYPES.LIKERT ? 'Personality Assessment' : (QUESTION_TYPE_LABELS[question.type] || question.type)} • {question.maxMarks} mark{question.maxMarks !== 1 ? 's' : ''}
                           </span>
                           {/* Complexity Badge */}
                           <span className={`text-xs px-2 py-0.5 rounded font-medium ${
@@ -6838,7 +7483,7 @@ const calculateStudentEndTime = (
                         }}
                       />
                     </button>
-                  ))}
+                  ); })}
               </div>
             </div>
 
@@ -6859,9 +7504,87 @@ const calculateStudentEndTime = (
         </div>
       )}
 
+      {/* Language Switch Confirmation Dialog */}
+      {langSwitchConfirm && (() => {
+        const langLabels: Record<string, string> = {
+          cpp: 'C++', c: 'C', java: 'Java', python: 'Python',
+          javascript: 'JavaScript', typescript: 'TypeScript',
+          csharp: 'C#', go: 'Go', rust: 'Rust', ruby: 'Ruby',
+          kotlin: 'Kotlin', swift: 'Swift', sql: 'SQL'
+        };
+        const langLabel = langLabels[langSwitchConfirm.newLang] || langSwitchConfirm.newLang;
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[10000] p-4">
+            <div className={`rounded-xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all ${
+              darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'
+            }`}>
+              <div className={`px-5 py-4 border-b ${
+                darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-100 bg-amber-50'
+              }`}>
+                <div className="flex items-center space-x-3">
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                    darkMode ? 'bg-amber-900/50 text-amber-400' : 'bg-amber-100 text-amber-600'
+                  }`}>
+                    <FontAwesomeIcon icon={faCode} />
+                  </div>
+                  <div>
+                    <h3 className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                      Switch to {langLabel}?
+                    </h3>
+                    <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Language change
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="px-5 py-4">
+                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  Your current code will be replaced with the <span className="font-semibold">{langLabel}</span> starter code. This action cannot be undone.
+                </p>
+              </div>
+              <div className={`px-5 py-3 flex justify-end space-x-2 border-t ${
+                darkMode ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50'
+              }`}>
+                <button
+                  onClick={() => setLangSwitchConfirm(null)}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    darkMode
+                      ? 'text-gray-300 hover:bg-gray-700'
+                      : 'text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Keep Current
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedLanguage(langSwitchConfirm.newLang);
+                    setCodeInput(langSwitchConfirm.starterCode);
+                    if (editorRef.current) {
+                      editorRef.current.setValue(langSwitchConfirm.starterCode);
+                    }
+                    codeInputRef.current = langSwitchConfirm.starterCode;
+                    if (currentQuestion) {
+                      initialCodeLengthRef.current[currentQuestion.id] = langSwitchConfirm.starterCode.length;
+                    }
+                    setLangSwitchConfirm(null);
+                  }}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                    darkMode
+                      ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                      : 'bg-amber-500 hover:bg-amber-600 text-white'
+                  }`}
+                >
+                  Switch to {langLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Submit Confirmation Dialog */}
       {showSubmitDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[10000] p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[10000] p-4" onContextMenu={e => e.preventDefault()}>
           <div className={`rounded-lg shadow-2xl w-full max-w-md overflow-hidden ${
             darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'
           }`}>
@@ -6926,6 +7649,58 @@ const calculateStudentEndTime = (
               {/* IDLE STATE - Show Summary */}
               {submitStatus === SUBMIT_STATUS.IDLE && (
                 <>
+                  {/* LIKERT PHASE BLOCK */}
+                  {examPhase === 'likert' ? (
+                    isLikertOnlyExam ? (
+                      // Likert-only exam — allow submission
+                      <>
+                        <div className={`mb-5 p-3 rounded-lg ${
+                          darkMode ? 'bg-orange-900/20 border border-orange-800' : 'bg-orange-50 border border-orange-200'
+                        }`}>
+                          <p className={`text-sm ${darkMode ? 'text-orange-300' : 'text-orange-800'}`}>
+                            ⚠️ Once submitted, you cannot make any changes to your answers. Please review before proceeding.
+                          </p>
+                        </div>
+                        <div className="space-y-2.5 mb-5">
+                          <div className={`flex justify-between items-center border-b pb-2 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                            <div className="flex items-center space-x-2">
+                              <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                              <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Questions Answered:</span>
+                            </div>
+                            <span className={`text-sm font-semibold ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
+                              {stats.answered}/{likertOnlyQuestions.length}
+                            </span>
+                          </div>
+                          <div className={`flex justify-between items-center border-b pb-2 ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                            <div className="flex items-center space-x-2">
+                              <span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+                              <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Not Answered:</span>
+                            </div>
+                            <span className={`text-sm font-semibold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
+                              {likertOnlyQuestions.length - stats.answered}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                    // Likert phase with actual exam after — block submission
+                    <div className="py-6 flex flex-col items-center text-center">
+                      <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${darkMode ? 'bg-blue-900/40' : 'bg-blue-50'}`}>
+                        <span className="text-3xl">🧠</span>
+                      </div>
+                      <h3 className={`text-base font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                        Personality Assessment in Progress
+                      </h3>
+                      <p className={`text-sm mb-4 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                        You are currently in the <strong>Personality Assessment</strong> section. The actual exam has not started yet.
+                      </p>
+                      <div className={`w-full p-3 rounded-lg text-sm ${darkMode ? 'bg-yellow-900/20 border border-yellow-700 text-yellow-300' : 'bg-yellow-50 border border-yellow-200 text-yellow-800'}`}>
+                        ⏳ Please complete the personality questions first. The exam will begin automatically once this section ends.
+                      </div>
+                    </div>
+                    )
+                  ) : (
+                  <>
                   {/* Warning Message */}
                   <div className={`mb-5 p-3 rounded-lg ${
                     darkMode ? 'bg-orange-900/20 border border-orange-800' : 'bg-orange-50 border border-orange-200'
@@ -6945,7 +7720,7 @@ const calculateStudentEndTime = (
                         <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Questions Answered:</span>
                       </div>
                       <span className={`text-sm font-semibold ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
-                        {stats.answered}/{questions.length}
+                        {stats.answered}/{phaseQuestions.length}
                       </span>
                     </div>
 
@@ -6957,7 +7732,7 @@ const calculateStudentEndTime = (
                         <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Not Answered:</span>
                       </div>
                       <span className={`text-sm font-semibold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
-                        {questions.length - stats.answered}
+                        {phaseQuestions.length - stats.answered}
                       </span>
                     </div>
 
@@ -6989,18 +7764,20 @@ const calculateStudentEndTime = (
                   </div>
 
                   {/* Additional Info */}
-                  {(questions.length - stats.answered) > 0 && (
+                  {(phaseQuestions.length - stats.answered) > 0 && (
                     <div className={`mb-5 p-3 rounded-lg ${
                       darkMode ? 'bg-red-900/20 border border-red-800' : 'bg-red-50 border border-red-200'
                     }`}>
                       <div className="flex items-start space-x-2">
                         <FontAwesomeIcon icon={faCircleInfo} className="text-red-500 mt-0.5 text-sm" />
                         <p className={`text-xs ${darkMode ? 'text-red-300' : 'text-red-800'}`}>
-                          <strong>Note:</strong> You have {questions.length - stats.answered} unanswered question{(questions.length - stats.answered) > 1 ? 's' : ''}. These will be marked as incorrect.
+                          <strong>Note:</strong> You have {phaseQuestions.length - stats.answered} unanswered question{(phaseQuestions.length - stats.answered) > 1 ? 's' : ''}. These will be marked as incorrect.
                         </p>
                       </div>
                     </div>
                   )}
+                  </>
+                  )} {/* end examPhase ternary */}
                 </>
               )}
 
@@ -7084,14 +7861,16 @@ const calculateStudentEndTime = (
                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                     }`}
                   >
-                    Cancel
+                    {examPhase === 'likert' && !isLikertOnlyExam ? 'Close' : 'Cancel'}
                   </button>
+                  {(examPhase !== 'likert' || isLikertOnlyExam) && (
                   <button
                     onClick={handleSubmitExam}
                     className="px-5 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105"
                   >
                     Submit
                   </button>
+                  )}
                 </>
               )}
               {submitStatus === SUBMIT_STATUS.ERROR && (
@@ -7110,15 +7889,24 @@ const calculateStudentEndTime = (
                   >
                     Close
                   </button>
-                  <button
-                    onClick={() => {
-                      setSubmitStatus(SUBMIT_STATUS.IDLE);
-                      setSubmitMessage('');
-                    }}
-                    className="px-5 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105"
-                  >
-                    Try Again
-                  </button>
+                  {submitMessage.includes('preview mode') ? (
+                    <button
+                      onClick={onExitExam}
+                      className="px-5 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105"
+                    >
+                      Dashboard
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setSubmitStatus(SUBMIT_STATUS.IDLE);
+                        setSubmitMessage('');
+                      }}
+                      className="px-5 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white text-sm font-semibold rounded-lg shadow-lg hover:shadow-xl transition-all hover:scale-105"
+                    >
+                      Try Again
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -7128,7 +7916,7 @@ const calculateStudentEndTime = (
 
       {/* Activity Monitor Dialog */}
       {showActivityMonitorDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[10000] p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[10000] p-4" onContextMenu={e => e.preventDefault()}>
           <div className={`rounded-lg shadow-2xl w-full max-w-md max-h-[85vh] overflow-hidden ${
             darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'
           }`}>
@@ -7181,7 +7969,7 @@ const calculateStudentEndTime = (
                     <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Questions Answered:</span>
                   </div>
                   <span className={`text-sm font-semibold ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
-                    {Object.keys(answers).length}/{questions.length}
+                    {Object.keys(answers).length}/{phaseQuestions.length}
                   </span>
                 </div>
 
@@ -7310,12 +8098,7 @@ const calculateStudentEndTime = (
                         <div className={`text-xs ml-3.5 mt-0.5 ${
                           darkMode ? 'text-gray-500' : 'text-gray-500'
                         }`}>
-                          {new Date(violation.timestamp).toLocaleTimeString('en-IN', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            hour12: true
-                          })}
+                          {formatViolationTime(violation.timestamp)}
                         </div>
                       </div>
                     ))}
@@ -7376,7 +8159,7 @@ const calculateStudentEndTime = (
       )}
       {/* Offline Submit Dialog */}
       {showOfflineSubmitDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[10000] p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[10000] p-4" onContextMenu={e => e.preventDefault()}>
           <div className={`rounded-2xl shadow-2xl max-w-md w-full mx-4 ${
             darkMode ? 'bg-gray-800' : 'bg-white'
           }`}>
@@ -7427,7 +8210,7 @@ const calculateStudentEndTime = (
                     Answers Saved:
                   </span>
                   <span className={`text-sm font-bold ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
-                    {Object.keys(answers).length} / {questions.length}
+                    {Object.keys(answers).length} / {phaseQuestions.length}
                   </span>
                 </div>
                 <div className="flex justify-between items-center mb-2">
@@ -7494,6 +8277,7 @@ const calculateStudentEndTime = (
       {/* Test Cases Panel - CODE and SQL */}
       {currentQuestion && (currentQuestion.type === QUESTION_TYPES.CODE || currentQuestion.type === QUESTION_TYPES.SQL) && (
         <TestCasesPanel
+          key={currentQuestion.id}
           isOpen={showTestCasesPanel}
           onClose={() => setShowTestCasesPanel(false)}
           testCases={visibleTestCases}
@@ -7506,9 +8290,58 @@ const calculateStudentEndTime = (
         />
       )}
 
+      {/* Phase Transition Overlay - Likert → Exam */}
+      {showPhaseTransition && (
+        <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 flex items-center justify-center z-[10002]" onContextMenu={e => e.preventDefault()}>
+          <div className="text-center max-w-md px-6">
+            {/* Trophy SVG */}
+            <div className="mx-auto mb-6" style={{ width: 100, height: 100, animation: 'phaseFloat 3s ease-in-out infinite' }}>
+              <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" width="100" height="100">
+                <rect x="24" y="48" width="16" height="4" rx="2" fill="#fbbf24"/>
+                <rect x="20" y="52" width="24" height="4" rx="2" fill="#f59e0b"/>
+                <path d="M20 16h24v18c0 6.6-5.4 12-12 12s-12-5.4-12-12V16z" fill="#fbbf24"/>
+                <path d="M32 16v30c6.6 0 12-5.4 12-12V16H32z" fill="#f59e0b"/>
+                <path d="M20 20c-4 0-6 3-6 6s2 6 6 6" stroke="#fde68a" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
+                <path d="M44 20c4 0 6 3 6 6s-2 6-6 6" stroke="#fde68a" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
+                <path d="M25 22c2-1 5-1 7 0" stroke="#fff" strokeWidth="2" strokeLinecap="round" opacity=".5"/>
+                <path d="M32 24l1.5 4h4l-3 2.5 1.2 4L32 32l-3.7 2.5 1.2-4-3-2.5h4z" fill="#fff" opacity=".7"/>
+                <circle cx="14" cy="12" r="2" fill="#f472b6"/>
+                <rect x="48" y="10" width="4" height="4" rx="1" fill="#34d399" transform="rotate(20 48 10)"/>
+                <circle cx="52" cy="36" r="1.5" fill="#60a5fa"/>
+                <rect x="10" y="38" width="3" height="3" rx="1" fill="#a78bfa" transform="rotate(-15 10 38)"/>
+              </svg>
+            </div>
+            <style>{`@keyframes phaseFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }`}</style>
+
+            <h2 className="text-2xl font-bold text-white mb-3">Personality Assessment Complete</h2>
+            <p className="text-gray-300 mb-6">The personality section has ended. Your actual exam is starting now...</p>
+
+            {/* Progress bar */}
+            <div className="w-48 h-1.5 bg-gray-700 rounded-full mx-auto overflow-hidden mb-0">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  background: 'linear-gradient(90deg, #fbbf24, #f59e0b, #f97316)',
+                  animation: 'phaseGrow 60s linear forwards'
+                }}
+              />
+            </div>
+            <style>{`@keyframes phaseGrow { from { width: 0%; } to { width: 100%; } }`}</style>
+
+            {/* Wait + countdown */}
+            <div className="flex items-center justify-center gap-2 mt-3">
+              <p className="text-gray-500 text-sm">Please wait...</p>
+              <p className="text-sm font-bold" style={{ background: 'linear-gradient(90deg, #fbbf24, #f97316)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                {phaseTransitionCount}s
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Time Expired Overlay */}
       {showTimeExpiredOverlay && (
-        <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center z-[10001]">
+        <div className="fixed inset-0 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center z-[10001]" onContextMenu={e => e.preventDefault()}>
           <div className="text-center max-w-2xl px-6">
             {/* Animated Clock Icon */}
             <div className="mb-8 flex justify-center">
@@ -7568,7 +8401,7 @@ const calculateStudentEndTime = (
               </div>
               <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4">
                 <div className="text-2xl font-bold text-gray-300 mb-1">
-                  {questions.length}
+                  {phaseQuestions.length}
                 </div>
                 <div className="text-xs text-gray-400 uppercase tracking-wide">
                   Total Questions
@@ -7607,43 +8440,43 @@ const calculateStudentEndTime = (
                 // Prevent multiple clicks
                 if (isSubmittingFromOverlay) return;
                 
-                console.log('🔵 Setting loading state to TRUE');
+                // console.log('🔵 Setting loading state to TRUE');
                 // Set loading state and wait for React to render it
                 setIsSubmittingFromOverlay(true);
                 
                 // Force React to render the loading state before continuing
                 await new Promise(resolve => setTimeout(resolve, 100));
-                console.log('🔵 Loading state should be visible now');
+                // console.log('🔵 Loading state should be visible now');
                 
                 try {
                   // If auto-submit already happened, just exit with the stored data
                   if (autoSubmitTriggered.current) {
-                    console.log('⏰ Auto-submit already completed - Navigating to overview...');
+                    // console.log('⏰ Auto-submit already completed - Navigating to overview...');
                     await new Promise(resolve => setTimeout(resolve, 500));
                     
                     // Use the stored attempt data if available, otherwise just call onSubmitExam with null
                     // Never call onExitExam after auto-submit - exam is already submitted!
                     if (submittedAttemptData.current) {
-                      console.log('✅ Using stored attempt data from auto-submit');
+                      // console.log('✅ Using stored attempt data from auto-submit');
                       onSubmitExam(submittedAttemptData.current);
                     } else {
-                      console.log('⚠️ No stored attempt data, but exam was auto-submitted - calling onSubmitExam with null');
+                      // console.log('⚠️ No stored attempt data, but exam was auto-submitted - calling onSubmitExam with null');
                       onSubmitExam(null);
                     }
                   }
                   // Otherwise submit exam when user clicks exit
                   else if (questions.length > 0 && attempt?.attemptId && isOnline) {
-                    console.log('⏰ User clicked exit - Submitting exam...');
+                    // console.log('⏰ User clicked exit - Submitting exam...');
                     
                     // Add minimum display time for loading state
                     const submitPromise = handleSubmitExam();
                     const minDisplayTime = new Promise(resolve => setTimeout(resolve, 1000));
                     
                     await Promise.all([submitPromise, minDisplayTime]);
-                    console.log('🔵 Submission complete');
+                    // console.log('🔵 Submission complete');
                     // Keep loading state visible while navigation happens
                   } else if (!isOnline) {
-                    console.log('⏰ Offline - Showing offline dialog');
+                    // console.log('⏰ Offline - Showing offline dialog');
                     setIsSubmittingFromOverlay(false);
                     setShowOfflineSubmitDialog(true);
                     setShowTimeExpiredOverlay(false);
@@ -7690,7 +8523,7 @@ const calculateStudentEndTime = (
 
       {/* 15-Minute Warning Dialog */}
       {show15MinWarning && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[10000] p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[10000] p-4" onContextMenu={e => e.preventDefault()}>
           <div className={`rounded-lg shadow-2xl w-full max-w-md overflow-hidden ${
             darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'
           }`}>
@@ -7757,7 +8590,7 @@ const calculateStudentEndTime = (
                     <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Questions Answered:</span>
                   </div>
                   <span className={`text-sm font-semibold ${darkMode ? 'text-green-400' : 'text-green-600'}`}>
-                    {stats.answered}/{questions.length}
+                    {stats.answered}/{phaseQuestions.length}
                   </span>
                 </div>
 
@@ -7769,7 +8602,7 @@ const calculateStudentEndTime = (
                     <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Not Answered:</span>
                   </div>
                   <span className={`text-sm font-semibold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
-                    {questions.length - stats.answered}
+                    {phaseQuestions.length - stats.answered}
                   </span>
                 </div>
 
@@ -7785,14 +8618,14 @@ const calculateStudentEndTime = (
               </div>
 
               {/* Additional Notice */}
-              {(questions.length - stats.answered) > 0 && (
+              {(phaseQuestions.length - stats.answered) > 0 && (
                 <div className={`p-3 rounded-lg ${
                   darkMode ? 'bg-red-900/20 border border-red-800' : 'bg-red-50 border border-red-200'
                 }`}>
                   <div className="flex items-start space-x-2">
                     <FontAwesomeIcon icon={faCircleInfo} className="text-red-500 mt-0.5 text-sm" />
                     <p className={`text-xs ${darkMode ? 'text-red-300' : 'text-red-800'}`}>
-                      <strong>Reminder:</strong> You still have {questions.length - stats.answered} unanswered question{(questions.length - stats.answered) > 1 ? 's' : ''}. Make sure to answer them before time runs out!
+                      <strong>Reminder:</strong> You still have {phaseQuestions.length - stats.answered} unanswered question{(phaseQuestions.length - stats.answered) > 1 ? 's' : ''}. Make sure to answer them before time runs out!
                     </p>
                   </div>
                 </div>
@@ -7814,6 +8647,90 @@ const calculateStudentEndTime = (
                 Continue Exam
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔥 FULLSCREEN RE-ENTRY OVERLAY — blocks exam until student returns to fullscreen */}
+      {showFullscreenOverlay && isMonitoringActive && (
+        <div 
+          className="fixed inset-0 bg-black/95 flex items-center justify-center z-[10003]"
+          onContextMenu={e => e.preventDefault()}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+            <div className="bg-gradient-to-r from-red-500 to-orange-500 px-6 py-5">
+              <div className="flex items-center space-x-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-white font-bold text-lg">Fullscreen Required</h3>
+                  <p className="text-white/80 text-sm">Exam cannot continue without fullscreen</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-gray-600 text-sm mb-1">
+                You have exited fullscreen mode. This has been recorded as a violation.
+              </p>
+              <p className="text-gray-600 text-sm mb-5">
+                Please return to fullscreen to continue your exam.
+              </p>
+              <button
+                onClick={async () => {
+                  try {
+                    const elem = document.documentElement;
+                    if (elem.requestFullscreen) {
+                      await elem.requestFullscreen();
+                    } else if ((elem as any).webkitRequestFullscreen) {
+                      await (elem as any).webkitRequestFullscreen();
+                    } else if ((elem as any).msRequestFullscreen) {
+                      await (elem as any).msRequestFullscreen();
+                    }
+                    setShowFullscreenOverlay(false);
+                  } catch (err) {
+                    // console.warn('⚠️ Failed to re-enter fullscreen:', err);
+                  }
+                }}
+                className="w-full py-3 bg-gradient-to-r from-red-500 to-orange-500 text-white font-semibold rounded-xl hover:from-red-600 hover:to-orange-600 transition-all shadow-lg"
+              >
+                Return to Fullscreen
+              </button>
+              <p className="text-xs text-gray-400 text-center mt-3">
+                ⚠️ This violation has been logged and will be visible to your examiner
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ⛔ DevTools Detected Overlay — blocks entire exam UI */}
+      {showDevToolsOverlay && isMonitoringActive && (
+        <div 
+          className="fixed inset-0 bg-black flex items-center justify-center z-[10004]"
+          onContextMenu={e => e.preventDefault()}
+        >
+          <div className="text-center px-8 max-w-2xl">
+            <div className="text-8xl mb-6">⛔</div>
+            <h1 className="text-red-500 text-5xl font-black mb-4 tracking-tight">
+              DEVTOOLS PROHIBITED
+            </h1>
+            <p className="text-red-400 text-2xl font-bold mb-6">
+              Developer Tools usage is STRICTLY PROHIBITED during exams
+            </p>
+            <div className="bg-red-950 border-2 border-red-600 rounded-xl p-6 mb-6">
+              <p className="text-red-300 text-lg mb-2">
+                ⚠️ This violation has been recorded and reported to your examiner.
+              </p>
+              <p className="text-red-400 text-base">
+                If DevTools is docked, close it to continue. This warning will auto-dismiss.
+              </p>
+            </div>
+            <p className="text-gray-500 text-sm">
+              Your exam content is hidden while this warning is displayed.
+            </p>
           </div>
         </div>
       )}

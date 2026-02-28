@@ -50,7 +50,9 @@ export const getThemeFromSubdomain = (): BrandTheme => {
   return generateBrandTheme(
     themeConfig.color,
     themeConfig.name,
-    subdomain
+    subdomain,
+    themeConfig.secondary,
+    themeConfig.accent
   );
 };
 
@@ -84,6 +86,28 @@ export const debugTheme = () => {
   console.log('  College Name:', themeConfig.name);
   console.log('  Primary Color:', themeConfig.color);
   console.log('  Available Themes:', Object.keys(collegeThemes));
+};
+
+/**
+ * Generate theme from Firestore brand profile data
+ * Used when brand profile is saved — call this to refresh the theme
+ */
+export const generateThemeFromBrandProfile = (brandProfile: {
+  primaryColor?: string;
+  secondaryColor?: string;
+  accentColor?: string;
+  collegeName?: string;
+  instituteLogo?: string;
+}, collegeId: string): BrandTheme => {
+  const theme = generateBrandTheme(
+    brandProfile.primaryColor || '#4F46E5',
+    brandProfile.collegeName || 'EXAMINERS',
+    collegeId,
+    brandProfile.secondaryColor,
+    brandProfile.accentColor
+  );
+  // Attach instituteLogo if available
+  return { ...theme, instituteLogo: brandProfile.instituteLogo || '' };
 };
 
 /**

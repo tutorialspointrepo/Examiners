@@ -22,6 +22,8 @@ export declare const exerciseEvaluationWorker: functions.CloudFunction<functions
  * Enhances resume summaries, job descriptions, and skills using GPT
  */
 export declare const enhanceResumeContent: functions.HttpsFunction & functions.Runnable<any>;
+export declare const getExamMetadata: functions.HttpsFunction & functions.Runnable<any>;
+export declare const getExamQuestionsList: functions.HttpsFunction & functions.Runnable<any>;
 export declare const getExamForStudent: functions.HttpsFunction & functions.Runnable<any>;
 export declare const submitAndGradeExam: functions.HttpsFunction & functions.Runnable<any>;
 /**
@@ -106,4 +108,10 @@ export declare const scheduledJobScraper: functions.CloudFunction<unknown>;
  * 🔧 Manual Job Scraper Trigger — callable from admin UI
  */
 export declare const triggerJobScraper: functions.HttpsFunction & functions.Runnable<any>;
+export declare const getPersonalityTraitAggregation: functions.HttpsFunction & functions.Runnable<any>;
+export declare const updateLeaderboardStats: functions.CloudFunction<functions.Change<functions.firestore.DocumentSnapshot>>;
+export declare const getLeaderboardPaginated: functions.HttpsFunction & functions.Runnable<any>;
+export declare const migrateLeaderboardStats: functions.HttpsFunction & functions.Runnable<any>;
+export declare const getLiveExamStats: functions.HttpsFunction & functions.Runnable<any>;
+export declare const getExamStudentsPaginated: functions.HttpsFunction & functions.Runnable<any>;
 //# sourceMappingURL=index.d.ts.map

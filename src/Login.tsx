@@ -126,11 +126,11 @@ export default function Login({ onLoginSuccess, onRequirePasswordChange, onForgo
                 <div className="relative">
                   {/* Paper sheet */}
                   <div className="bg-white rounded-lg shadow-lg p-2.5 relative transform group-hover:scale-110 transition-transform duration-300">
-                    {/* Document lines */}
+                    {/* Document lines - uses brand colors */}
                     <div className="space-y-1">
-                      <div className="h-1 bg-gradient-to-r from-blue-400 to-purple-400 rounded-full w-7"></div>
-                      <div className="h-1 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full w-5"></div>
-                      <div className="h-1 bg-gradient-to-r from-pink-400 to-orange-400 rounded-full w-6"></div>
+                      <div className="h-1 rounded-full w-7" style={{ background: `linear-gradient(to right, ${brand.colors.primary}, ${brand.colors.secondary})` }}></div>
+                      <div className="h-1 rounded-full w-5" style={{ background: `linear-gradient(to right, ${brand.colors.secondary}, ${brand.colors.accent})` }}></div>
+                      <div className="h-1 rounded-full w-6" style={{ background: `linear-gradient(to right, ${brand.colors.accent}, ${brand.colors.primary})` }}></div>
                     </div>
                     
                     {/* AI Checkmark overlay */}
@@ -142,14 +142,14 @@ export default function Login({ onLoginSuccess, onRequirePasswordChange, onForgo
                   </div>
                   
                   {/* AI Neural nodes around document */}
-                  <div className="absolute -top-1 -left-1 w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse shadow-md"></div>
-                  <div className="absolute -bottom-1 -right-1 w-1.5 h-1.5 bg-purple-400 rounded-full animate-pulse shadow-md" style={{animationDelay: '0.5s'}}></div>
-                  <div className="absolute top-1/2 -right-2 w-1 h-1 bg-pink-400 rounded-full animate-pulse shadow-md" style={{animationDelay: '1s'}}></div>
+                  <div className="absolute -top-1 -left-1 w-1.5 h-1.5 rounded-full animate-pulse shadow-md" style={{ backgroundColor: brand.colors.primary }}></div>
+                  <div className="absolute -bottom-1 -right-1 w-1.5 h-1.5 rounded-full animate-pulse shadow-md" style={{ backgroundColor: brand.colors.secondary, animationDelay: '0.5s' }}></div>
+                  <div className="absolute top-1/2 -right-2 w-1 h-1 rounded-full animate-pulse shadow-md" style={{ backgroundColor: brand.colors.accent, animationDelay: '1s' }}></div>
                   
                   {/* Connection lines */}
                   <div className="absolute inset-0 pointer-events-none">
-                    <div className="absolute top-0 left-0 w-2.5 h-0.5 bg-gradient-to-r from-blue-400/60 to-transparent rotate-45"></div>
-                    <div className="absolute bottom-0 right-0 w-2.5 h-0.5 bg-gradient-to-l from-purple-400/60 to-transparent -rotate-45"></div>
+                    <div className="absolute top-0 left-0 w-2.5 h-0.5 rotate-45" style={{ background: `linear-gradient(to right, ${brand.colors.primary}99, transparent)` }}></div>
+                    <div className="absolute bottom-0 right-0 w-2.5 h-0.5 -rotate-45" style={{ background: `linear-gradient(to left, ${brand.colors.secondary}99, transparent)` }}></div>
                   </div>
                 </div>
               </div>

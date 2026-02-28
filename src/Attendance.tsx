@@ -35,6 +35,9 @@ interface Question {
     correctAnswer?: number;
     blanks?: string[];  // ✅ FITB specific
     correctSequence?: string[];  // ✅ Jumbled specific
+    // Likert specific
+    likertTrait?: string;  // ✅ Likert - trait this question maps to
+    likertDirection?: 'positive' | 'reverse';  // ✅ Likert - scoring direction
     jumbledOptions?: string[];
     hint?: string;
     solution?: string;
@@ -124,6 +127,7 @@ export default function Attendance({ exam, brandTheme, currentUser, isExamOver =
   
   const PAGE_SIZE = 8; // Students per page
   const hasLoggedView = useRef(false); // Track if we've logged this view
+  const attendanceCache = useRef<Map<string, { status: string; markedAt: any }> | null>(null);
 
   // Calculate exam start and end times
   useEffect(() => {
@@ -214,52 +218,35 @@ const loadPage = async (pageNumber: number) => {
     
     console.log(`✅ Found ${studentsData.length} students for page ${pageNumber}`);
     
-    // Get attendance records for this exam (all records, not just current page)
-    const attendanceData = await firebaseService.getExamAttendance(exam.id);
-    
-    // ✅ DEBUG: Log the raw data from getExamAttendance
-    console.log('═══════════════════════════════════════');
-    console.log('🔍 DEBUG #1: Raw attendanceData from getExamAttendance');
-    console.log('═══════════════════════════════════════');
-    console.log('Full array:', attendanceData);
-    console.log('Type:', typeof attendanceData);
-    console.log('Is Array?', Array.isArray(attendanceData));
-    console.log('Length:', attendanceData?.length);
-    if (attendanceData && attendanceData.length > 0) {
-      console.log('First record:', attendanceData[0]);
-    }
-    console.log('═══════════════════════════════════════\n');
-
-    // ✅ FIX: attendanceData is already an array of AttendanceRecord[]
-    // No need to map presentStudents/absentStudents - just use the array directly
-    const attendanceRecords = attendanceData.map(record => ({
-      userId: record.userId,  // Changed: studentId → userId
-      status: record.status,
-      markedAt: record.markedAt
-    }));
-    
-    console.log(`📝 Found ${attendanceRecords.length} attendance records`);
-    
-    // Calculate total present students across ALL pages
-    const presentCount = attendanceRecords.filter(record => record.status === 'present').length;
-    
-    // Get total count on first load or if not set
-    let totalCount = totalStudents;
-    if (pageNumber === 1 && totalStudents === 0) {
-      totalCount = await getTotalStudentCount();
-      setTotalStudents(totalCount);
-      setTotalPages(Math.ceil(totalCount / PAGE_SIZE));
+    // Fetch attendance only once and cache it
+    if (!attendanceCache.current) {
+      console.log('📥 Fetching attendance records (first time)...');
+      const attendanceData = await firebaseService.getExamAttendance(exam.id);
+      
+      attendanceCache.current = new Map(
+        attendanceData.map(record => [
+          record.userId,
+          { status: record.status, markedAt: record.markedAt }
+        ])
+      );
+      console.log(`📝 Cached ${attendanceCache.current.size} attendance records`);
+      
+      // Calculate totals once
+      const presentCount = attendanceData.filter(record => record.status === 'present').length;
+      
+      let totalCount = totalStudents;
+      if (pageNumber === 1 && totalStudents === 0) {
+        totalCount = await getTotalStudentCount();
+        setTotalStudents(totalCount);
+        setTotalPages(Math.ceil(totalCount / PAGE_SIZE));
+      }
+      
+      setTotalPresentStudents(presentCount);
+      setTotalAbsentStudents(Math.max(0, totalCount - presentCount));
     }
     
-    const absentCount = totalCount - presentCount;
-    
-    setTotalPresentStudents(presentCount);
-    setTotalAbsentStudents(absentCount);
-    
-    // Create a map of student IDs to attendance records for faster lookup
-    const attendanceMap = new Map(
-      attendanceRecords.map(record => [record.userId, record]) 
-    );
+    // Use cached attendance map
+    const attendanceMap = attendanceCache.current;
 
     // Merge attendance status with student data
     const studentsWithAttendance: Student[] = studentsData.map(student => {
@@ -282,6 +269,12 @@ const loadPage = async (pageNumber: number) => {
       };
   });
     
+    // Sort present students first, then alphabetically by name
+    studentsWithAttendance.sort((a, b) => {
+      if (a.isPresent === b.isPresent) return (a.fullName || '').localeCompare(b.fullName || '');
+      return a.isPresent ? -1 : 1;
+    });
+
     setStudents(studentsWithAttendance);
     setHasNextPage(hasMore);
     
@@ -377,6 +370,15 @@ const loadPage = async (pageNumber: number) => {
       }
       return s;
     }));
+
+    // Update attendance cache
+    if (attendanceCache.current) {
+      if (newStatus) {
+        attendanceCache.current.set(studentUserId, { status: 'present', markedAt: new Date() });
+      } else {
+        attendanceCache.current.set(studentUserId, { status: 'absent', markedAt: new Date() });
+      }
+    }
   } catch (error) {
     console.error('Error toggling attendance:', error);
   }
@@ -477,6 +479,9 @@ const loadPage = async (pageNumber: number) => {
                   <div className="flex items-center space-x-1">
                     <FontAwesomeIcon icon={faClipboardList} />
                     <span>{exam.totalQuestions} Questions</span>
+                  </div>
+                  <div className="flex items-center space-x-1 opacity-75 text-xs">
+                    <span>Exam ID: {exam.id}</span>
                   </div>
                 </div>
               </div>

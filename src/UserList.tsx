@@ -277,6 +277,13 @@ export default function UserList({
     }
   };
 
+  // Reset filters to 'All' when switching classes
+  useEffect(() => {
+    setFilterRole(FILTER_VALUES.ALL);
+    setFilterStatus(FILTER_VALUES.ALL);
+    setSearchQuery('');
+  }, [selectedClass]);
+
   // Initial fetch when class/filter changes
   useEffect(() => {
     fetchUsers(false);
@@ -1203,12 +1210,6 @@ export default function UserList({
                     <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-700 rounded-lg text-xs font-medium">
                       <span className="w-2 h-2 rounded-full bg-purple-500"></span>
                       {roleCounts.teachers} Teachers
-                    </span>
-                  )}
-                  {roleCounts.students > 0 && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium">
-                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                      {roleCounts.students} Students
                     </span>
                   )}
                 </>

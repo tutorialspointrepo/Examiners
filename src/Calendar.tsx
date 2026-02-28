@@ -102,12 +102,10 @@ function Calendar({
         let filteredExams = examsData;
         const userType = currentUser?.userType;
         
-        if (userType === USER_TYPES.STUDENT && currentUser) {
-          // Students see only their class and board exams
-          filteredExams = examsData.filter(exam => 
-            exam.class === currentUser.studentClass && 
-            exam.board === currentUser.board
-          );
+        if (userType === USER_TYPES.STUDENT && currentUser?.uid) {
+          // Students see only exams they are enrolled in
+          const enrolledExamIds = await firebaseService.getEnrolledExamIdsForStudent(currentUser.uid, activeCollegeId);
+          filteredExams = examsData.filter(exam => enrolledExamIds.has(exam.id));
         } else if (userType === USER_TYPES.TEACHER && currentUser?.teacherClasses) {
           // Teachers see exams for classes they teach
           filteredExams = examsData.filter(exam => 
@@ -227,12 +225,21 @@ function Calendar({
     });
   }, [selectedDate, allExams]);
 
-  // Update events count when selected date changes
+  // Count exams for the currently displayed month
+  const currentMonthExamCount = useMemo(() => {
+    return allExams.filter(exam => {
+      if (!exam.examDate) return false;
+      const examDate = new Date(exam.examDate);
+      return examDate.getFullYear() === currentYear && examDate.getMonth() === currentMonth;
+    }).length;
+  }, [allExams, currentYear, currentMonth]);
+
+  // Update events count when month changes
   useEffect(() => {
     if (onEventsCountChange) {
-      onEventsCountChange(selectedDateExams.length);
+      onEventsCountChange(currentMonthExamCount);
     }
-  }, [selectedDateExams, onEventsCountChange]);
+  }, [currentMonthExamCount, onEventsCountChange]);
   
   // Handle day click
   const handleDayClick = (day: CalendarDay) => {
@@ -336,7 +343,7 @@ function Calendar({
                 {monthNames[currentMonth]} {currentYear}
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                {allExams.length} exam{allExams.length !== 1 ? 's' : ''}
+                {currentMonthExamCount} exam{currentMonthExamCount !== 1 ? 's' : ''}
               </p>
             </div>
             

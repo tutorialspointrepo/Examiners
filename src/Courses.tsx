@@ -39,6 +39,9 @@ interface CoursesProps {
   selectedCollege?: { id: string; name: string } | null;
   onOpenCurriculum?: (course: Course) => void;
   onCoursesLoaded?: (courses: Course[]) => void;
+  learningPathCourseIds?: number[];
+  learningPathName?: string;
+  onBackFromPath?: () => void;
 }
 
 const Courses: React.FC<CoursesProps> = ({
@@ -50,10 +53,13 @@ const Courses: React.FC<CoursesProps> = ({
   selectedCollege,
   onOpenCurriculum,
   onCoursesLoaded,
+  learningPathCourseIds,
+  learningPathName,
+  onBackFromPath,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'topRated' | 'recentlyAdded'>('all');
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'topRated' | 'recentlyAdded' | 'completed'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
   const categoryDropdownRef = useRef<HTMLDivElement>(null);
@@ -125,8 +131,76 @@ const Courses: React.FC<CoursesProps> = ({
         let transformedCourses: Course[] = [];
         let totalCount = 0;
         
-        // Universal search: when user searches, query full database regardless of user type
-        if (debouncedSearchQuery && debouncedSearchQuery.trim().length > 0) {
+        // Learning Path mode: fetch only courses from the learning path
+        if (learningPathCourseIds && learningPathCourseIds.length > 0 && !debouncedSearchQuery) {
+          console.log('📋 Fetching learning path courses:', learningPathCourseIds);
+          const courseDetails = await firebaseService.getCoursesByCourseId(learningPathCourseIds);
+          
+          // If student, get enrollment data
+          let enrollmentMap = new Map<string, any>();
+          if (isStudent && currentUser?.userId) {
+            try {
+              const enrollResult = await firebaseService.getStudentCourseEnrollmentsPaginated({
+                userId: currentUser.userId || currentUser.uid,
+                limit: 100,
+                orderBy: 'enrolledAt',
+                orderDirection: 'desc',
+              });
+              enrollResult.enrollments.forEach((e: any) => {
+                enrollmentMap.set(String(e.courseId), e);
+              });
+            } catch (err) {
+              console.warn('Failed to fetch student enrollments for path courses:', err);
+            }
+          }
+          
+          transformedCourses = courseDetails.map(course => {
+            const courseData = course as any;
+            const enrollment = enrollmentMap.get(String(course.courseId));
+            const progress = enrollment?.progress || {};
+            const completedLectures = progress.completedLectures?.length || 0;
+            const totalLectures = course.totalLectures || 0;
+            const calculatedProgress = progress.percentage || (totalLectures > 0 && completedLectures > 0 ? Math.max(1, Math.round((completedLectures / totalLectures) * 100)) : 0);
+            
+            return {
+              id: course.slug,
+              courseId: course.courseId,
+              name: course.courseName,
+              thumbnail: course.thumbnailUrl,
+              category: course.courseCategories?.[0] || 'General',
+              lectures: course.totalLectures || 0,
+              duration: formatDuration(course.totalDuration || 0),
+              quizzes: courseData.totalQuizzes || 0,
+              exercises: courseData.totalExercises || 0,
+              progress: calculatedProgress,
+              isEnrolled: !!enrollment,
+              totalChapters: course.totalChapters || 0,
+              assessments: course.totalUnits || 0,
+              completedCount: course.completedCount || 0,
+              tags: course.courseCategories,
+              rating: course.rating?.average || 0,
+              totalRatings: course.rating?.totalRatings || 0,
+              createdAt: course.dateOfPublishing || '',
+              instructor: courseData.courseAuthor || '',
+              level: courseData.complexityLevel === 1 ? 'Beginner' : courseData.complexityLevel === 2 ? 'Intermediate' : courseData.complexityLevel === 3 ? 'Advanced' : 'All Levels',
+              tagLine: courseData.tagLine || '',
+              language: courseData.language || 'English',
+              enrollmentCount: 0,
+              enrollmentId: enrollment?.enrollmentId,
+            };
+          });
+          
+          // Maintain order from learningPathCourseIds
+          const orderMap = new Map(learningPathCourseIds.map((id, idx) => [id, idx]));
+          transformedCourses.sort((a, b) => (orderMap.get(Number(a.courseId)) || 0) - (orderMap.get(Number(b.courseId)) || 0));
+          
+          if (selectedCategory) {
+            transformedCourses = transformedCourses.filter(c => c.tags?.includes(selectedCategory));
+          }
+          
+          totalCount = transformedCourses.length;
+          setLastDoc(null);
+        } else if (debouncedSearchQuery && debouncedSearchQuery.trim().length > 0) {
           const searchResults = await firebaseService.searchCourses(debouncedSearchQuery);
           
           // Get college-specific enrollment counts if applicable
@@ -179,8 +253,10 @@ const Courses: React.FC<CoursesProps> = ({
             transformedCourses = transformedCourses.filter(c => c.tags?.includes(selectedCategory));
           }
           
-          // Apply sorting
-          if (selectedFilter === 'recentlyAdded') {
+          // Apply sorting/filtering
+          if (selectedFilter === 'completed') {
+            transformedCourses = transformedCourses.filter(c => c.progress === 100);
+          } else if (selectedFilter === 'recentlyAdded') {
             transformedCourses.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
           } else if (selectedFilter === 'topRated') {
             transformedCourses.sort((a, b) => (b.rating || 0) - (a.rating || 0));
@@ -326,8 +402,10 @@ const Courses: React.FC<CoursesProps> = ({
               );
             }
             
-            // Sort
-            if (selectedFilter === 'recentlyAdded') {
+            // Sort/filter
+            if (selectedFilter === 'completed') {
+              transformedCourses = transformedCourses.filter(c => c.progress === 100);
+            } else if (selectedFilter === 'recentlyAdded') {
               transformedCourses.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
             } else if (selectedFilter === 'topRated') {
               transformedCourses.sort((a, b) => (b.rating || 0) - (a.rating || 0));
@@ -421,8 +499,10 @@ const Courses: React.FC<CoursesProps> = ({
               transformedCourses = transformedCourses.filter(c => c.tags?.includes(selectedCategory));
             }
             
-            // Apply sorting for topRated (client-side)
-            if (selectedFilter === 'topRated') {
+            // Apply sorting/filtering
+            if (selectedFilter === 'completed') {
+              transformedCourses = transformedCourses.filter(c => c.progress === 100);
+            } else if (selectedFilter === 'topRated') {
               transformedCourses.sort((a, b) => (b.rating || 0) - (a.rating || 0));
             }
           }
@@ -458,7 +538,7 @@ const Courses: React.FC<CoursesProps> = ({
     };
 
     fetchCourses();
-  }, [selectedCategory, selectedFilter, currentPage, debouncedSearchQuery, filterVersion, currentUser, selectedCollege]);
+  }, [selectedCategory, selectedFilter, currentPage, debouncedSearchQuery, filterVersion, currentUser, selectedCollege, learningPathCourseIds]);
 
   // Category options
   const categoryOptions = [
@@ -536,35 +616,54 @@ const Courses: React.FC<CoursesProps> = ({
       <div className="p-4 border-b border-gray-200 bg-white sticky top-0 z-10 flex-shrink-0">
         {/* Title Row with Filters */}
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            {learningPathName && onBackFromPath ? (
+              <>
+                <button
+                  onClick={onBackFromPath}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-500"
+                  title="Back to Learning Path"
+                >
+                  <FontAwesomeIcon icon={faChevronLeft} />
+                </button>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center" title={learningPathName}>
+                    <FontAwesomeIcon icon={faBooks} className="mr-2" style={{ color: brandTheme.colors.primary }} />
+                    {learningPathName.length > 40 ? learningPathName.slice(0, 40) + '...' : learningPathName}
+                  </h2>
+                  <p className="text-xs text-gray-500 ml-7">{learningPathCourseIds?.length || 0} courses included</p>
+                </div>
+              </>
+            ) : (
+            <>
+            <h2 className="text-xl font-bold text-gray-900 flex items-center flex-shrink-0">
               <FontAwesomeIcon icon={faBooks} className="mr-2" style={{ color: brandTheme.colors.primary }} />
               Courses
             </h2>
             
             {/* Filter Pills */}
-            <div className="flex gap-1 ml-2">
-              {['all', 'topRated', 'recentlyAdded'].map(filter => (
+            <div className="flex gap-1 ml-2 overflow-x-auto no-scrollbar" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+              {['all', 'topRated', 'recentlyAdded', 'completed'].map(filter => (
                 <button
                   key={filter}
                   onClick={() => setSelectedFilter(filter as any)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap ${
                     selectedFilter === filter
                       ? 'text-white'
                       : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                   }`}
                   style={selectedFilter === filter ? { backgroundColor: brandTheme.colors.primary } : {}}
                 >
-                  {filter === 'all' ? 'All' : filter === 'topRated' ? 'Top Rated' : 'Recent'}
+                  {filter === 'all' ? 'All' : filter === 'topRated' ? 'Top Rated' : filter === 'recentlyAdded' ? 'Recent' : 'Completed'}
                 </button>
               ))}
             </div>
 
             {/* Category Dropdown */}
-            <div ref={categoryDropdownRef} className="relative">
+            <div ref={categoryDropdownRef} className="relative flex-shrink-0">
               <button
                 onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 border border-gray-200 rounded-full text-xs font-medium hover:bg-gray-50"
+                className="flex items-center gap-2 px-3 py-1.5 border border-gray-200 rounded-full text-xs font-medium hover:bg-gray-50 whitespace-nowrap"
               >
                 <FontAwesomeIcon icon={faFilter} className="text-gray-400" style={{ fontSize: '10px' }} />
                 <span className="text-gray-600">{selectedCategory || 'All Categories'}</span>
@@ -594,6 +693,8 @@ const Courses: React.FC<CoursesProps> = ({
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
 
           {onCollapse && (

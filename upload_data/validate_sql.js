@@ -1,5 +1,5 @@
 /**
- * Validate ALL SQL problems using the SAME logic as PHP template / CodingLab
+ * Validate ALL SQL problems using the SAME logic as PHP template / CodePractice
  * 
  * This mirrors exactly how the frontend creates tables, inserts data,
  * runs queries, and compares results — so if it passes here, it passes there.

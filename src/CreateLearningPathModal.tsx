@@ -77,7 +77,7 @@ export default function CreateLearningPathModal({
   isOpen,
   onClose,
   brandTheme,
-  currentUser: _currentUser,
+  currentUser,
   selectedCollege,
   onPathCreated,
   editPath,
@@ -452,6 +452,7 @@ export default function CreateLearningPathModal({
           courses: mappedCourses,
           jdText: jdText || undefined,
           collegeId: selectedCollege?.id || selectedCollege?.collegeId || '',
+          createdByName: currentUser?.fullName || currentUser?.displayName || '',
         });
 
         if (!result.success) {

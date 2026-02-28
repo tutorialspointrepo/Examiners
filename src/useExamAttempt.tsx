@@ -219,6 +219,13 @@ export const useExamAttempt = (
         console.log('  - Safe to create new attempt');
         console.log('🆕'.repeat(40) + '\n');
         
+        // ✅ Skip attempt creation for non-students (teachers/admins have no rollNumber)
+        if (!studentInfo.rollNumber || studentInfo.rollNumber.trim() === '' || studentInfo.rollNumber === 'N/A') {
+          console.warn('🚫 No roll number — non-student, skipping attempt creation (preview mode)');
+          setLoading(false);
+          return;
+        }
+
         // Get device info
         const deviceInfo = {
           userAgent: navigator.userAgent,
@@ -240,12 +247,19 @@ export const useExamAttempt = (
         setIsAlreadySubmitted(false); // New attempt is not submitted
       }
     } catch (err: any) {
-      console.error('\n' + '❌'.repeat(40));
-      console.error('❌ ERROR INITIALIZING ATTEMPT');
-      console.error('  - Error:', err.message);
-      console.error('  - Stack:', err.stack);
-      console.error('❌'.repeat(40) + '\n');
-      setError(err.message);
+      // ✅ Non-student blocked silently — no error shown, attempt stays null
+      if (err.message === 'NON_STUDENT_BLOCKED') {
+        console.warn('🚫 Non-student blocked from creating exam attempt — preview mode only');
+        setAttempt(null);
+        setIsAlreadySubmitted(false);
+      } else {
+        console.error('\n' + '❌'.repeat(40));
+        console.error('❌ ERROR INITIALIZING ATTEMPT');
+        console.error('  - Error:', err.message);
+        console.error('  - Stack:', err.stack);
+        console.error('❌'.repeat(40) + '\n');
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
       console.log('\n' + '🏁'.repeat(40));
@@ -264,6 +278,7 @@ export const useExamAttempt = (
 
   // Submit answer for a question - FIXED to prevent infinite loop
   const submitAnswer = useCallback(async (
+    questionId: string,
     questionNo: number,
     answer: string | string[],
     question: any,
@@ -285,6 +300,7 @@ export const useExamAttempt = (
       // Use offline queue service which handles both online and offline scenarios
       const result = await offlineQueueService.queueAnswer(
         attempt.attemptId,
+        questionId,
         questionNo,
         answer,
         question,
@@ -299,9 +315,10 @@ export const useExamAttempt = (
         if (!prev) return null;
         
         const updatedResponses = [...prev.responses];
-        const existingIndex = updatedResponses.findIndex(r => r.questionNo === questionNo);
+        const existingIndex = updatedResponses.findIndex((r: any) => r.questionId === questionId);
         
         const responseUpdate = {
+          questionId,
           questionNo,
           studentAnswer: answer,
           markedForReview,
@@ -317,7 +334,6 @@ export const useExamAttempt = (
           updatedResponses.push({
             responseId: `${prev.attemptId}_${questionNo}`,
             attemptId: prev.attemptId,
-            questionId: question.id,
             ...responseUpdate
           } as StudentQuestionResponse);
         }

@@ -22,8 +22,10 @@ import {
   faCode,
   faBookOpen,
   faChevronRight,
+  faPalette,
 } from '@fortawesome/sharp-light-svg-icons';
 import { useBrand } from './BrandContext';
+import BrandProfile from './BrandProfile';
 import { type UserType } from './constants';
 import { firebaseService } from './services/firebase_service';
 
@@ -45,6 +47,7 @@ interface ProfileDropdownProps {
   onViewLeetCode?: () => void;
   onProfileClick?: () => void;
   onAddUniversity?: () => void;
+  onBrandProfile?: () => void;
   onSignOut: () => void;
   onSwitchMode?: (mode: 'learning' | 'assessment') => void;
   currentMode?: 'learning' | 'assessment';
@@ -58,6 +61,7 @@ export default function ProfileDropdown({
   onViewLoginDetails,
   onViewLeetCode,
   onAddUniversity,
+  onBrandProfile,
   onSignOut,
   onSwitchMode,
   currentMode,
@@ -78,6 +82,7 @@ export default function ProfileDropdown({
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [showBrandProfile, setShowBrandProfile] = useState(false);
 
   // Slide-in animation
   useEffect(() => {
@@ -121,6 +126,7 @@ export default function ProfileDropdown({
   };
 
   const canAddUniversity = user.role === 'system_admin';
+  const canManageBrand = user.role === 'system_admin';
 
   // Handle change password modal close
   const handleCloseChangePassword = () => {
@@ -377,6 +383,26 @@ export default function ProfileDropdown({
                       <div className="flex-1 text-left">
                         <div className="font-medium text-[13px]">Add University</div>
                         <div className="text-[11px] text-gray-400">Register a new institution</div>
+                      </div>
+                      <FontAwesomeIcon icon={faChevronRight} className="text-xs text-gray-500" />
+                    </button>
+                  )}
+
+                  {/* Brand Profile (Admin & System Admin Only) */}
+                  {canManageBrand && (
+                    <button
+                      onClick={() => {
+                        setShowBrandProfile(true);
+                        setIsOpen(false);
+                      }}
+                      className="w-full flex items-center space-x-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 rounded-xl transition-colors"
+                    >
+                      <div className="w-9 h-9 bg-pink-100 rounded-lg flex items-center justify-center">
+                        <FontAwesomeIcon icon={faPalette} className="text-pink-500 text-sm" />
+                      </div>
+                      <div className="flex-1 text-left">
+                        <div className="font-medium text-[13px]">Brand Profile</div>
+                        <div className="text-[11px] text-gray-400">Logo, colors & branding</div>
                       </div>
                       <FontAwesomeIcon icon={faChevronRight} className="text-xs text-gray-500" />
                     </button>
@@ -717,6 +743,14 @@ export default function ProfileDropdown({
         </>,
         document.body
       )}
+
+      {/* Brand Profile Panel */}
+      <BrandProfile
+        isOpen={showBrandProfile}
+        onClose={() => setShowBrandProfile(false)}
+        collegeId={user.organizationId || ''}
+        onBrandUpdate={onBrandProfile}
+      />
     </div>
   );
 }

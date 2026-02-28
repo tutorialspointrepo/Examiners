@@ -13,7 +13,8 @@ import {
   faBuilding,
   faCheckSquare,
   faClock,
-  faVideo
+  faVideo,
+  faChartBar
 } from '@fortawesome/sharp-light-svg-icons';
 import { firebaseService } from './services/firebase_service';
 import type { DocumentSnapshot } from 'firebase/firestore';
@@ -73,6 +74,9 @@ export interface Exam {
   questionPaperImages?: string[];
   questionsList?: Question[];
   collegeId?: string;  // ✅ ADDED: College ID from exams table
+  personalityAssessment?: boolean;
+  likertQuestions?: any[];
+  likertDuration?: number;
   createdAt: string;
   createdBy: string;
   createdById: string;
@@ -102,6 +106,7 @@ interface ExamsProps {
   currentUserType?: string; // ✅ ADDED: User type (student/teacher/admin)
   studentClass?: string; // ✅ ADDED: Student's class
   studentBoard?: string; // ✅ ADDED: Student's board
+  onFilteredExamCount?: (count: number) => void; // ✅ Report enrolled exam count to parent for sidebar
 }
 
 function Exams({ 
@@ -118,12 +123,15 @@ function Exams({
   onExamAutoSelected,
   userId, // ✅ ADDED: Current student's user ID
   currentUserType, // ✅ ADDED: User type
-  studentClass, // ✅ ADDED: Student's class
-  studentBoard // ✅ ADDED: Student's board
+  studentClass: _studentClass, // ✅ ADDED: Student's class
+  studentBoard: _studentBoard, // ✅ ADDED: Student's board
+  onFilteredExamCount // ✅ Report enrolled exam count to parent for sidebar
 }: ExamsProps) {
   // State
   const [exams, setExams] = useState<Exam[]>([]);
   const [isLoadingExams, setIsLoadingExams] = useState(true);
+  const [loadingExamId, setLoadingExamId] = useState<string | null>(null); // ✅ PERF: Track which exam is loading full data
+  const [enrolledExamIds, setEnrolledExamIds] = useState<Set<string> | null>(null); // ✅ ADDED: Enrolled exam IDs for students
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
@@ -244,6 +252,83 @@ function Exams({
     }
   }
 
+  // Check if exam window has ended (time-based, not status-based)
+  function isExamOver(exam: Exam): boolean {
+    if (!exam.examDate) return false;
+    try {
+      const examStart = new Date(exam.examDate);
+      if (exam.examTime) {
+        const [hours, minutes] = exam.examTime.split(':').map(Number);
+        examStart.setHours(hours, minutes, 0, 0);
+      } else {
+        examStart.setHours(23, 59, 59, 999);
+      }
+      const totalDuration = (parseInt(exam.duration) || 0) + (exam.personalityAssessment ? (exam.likertDuration || 0) : 0);
+      const examEnd = new Date(examStart.getTime() + totalDuration * 60 * 1000);
+      const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      return nowIST > examEnd;
+    } catch {
+      return false;
+    }
+  }
+
+  // ✅ PERF: Ref to current exams for cache lookup without re-creating callbacks
+  const examsRef = useRef(exams);
+  examsRef.current = exams;
+
+  // ✅ PERF: Lazy-load full exam data when user selects an exam
+  // Shows lite data immediately, fetches full data in background (non-blocking)
+  const handleExamSelect = useCallback((exam: Exam | null) => {
+    if (!exam) {
+      onExamSelect(null);
+      setLoadingExamId(null);
+      return;
+    }
+    
+    // Check if we already have full data cached
+    const cachedExam = examsRef.current.find(e => e.id === exam.id);
+    const examToCheck = cachedExam || exam;
+    
+    const hasFullData = (examToCheck.questionsList && examToCheck.questionsList.length > 0) ||
+                        (examToCheck.questionPaperImages && examToCheck.questionPaperImages.length > 0) ||
+                        (examToCheck as any)._isLite === false;
+    if (hasFullData) {
+      onExamSelect(examToCheck);
+      setLoadingExamId(null);
+      return;
+    }
+
+    // Show lite version immediately (card highlight, basic info)
+    onExamSelect(exam);
+    setLoadingExamId(exam.id);
+    
+    // Fetch full data in background — NON-BLOCKING (no await in click handler)
+    firebaseService.getExamFullById(exam.id).then(fullExam => {
+      if (fullExam) {
+        const formattedFull = {
+          ...exam,
+          questionPaperImages: fullExam.questionPaperImages,
+          questionsList: fullExam.questionsList,
+          questionPool: fullExam.questionPool,
+          pickRandomCount: fullExam.pickRandomCount,
+          poolQuestionMarks: fullExam.poolQuestionMarks,
+          personalityAssessment: fullExam.personalityAssessment,
+          likertQuestions: fullExam.likertQuestions,
+          likertDuration: fullExam.likertDuration,
+          _isLite: false,
+        } as Exam;
+        
+        // Cache in exams list
+        setExams(prev => prev.map(e => e.id === exam.id ? formattedFull : e));
+        onExamSelect(formattedFull);
+      }
+    }).catch(error => {
+      console.error('Error loading full exam:', error);
+    }).finally(() => {
+      setLoadingExamId(null);
+    });
+  }, [onExamSelect]);
+
   const loadInitialExams = useCallback(async () => {
     if (!activeCollegeId) {
       setExams([]);
@@ -256,7 +341,9 @@ function Exams({
     setLastDoc(null);
     setHasMore(true);
     
-    try {
+  try {
+      // FIX: Use the existing teacher function but filter it in the memoized baseFilteredExams
+      // rather than calling a non-existent student-specific function.
       const result = await firebaseService.getExamsPaginated(activeCollegeId, selectedYear, 25);
       
       const formattedExams = result.exams.map(exam => ({
@@ -287,6 +374,9 @@ function Exams({
         pickRandomCount: exam.pickRandomCount,
         poolQuestionMarks: exam.poolQuestionMarks,
         collegeId: exam.collegeId,
+        personalityAssessment: (exam as any).personalityAssessment || false,
+        likertQuestions: (exam as any).likertQuestions || [],
+        likertDuration: (exam as any).likertDuration || 0,
         createdAt: exam.createdAt.toLocaleString(),
         createdBy: exam.createdByName,
         createdById: exam.createdBy,
@@ -378,6 +468,9 @@ function Exams({
         pickRandomCount: exam.pickRandomCount,
         poolQuestionMarks: exam.poolQuestionMarks,
         collegeId: exam.collegeId,
+        personalityAssessment: (exam as any).personalityAssessment || false,
+        likertQuestions: (exam as any).likertQuestions || [],
+        likertDuration: (exam as any).likertDuration || 0,
         createdAt: exam.createdAt.toLocaleString(),
         createdBy: exam.createdByName,
         createdById: exam.createdBy,
@@ -431,6 +524,17 @@ function Exams({
       loadInitialExams();
     }
   }, [activeCollegeId, selectedYear, loadInitialExams]);
+
+  // ✅ ADDED: Fetch enrolled exam IDs for students
+  useEffect(() => {
+    if (currentUserType === 'student' && userId && activeCollegeId) {
+      firebaseService.getEnrolledExamIdsForStudent(userId, activeCollegeId)
+        .then(ids => setEnrolledExamIds(ids))
+        .catch(() => setEnrolledExamIds(new Set()));
+    } else {
+      setEnrolledExamIds(null); // Non-students don't need enrollment filtering
+    }
+  }, [currentUserType, userId, activeCollegeId]);
 
   // Auto-select and scroll to newly created exam
   const onExamAutoSelectedRef = useRef(onExamAutoSelected);
@@ -561,28 +665,51 @@ function Exams({
         return true;
       }
       
-      // For students, only show exams for their class and board
+      // For students, only show exams they are enrolled in
       if (currentUserType === 'student') {
-        const studentClassMatch = studentClass ? exam.class === studentClass : true;
-        const studentBoardMatch = studentBoard ? exam.board === studentBoard : true;
-        return studentClassMatch && studentBoardMatch;
+        // If enrollment data is still loading, show nothing yet
+        if (enrolledExamIds === null) return false;
+        // Only show exams the student is enrolled in
+        if (!enrolledExamIds.has(exam.id)) return false;
+        
+        // Apply exam type filter for students too
+        const isPAFilter = selectedExamType === 'PA Included' || selectedExamType === 'Personality Assessment';
+        const examTypeMatch = selectedExamType === FILTER_VALUES.ALL 
+          || (isPAFilter 
+              ? !!(exam.personalityAssessment || (exam as any).personalityAssessment)
+              : exam.type === selectedExamType);
+        return examTypeMatch;
       }
       
       // For teachers/admins, use the dropdown filters
       const yearMatch = selectedYear === FILTER_VALUES.ALL || exam.year === selectedYear;
       const classMatch = selectedClass === FILTER_VALUES.ALL || exam.class === selectedClass;
       const boardMatch = selectedBoard === FILTER_VALUES.ALL || exam.board === selectedBoard;
-      const examTypeMatch = selectedExamType === FILTER_VALUES.ALL || exam.type === selectedExamType;
+      const isPAFilter = selectedExamType === 'PA Included' || selectedExamType === 'Personality Assessment';
+      const examTypeMatch = selectedExamType === FILTER_VALUES.ALL 
+        || (isPAFilter 
+            ? !!(exam.personalityAssessment || (exam as any).personalityAssessment)
+            : exam.type === selectedExamType);
       return yearMatch && classMatch && boardMatch && examTypeMatch;
     });
     
     return filtered;
-  }, [exams, selectedYear, selectedClass, selectedBoard, selectedExamType, currentUserType, studentClass, studentBoard, highlightedExamId]);
+  }, [exams, selectedYear, selectedClass, selectedBoard, selectedExamType, currentUserType, enrolledExamIds, highlightedExamId]);
 
   // Filter exams including status filter and sort by priority
   const filteredExams = useMemo(() => {
     const filtered = baseFilteredExams.filter(exam => {
-      const statusMatch = examFilter === FILTER_VALUES.ALL || exam.status === examFilter;
+      if (examFilter === FILTER_VALUES.ALL) return true;
+      
+      // For students, use time-based check since exam.status may not be updated
+      if (currentUserType === 'student') {
+        const examOver = isExamOver(exam);
+        if (examFilter === EXAM_STATUS.COMPLETED) return examOver || exam.status === EXAM_STATUS.COMPLETED;
+        if (examFilter === EXAM_STATUS.UPCOMING) return !examOver && exam.status !== EXAM_STATUS.COMPLETED;
+        return exam.status === examFilter;
+      }
+      
+      const statusMatch = exam.status === examFilter;
       return statusMatch;
     });
     
@@ -630,7 +757,7 @@ function Exams({
     }
     
     return sorted;
-  }, [baseFilteredExams, examFilter, exams.length, highlightedExamId]);
+  }, [baseFilteredExams, examFilter, exams.length, highlightedExamId, currentUserType]);
 
   // Notify parent component when filtered exams change
   useEffect(() => {
@@ -639,9 +766,17 @@ function Exams({
     }
   }, [filteredExams, onExamsListChange]);
 
+  // ✅ Report enrolled/filtered exam count to parent for sidebar badge
+  useEffect(() => {
+    if (onFilteredExamCount) {
+      onFilteredExamCount(baseFilteredExams.length);
+    }
+  }, [baseFilteredExams.length, onFilteredExamCount]);
+
   // Auto-select first exam when filtered exams change (only if no exam selected)
-  const onExamSelectRef = useRef(onExamSelect);
-  onExamSelectRef.current = onExamSelect;
+  // ✅ PERF: Use handleExamSelect for auto-select so full data is lazy-loaded
+  const onExamSelectRef = useRef(handleExamSelect);
+  onExamSelectRef.current = handleExamSelect;
   
   useEffect(() => {
     if (filteredExams.length > 0 && !selectedExam) {
@@ -796,7 +931,7 @@ function Exams({
                 >
                   <span>📝</span>
                   <span>Upcoming</span>
-                  <span className="ml-1 text-xs font-semibold">{baseFilteredExams.filter(e => e.status === EXAM_STATUS.UPCOMING).length}</span>
+                  <span className="ml-1 text-xs font-semibold">{baseFilteredExams.filter(e => currentUserType === 'student' ? (!isExamOver(e) && e.status !== EXAM_STATUS.COMPLETED) : e.status === EXAM_STATUS.UPCOMING).length}</span>
                 </button>
                 
                 <button
@@ -813,7 +948,7 @@ function Exams({
                 >
                   <span>✅</span>
                   <span>Completed</span>
-                  <span className="ml-1 text-xs font-semibold">{baseFilteredExams.filter(e => e.status === EXAM_STATUS.COMPLETED).length}</span>
+                  <span className="ml-1 text-xs font-semibold">{baseFilteredExams.filter(e => currentUserType === 'student' ? (isExamOver(e) || e.status === EXAM_STATUS.COMPLETED) : e.status === EXAM_STATUS.COMPLETED).length}</span>
                 </button>
                 
                 {/* Exam Type Filter Dropdown */}
@@ -891,20 +1026,10 @@ function Exams({
                       key={exam.id}
                       ref={(el) => { examCardsRef.current[exam.id] = el; }}
                       onClick={() => {
-                        // Check if exam is already submitted
-                        const isSubmitted = submittedExams[exam.id];
-                        
-                        if (isSubmitted) {
-                          alert('❌ Exam Already Submitted\n\nYou have already submitted this exam and cannot re-enter it.\n\nPlease check the Results section to view your submission.');
-                          return;
-                        }
-                        
-                        onExamSelect(exam);
+                        handleExamSelect(exam);
                       }}
                       className={`relative rounded-xl shadow-sm border p-5 transition-all duration-500 ${
-                        submittedExams[exam.id] 
-                          ? 'opacity-60 cursor-not-allowed bg-gray-50' // ✅ Visually show submitted exams
-                          : 'cursor-pointer ' + (
+                        'cursor-pointer ' + (
                             highlightedExamId === exam.id
                               ? 'shadow-lg border'
                               : selectedExam?.id === exam.id 
@@ -913,11 +1038,7 @@ function Exams({
                           )
                       }`}
                       style={
-                        submittedExams[exam.id] ? {
-                          backgroundColor: '#f9fafb',
-                          borderColor: '#9ca3af',
-                          cursor: 'not-allowed'
-                        } : highlightedExamId === exam.id ? {
+                        highlightedExamId === exam.id ? {
                           backgroundColor: '#fef2f2',
                           borderColor: '#ef4444',
                           boxShadow: '0 0 0 3px rgba(239, 68, 68, 0.2)'
@@ -927,7 +1048,7 @@ function Exams({
                         } : {}
                       }
                       onMouseEnter={(e) => {
-                        if (selectedExam?.id !== exam.id && !submittedExams[exam.id]) {
+                        if (selectedExam?.id !== exam.id) {
                           e.currentTarget.style.borderColor = brandTheme.colors.primary;
                         }
                       }}
@@ -937,13 +1058,7 @@ function Exams({
                         }
                       }}
                     >
-                      {/* ✅ Show "SUBMITTED" badge if exam is submitted */}
-                      {submittedExams[exam.id] && (
-                        <div className="absolute top-3 right-3 bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
-                          <FontAwesomeIcon icon={faCheckSquare} />
-                          <span>SUBMITTED</span>
-                        </div>
-                      )}
+                      {/* Status badges moved to bottom bar */}
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
@@ -952,7 +1067,7 @@ function Exams({
                             </h3>
                             
                             {/* Live Indicator for Online Exams */}
-                            {exam.mode === EXAM_MODES.ONLINE && exam.examTime && isExamLive(exam.examDate, exam.examTime, exam.duration) && (
+                            {exam.mode === EXAM_MODES.ONLINE && exam.examTime && isExamLive(exam.examDate, exam.examTime, String((parseInt(exam.duration) || 0) + (exam.personalityAssessment ? (exam.likertDuration || 0) : 0))) && (
                               <div className="flex items-center space-x-1.5">
                                 <div className="relative flex h-2 w-2">
                                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -967,6 +1082,12 @@ function Exams({
                               <FontAwesomeIcon icon={faUsers} style={{ fontSize: '12px' }} className="mr-1" />
                               <span className="font-medium">{exam.totalStudents || 0} Student{exam.totalStudents !== 1 ? 's' : ''}</span>
                             </span>
+                            {exam.personalityAssessment && ((exam.likertQuestions?.length || 0) > 0 || ((exam as any).likertDuration || 0) > 0) && (
+                              <span className="flex items-center gap-1 text-xs font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                                <FontAwesomeIcon icon={faChartBar} style={{ fontSize: '10px' }} />
+                                PA Included
+                              </span>
+                            )}
                             <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md flex items-center gap-1.5">
                               {exam.status === EXAM_STATUS.COMPLETED ? (
                                 <span className="w-2 h-2 rounded-full bg-green-500"></span>
@@ -1001,7 +1122,13 @@ function Exams({
                           <FontAwesomeIcon icon={faClock} style={{ fontSize: '16px' }} className="text-gray-500" />
                           <div>
                             <p className="text-xs text-gray-500">Duration</p>
-                            <p className="text-sm font-medium text-gray-900">{formatDuration(exam.duration)}</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {(() => {
+                                const examDur = parseInt(exam.duration) || 0;
+                                const likertDur = exam.personalityAssessment ? (exam.likertDuration || 0) : 0;
+                                return formatDuration(examDur + likertDur);
+                              })()}
+                            </p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
@@ -1015,7 +1142,13 @@ function Exams({
                           <FontAwesomeIcon icon={faAward} style={{ fontSize: '16px' }} className="text-gray-500" />
                           <div>
                             <p className="text-xs text-gray-500">Max Marks</p>
-                            <p className="text-sm font-medium text-gray-900">{parseInt(exam.maxMarks || '0')} marks</p>
+                            <p className="text-sm font-medium text-gray-900">
+                              {(() => {
+                                const marks = parseInt(exam.maxMarks || '0');
+                                const isPersonalityOnly = exam.personalityAssessment && marks === 0;
+                                return isPersonalityOnly ? 'N/A' : `${marks} marks`;
+                              })()}
+                            </p>
                           </div>
                         </div>
                       </div>
@@ -1023,56 +1156,77 @@ function Exams({
                       <div className="flex items-center justify-between pt-3 border-t border-gray-100">
                         <div className="flex items-center gap-2">
                           {/* Board Badge */}
-                          <span className="inline-flex items-center text-[11px] font-semibold text-indigo-700 bg-gradient-to-r from-indigo-50 to-indigo-100 px-3 py-1.5 rounded-lg shadow-sm">
+                          <span className="inline-flex items-center text-[10px] font-semibold text-indigo-700 bg-gradient-to-r from-indigo-50 to-indigo-100 px-2 py-1 rounded-full">
                             {exam.board}
                           </span>
                           
                           {/* Year Badge */}
-                          <span className="inline-flex items-center text-[11px] font-semibold text-blue-700 bg-gradient-to-r from-blue-50 to-blue-100 px-3 py-1.5 rounded-lg shadow-sm">
+                          <span className="inline-flex items-center text-[10px] font-semibold text-blue-700 bg-gradient-to-r from-blue-50 to-blue-100 px-2 py-1 rounded-full">
                             {exam.year}
                           </span>
                           
                           {/* Security Level Badge */}
                           {exam.mode === EXAM_MODES.ONLINE && exam.securityLevel === SECURITY_LEVELS.SECURE && (
                             <div 
-                              className="inline-flex items-center justify-center w-8 h-8 bg-gradient-to-br from-red-50 to-red-100 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-help" 
+                              className="inline-flex items-center justify-center w-6 h-6 bg-gradient-to-br from-red-50 to-red-100 rounded-full cursor-help" 
                               title="Secure Exam - Enhanced Security Measures Enabled"
                             >
-                              <FontAwesomeIcon icon={faShield} style={{ fontSize: '14px' }} className="text-red-600" />
+                              <FontAwesomeIcon icon={faShield} style={{ fontSize: '10px' }} className="text-red-600" />
                             </div>
                           )}
                           
                           {/* Attendance Badge */}
                           {exam.mode === EXAM_MODES.ONLINE && exam.attendance && (
                             <div 
-                              className="inline-flex items-center justify-center w-8 h-8 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-help" 
+                              className="inline-flex items-center justify-center w-6 h-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-full cursor-help" 
                               title="Attendance Required - Students must mark attendance"
                             >
-                              <FontAwesomeIcon icon={faCheckSquare} style={{ fontSize: '14px' }} className="text-blue-600" />
+                              <FontAwesomeIcon icon={faCheckSquare} style={{ fontSize: '10px' }} className="text-blue-600" />
                             </div>
                           )}
                           
                           {/* A/V Proctoring Badge */}
                           {exam.mode === EXAM_MODES.ONLINE && exam.avProctoring && (
                             <div 
-                              className="inline-flex items-center justify-center w-8 h-8 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-help" 
+                              className="inline-flex items-center justify-center w-6 h-6 bg-gradient-to-br from-purple-50 to-purple-100 rounded-full cursor-help" 
                               title="A/V Proctoring Enabled - Audio & Video Monitoring Active"
                             >
-                              <FontAwesomeIcon icon={faVideo} style={{ fontSize: '14px' }} className="text-purple-600" />
+                              <FontAwesomeIcon icon={faVideo} style={{ fontSize: '10px' }} className="text-purple-600" />
                             </div>
                           )}
                         </div>
                         
                         {/* View Details Button */}
-                        <button 
+                        <div className="flex items-center gap-2 ml-auto">
+                          {submittedExams[exam.id] && (
+                            <div className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1">
+                              <FontAwesomeIcon icon={faCheckSquare} style={{ fontSize: '9px' }} />
+                              <span>Submitted</span>
+                            </div>
+                          )}
+                          {!submittedExams[exam.id] && (exam.status === EXAM_STATUS.COMPLETED || isExamOver(exam)) && currentUserType === 'student' && (
+                            <div className="bg-red-100 text-red-600 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1">
+                              <FontAwesomeIcon icon={faClock} style={{ fontSize: '9px' }} />
+                              <span>Absent</span>
+                            </div>
+                          )}
+                          {!submittedExams[exam.id] && !isExamOver(exam) && exam.status !== EXAM_STATUS.COMPLETED && currentUserType === 'student' && !isExamLive(exam.examDate, exam.examTime || '', String((parseInt(exam.duration) || 0) + (exam.personalityAssessment ? (exam.likertDuration || 0) : 0))) && (
+                            <div className="bg-amber-100 text-amber-700 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1">
+                              <FontAwesomeIcon icon={faCalendar} style={{ fontSize: '9px' }} />
+                              <span>Scheduled</span>
+                            </div>
+                          )}
+                          <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            onExamSelect(exam);
+                            handleExamSelect(exam);
                           }}
-                          className="inline-flex items-center text-xs font-semibold px-4 py-2 rounded-full transition-all duration-200 shadow-sm hover:shadow-md transform hover:-translate-y-0.5"
+                          disabled={loadingExamId === exam.id}
+                          className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full transition-all duration-200 hover:shadow-sm"
                           style={{ 
                             color: brandTheme.colors.primary,
-                            backgroundColor: `${brandTheme.colors.primary}15`
+                            backgroundColor: `${brandTheme.colors.primary}15`,
+                            opacity: loadingExamId === exam.id ? 0.7 : 1
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.backgroundColor = `${brandTheme.colors.primary}25`;
@@ -1081,8 +1235,16 @@ function Exams({
                             e.currentTarget.style.backgroundColor = `${brandTheme.colors.primary}15`;
                           }}
                         >
-                          View Details
+                          {loadingExamId === exam.id ? (
+                            <>
+                              <div className="w-3 h-3 border-2 rounded-full animate-spin" style={{ borderColor: `${brandTheme.colors.primary}30`, borderTopColor: brandTheme.colors.primary }} />
+                              Loading...
+                            </>
+                          ) : (
+                            'View Details'
+                          )}
                         </button>
+                        </div>
                       </div>
                     </div>
                   );

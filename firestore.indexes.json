@@ -507,6 +507,34 @@
       "density": "SPARSE_ALL"
     },
     {
+      "collectionGroup": "path_enrollments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "pathId", "order": "ASCENDING" },
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "path_enrollments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "pathId", "order": "ASCENDING" },
+        { "fieldPath": "collegeId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "enrolledAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "path_enrollments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "enrolledAt", "order": "DESCENDING" }
+      ]
+    }
+    {
       "collectionGroup": "exams",
       "queryScope": "COLLECTION",
       "fields": [

@@ -44,6 +44,7 @@ import BulkUploadQuestions from './BulkUploadQuestions';
 import CreateUserModal from './CreateUserModal';
 import CreateLearningPathModal from './CreateLearningPathModal';
 import { LoadingSpinner } from './LoadingSpinner';
+import CertificateVerify from './CertificateVerify';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import 'katex/dist/katex.min.css';
@@ -51,7 +52,7 @@ import katex from 'katex';
 
 import ProfileDropdown from './ProfileDropdown';
 import { BrandProvider } from './BrandContext';
-import { getThemeFromSubdomain, getSubdomain } from './themeUtils';
+import { getThemeFromSubdomain, getSubdomain, generateThemeFromBrandProfile } from './themeUtils';
 import AIAssistant from './AIAssistant';
 import AISupportAssistant from './AISupportAssistant';
 import Questions from './Questions';
@@ -79,6 +80,7 @@ import {
   faChevronLeft,
   faChevronRight,
   faChevronDown,
+  faUser,
   faUsers,
   faGraduationCap,
   faChartBar,
@@ -239,7 +241,7 @@ function canViewLiveStats(examDate: string, examTime: string): boolean {
 }
 
 // Helper function to check if exam is currently live
-function isExamLive(examDate: string, examTime: string | undefined, duration: string): boolean {
+function isExamLive(examDate: string, examTime: string | undefined, duration: string, likertDuration?: number): boolean {
   if (!examDate || !duration) return false;
   
   try {
@@ -255,8 +257,8 @@ function isExamLive(examDate: string, examTime: string | undefined, duration: st
       const [hours, minutes] = examTime.split(':').map(Number);
       examStartIST.setHours(hours, minutes, 0, 0);
       
-      const durationMinutes = parseInt(duration);
-      const examEndIST = new Date(examStartIST.getTime() + durationMinutes * 60 * 1000);
+      const totalDurationMinutes = (parseInt(duration) || 0) + (likertDuration || 0);
+      const examEndIST = new Date(examStartIST.getTime() + totalDurationMinutes * 60 * 1000);
       
       // Exam is live only during actual exam time (start to end)
       return nowIST >= examStartIST && nowIST <= examEndIST;
@@ -274,7 +276,7 @@ function isExamLive(examDate: string, examTime: string | undefined, duration: st
 }
 
 // Helper function to check if exam has completely ended
-function isExamCompleted(examDate: string, examTime: string | undefined, duration: string, status?: string): boolean {
+function isExamCompleted(examDate: string, examTime: string | undefined, duration: string, status?: string, likertDuration?: number): boolean {
   // If status is explicitly set to completed, return true
   if (status === EXAM_STATUS.COMPLETED) return true;
   
@@ -286,8 +288,8 @@ function isExamCompleted(examDate: string, examTime: string | undefined, duratio
     const examStartIST = new Date(examDate);
     examStartIST.setHours(hours, minutes, 0, 0);
     
-    const durationMinutes = parseInt(duration);
-    const examEndIST = new Date(examStartIST.getTime() + durationMinutes * 60 * 1000);
+    const totalDurationMinutes = (parseInt(duration) || 0) + (likertDuration || 0);
+    const examEndIST = new Date(examStartIST.getTime() + totalDurationMinutes * 60 * 1000);
     
     // Get current time in IST
     const nowUTC = new Date();
@@ -303,11 +305,8 @@ function isExamCompleted(examDate: string, examTime: string | undefined, duratio
 // Helper function to check if student is marked present for an exam
 async function checkStudentAttendance(examId: string, studentId: string): Promise<boolean> {
   try {
-    const attendanceRecords = await firebaseService.getExamAttendance(examId);
-    const studentRecord = attendanceRecords.find(record => 
-      record.studentId === studentId && record.status === ATTENDANCE_STATUS.PRESENT
-    );
-    return !!studentRecord;
+    const record = await firebaseService.getStudentAttendance(examId, studentId);
+    return !!(record && record.status === ATTENDANCE_STATUS.PRESENT);
   } catch (error) {
     console.error('Error checking student attendance:', error);
     return false;
@@ -345,12 +344,29 @@ async function handleExamStartClick(
     return;
   }
   
-  console.log(`🔍 Checking requirements for exam: ${exam.id}, student: ${user.userId}`);
-  console.log(`🎥 Exam mode: ${exam.mode}, A/V Proctoring: ${exam.avProctoring}`);
+  // console.log(`🔍 Checking requirements for exam: ${exam.id}, student: ${user.userId}`);
+  // console.log(`🎥 Exam mode: ${exam.mode}, A/V Proctoring: ${exam.avProctoring}`);
   
+  // CHECK 0: Enrollment Validation — student must be enrolled in exam_enrollments
+  if (user.userType === 'student') {
+    try {
+      const isEnrolled = await firebaseService.isStudentEnrolledInExam(exam.id, user.userId);
+      // console.log(`📋 Enrollment status: ${isEnrolled ? 'Enrolled' : 'NOT Enrolled'}`);
+      if (!isEnrolled) {
+        // console.log('🚫 Blocking exam start - student is NOT enrolled for this exam');
+        alert('You are not enrolled for this exam. Please contact your teacher or administrator.');
+        return;
+      }
+    } catch (enrollError) {
+      console.error('❌ Error checking enrollment:', enrollError);
+      // Block on error — don't let unenrolled students through
+      alert('Unable to verify enrollment. Please try again.');
+      return;
+    }
+  }
   // 🎥 CHECK 1: A/V Proctoring Requirements (if enabled)
   if (exam.mode === EXAM_MODES.ONLINE && exam.avProctoring === true) {
-    console.log('🎥 A/V Proctoring is enabled for this exam - checking requirements...');
+    // console.log('🎥 A/V Proctoring is enabled for this exam - checking requirements...');
     
     // Check if proctoring photos exist
     const hasProctoringPhotos = 
@@ -358,12 +374,12 @@ async function handleExamStartClick(
       user.proctoringPhotos?.left && 
       user.proctoringPhotos?.right;
     
-    console.log('📸 Proctoring photos status:', {
-      front: !!user.proctoringPhotos?.front,
-      left: !!user.proctoringPhotos?.left,
-      right: !!user.proctoringPhotos?.right,
-      allComplete: hasProctoringPhotos
-    });
+    // console.log('📸 Proctoring photos status:', {
+      // front: !!user.proctoringPhotos?.front,
+      // left: !!user.proctoringPhotos?.left,
+      // right: !!user.proctoringPhotos?.right,
+      // allComplete: hasProctoringPhotos
+    // });
     
     // Check camera/microphone permissions
     let hasCameraPermission = false;
@@ -382,16 +398,16 @@ async function handleExamStartClick(
       // Stop the stream immediately - we're just checking permissions
       stream.getTracks().forEach(track => track.stop());
       
-      console.log('✅ Camera and microphone permissions granted');
+      // console.log('✅ Camera and microphone permissions granted');
     } catch (error: any) {
-      console.log('❌ Camera/microphone permission error:', error.name);
+      // console.log('❌ Camera/microphone permission error:', error.name);
       hasCameraPermission = false;
       hasMicPermission = false;
     }
     
     // If ANYTHING is missing, show the setup dialog
     if (!hasProctoringPhotos || !hasCameraPermission || !hasMicPermission) {
-      console.log('⚠️ Some requirements missing - showing setup dialog');
+      // console.log('⚠️ Some requirements missing - showing setup dialog');
       if (onProctoringSetup) {
         onProctoringSetup(exam, hasCameraPermission, hasMicPermission);
       } else {
@@ -400,51 +416,50 @@ async function handleExamStartClick(
       return;
     }
     
-    console.log('✅ All proctoring requirements met - proceeding to exam');
+    // console.log('✅ All proctoring requirements met - proceeding to exam');
   }
   
   // CHECK 2: Attendance Requirements
-  console.log(`📋 Checking attendance for exam: ${exam.id}, student: ${user.userId}`);
+  // console.log(`📋 Checking attendance for exam: ${exam.id}, student: ${user.userId}`);
   
   // Check if student is already marked present
   const isPresent = await checkStudentAttendance(exam.id, user.userId);
-  console.log(`📋 Attendance status: ${isPresent ? 'Present' : 'Not marked'}`);
-  console.log(`⚙️ Exam attendance required: ${exam.attendance}`);
+  // console.log(`📋 Attendance status: ${isPresent ? 'Present' : 'Not marked'}`);
+  // console.log(`⚙️ Exam attendance required: ${exam.attendance}`);
   
   // If exam requires attendance and student is NOT present, block them
   if (exam.attendance === true && !isPresent) {
-    console.log('🚫 Blocking exam start - attendance required but student not marked present');
+    // console.log('🚫 Blocking exam start - attendance required but student not marked present');
     onAttendanceWarning(exam);
     return;
   }
   
   // Auto-mark attendance if not already marked
   if (!isPresent) {
-    console.log('✍️ Auto-marking attendance for student...');
+    // console.log('✍️ Auto-marking attendance for student...');
     try {
-      // Create user object with exam's collegeId for attendance marking
-      const userWithExamCollege = {
-        ...user,
-        collegeId: exam.collegeId  // Use exam's collegeId
-      };
-      
-      await firebaseService.markAttendance(
+      await firebaseService.markOwnAttendance(
         exam.id, 
-        user.userId, 
-        ATTENDANCE_STATUS.PRESENT,
-        userWithExamCollege
+        {
+          userId: user.userId,
+          fullName: user.fullName,
+          email: user.email,
+          studentRoll: user.studentRoll,
+          collegeId: exam.collegeId
+        },
+        ATTENDANCE_STATUS.PRESENT
       );
-      console.log('✅ Attendance auto-marked successfully for student:', user.fullName);
+      // console.log('✅ Attendance auto-marked successfully for student:', user.fullName);
     } catch (error) {
       console.error('❌ Error auto-marking attendance:', error);
       // Continue anyway - don't block exam start
     }
   } else {
-    console.log('ℹ️ Student already marked present, skipping auto-mark');
+    // console.log('ℹ️ Student already marked present, skipping auto-mark');
   }
   
   // Proceed to exam
-  console.log('🎯 Proceeding to exam interface...');
+  // console.log('🎯 Proceeding to exam interface...');
   onProceed();
 }
 
@@ -461,15 +476,15 @@ function triggerPreExamVerification(
 ) {
   // ✅ CHECK: If proctoring is NOT enabled, skip verification and go directly to exam
   if (exam.avProctoring !== true) {
-    console.log('ℹ️ Proctoring not enabled - requesting fullscreen and starting exam');
+    // console.log('ℹ️ Proctoring not enabled - requesting fullscreen and starting exam');
     
     // ✅ Request fullscreen IMMEDIATELY (synchronous call in user gesture context)
     const elem = document.documentElement;
     if (elem.requestFullscreen) {
       elem.requestFullscreen().then(() => {
-        console.log('✅ Fullscreen activated');
-      }).catch((err) => {
-        console.warn('⚠️ Fullscreen failed:', err);
+        // console.log('✅ Fullscreen activated');
+      }).catch((_err) => {
+        // console.warn('⚠️ Fullscreen failed:', err);
       });
     } else if ((elem as any).webkitRequestFullscreen) {
       (elem as any).webkitRequestFullscreen();
@@ -666,7 +681,7 @@ function CountdownTimer({ examDate, examTime, brandTheme }: { examDate: string; 
 }
 
 // Helper function to calculate remaining time until exam ends
-function useRemainingTime(examDate: string, examTime: string | undefined, duration: string) {
+function useRemainingTime(examDate: string, examTime: string | undefined, duration: string, likertDuration?: number) {
   const [remaining, setRemaining] = useState({
     hours: 0,
     minutes: 0,
@@ -685,9 +700,9 @@ function useRemainingTime(examDate: string, examTime: string | undefined, durati
         startTimeIST.setHours(0, 0, 0, 0);
       }
 
-      // Calculate end time in IST
-      const durationMinutes = parseInt(duration);
-      const endTimeIST = new Date(startTimeIST.getTime() + durationMinutes * 60 * 1000);
+      // Calculate end time in IST using total duration
+      const totalDurationMinutes = (parseInt(duration) || 0) + (likertDuration || 0);
+      const endTimeIST = new Date(startTimeIST.getTime() + totalDurationMinutes * 60 * 1000);
 
       // Get current time in IST
       const nowUTC = new Date();
@@ -781,11 +796,11 @@ function ProctoringSetupDialog({
     
     // Check proctoring photos
     if (user) {
-      console.log('🔍 Checking proctoring photos for user:', user.userId);
-      console.log('📸 Proctoring photos data:', user.proctoringPhotos);
-      console.log('📸 Front photo URL:', user.proctoringPhotos?.front);
-      console.log('📸 Left photo URL:', user.proctoringPhotos?.left);
-      console.log('📸 Right photo URL:', user.proctoringPhotos?.right);
+      // console.log('🔍 Checking proctoring photos for user:', user.userId);
+      // console.log('📸 Proctoring photos data:', user.proctoringPhotos);
+      // console.log('📸 Front photo URL:', user.proctoringPhotos?.front);
+      // console.log('📸 Left photo URL:', user.proctoringPhotos?.left);
+      // console.log('📸 Right photo URL:', user.proctoringPhotos?.right);
       
       const missing: string[] = [];
       
@@ -794,14 +809,14 @@ function ProctoringSetupDialog({
       if (!user.proctoringPhotos?.left) missing.push('Left Side');
       if (!user.proctoringPhotos?.right) missing.push('Right Side');
       
-      console.log('📋 Missing photos:', missing);
+      // console.log('📋 Missing photos:', missing);
       
       setMissingPhotos(missing);
       setProctoringPhotosStatus(missing.length === 0 ? 'complete' : 'incomplete');
       
-      console.log('✅ Photo status set to:', missing.length === 0 ? 'complete' : 'incomplete');
+      // console.log('✅ Photo status set to:', missing.length === 0 ? 'complete' : 'incomplete');
     } else {
-      console.warn('⚠️ No user provided for photo check');
+      // console.warn('⚠️ No user provided for photo check');
     }
     
     // Only check camera/audio permissions if status is still 'checking'
@@ -828,7 +843,7 @@ function ProctoringSetupDialog({
         }
       }
     } else {
-      console.log('✅ Using existing permission status - camera:', cameraStatus, 'audio:', audioStatus);
+      // console.log('✅ Using existing permission status - camera:', cameraStatus, 'audio:', audioStatus);
     }
     
     setIsCheckingPermissions(false);
@@ -1051,22 +1066,22 @@ function ProctoringSetupDialog({
                 ) : permissionHelpMessage === 'uploadphotos' ? (
                   <button
                     onClick={async () => {
-                      console.log('🔄 Check Again button clicked');
+                      // console.log('🔄 Check Again button clicked');
                       setIsRefreshing(true);
                       
                       try {
                         // Refresh user data first
-                        console.log('📥 Refreshing user data...');
+                        // console.log('📥 Refreshing user data...');
                         if (onRefreshUser) {
                           await onRefreshUser();
-                          console.log('✅ User data refreshed');
+                          // console.log('✅ User data refreshed');
                         }
                         
                         // Then recheck photos
-                        console.log('🔍 Rechecking photos...');
+                        // console.log('🔍 Rechecking photos...');
                         setShowPermissionHelp(false);
                         await checkPermissionsAndPhotos();
-                        console.log('✅ Photos rechecked');
+                        // console.log('✅ Photos rechecked');
                       } catch (error) {
                         console.error('❌ Error during refresh:', error);
                       } finally {
@@ -1342,222 +1357,263 @@ function LiveExamInterface({
   brandTheme: any;
   onEnterExam: () => void;
 }) {
-  const [isLoading, setIsLoading] = useState(true);
+  // No artificial loading needed — parent already shows spinner via isLoadingExamDetail
   const userRole = currentUser?.userType || 'student';
   const isTeacher = ['admin', 'principal', 'dean', 'teacher', 'system_admin'].includes(userRole);
-  const remaining = useRemainingTime(selectedExam.examDate, selectedExam.examTime, selectedExam.duration);
+  const remaining = useRemainingTime(selectedExam.examDate, selectedExam.examTime, selectedExam.duration, selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0);
 
-  // Simulate brief loading to prevent flash
-  useEffect(() => {
-    setIsLoading(true);
-    const timer = setTimeout(() => setIsLoading(false), 150);
-    return () => clearTimeout(timer);
-  }, [selectedExam?.id]);
-
-  if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-gray-50 to-white">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading exam details...</p>
-        </div>
-      </div>
-    );
-  }
+  // Compute personality flags
+  const hasRegularQuestionsLive = (selectedExam.questionsList?.length || 0) > 0;
+  const hasPoolLive = (selectedExam as any).questionPool?.length > 0 && (selectedExam as any).pickRandomCount > 0;
+  const hasPersonality = !!selectedExam.personalityAssessment && (selectedExam.likertQuestions?.length || 0) > 0;
+  const isPersonalityOnly = hasPersonality && !hasRegularQuestionsLive && !hasPoolLive;
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gradient-to-br from-gray-50 to-white">
-      {/* Header Section */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="px-8 py-6">
-          {/* Live Badge */}
+    <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ background: 'linear-gradient(135deg, #f8faff 0%, #f0f4ff 50%, #faf8ff 100%)' }}>
+      {/* Hero Header */}
+      <div className="relative border-b border-gray-200" style={{ background: 'linear-gradient(135deg, #f8faff 0%, #f0f4ff 50%, #faf8ff 100%)' }}>
+        {/* Decorative circles */}
+        <div className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-10" style={{ background: 'radial-gradient(circle, #a78bfa, transparent)', transform: 'translate(30%, -30%)' }} />
+        <div className="absolute bottom-0 left-0 w-48 h-48 rounded-full opacity-10" style={{ background: 'radial-gradient(circle, #818cf8, transparent)', transform: 'translate(-30%, 30%)' }} />
+        
+        <div className="relative px-8 py-6">
+          {/* Top row: Live badge + Timer */}
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className="relative flex h-3 w-3">
+            <div className="flex items-center space-x-2 bg-green-50 px-3 py-1.5 rounded-full border border-green-200">
+              <div className="relative flex h-2.5 w-2.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
               </div>
-              <span className="text-sm font-bold text-green-600 uppercase tracking-wide">Exam is Live Now</span>
+              <span className="text-xs font-bold text-green-700 uppercase tracking-widest">Live Now</span>
             </div>
             
-            {/* Remaining Time Counter */}
-            <div className={`flex items-center space-x-2 px-4 py-2 rounded-lg border ${remaining.isExpired ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
-              <svg className={`w-5 h-5 ${remaining.isExpired ? 'text-red-600' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl border ${remaining.isExpired ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
+              <svg className={`w-4 h-4 ${remaining.isExpired ? 'text-red-600' : 'text-blue-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <div className={`text-sm font-semibold ${remaining.isExpired ? 'text-red-900' : 'text-blue-900'}`}>
-                <span className={`text-xs ${remaining.isExpired ? 'text-red-600' : 'text-blue-600'} mr-2`}>
-                  {remaining.isExpired ? 'Ended' : 'Remaining:'}
-                </span>
+              <span className={`text-xs font-medium ${remaining.isExpired ? 'text-red-600' : 'text-blue-600'}`}>{remaining.isExpired ? 'Ended' : 'Remaining:'}</span>
+              <span className={`text-sm font-bold font-mono ${remaining.isExpired ? 'text-red-800' : 'text-blue-900'}`}>
                 {remaining.hours.toString().padStart(2, '0')}:{remaining.minutes.toString().padStart(2, '0')}:{remaining.seconds.toString().padStart(2, '0')}
-              </div>
+              </span>
             </div>
           </div>
 
           {/* Exam Title */}
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">{selectedExam.title}</h1>
-          <p className="text-gray-600">
+          <h1 className="text-2xl font-bold text-gray-900 mb-1 leading-tight">{selectedExam.title}</h1>
+          <p className="text-gray-500 text-sm">
             {isTeacher ? 'Monitor and manage the live exam' : (
-              <>
-                Started at: {formatExamDate(selectedExam.examDate)}
-                {selectedExam.examTime && <>, {formatExamTime(selectedExam.examTime || '')}</>}
-              </>
+              <>Started at: {formatExamDate(selectedExam.examDate)}{selectedExam.examTime && <>, {formatExamTime(selectedExam.examTime || '')}</>}</>
             )}
           </p>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="px-8 py-8 max-w-6xl mx-auto">
-        {/* Exam Details Grid */}
-        <div className="flex gap-2 mb-8 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          {/* Total Questions */}
-          <div className="bg-white rounded-xl p-3 border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow flex-shrink-0 min-w-[140px] mx-auto first:ml-auto last:mr-auto">
-            <div className="flex items-center space-x-1.5 mb-1.5">
-              <FontAwesomeIcon icon={faCircleQuestion} className="w-4 h-4 text-cyan-600" />
-              <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">Questions</span>
+      <div className="px-6 py-6 max-w-3xl mx-auto">
+
+        {/* Stats Cards */}
+        <div className={`grid gap-3 mb-6 ${isPersonalityOnly ? 'grid-cols-3' : 'grid-cols-4'}`}>
+          {/* Questions */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-all">
+            <div className="flex items-center space-x-2 mb-2">
+              <div className="w-7 h-7 rounded-lg bg-cyan-50 flex items-center justify-center">
+                <FontAwesomeIcon icon={faCircleQuestion} className="text-cyan-600 text-xs" />
+              </div>
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Questions</span>
             </div>
-            <div className="text-xl font-bold text-gray-900">{selectedExam.totalQuestions || 0}</div>
+            <div className="text-2xl font-bold text-gray-900">{selectedExam.totalQuestions || 0}</div>
+            {hasPersonality && selectedExam.likertQuestions?.length > 0 && (
+              <div className="text-[10px] text-violet-500 font-medium mt-1">
+                {isPersonalityOnly
+                  ? `${selectedExam.likertQuestions.length} personality`
+                  : `+${selectedExam.likertQuestions.length} personality`
+                }
+              </div>
+            )}
           </div>
 
-          {/* Maximum Marks */}
-          <div className="bg-white rounded-xl p-3 border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow flex-shrink-0 min-w-[140px] mx-auto first:ml-auto last:mr-auto">
-            <div className="flex items-center space-x-1.5 mb-1.5">
-              <FontAwesomeIcon icon={faStar} className="w-4 h-4 text-orange-600" />
-              <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">Max Marks</span>
+          {/* Max Marks — hidden if personality-only */}
+          {!isPersonalityOnly && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-all">
+              <div className="flex items-center space-x-2 mb-2">
+                <div className="w-7 h-7 rounded-lg bg-orange-50 flex items-center justify-center">
+                  <FontAwesomeIcon icon={faStar} className="text-orange-500 text-xs" />
+                </div>
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Max Marks</span>
+              </div>
+              <div className="text-2xl font-bold text-gray-900">{selectedExam.maxMarks || selectedExam.totalQuestions || 0}</div>
             </div>
-            <div className="text-xl font-bold text-gray-900">{selectedExam.maxMarks || selectedExam.totalQuestions || 0}</div>
-          </div>
+          )}
 
-          {/* Total Duration */}
-          <div className="bg-white rounded-xl p-3 border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow flex-shrink-0 min-w-[140px] mx-auto first:ml-auto last:mr-auto">
-            <div className="flex items-center space-x-1.5 mb-1.5">
-              <FontAwesomeIcon icon={faClock} className="w-4 h-4 text-green-600" />
-              <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">Duration</span>
+          {/* Duration */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-all">
+            <div className="flex items-center space-x-2 mb-2">
+              <div className="w-7 h-7 rounded-lg bg-green-50 flex items-center justify-center">
+                <FontAwesomeIcon icon={faClock} className="text-green-600 text-xs" />
+              </div>
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Duration</span>
             </div>
-            <div className="text-xl font-bold text-gray-900">{formatDuration(selectedExam.duration)}</div>
+            <div className="text-lg font-bold text-gray-900 leading-tight">{formatDuration((parseInt(selectedExam.duration) || 0) + (hasPersonality ? (selectedExam.likertDuration || 0) : 0))}</div>
+            {hasPersonality && !isPersonalityOnly && selectedExam.likertDuration > 0 && (
+              <div className="text-[10px] text-violet-500 font-medium mt-1">
+                {`+${selectedExam.likertDuration}m personality`}
+              </div>
+            )}
           </div>
 
           {/* Exam ID */}
           {selectedExam.id && (
-            <div className="bg-white rounded-xl p-3 border-2 border-gray-200 shadow-sm hover:shadow-md transition-shadow flex-shrink-0 min-w-[140px] mx-auto first:ml-auto last:mr-auto">
-              <div className="flex items-center space-x-1.5 mb-1.5">
-                <FontAwesomeIcon icon={faTag} className="w-4 h-4 text-blue-600" />
-                <span className="text-[10px] font-semibold text-gray-600 uppercase tracking-wider">Exam ID</span>
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-all">
+              <div className="flex items-center space-x-2 mb-2">
+                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
+                  <FontAwesomeIcon icon={faTag} className="text-blue-600 text-xs" />
+                </div>
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Exam ID</span>
               </div>
-              <div className="text-base font-bold text-gray-900 truncate" title={selectedExam.id}>{selectedExam.id}</div>
+              <div className="text-sm font-bold text-gray-900 truncate" title={selectedExam.id}>{selectedExam.id}</div>
             </div>
           )}
         </div>
 
-        {/* Instructions Section */}
-        <div className="bg-gradient-to-br from-amber-50 via-yellow-50 to-orange-50 rounded-2xl p-5 border border-amber-200 shadow-sm mb-8">
-          <div className="flex items-start space-x-3">
-            <div className="flex-shrink-0">
-              <div className="w-9 h-9 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center shadow-md">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        {/* Personality Assessment Info Card */}
+        {hasPersonality && (
+          <div className="mb-5 rounded-2xl overflow-hidden border border-violet-200 shadow-sm">
+            {/* Header */}
+            <div className="px-5 py-3.5 flex items-center space-x-3" style={{ background: brandTheme.gradients.primary }}>
+              <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
               </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">
+                  {isPersonalityOnly ? 'Personality Assessment' : 'Includes Personality Assessment'}
+                </h3>
+                <p className="text-[11px] text-violet-200">
+                  {isPersonalityOnly
+                    ? 'This assessment measures personality traits — there are no right or wrong answers'
+                    : 'This exam includes a personality section alongside graded questions'
+                  }
+                </p>
+              </div>
             </div>
-            <div className="flex-1">
-              <h3 className="text-base font-bold text-amber-900 mb-3">
-                {isTeacher ? 'Teacher Instructions' : 'Important Instructions'}
-              </h3>
-              <ul className="space-y-2">
-                {isTeacher ? (
-                  <>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed">Monitor student attendance and submissions in real-time via Live Stats</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed">You can enter the exam to preview questions and verify content</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed">Student progress and scores will be visible after exam completion</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed">Use Attendance tab to mark present students manually if needed</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed">Your entry won't affect student access or exam results</span>
-                    </li>
-                  </>
-                ) : (
-                  <>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Mark Attendance:</strong> Your attendance will be recorded when you enter the exam</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Read Carefully:</strong> Review all questions before starting to answer</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-red-500 font-bold text-base mt-0.5 flex-shrink-0">⚠</span>
-                      <span className="text-red-800 text-sm leading-relaxed"><strong className="font-semibold">Negative Marking:</strong> MCQ questions have negative marking - wrong answers will deduct marks</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Save Progress:</strong> Your answers are auto-saved, but submit manually to be safe</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Stable Connection:</strong> {selectedExam.mode === EXAM_MODES.ONLINE ? 'Keep a strong internet connection throughout the exam' : 'Ensure internet connectivity for submitting answers'}</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Time Management:</strong> Monitor the countdown timer and submit before time expires</span>
-                    </li>
-                    <li className="flex items-start space-x-2">
-                      <span className="text-amber-500 font-bold text-base mt-0.5 flex-shrink-0">•</span>
-                      <span className="text-amber-800 text-sm leading-relaxed"><strong className="font-semibold">Academic Integrity:</strong> Complete the exam independently without external assistance</span>
-                    </li>
-                    {selectedExam.securityLevel === SECURITY_LEVELS.SECURE && (
-                      <li className="flex items-start space-x-2">
-                        <span className="text-red-500 font-bold text-base mt-0.5 flex-shrink-0">⚠</span>
-                        <span className="text-red-800 text-sm leading-relaxed font-medium"><strong className="font-semibold">Secure Mode:</strong> Tab switching and external tools may be monitored</span>
-                      </li>
-                    )}
-                  </>
+            {/* Details */}
+            <div className="bg-violet-50 px-5 py-4">
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="text-center">
+                  <div className="text-lg font-bold text-violet-700">{selectedExam.likertQuestions?.length || 0}</div>
+                  <div className="text-[10px] text-violet-500 font-medium uppercase tracking-wide">Statements</div>
+                </div>
+                {selectedExam.likertDuration > 0 && (
+                  <div className="text-center">
+                    <div className="text-lg font-bold text-violet-700">{selectedExam.likertDuration}m</div>
+                    <div className="text-[10px] text-violet-500 font-medium uppercase tracking-wide">Time Allotted</div>
+                  </div>
                 )}
-              </ul>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-violet-700">No</div>
+                  <div className="text-[10px] text-violet-500 font-medium uppercase tracking-wide">Right/Wrong</div>
+                </div>
+              </div>
+              <div className="bg-white rounded-xl px-4 py-3 border border-violet-100">
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  You will be shown a series of statements. Rate how strongly you agree or disagree with each one — <span className="font-semibold text-violet-700">respond honestly</span> based on how you actually think and feel. Your personality profile will be generated from these responses.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Instructions Card */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm mb-6 overflow-hidden">
+          <div className="px-5 py-3.5 flex items-center space-x-2.5 border-b border-gray-50" style={{ background: isTeacher ? 'linear-gradient(135deg, #fffbeb, #fef3c7)' : 'linear-gradient(135deg, #fff7ed, #fef3c7)' }}>
+            <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isTeacher ? 'bg-amber-400' : 'bg-orange-400'}`}>
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 className="text-sm font-bold text-amber-900">
+              {isTeacher ? 'Teacher Instructions' : 'Important Instructions'}
+            </h3>
+          </div>
+          <div className="px-5 py-4">
+            <div className="space-y-2.5">
+              {isTeacher ? (
+                <>
+                  {[
+                    'Monitor student attendance and submissions in real-time via Live Stats',
+                    'You can enter the exam to preview questions and verify content',
+                    'Student progress and scores will be visible after exam completion',
+                    'Use Attendance tab to mark present students manually if needed',
+                    "Your entry won't affect student access or exam results",
+                  ].map((text, i) => (
+                    <div key={i} className="flex items-start space-x-2.5">
+                      <div className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-amber-600 text-[10px] font-bold">{i + 1}</span>
+                      </div>
+                      <span className="text-sm text-gray-700 leading-relaxed">{text}</span>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <>
+                  {[
+                    { label: 'Mark Attendance', text: 'Your attendance will be recorded when you enter the exam', warn: false },
+                    { label: 'Read Carefully', text: 'Review all questions before starting to answer', warn: false },
+                    { label: 'Negative Marking', text: 'MCQ questions have negative marking — wrong answers will deduct marks', warn: true },
+                    { label: 'Save Progress', text: 'Your answers are auto-saved, but submit manually to be safe', warn: false },
+                    { label: 'Stable Connection', text: selectedExam.mode === EXAM_MODES.ONLINE ? 'Keep a strong internet connection throughout the exam' : 'Ensure internet connectivity for submitting answers', warn: false },
+                    { label: 'Time Management', text: 'Monitor the countdown timer and submit before time expires', warn: false },
+                    { label: 'Academic Integrity', text: 'Complete the exam independently without external assistance', warn: false },
+                  ].map((item, i) => (
+                    <div key={i} className={`flex items-start space-x-2.5 p-2.5 rounded-xl ${item.warn ? 'bg-red-50 border border-red-100' : 'bg-gray-50'}`}>
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${item.warn ? 'bg-red-100' : 'bg-orange-100'}`}>
+                        {item.warn
+                          ? <span className="text-red-600 text-[10px] font-bold">!</span>
+                          : <span className="text-orange-600 text-[10px] font-bold">{i + 1}</span>
+                        }
+                      </div>
+                      <span className="text-sm text-gray-700 leading-relaxed">
+                        <strong className={`font-semibold ${item.warn ? 'text-red-700' : 'text-gray-900'}`}>{item.label}:</strong> {item.text}
+                      </span>
+                    </div>
+                  ))}
+                  {selectedExam.securityLevel === SECURITY_LEVELS.SECURE && (
+                    <div className="flex items-start space-x-2.5 p-2.5 rounded-xl bg-red-50 border border-red-100">
+                      <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-red-600 text-[10px] font-bold">!</span>
+                      </div>
+                      <span className="text-sm text-gray-700 leading-relaxed">
+                        <strong className="font-semibold text-red-700">Secure Mode:</strong> Tab switching and external tools may be monitored
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>
 
         {/* Enter Exam Button */}
-        <div className="flex items-center justify-center">
+        <div className="flex flex-col items-center space-y-3 pb-6">
           <button
             onClick={onEnterExam}
-            className="px-12 py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center space-x-3"
-            style={{ 
-              background: brandTheme.gradients.primary,
-              color: 'white'
-            }}
+            className="w-full max-w-xs py-4 rounded-2xl font-bold text-base shadow-lg hover:shadow-xl transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-3"
+            style={{ background: brandTheme.gradients.primary, color: 'white' }}
           >
             <span>{isTeacher ? 'Enter Exam' : 'Start Exam'}</span>
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
           </button>
-        </div>
-
-        {/* Footer Message */}
-        <div className="text-center mt-6">
-          <p className="text-gray-600">
-            {isTeacher 
+          <p className="text-xs text-gray-400 text-center max-w-sm leading-relaxed">
+            {isTeacher
               ? '💼 You have monitoring access to track student progress and ensure exam integrity'
-              : '🌟 Best wishes! Stay focused, manage your time wisely, and give your best effort'
+              : '🌟 Best wishes! Stay focused, manage your time, and give your best effort'
             }
           </p>
           {!isTeacher && (
-            <p className="text-gray-500 text-sm mt-2">
+            <p className="text-xs text-gray-400 text-center">
               💡 Tip: If you face any technical issues, contact your instructor immediately
             </p>
           )}
@@ -1606,17 +1662,17 @@ function Logo({ size = 'medium', showText = true, brand, collegeName }: { size?:
             <div className={`bg-white rounded shadow-md relative transform group-hover:scale-110 transition-transform duration-300 ${
               size === 'small' ? 'p-1.5' : size === 'medium' ? 'p-2' : 'p-2.5'
             }`}>
-              {/* Document lines */}
+              {/* Document lines - uses brand colors */}
               <div className="space-y-0.5">
-                <div className={`bg-gradient-to-r from-blue-400 to-purple-400 rounded-full ${
+                <div className={`rounded-full ${
                   size === 'small' ? 'h-0.5 w-3' : size === 'medium' ? 'h-0.5 w-4' : 'h-1 w-5'
-                }`}></div>
-                <div className={`bg-gradient-to-r from-purple-400 to-pink-400 rounded-full ${
+                }`} style={{ background: `linear-gradient(to right, ${brand.colors.primary}, ${brand.colors.secondary})` }}></div>
+                <div className={`rounded-full ${
                   size === 'small' ? 'h-0.5 w-2' : size === 'medium' ? 'h-0.5 w-3' : 'h-1 w-4'
-                }`}></div>
-                <div className={`bg-gradient-to-r from-pink-400 to-orange-400 rounded-full ${
+                }`} style={{ background: `linear-gradient(to right, ${brand.colors.secondary}, ${brand.colors.accent})` }}></div>
+                <div className={`rounded-full ${
                   size === 'small' ? 'h-0.5 w-2.5' : size === 'medium' ? 'h-0.5 w-3.5' : 'h-1 w-4.5'
-                }`}></div>
+                }`} style={{ background: `linear-gradient(to right, ${brand.colors.accent}, ${brand.colors.primary})` }}></div>
               </div>
               
               {/* AI Checkmark overlay */}
@@ -1727,6 +1783,14 @@ const getSectionTextColor = (section?: string) => {
 const academicYears = ['all', '2025-26', '2026-27', '2027-28', '2028-29', '2029-30'];
 
 
+function AppRouter() {
+  // Public route: Certificate verification (no login required)
+  if (window.location.pathname.startsWith('/verify')) {
+    return <CertificateVerify />;
+  }
+  return <App />;
+}
+
 function App() {
   const [showUserProfile, setShowUserProfile] = useState(false);
   const [profileInitialView, setProfileInitialView] = useState<'profile' | 'leetcode'>('profile');
@@ -1736,7 +1800,7 @@ function App() {
   const [selectedStudentForDetail, setSelectedStudentForDetail] = useState<any>(null);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [showAISupportAssistant, setShowAISupportAssistant] = useState(false);
-  const [showLearning, setShowLearning] = useState(false);
+  const [showLearning, setShowLearning] = useState(true);
   const [learningActiveMenu, setLearningActiveMenu] = useState<string>('courses');
   
   // Course Curriculum Page State
@@ -1750,7 +1814,7 @@ function App() {
     initialLectureId?: number;
   }>({ courseName: '', courseSlug: '', curriculumData: [], isLoading: false });
   const [showProblemsListModal, setShowProblemsListModal] = useState(false);
-  const [selectedProblemSlug, setSelectedProblemSlug] = useState<string>('two-sum');
+  const [selectedProblemSlug, setSelectedProblemSlug] = useState<string>('');
   const [selectedSubject, setSelectedSubject] = useState<any | null>(null);
   const [selectedQuestionType, setSelectedQuestionType] = useState<'all' | 'mcq' | 'fitb' | 'descriptive' | 'jumbled' | 'code' | 'sql'>('all');
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
@@ -1817,19 +1881,10 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   //   - tutorialspoint.com     → Default EXAMINERS theme
   
   const detectedSubdomain = getSubdomain();
-  const brandTheme = useMemo(() => {
-    // Brand theme is ONLY based on subdomain, NOT user's collegeId
-    // User's collegeId is for data filtering, not for visual theme
+  const [brandTheme, setBrandTheme] = useState(() => {
     const subdomainTheme = getThemeFromSubdomain();
-    
-    console.log('🎨 Brand Theme (Subdomain Only):', {
-      subdomain: detectedSubdomain,
-      collegeName: subdomainTheme.collegeName,
-      primaryColor: subdomainTheme.colors.primary
-    });
-    
     return subdomainTheme;
-  }, [detectedSubdomain]);  // Only depends on subdomain, not currentUser
+  });
   // ===========================================================================
   
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(window.innerWidth <= 1400);
@@ -1927,7 +1982,28 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   const [colleges, setColleges] = useState<Array<{id: string; name: string}>>([]);
   const [selectedCollege, setSelectedCollege] = useState<{id: string; name: string; academicYear?: string; academicYearStartMonth?: string} | null>(null);
   const [isCollegeDropdownOpen, setIsCollegeDropdownOpen] = useState(false);
-  
+
+  // Update brand theme dynamically when college is known
+  useEffect(() => {
+    if (!selectedCollege?.id || detectedSubdomain !== 'default') return;
+    
+    // console.log('🎨 [BRAND] Fetching brand profile for:', selectedCollege.id);
+    firebaseService.getBrandProfile(selectedCollege.id).then(brandProfile => {
+      if (brandProfile && brandProfile.primaryColor) {
+        const dynamicTheme = generateThemeFromBrandProfile(brandProfile, selectedCollege.id);
+        // console.log('🎨 [BRAND] Applying dynamic theme:', {
+          // primary: dynamicTheme.colors.primary,
+          // secondary: dynamicTheme.colors.secondary,
+          // accent: dynamicTheme.colors.accent,
+          // collegeName: dynamicTheme.collegeName
+        // });
+        setBrandTheme(dynamicTheme);
+      } else {
+        // console.log('🎨 [BRAND] No brand colors found for college:', selectedCollege.id);
+      }
+    }).catch((err) => { console.error('🎨 [BRAND] Error:', err); });
+  }, [selectedCollege?.id]);
+
   // College data (boards, subjects, classes)
   const [collegeData, setCollegeData] = useState<{
     boards: string[];
@@ -1956,7 +2032,12 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
       try {
         const firebaseUser = await firebaseService.waitForAuthReady();
         if (firebaseUser?.email) {
-          const userData = await firebaseService.getUserByEmail(firebaseUser.email);
+          // Try direct doc read first (works for all users including students)
+          let userData = await firebaseService.getUserById(firebaseUser.uid);
+          // Fall back to email query if direct read fails
+          if (!userData) {
+            userData = await firebaseService.getUserByEmail(firebaseUser.email);
+          }
           if (userData) {
             await handleLoginSuccess(userData);
           }
@@ -1972,36 +2053,37 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   
   // Fetch colleges if system admin
   useEffect(() => {
-    console.log('🔍 College Loading Check:', {
-      isAuthenticated,
-      hasCurrentUser: !!currentUser,
-      userType: currentUser?.userType,
-      isSystemAdmin: currentUser ? firebaseService.isSystemAdmin(currentUser) : false,
-      colleges: colleges.length
-    });
-    
-    if (isAuthenticated && currentUser && firebaseService.isSystemAdmin(currentUser)) {
-      console.log('✅ System Admin detected - loading colleges...');
+    // Skip if colleges already loaded by handleLoginSuccess
+    if (isAuthenticated && currentUser && firebaseService.isSystemAdmin(currentUser) && colleges.length === 0) {
       loadColleges();
-    } else {
-      console.log('❌ Not system admin or not authenticated');
-      if (currentUser) {
-        console.log('   User type:', currentUser.userType);
-        console.log('   College ID:', currentUser.collegeId);
-      }
     }
 }, [isAuthenticated, currentUser]);
 
   // Check if user is using EXAMINERS Secure Browser (memoized to avoid re-running on every render)
+  const MINIMUM_SECURE_VERSION = '1.1';
   const isSecureBrowser = useMemo(() => {
     const userAgent = navigator.userAgent;
-    console.log('🔍 User Agent:', userAgent);
+    // console.log('🔍 User Agent:', userAgent);
     
     // Check for our custom user agent markers
-    const isSecure = userAgent.includes('SecureEnvironment') && userAgent.includes('TutorialsPoint');
-    console.log('🔒 Is Secure Browser:', isSecure);
+    const hasMarkers = userAgent.includes('SecureEnvironment') && userAgent.includes('TutorialsPoint');
+    if (!hasMarkers) {
+      // console.log('🔒 Is Secure Browser: false (missing markers)');
+      return false;
+    }
     
-    return isSecure;
+    // Extract version from SecureEnvironment/X.X
+    const versionMatch = userAgent.match(/SecureEnvironment\/(\d+\.\d+)/);
+    const version = versionMatch ? versionMatch[1] : '0.0';
+    
+    // Compare versions: split into major.minor and check >= minimum
+    const [vMajor, vMinor] = version.split('.').map(Number);
+    const [minMajor, minMinor] = MINIMUM_SECURE_VERSION.split('.').map(Number);
+    const isVersionValid = vMajor > minMajor || (vMajor === minMajor && vMinor >= minMinor);
+    
+    // console.log(`🔒 Secure Browser version: ${version} (minimum: ${MINIMUM_SECURE_VERSION}) → ${isVersionValid ? 'ALLOWED' : 'OUTDATED'}`);
+    
+    return isVersionValid;
   }, []);
   
   const isUsingSecureBrowser = useCallback((): boolean => {
@@ -2012,47 +2094,53 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
     try {
       const storage = getStorage();
       let fileName = '';
-      let platformName = '';
       
       switch(platform) {
         case 'windows':
           fileName = 'Installation/ExaminersSecureBrowser.exe';
-          platformName = 'Windows';
+          
           break;
         case 'mac':
           fileName = 'Installation/ExaminersSecureBrowser.dmg';
-          platformName = 'macOS';
           break;
         case 'linux':
           fileName = 'Installation/ExaminersSecureBrowser.deb';
-          platformName = 'Linux';
           break;
       }
       
-      console.log(`📥 Fetching ${platformName} installer URL...`);
+      // console.log(`📥 Fetching ${platformName} installer URL...`);
       const downloadURL = await getDownloadURL(ref(storage, fileName));
-      console.log(`✅ ${platformName} URL obtained:`, downloadURL);
+      // console.log(`✅ ${platformName} URL obtained:`, downloadURL);
       
-      // Create temporary anchor element and trigger download
-      const link = document.createElement('a');
-      link.href = downloadURL;
-      link.download = fileName.split('/').pop() || 'installer';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Open in new tab to avoid replacing current app
+      window.open(downloadURL, '_blank');
       
-      console.log(`✅ ${platformName} download started`);
+      // console.log(`✅ ${platformName} download started`);
     } catch (error) {
       console.error(`❌ Error downloading ${platform} installer:`, error);
       alert(`Sorry, the ${platform} installer is not available at the moment. Please contact support.`);
     }
   };
+
+  const handleDownloadGuide = async (guideName: string, displayName: string) => {
+    try {
+      const storage = getStorage();
+      // console.log(`📥 Fetching ${displayName}...`);
+      const downloadURL = await getDownloadURL(ref(storage, `Installation/${guideName}`));
+      // console.log(`✅ ${displayName} URL obtained:`, downloadURL);
+      window.open(downloadURL, '_blank');
+      // console.log(`✅ ${displayName} download started`);
+    } catch (error) {
+      console.error(`❌ Error downloading ${displayName}:`, error);
+      alert(`Sorry, the ${displayName} is not available at the moment. Please contact support.`);
+    }
+  };
   
   const loadColleges = async () => {
     try {
-      console.log('📋 Fetching all colleges...');
+      // console.log('📋 Fetching all colleges...');
       const fetchedColleges = await firebaseService.getAllColleges();
-      console.log('📋 Fetched colleges:', fetchedColleges.length, fetchedColleges);
+      // console.log('📋 Fetched colleges:', fetchedColleges.length, fetchedColleges);
       
       const collegeList = fetchedColleges.map(c => ({
         id: c.collegeId,
@@ -2061,22 +2149,22 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
         academicYearStartMonth: c.academicYear
       }));
       
-      console.log('📋 College list formatted:', collegeList);
+      // console.log('📋 College list formatted:', collegeList);
       setColleges(collegeList);
       
       // Auto-select first college
       if (collegeList.length > 0 && !selectedCollege) {
-        console.log('✅ Auto-selecting first college:', collegeList[0]);
+        // console.log('✅ Auto-selecting first college:', collegeList[0]);
         setSelectedCollege(collegeList[0]);
       } else {
-        console.log('⚠️ No colleges to auto-select or already selected:', selectedCollege);
+        // console.log('⚠️ No colleges to auto-select or already selected:', selectedCollege);
       }
     } catch (error) {
       console.error('❌ Error loading colleges:', error);
     }
   };
   
-  // Fetch college data (boards, subjects, classes) when active college changes
+  // Fetch college data (boards, subjects, classes) when active college changes (staff only)
   useEffect(() => {
     const fetchCollegeData = async () => {
       const collegeId = getActiveCollegeId();
@@ -2084,6 +2172,9 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
         setCollegeData({ boards: [], subjects: [], classes: [], features: [] });
         return;
       }
+      
+      // Students don't need college config data (boards, subjects, classes)
+      if (currentUser?.userType === 'student') return;
       
       try {
         const data = await firebaseService.getCollegeById(collegeId);
@@ -2094,7 +2185,22 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
             classes: data.validClasses || [],
             features: data.features || []
           });
+          
+          // Also set college filters (avoids separate getCollege call)
+          setAllClasses(data.validClasses && data.validClasses.length > 0 
+            ? data.validClasses 
+            : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']);
+          
+          setAllSubjects(data.subjects && data.subjects.length > 0 
+            ? data.subjects 
+            : ['Mathematics', 'Science', 'English', 'Hindi', 'Social Studies', 'Computer Science']);
         }
+        
+        // Fetch years from exams (needed for filters)
+        const exams = await firebaseService.getExams(collegeId, 'all');
+        const uniqueYears = [...new Set(exams.map(exam => exam.year))].filter(Boolean).sort();
+        setAllYears(uniqueYears.length > 0 ? uniqueYears : ['2025-26', '2026-27', '2027-28', '2028-29', '2029-30']);
+        
       } catch (error) {
         console.error('Error fetching college data:', error);
         setCollegeData({ boards: [], subjects: [], classes: [], features: [] });
@@ -2118,7 +2224,7 @@ const [auditTrailInitializing, setAuditTrailInitializing] = useState(false);
   };
 
   const handleCreateHallTicket = () => {
-    console.log('Opening Create Hall Ticket Modal');
+    // console.log('Opening Create Hall Ticket Modal');
     setIsCreateHallTicketModalOpen(true);
   };
 
@@ -2139,32 +2245,32 @@ const handleCloseRoomDetail = () => {
 
 // Reports handler functions
 const handleReportSelect = useCallback((report: any) => {
-  console.log('📊 handleReportSelect called:', report?.name || 'null');
+  // console.log('📊 handleReportSelect called:', report?.name || 'null');
   setSelectedReport(report);
 }, []);
 
 // @ts-ignore - Reserved for future report refresh functionality
 const handleReportRefresh = useCallback(() => {
-  console.log('🔄 Refreshing reports...');
+  // console.log('🔄 Refreshing reports...');
   setReportRefreshTrigger(prev => prev + 1);
 }, []);
 
 
   const handleExamCreated = (exam?: any) => {
-    console.log('🔥 Exam created:', exam);
+    // console.log('🔥 Exam created:', exam);
     // Refresh counts to update menu
     refreshCounts();
     // Store the newly created exam ID for auto-selection
     if (exam?.id) {
-      console.log('📌 Setting newly created exam ID:', exam.id);
+      // console.log('📌 Setting newly created exam ID:', exam.id);
       setNewlyCreatedExamId(exam.id);
     }
     // Trigger Exams component to refresh
     setExamsRefreshKey(prev => prev + 1);
   };
 
-  const handleHallTicketCreated = (hallTicketGroup?: any) => {
-    console.log('🎟️ Hall Ticket Group created:', hallTicketGroup);
+  const handleHallTicketCreated = (_hallTicketGroup?: any) => {
+    // console.log('🎟️ Hall Ticket Group created:', hallTicketGroup);
     // Refresh counts to update menu
     refreshCounts();
     // Close the modal
@@ -2241,38 +2347,44 @@ const fetchCounts = async () => {
       try {
         // Get Firestore instance
         const db = getFirestore();
+        const isStudent = currentUser?.userType === 'student';
         
-        // Fetch all counts in parallel for faster loading
+        // Fetch counts in parallel - skip collections students don't have access to
         const [examsSnapshot, questionsSnapshot, usersSnapshot, roomsStats, hallTicketsGroups, reportTemplatesSnapshot] = await Promise.all([
           firebaseService.getExams(collegeId, 'all'),
-          firebaseService.getQuestions(collegeId),
-          firebaseService.getUsersCount(collegeId),
+          isStudent ? Promise.resolve([]) : firebaseService.getQuestions(collegeId),
+          isStudent ? Promise.resolve(0) : firebaseService.getUsersCount(collegeId),
           firebaseService.getRoomStats(collegeId),
-          getHallTicketGroups(collegeId, { status: 'active' }),
-          getDocs(query(collection(db, 'reportTemplates'), where('isActive', '==', true)))
+          getHallTicketGroups(collegeId, { status: 'active', studentId: isStudent ? currentUser?.userId : undefined }),
+          isStudent ? Promise.resolve({ size: 0 }) : getDocs(query(collection(db, 'reportTemplates'), where('isActive', '==', true)))
         ]);
         
-        // Set counts
-        setExamsCount(examsSnapshot.length);
-        setQuestionsCount(questionsSnapshot.length);
-        setUsersCount(usersSnapshot);
-        setRoomsCount(roomsStats.length);
+        // Set counts (will be 0 for students)
+        setQuestionsCount(Array.isArray(questionsSnapshot) ? questionsSnapshot.length : 0);
+        setUsersCount(typeof usersSnapshot === 'number' ? usersSnapshot : 0);
+        setRoomsCount(Array.isArray(roomsStats) ? roomsStats.length : 0);
+        setHallTicketsCount(hallTicketsGroups.length);
         
-        // Filter hall tickets for students - only count groups where the student is included
-        if (currentUser?.userType === 'student' && currentUser?.userId) {
-          const studentHallTickets = hallTicketsGroups.filter((group: any) => 
-            group.students?.some((student: any) => student.studentId === currentUser.userId)
-          );
-          setHallTicketsCount(studentHallTickets.length);
+        setReportsCount((reportTemplatesSnapshot as any).size || 0);
+        
+        // For students, only count enrolled exams and results
+        if (isStudent && currentUser?.userId) {
+          try {
+            const enrolledIds = await firebaseService.getEnrolledExamIdsForStudent(currentUser.userId, collegeId);
+            const enrolledExams = examsSnapshot.filter(exam => enrolledIds.has(exam.id));
+            setExamsCount(enrolledExams.length);
+            const completedEnrolledExams = enrolledExams.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
+            setResultsCount(completedEnrolledExams.length);
+          } catch {
+            setExamsCount(examsSnapshot.length);
+            const completedExams = examsSnapshot.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
+            setResultsCount(completedExams.length);
+          }
         } else {
-          setHallTicketsCount(hallTicketsGroups.length);
+          setExamsCount(examsSnapshot.length);
+          const completedExams = examsSnapshot.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
+          setResultsCount(completedExams.length);
         }
-        
-        setReportsCount(reportTemplatesSnapshot.size);
-        
-        // Fetch completed exams count for results
-        const completedExams = examsSnapshot.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
-        setResultsCount(completedExams.length);
         
       } catch (error) {
         console.error('Error fetching counts:', error);
@@ -2334,7 +2446,7 @@ const fetchCounts = async () => {
   
   // Debug: Log selectedAuditUser changes
   useEffect(() => {
-    console.log('🔄 [AUDIT STATE] selectedAuditUser changed:', selectedAuditUser?.fullName || 'null');
+    // console.log('🔄 [AUDIT STATE] selectedAuditUser changed:', selectedAuditUser?.fullName || 'null');
   }, [selectedAuditUser]);
   
   // Function to refresh counts (can be called after creating/deleting items)
@@ -2344,46 +2456,55 @@ const fetchCounts = async () => {
     if (!collegeId) return;
     
     try {
+      const isStudent = currentUser?.userType === 'student';
+      
       const [examsSnapshot, questionsSnapshot, usersSnapshot, roomsStats, hallTicketsGroups] = await Promise.all([
         firebaseService.getExams(collegeId, 'all'),
-        firebaseService.getQuestions(collegeId),
-        firebaseService.getUsersCount(collegeId),
+        isStudent ? Promise.resolve([]) : firebaseService.getQuestions(collegeId),
+        isStudent ? Promise.resolve(0) : firebaseService.getUsersCount(collegeId),
         firebaseService.getRoomStats(collegeId),
-        getHallTicketGroups(collegeId, { status: 'active' })
+        getHallTicketGroups(collegeId, { status: 'active', studentId: isStudent ? currentUser?.userId : undefined })
       ]);
       
-      setExamsCount(examsSnapshot.length);
-      setQuestionsCount(questionsSnapshot.length);
-      setUsersCount(usersSnapshot);
-      setRoomsCount(roomsStats.length);
+      setQuestionsCount(Array.isArray(questionsSnapshot) ? questionsSnapshot.length : 0);
+      setUsersCount(typeof usersSnapshot === 'number' ? usersSnapshot : 0);
+      setRoomsCount(Array.isArray(roomsStats) ? roomsStats.length : 0);
+      setHallTicketsCount(hallTicketsGroups.length);
       
-      // Filter hall tickets for students - only count groups where the student is included
-      if (currentUser?.userType === 'student' && currentUser?.userId) {
-        const studentHallTickets = hallTicketsGroups.filter((group: any) => 
-          group.students?.some((student: any) => student.studentId === currentUser.userId)
-        );
-        setHallTicketsCount(studentHallTickets.length);
+      // For students, only count enrolled exams and results
+      if (isStudent && currentUser?.userId) {
+        try {
+          const enrolledIds = await firebaseService.getEnrolledExamIdsForStudent(currentUser.userId, collegeId);
+          const enrolledExams = examsSnapshot.filter(exam => enrolledIds.has(exam.id));
+          setExamsCount(enrolledExams.length);
+          const completedEnrolledExams = enrolledExams.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
+          setResultsCount(completedEnrolledExams.length);
+        } catch {
+          setExamsCount(examsSnapshot.length);
+          const completedExams = examsSnapshot.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
+          setResultsCount(completedExams.length);
+        }
       } else {
-        setHallTicketsCount(hallTicketsGroups.length);
+        setExamsCount(examsSnapshot.length);
+        const completedExams = examsSnapshot.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
+        setResultsCount(completedExams.length);
       }
       
-      const completedExams = examsSnapshot.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
-      setResultsCount(completedExams.length);
-      
-      // Calculate calendar events count for today
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Calculate calendar events count for current month
       
       // Filter exams based on user role (same as Calendar component)
       let filteredExams = examsSnapshot;
       const userType = currentUser?.userType;
       
-      if (userType === USER_TYPES.STUDENT && currentUser) {
-        // Students see only their class and board exams
-        filteredExams = examsSnapshot.filter(exam => 
-          exam.class === currentUser.studentClass && 
-          exam.board === currentUser.board
-        );
+      if (userType === USER_TYPES.STUDENT && currentUser?.userId) {
+        // Students see only exams they are enrolled in
+        const collegeId = getActiveCollegeId();
+        if (collegeId) {
+          const enrolledExamIds = await firebaseService.getEnrolledExamIdsForStudent(currentUser.userId, collegeId);
+          filteredExams = examsSnapshot.filter(exam => enrolledExamIds.has(exam.id));
+        } else {
+          filteredExams = [];
+        }
       } else if (userType === USER_TYPES.TEACHER && currentUser?.teacherClasses) {
         // Teachers see exams for classes they teach
         filteredExams = examsSnapshot.filter(exam => 
@@ -2392,65 +2513,22 @@ const fetchCounts = async () => {
       }
       // Admins/Principals see all exams (no filtering needed)
       
-      // Count exams for today
-      const todayExams = filteredExams.filter(exam => {
+      // Count exams for the current month
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+      const monthExams = filteredExams.filter(exam => {
         if (!exam.examDate) return false;
         const examDate = new Date(exam.examDate);
-        examDate.setHours(0, 0, 0, 0);
-        return examDate.getTime() === today.getTime();
+        return examDate.getFullYear() === currentYear && examDate.getMonth() === currentMonth;
       });
-      setCalendarEventsCount(todayExams.length);
+      setCalendarEventsCount(monthExams.length);
     } catch (error) {
       console.error('Error refreshing counts:', error);
     }
   };
 
-  // Fetch college data for leaderboard filters
-  useEffect(() => {
-    const fetchCollegeFilters = async () => {
-      const collegeId = getActiveCollegeId();
-      if (!collegeId || !currentUser) return;
-
-      console.log('🔄 Fetching college filters for:', collegeId);
-
-      try {
-        const college = await firebaseService.getCollege(collegeId);
-        
-        if (college) {
-          console.log('📚 College data loaded:', {
-            validClasses: college.validClasses?.length || 0,
-            subjects: college.subjects?.length || 0
-          });
-          
-          setAllClasses(college.validClasses && college.validClasses.length > 0 
-            ? college.validClasses 
-            : ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']);
-          
-          setAllSubjects(college.subjects && college.subjects.length > 0 
-            ? college.subjects 
-            : ['Mathematics', 'Science', 'English', 'Hindi', 'Social Studies', 'Computer Science']);
-        } else {
-          console.warn('⚠️ College document not found for:', collegeId);
-        }
-
-        const exams = await firebaseService.getExams(collegeId, 'all');
-        console.log('📅 Exams loaded:', exams.length);
-        
-        const uniqueYears = [...new Set(exams.map(exam => exam.year))].filter(Boolean).sort();
-        setAllYears(uniqueYears.length > 0 ? uniqueYears : ['2025-26', '2026-27', '2027-28', '2028-29', '2029-30']);
-        
-        console.log('✅ College filters updated:', {
-          years: uniqueYears.length,
-          classes: college?.validClasses?.length || 0,
-          subjects: college?.subjects?.length || 0
-        });
-      } catch (error) {
-        console.error('❌ Error fetching college filters:', error);
-      }
-    };
-
-    fetchCollegeFilters();
-  }, [currentUser, selectedCollege]); // ✅ FIXED: Added selectedCollege dependency
+  // College filters (classes, subjects, years) are now loaded inside fetchCollegeData effect above
   
   const handleMarkAsRead = async (noticeId: string) => {
     if (!currentUser) return;
@@ -2568,12 +2646,12 @@ const fetchCounts = async () => {
   const handleLoginSuccess = async (user: UserModel) => {
     setCurrentUser(user);
     setIsLoadingData(true);
-    console.log('Login successful, loading application data for:', user.email);
+    // console.log('Login successful, loading application data for:', user.email);
     
     // Extract and store IP info
     if (user.lastLoginIP) {
       setLoginIPInfo(user.lastLoginIP);
-      console.log('📍 Login IP Info:', user.lastLoginIP);
+      // console.log('📍 Login IP Info:', user.lastLoginIP);
     }
     
     // Start minimum loading time (10 seconds for smooth progress bar)
@@ -2586,16 +2664,16 @@ const fetchCounts = async () => {
       
       // 1. Load colleges if system admin
       if (firebaseService.isSystemAdmin(user)) {
-        console.log('🏫 Loading colleges for system admin...');
-        console.log('🏫 User details:', {
-          userId: user.userId,
-          userType: user.userType,
-          email: user.email
-        });
+        // console.log('🏫 Loading colleges for system admin...');
+        // console.log('🏫 User details:', {
+          // userId: user.userId,
+          // userType: user.userType,
+          // email: user.email
+        // });
         
         dataPromises.push(
           firebaseService.getAllColleges().then(fetchedColleges => {
-            console.log('🏫 Fetched colleges on login:', fetchedColleges.length);
+            // console.log('🏫 Fetched colleges on login:', fetchedColleges.length);
             const collegeList = fetchedColleges.map(c => ({
               id: c.collegeId,
               name: c.collegeName,
@@ -2606,23 +2684,23 @@ const fetchCounts = async () => {
             
             // Auto-select first college
             if (collegeList.length > 0 && !selectedCollege) {
-              console.log('🏫 Auto-selecting first college on login:', collegeList[0]);
+              // console.log('🏫 Auto-selecting first college on login:', collegeList[0]);
               setSelectedCollege(collegeList[0]);
             }
-            console.log('✅ Colleges loaded on login:', collegeList.length);
+            // console.log('✅ Colleges loaded on login:', collegeList.length);
           }).catch(error => {
             console.error('❌ Error loading colleges on login:', error);
           })
         );
       } else {
-        console.log('❌ User is NOT system admin:', {
-          userType: user.userType,
-          isSystemAdmin: firebaseService.isSystemAdmin(user)
-        });
+        // console.log('❌ User is NOT system admin:', {
+          // userType: user.userType,
+          // isSystemAdmin: firebaseService.isSystemAdmin(user)
+        // });
         
         // Auto-set college for non-System Admin users
         if (user.collegeId) {
-          console.log('🎓 Setting college for non-System Admin user...');
+          // console.log('🎓 Setting college for non-System Admin user...');
           dataPromises.push(
             firebaseService.getCollegeById(user.collegeId).then(college => {
               if (college) {
@@ -2632,7 +2710,7 @@ const fetchCounts = async () => {
                   academicYear: calculateAcademicYear(college.academicYear),
                   academicYearStartMonth: college.academicYear
                 };
-                console.log('✅ Auto-selected college at login:', collegeInfo);
+                // console.log('✅ Auto-selected college at login:', collegeInfo);
                 setSelectedCollege(collegeInfo);
               } else {
                 console.error('❌ College not found for ID:', user.collegeId);
@@ -2644,45 +2722,19 @@ const fetchCounts = async () => {
         }
       }
       
-      // 2. Load counts (exams, questions, users)
-      const collegeId = firebaseService.isSystemAdmin(user) 
-        ? (await firebaseService.getAllColleges())[0]?.collegeId 
-        : user.collegeId;
-      
-      if (collegeId) {
-        console.log('Loading data counts for college:', collegeId);
-        dataPromises.push(
-          firebaseService.getExams(collegeId, 'all').then(exams => {
-            setExamsCount(exams.length);
-            console.log('✓ Exams loaded:', exams.length);
-          })
-        );
-        
-        dataPromises.push(
-          firebaseService.getQuestions(collegeId).then(questions => {
-            setQuestionsCount(questions.length);
-            console.log('✓ Questions loaded:', questions.length);
-          })
-        );
-        
-        dataPromises.push(
-          firebaseService.getUsersCount(collegeId).then(count => {
-            setUsersCount(count);
-            console.log('✓ Users count loaded:', count);
-          })
-        );
-      }
+      // 2. Counts will be loaded by useEffect hooks when isAuthenticated + selectedCollege are set
+      // No need to fetch here — avoids duplicate heavy Firestore reads
       
       // Wait for all data to load
       await Promise.all(dataPromises);
-      console.log('All data loaded successfully!');
+      // console.log('All data loaded successfully!');
       
       // Ensure minimum loading time for smooth UX and progress bar animation
       const elapsedTime = Date.now() - startTime;
       const remainingTime = Math.max(0, minLoadingTime - elapsedTime);
       
       if (remainingTime > 0) {
-        console.log(`Waiting additional ${remainingTime}ms for smooth transition...`);
+        // console.log(`Waiting additional ${remainingTime}ms for smooth transition...`);
         await new Promise(resolve => setTimeout(resolve, remainingTime));
       }
       
@@ -2693,7 +2745,7 @@ const fetchCounts = async () => {
       // Show the main application
       setIsLoadingData(false);
       setIsAuthenticated(true);
-      console.log('Application ready!');
+      // console.log('Application ready!');
     }
   };
 
@@ -2786,84 +2838,110 @@ const fetchCounts = async () => {
     setTotalStudents(data.totalStudents);
   }, []);
   
-  const handleStudentSelect = useCallback((student: any) => {
-    console.log('🎯 [APP.TSX] handleStudentSelect called with:', student);
+  const handleStudentSelect = useCallback(async (student: any) => {
+    // console.log('🎯 [APP.TSX] handleStudentSelect called with:', student);
+    
+    // Always set immediately (shows light data or null for deselect)
     setSelectedStudentForDetail(student);
-    console.log('✅ [APP.TSX] selectedStudentForDetail state updated');
+    
+    // If attempt data exists but responses are stripped (paginated view), fetch full attempt in background
+    if (student?.attemptData?.attemptId && !student.attemptData.responses) {
+      try {
+        const targetStudentId = student.studentId;
+        const fullAttempt = await firebaseService.getExamAttemptById(student.attemptData.attemptId);
+        if (fullAttempt) {
+          // Only update if user hasn't selected a different student while we were fetching
+          setSelectedStudentForDetail((prev: any) => {
+            if (prev?.studentId !== targetStudentId) return prev; // stale, skip
+            return {
+              ...student,
+              attemptData: { ...student.attemptData, ...fullAttempt }
+            };
+          });
+        }
+      } catch (err) {
+        console.error('⚠️ [APP.TSX] Failed to fetch full attempt, using light data:', err);
+      }
+    }
   }, []);
   const [selectedExam, setSelectedExam] = useState<ExamWithPool | null>(null);
+  
+  // 🔒 SECURITY: Strip sensitive question data for students
+  const sanitizeExamForStudent = useCallback((exam: ExamWithPool | null | undefined): ExamWithPool | null => {
+    if (!exam) return null;
+    const isStudent = currentUser?.userType === 'student';
+    if (!isStudent) return exam;
+    const sanitized = { ...exam };
+    if (sanitized.questionsList && sanitized.questionsList.length > 0) {
+      sanitized.questionsList = sanitized.questionsList.map((q: any) => ({
+        id: q.id, type: q.type, maxMarks: q.maxMarks,
+        questionText: '', maximumMarks: q.maxMarks || 0,
+      })) as any;
+    }
+    if ((sanitized as any).questionPool) {
+      (sanitized as any).questionPool = (sanitized as any).questionPool.map((q: any) => ({
+        id: q.id, type: q.type, maxMarks: q.maxMarks, chapter: q.chapter,
+      }));
+    }
+    if (sanitized.likertQuestions && sanitized.likertQuestions.length > 0) {
+      sanitized.likertQuestions = sanitized.likertQuestions.map((q: any) => ({
+        id: q.id, type: q.type || 'likert',
+      }));
+    }
+    return sanitized;
+  }, [currentUser?.userType]);
+  
+  const setSelectedExamSafe = useCallback((exam: ExamWithPool | null | undefined | ((prev: ExamWithPool | null) => ExamWithPool | null)) => {
+    if (typeof exam === 'function') {
+      setSelectedExam((prev) => sanitizeExamForStudent(exam(prev)));
+    } else {
+      setSelectedExam(sanitizeExamForStudent(exam));
+    }
+  }, [sanitizeExamForStudent]);
   const [currentExamsList, setCurrentExamsList] = useState<ExamWithPool[]>([]);
   const [hasCheckedSubmission, setHasCheckedSubmission] = useState(false); // ✅ Track if we've completed the check
   
-  // ✅ CHECK: When exam is selected, check if student has submitted it
+  // ✅ CHECK: Fallback — only runs if fetchAndSetExam didn't already check (e.g. selectedExam set externally)
   useEffect(() => {
+    // Skip if already checked by fetchAndSetExam
+    if (hasCheckedSubmission) return;
+    
     const checkIfExamSubmitted = async () => {
       if (!selectedExam || !currentUser?.userId) {
         setIsSelectedExamSubmitted(false);
-        setHasCheckedSubmission(true); // ✅ Mark as checked (no check needed)
+        setHasCheckedSubmission(true);
         return;
       }
       
-      // Only check for students (not teachers/admins)
-      const userRole = currentUser?.userType || 'student';
-      const isTeacher = ['admin', 'principal', 'dean', 'teacher', 'system_admin'].includes(userRole);
+      const submissionKey = `${selectedExam.id}_${currentUser.userId}`;
       
-      if (isTeacher) {
-        setIsSelectedExamSubmitted(false);
-        setHasCheckedSubmission(true); // ✅ Mark as checked (teachers skip check)
+      // If cached, use it
+      if (submissionCacheRef.current.has(submissionKey)) {
+        setIsSelectedExamSubmitted(submissionCacheRef.current.get(submissionKey)!);
+        setHasCheckedSubmission(true);
         return;
       }
-      
-      setHasCheckedSubmission(false); // ✅ Mark as NOT checked yet - show loading
-      
-      console.log('\n' + '🔍'.repeat(40));
-      console.log('🔍 [APP.TSX] Checking if exam is submitted');
-      console.log('  - Exam ID:', selectedExam.id);
-      console.log('  - Exam Title:', selectedExam.title);
-      console.log('  - Student ID:', currentUser.userId);
-      console.log('  - Student Name:', currentUser.fullName);
-      console.log('🔍'.repeat(40) + '\n');
       
       try {
         const attempt = await firebaseService.getAnyAttempt(selectedExam.id, currentUser.userId);
-        
-        if (attempt) {
-          const isSubmitted = !!(
-            attempt.submitTime || 
-            attempt.status === 'submitted' || 
-            attempt.status === 'evaluated' || 
-            attempt.status === 'under_review'
-          );
-          
-          console.log('\n' + '📋'.repeat(40));
-          console.log('📋 [APP.TSX] Found attempt for this exam');
-          console.log('  - Attempt ID:', attempt.attemptId);
-          console.log('  - Status:', attempt.status);
-          console.log('  - Submit Time:', attempt.submitTime);
-          console.log('  - Is Submitted?:', isSubmitted);
-          console.log('📋'.repeat(40) + '\n');
-          
-          setIsSelectedExamSubmitted(isSubmitted);
-          
-          if (isSubmitted) {
-            console.log('🚫 [APP.TSX] Exam is SUBMITTED - will block Start Exam button');
-          } else {
-            console.log('✅ [APP.TSX] Exam is IN PROGRESS - allowing entry');
-          }
-        } else {
-          console.log('✅ [APP.TSX] No attempt found - student has not started this exam yet');
-          setIsSelectedExamSubmitted(false);
-        }
+        const isSubmitted = !!(attempt && (
+          attempt.submitTime || 
+          attempt.status === 'submitted' || 
+          attempt.status === 'evaluated' || 
+          attempt.status === 'under_review'
+        ));
+        submissionCacheRef.current.set(submissionKey, isSubmitted);
+        setIsSelectedExamSubmitted(isSubmitted);
       } catch (error) {
-        console.error('❌ [APP.TSX] Error checking exam submission:', error);
+        console.error('❌ Error checking exam submission:', error);
         setIsSelectedExamSubmitted(false);
       } finally {
-        setHasCheckedSubmission(true); // ✅ Mark as checked - hide loading
+        setHasCheckedSubmission(true);
       }
     };
     
     checkIfExamSubmitted();
-  }, [selectedExam?.id, currentUser?.userId]);
+  }, [selectedExam?.id, currentUser?.userId, hasCheckedSubmission]);
   
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
@@ -2951,6 +3029,24 @@ const fetchCounts = async () => {
       return () => clearTimeout(timer);
     }
   }, [isLeftCollapsed]);
+
+// Close college dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (isCollegeDropdownOpen && !target.closest('.college-dropdown-container')) {
+        setIsCollegeDropdownOpen(false);
+      }
+    };
+
+    if (isCollegeDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isCollegeDropdownOpen]);
 
 // Close year dropdown when clicking outside
   useEffect(() => {
@@ -3061,7 +3157,7 @@ const fetchCounts = async () => {
         collegeName: activeCollegeName
       };
 
-      console.log('Creating notice:', noticeData);
+      // console.log('Creating notice:', noticeData);
 
       // Create notice in Firebase
       const noticeId = await firebaseService.createNotice(noticeData, currentUser);
@@ -3095,59 +3191,115 @@ const fetchCounts = async () => {
     }
   };
 
-  // Memoized exam select handler to prevent re-render loops from inline async callbacks
-  const lastFetchedExamIdRef = useRef<string | null>(null);
+  // Cache for fetched full exam data
+  const examCacheRef = useRef<Map<string, any>>(new Map());
+  // Cache for submission status per exam+user — avoids repeated DB calls
+  const submissionCacheRef = useRef<Map<string, boolean>>(new Map());
+  const [isLoadingExamDetail, setIsLoadingExamDetail] = useState(false);
+
+  const fetchAndSetExam = useCallback(async (examId: string, viewContext?: 'result') => {
+    const userId = currentUser?.userId;
+    const submissionKey = userId ? `${examId}_${userId}` : '';
+    
+    // If both exam data AND submission status are cached — instant, no DB call, no spinner
+    // But skip cache for result context (needs full unsanitized data)
+    if (!viewContext && examCacheRef.current.has(examId) && submissionKey && submissionCacheRef.current.has(submissionKey)) {
+      setSelectedExamSafe(examCacheRef.current.get(examId));
+      setIsSelectedExamSubmitted(submissionCacheRef.current.get(submissionKey)!);
+      setHasCheckedSubmission(true);
+      return;
+    }
+    
+    // Show single loading state for everything
+    setIsLoadingExamDetail(true);
+    setHasCheckedSubmission(false);
+    setIsSelectedExamSubmitted(false);
+    
+    try {
+      // Step 1: Get exam data (from cache or DB)
+      let examData = !viewContext ? examCacheRef.current.get(examId) : undefined;
+      if (!examData) {
+        const fullExam = await firebaseService.getExamById(examId, viewContext);
+        if (fullExam) {
+          examData = { ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) };
+          examCacheRef.current.set(examId, examData);
+        }
+      }
+      
+      if (examData) {
+        setSelectedExamSafe(examData);
+      }
+      
+      // Step 2: Check submission status (in same loading cycle)
+      if (userId && examData) {
+        try {
+          const attempt = await firebaseService.getAnyAttempt(examId, userId);
+          const isSubmitted = !!(attempt && (
+            attempt.submitTime || 
+            attempt.status === 'submitted' || 
+            attempt.status === 'evaluated' || 
+            attempt.status === 'under_review'
+          ));
+          submissionCacheRef.current.set(submissionKey, isSubmitted);
+          setIsSelectedExamSubmitted(isSubmitted);
+        } catch (error) {
+          console.error('❌ Error checking submission status:', error);
+          setIsSelectedExamSubmitted(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching exam:', error);
+    } finally {
+      setHasCheckedSubmission(true);
+      setIsLoadingExamDetail(false);
+    }
+  }, [currentUser?.userId]);
   
   const handleExamsOnExamSelect = useCallback(async (exam: any) => {
-    // First set the lightweight exam for immediate UI feedback
-    setSelectedExam(exam);
     setIsViewingLiveStats(false);
     setIsViewingAttendance(false);
     setShowStudentPreview(false);
     
-    // Then fetch full exam data with questionsList and questionPool
-    // Skip if we already fetched this exact exam
-    if (exam && exam.id && lastFetchedExamIdRef.current !== exam.id) {
-      lastFetchedExamIdRef.current = exam.id;
-      const fullExam = await firebaseService.getExamById(exam.id);
-      if (fullExam) {
-        setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
-      }
+    // ✅ PERF: If Exams.tsx already loaded full exam data, pre-cache it
+    // so fetchAndSetExam finds it instantly without calling Cloud Function
+    if (exam && exam.questionsList && exam.questionsList.length > 0 && !examCacheRef.current.has(exam.id)) {
+      const cachedExam = {
+        ...exam,
+        createdById: exam.createdById || exam.createdBy || '',
+        createdAt: typeof exam.createdAt === 'string' ? exam.createdAt : (exam.createdAt?.toLocaleString?.() || String(exam.createdAt))
+      };
+      examCacheRef.current.set(exam.id, cachedExam);
     }
-  }, []);
+    
+    await fetchAndSetExam(exam.id);
+  }, [fetchAndSetExam]);
 
   const handleResultsOnExamSelect = useCallback(async (exam: any) => {
-    setSelectedExam(exam);
     setIsViewingLiveStats(false);
     setIsViewingAttendance(false);
     setSelectedStudentForDetail(null);
     
-    if (exam && exam.id && lastFetchedExamIdRef.current !== exam.id) {
-      lastFetchedExamIdRef.current = exam.id;
-      const fullExam = await firebaseService.getExamById(exam.id);
-      if (fullExam) {
-        setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
-      }
+    // ✅ PERF: Pre-cache full exam data from Result.tsx if available
+    if (exam && exam.questionsList && exam.questionsList.length > 0 && !examCacheRef.current.has(exam.id)) {
+      const cachedExam = {
+        ...exam,
+        createdById: exam.createdById || exam.createdBy || '',
+        createdAt: typeof exam.createdAt === 'string' ? exam.createdAt : (exam.createdAt?.toLocaleString?.() || String(exam.createdAt))
+      };
+      examCacheRef.current.set(exam.id, cachedExam);
     }
-  }, []);
+    
+    await fetchAndSetExam(exam.id, 'result');
+  }, [fetchAndSetExam]);
 
   const handleCalendarOnExamSelect = useCallback(async (exam: any) => {
-    console.log('🎯 [CALENDAR] Exam clicked:', exam.title, exam.id);
+    // console.log('🎯 [CALENDAR] Exam clicked:', exam.title, exam.id);
     setActiveItem('exams');
     setIsViewingLiveStats(false);
     setIsViewingAttendance(false);
     setShowStudentPreview(false);
-    
-    if (exam && exam.id) {
-      lastFetchedExamIdRef.current = exam.id;
-      const fullExam = await firebaseService.getExamById(exam.id);
-      if (fullExam) {
-        setSelectedExam({ ...fullExam, createdById: fullExam.createdBy || '', createdAt: fullExam.createdAt?.toLocaleString?.() || String(fullExam.createdAt) });
-      } else {
-        setNewlyCreatedExamId(exam.id);
-      }
-    }
-  }, []);
+    await fetchAndSetExam(exam.id);
+  }, [fetchAndSetExam]);
 
   return (
     <BrandProvider theme={brandTheme}>
@@ -3174,12 +3326,6 @@ const fetchCounts = async () => {
           onAddUniversity={() => setIsBulkUploadUniversityOpen(true)}
           onSignOut={handleLogout}
           isSecureBrowser={isUsingSecureBrowser()}
-          onOpenCodingLab={() => {
-            setShowCourseCurriculum(false);
-            setCourseCurriculumData({ courseName: '', courseSlug: '', curriculumData: [], isLoading: false });
-            setShowLearning(true);
-            setLearningActiveMenu('codinglab');
-          }}
           onOpenResumeBuilder={() => {
             setShowCourseCurriculum(false);
             setCourseCurriculumData({ courseName: '', courseSlug: '', curriculumData: [], isLoading: false });
@@ -3201,7 +3347,7 @@ const fetchCounts = async () => {
           
           // ✅ UPDATE THIS FUNCTION
           onSuccess={(deviceId: string) => { 
-            console.log('🎤 Microphone Verified & Captured:', deviceId);
+            // console.log('🎤 Microphone Verified & Captured:', deviceId);
             setVerifiedAudioDeviceId(deviceId); // <--- STORE THE ID
             
             setShowPreExamVerification(false);
@@ -3217,7 +3363,7 @@ const fetchCounts = async () => {
         />
       )}
 
-      {showExamInterface && activeExam ? (
+      {showExamInterface && activeExam && !isSelectedExamSubmitted ? (
         // FULL SCREEN EXAM INTERFACE - No header, footer, or sidebars
       <>
 
@@ -3247,16 +3393,28 @@ const fetchCounts = async () => {
           setShowExamInterface(false);
           setActiveExam(null);
           setIsSelectedExamSubmitted(true);  // ✅ Mark exam as submitted
-          setSelectedExam(activeExam);  // ✅ Show the submitted exam screen
+          // Update cache so clicking this exam again won't re-fetch
+          if (activeExam?.id && currentUser?.userId) {
+            submissionCacheRef.current.set(`${activeExam.id}_${currentUser.userId}`, true);
+          }
+          setSelectedExamSafe(activeExam);  // ✅ Show the submitted exam screen
         }}
        onExitExam={() => {
-          setShowExitDialog(true);
+          const isStudent = !!(currentUser?.studentRoll && currentUser.studentRoll.trim() !== '' && currentUser.studentRoll !== 'N/A');
+          if (isStudent) {
+            setShowExitDialog(true);
+          } else {
+            setShowExamInterface(false);
+          }
+        }}
+        onDirectExit={() => {
+          setShowExamInterface(false);
         }}
       />
 
       {/* Custom Exit Confirmation Dialog */}
       {showExitDialog && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm" onContextMenu={e => e.preventDefault()}>
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden animate-scale-in">
             {/* Header */}
             <div className="px-6 py-5 border-b border-gray-200">
@@ -3406,7 +3564,7 @@ const fetchCounts = async () => {
           <div className="flex items-center space-x-4">
             <Logo size="medium" showText={true} brand={brandTheme} collegeName={selectedCollege?.name || brandTheme.collegeName} />
             
-            {/* Show Practice header when Coding Lab is active */}
+            {/* Show Coding Lab header when Coding Lab is active */}
             {showLearning && learningActiveMenu === 'codinglab' && (
               <>
                 <div className="w-px h-8 bg-gray-200"></div>
@@ -3425,8 +3583,8 @@ const fetchCounts = async () => {
               </>
             )}
             
-            {/* Only show Create button for non-students (teachers/admins) - Hide when Coding Lab, Resume Builder, or Logic Builder is active */}
-            {currentUser?.userType !== USER_TYPES.STUDENT && activeItem !== ACTIVE_ITEMS.CALENDAR && activeItem !== ACTIVE_ITEMS.LEADERBOARD && activeItem !== ACTIVE_ITEMS.REPORTS && activeItem !== ACTIVE_ITEMS.AUDIT && !(showLearning && learningActiveMenu === 'codinglab') && !(showLearning && learningActiveMenu === 'resumebuilder') && !(showLearning && learningActiveMenu === 'logicbuilder') && (
+            {/* Only show Create button for non-students (teachers/admins) - Hide when Code Practice, Resume Builder, or Logic Builder is active */}
+            {currentUser?.userType !== USER_TYPES.STUDENT && activeItem !== ACTIVE_ITEMS.CALENDAR && activeItem !== ACTIVE_ITEMS.LEADERBOARD && activeItem !== ACTIVE_ITEMS.REPORTS && activeItem !== ACTIVE_ITEMS.AUDIT && !(showLearning && learningActiveMenu === 'codepractice') && !(showLearning && learningActiveMenu === 'codinglab') && !(showLearning && learningActiveMenu === 'resumebuilder') && !(showLearning && learningActiveMenu === 'logicbuilder') && (
               <>
                 <div className="w-px h-8 bg-gray-200"></div>
                 <button 
@@ -3438,7 +3596,7 @@ const fetchCounts = async () => {
                         setIsCreateLearningPathModalOpen(true);
                       } else {
                         // TODO: Open Create Course Modal
-                        console.log('Create Course clicked');
+                        // console.log('Create Course clicked');
                       }
                     } else if (activeItem === ACTIVE_ITEMS.QUESTIONS) {
                       setIsCreateQuestionModalOpen(true);
@@ -3524,14 +3682,14 @@ const fetchCounts = async () => {
           <div className="flex items-center space-x-2">
             {/* College Dropdown (System Admin Only) */}
             {currentUser && firebaseService.isSystemAdmin(currentUser) && colleges.length > 0 ? (
-              <div className="relative">
+              <div className="relative college-dropdown-container">
                 <button 
                   onClick={() => {
-                    console.log('🏫 College dropdown clicked. Current state:', {
-                      isOpen: isCollegeDropdownOpen,
-                      colleges: colleges.length,
-                      selectedCollege
-                    });
+                    // console.log('🏫 College dropdown clicked. Current state:', {
+                      // isOpen: isCollegeDropdownOpen,
+                      // colleges: colleges.length,
+                      // selectedCollege
+                    // });
                     setIsCollegeDropdownOpen(!isCollegeDropdownOpen);
                   }}
                   className="flex items-center space-x-2 px-3 py-2 rounded-lg font-medium transition-colors text-sm text-white shadow-md"
@@ -3556,9 +3714,15 @@ const fetchCounts = async () => {
                         <button
                           key={college.id}
                           onClick={() => {
-                            console.log('🏫 College selected:', college);
+                            // console.log('🏫 College selected:', college);
                             setSelectedCollege(college);
                             setIsCollegeDropdownOpen(false);
+                            // Reset to home/landing page on college switch
+                            setSelectedExamSafe(null);
+                            setIsViewingLiveStats(false);
+                            setActiveItem(showLearning ? 'learning' : 'exams');
+                            // ✅ Force panels to remount with new college data
+                            setExamsRefreshKey(prev => prev + 1);
                           }}
                           className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
                             selectedCollege?.id === college.id 
@@ -3617,6 +3781,36 @@ const fetchCounts = async () => {
               )}
             </div>
             )}
+            
+            {/* Module Switch Button */}
+            <button
+              onClick={() => {
+                const switchingToAssessment = showLearning;
+                setShowLearning(!showLearning);
+                // 🔥 FIX: When switching TO Assessment mode, reset activeItem to 'exams'
+                // so the middle/right panels actually render (they depend on activeItem matching)
+                if (switchingToAssessment) {
+                  setActiveItem(ACTIVE_ITEMS.EXAMS);
+                  setSelectedExamSafe(null);
+                  setIsMainCollapsed(false);
+                }
+              }}
+              className="relative group flex items-center gap-2 px-3 py-2 rounded-xl transition-all duration-200 hover:shadow-sm"
+              style={{ backgroundColor: showLearning ? '#EEF2FF' : '#FEF3C7' }}
+            >
+              <FontAwesomeIcon 
+                icon={showLearning ? faClipboardList : faBookOpen} 
+                className="text-sm"
+                style={{ color: showLearning ? '#6366F1' : '#D97706' }}
+              />
+              <span className="text-xs font-semibold" style={{ color: showLearning ? '#6366F1' : '#D97706' }}>
+                {showLearning ? 'Assessment' : 'Learning'}
+              </span>
+              <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 px-2.5 py-1 text-white text-[10px] rounded-md opacity-0 group-hover:opacity-100 transition-all duration-200 pointer-events-none whitespace-nowrap z-50 shadow-lg" style={{ background: brandTheme.gradients.primary }}>
+                Switch to {showLearning ? 'Assessment' : 'Learning'}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent" style={{ borderBottomColor: brandTheme.colors.primary }}></div>
+              </div>
+            </button>
             
             {/* Notices Dropdown */}
             <div className="relative group notices-dropdown-container">
@@ -3877,9 +4071,9 @@ const fetchCounts = async () => {
               <div className="relative group">
                 <button 
                   onClick={() => {
-                    console.log('Create Notice button clicked');
-                    console.log('Current user:', currentUser);
-                    console.log('Setting showNoticeDialog to true');
+                    // console.log('Create Notice button clicked');
+                    // console.log('Current user:', currentUser);
+                    // console.log('Setting showNoticeDialog to true');
                     setShowNoticeDialog(true);
                   }}
                   className="flex flex-col items-center justify-center w-[46px] h-[46px] bg-gray-50 hover:bg-gray-100 rounded-xl transition-all duration-200"
@@ -3904,6 +4098,7 @@ const fetchCounts = async () => {
                   role: currentUser?.userType || 'student',
                   roleName: currentUser?.userType ? firebaseService.getUserTypeDisplayName(currentUser.userType) : 'User',
                   organization: selectedCollege?.name || brandTheme.collegeName,
+                  organizationId: selectedCollege?.id || currentUser?.collegeId || '',
                   avatar: currentUser?.profilePicture || undefined,
                   leetcodeUsername: currentUser?.leetcodeUsername || undefined
                 }}
@@ -3912,9 +4107,22 @@ const fetchCounts = async () => {
                 onViewLoginDetails={() => setShowLoginDetailsDialog(true)}
                 onViewLeetCode={() => { setProfileInitialView('leetcode'); setShowUserProfile(true); }}
                 onAddUniversity={() => setIsBulkUploadUniversityOpen(true)}
+                onBrandProfile={() => {
+                  const cId = selectedCollege?.id || currentUser?.collegeId;
+                  if (cId) {
+                    firebaseService.getBrandProfile(cId).then(bp => {
+                      if (bp && bp.primaryColor) {
+                        setBrandTheme(generateThemeFromBrandProfile(bp, cId));
+                      }
+                    }).catch(() => {});
+                  }
+                }}
                 onSignOut={handleLogout}
                 onProfileClick={() => { setProfileInitialView('profile'); setShowUserProfile(true); }}
-                onSwitchMode={(mode) => setShowLearning(mode === 'learning')}
+                onSwitchMode={(mode) => { 
+                  setShowLearning(mode === 'learning'); 
+                  if (mode !== 'learning') { setActiveItem(ACTIVE_ITEMS.EXAMS); setSelectedExamSafe(null); setIsMainCollapsed(false); }
+                }}
                 currentMode={showLearning ? 'learning' : 'assessment'}
               />
             </div>
@@ -3922,15 +4130,21 @@ const fetchCounts = async () => {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden overflow-x-auto">
+      <div className="flex flex-1 overflow-hidden overflow-x-hidden">
         {/* Learning Center - replaces sidebar and content when active */}
         {showLearning ? (
           <Learning
-            onClose={() => setShowLearning(false)}
+            onClose={() => { setShowLearning(false); setActiveItem(ACTIVE_ITEMS.EXAMS); setSelectedExamSafe(null); setIsMainCollapsed(false); }}
             brandTheme={brandTheme}
             currentUser={currentUser}
             selectedCollege={selectedCollege}
-            onActiveMenuChange={(menuItem) => setLearningActiveMenu(menuItem)}
+            onActiveMenuChange={(menuItem) => {
+              setLearningActiveMenu(menuItem);
+              // Reset to playground mode when clicking Coding Lab in sidebar
+              if (menuItem === 'codinglab') {
+                setSelectedProblemSlug('');
+              }
+            }}
             selectedProblemSlug={selectedProblemSlug}
             onOpenCurriculum={(data) => {
               setCourseCurriculumData(data);
@@ -4127,7 +4341,7 @@ const fetchCounts = async () => {
                       // Don't allow clicking on header items
                       if (isHeader) return;
                       
-                      // Handle custom onClick if provided (like codinglab)
+                      // Handle custom onClick if provided (like codepractice)
                       if (item.onClick) {
                         item.onClick();
                         return;
@@ -4140,37 +4354,37 @@ const fetchCounts = async () => {
                         setSelectedClassForUsers(null);
                         setSelectedRoom(null);  // ADD THIS
                       } else if (item.id === 'questions') {
-                        setSelectedExam(null);
+                        setSelectedExamSafe(null);
                         setSelectedClassForUsers(null);
                         setSelectedRoom(null);  // ADD THIS
                       } else if (item.id === 'rooms') {  // ADD THIS BLOCK
-                        setSelectedExam(null);
+                        setSelectedExamSafe(null);
                         setSelectedSubject(null);
                         setSelectedClassForUsers(null);
                       } else if (item.id === 'users') {
-                        setSelectedExam(null);
+                        setSelectedExamSafe(null);
                         setSelectedSubject(null);
                         setSelectedRoom(null);  // ADD THIS
                       } else if (item.id === 'calendar') { // ADDED: Calendar clear state
-                        setSelectedExam(null);
+                        setSelectedExamSafe(null);
                         setSelectedSubject(null);
                         setSelectedClassForUsers(null);
                         setSelectedRoom(null);
                         setIsMainCollapsed(false); // Always expand for Calendar
                       } else if (item.id === 'leaderboard') { // ADDED: Leader Board clear state
-                        setSelectedExam(null);
+                        setSelectedExamSafe(null);
                         setSelectedSubject(null);
                         setSelectedClassForUsers(null);
                         setSelectedRoom(null);
                         setIsMainCollapsed(false); // Always expand for LeaderBoard
                       } else if (item.id === 'reports') { // ADDED: Reports clear state
-                        setSelectedExam(null);
+                        setSelectedExamSafe(null);
                         setSelectedSubject(null);
                         setSelectedClassForUsers(null);
                         setSelectedRoom(null);
                         setSelectedReport(null); // Clear selected report
                       } else if (item.id === 'results') {  // ADD THIS
-                        setSelectedExam(null);
+                        setSelectedExamSafe(null);
                         setPresentStudents([]);
                         setAbsentStudents([]);
                         setTotalStudents(0);
@@ -4240,7 +4454,7 @@ const fetchCounts = async () => {
         {/* Main Content */}
       <main 
           className={`h-full overflow-y-auto transition-all duration-300 ${isMainCollapsed ? 'w-16' : ''} bg-white border-r border-gray-200 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]`}
-          style={isMainCollapsed ? undefined : (activeItem === ACTIVE_ITEMS.CALENDAR || activeItem === ACTIVE_ITEMS.LEADERBOARD ? { flex: 1, minWidth: '320px' } : { minWidth: '600px', maxWidth: '600px', width: '600px' })}
+          style={isMainCollapsed ? undefined : (activeItem === ACTIVE_ITEMS.CALENDAR || activeItem === ACTIVE_ITEMS.LEADERBOARD ? { flex: 1, minWidth: '320px' } : { minWidth: '320px', maxWidth: '600px', width: '600px' })}
         >
           {isMainCollapsed ? (
             <div className="h-full flex flex-col">
@@ -4346,7 +4560,7 @@ const fetchCounts = async () => {
             <>
               {activeItem === ACTIVE_ITEMS.EXAMS && (
                 <Exams
-                  key={examsRefreshKey}
+                  key={`${examsRefreshKey}-${getActiveCollegeId() || 'none'}`}
                   activeCollegeId={getActiveCollegeId() ?? null}
                   selectedYear={selectedYear}
                   brandTheme={brandTheme}
@@ -4361,6 +4575,8 @@ const fetchCounts = async () => {
                   showStudentPreview={showStudentPreview}
                   onStudentPreviewClose={() => setShowStudentPreview(false)}
                   onCountsChange={refreshCounts}
+                  userId={currentUser?.userId}
+                  currentUserType={currentUser?.userType}
                 />
               )}
 
@@ -4385,13 +4601,12 @@ const fetchCounts = async () => {
 
               {activeItem === ACTIVE_ITEMS.QUESTIONS && (
                 <Questions 
-                  key={questionsRefreshKey}
                   activeCollegeId={getActiveCollegeId() ?? ''} 
                   refreshTrigger={questionsRefreshKey}
                   onSubjectSelect={(subject, questionType) => {
-                    setSelectedExam(null);
+                    setSelectedExamSafe(null);
                     setSelectedSubject(subject);
-                    setSelectedQuestionType(questionType);
+                    setSelectedQuestionType(questionType as any);
                   }}
                   selectedSubject={selectedSubject}
                   onCollapse={() => { userInteractedMain.current = true; setIsMainCollapsed(true); }}
@@ -4425,7 +4640,7 @@ const fetchCounts = async () => {
                 <Classes
                   activeCollegeId={getActiveCollegeId() ?? null}
                   onClassSelect={(className) => {
-                    setSelectedExam(null);
+                    setSelectedExamSafe(null);
                     setSelectedSubject(null);
                     setSelectedClassForUsers(className);
                   }}
@@ -4465,9 +4680,9 @@ const fetchCounts = async () => {
                   collegeId={getActiveCollegeId() ?? ''}
                   onUserSelect={(user) => {
                     if (user) {
-                      console.log('🔍 [AUDIT] User selected:', user.fullName, user.userId);
+                      // console.log('🔍 [AUDIT] User selected:', user.fullName, user.userId);
                     } else {
-                      console.log('🔍 [AUDIT] User selection cleared');
+                      // console.log('🔍 [AUDIT] User selection cleared');
                     }
                     setSelectedAuditUser(user);
                   }}
@@ -4495,8 +4710,8 @@ const fetchCounts = async () => {
          {/* Right Sidebar - Exam/Question Details Panel */}
        {(() => {
          const shouldShow = (selectedExam || 
+          (activeItem === ACTIVE_ITEMS.USERS) || 
           (selectedSubject && activeItem === ACTIVE_ITEMS.QUESTIONS) || 
-          (selectedClassForUsers && activeItem === ACTIVE_ITEMS.USERS) || 
           (activeItem === ACTIVE_ITEMS.ROOMS) ||
           (activeItem === ACTIVE_ITEMS.REPORTS) ||
           (activeItem === ACTIVE_ITEMS.HALLTICKETS) ||
@@ -4507,10 +4722,10 @@ const fetchCounts = async () => {
           activeItem !== ACTIVE_ITEMS.CALENDAR && activeItem !== ACTIVE_ITEMS.LEADERBOARD;
          
          if (activeItem === 'audit') {
-           console.log('🔍 [AUDIT PANEL] activeItem:', activeItem);
-           console.log('🔍 [AUDIT PANEL] selectedAuditUser:', selectedAuditUser);
-           console.log('🔍 [AUDIT PANEL] auditTrailInitializing:', auditTrailInitializing);
-           console.log('🔍 [AUDIT PANEL] shouldShow:', shouldShow);
+           // console.log('🔍 [AUDIT PANEL] activeItem:', activeItem);
+           // console.log('🔍 [AUDIT PANEL] selectedAuditUser:', selectedAuditUser);
+           // console.log('🔍 [AUDIT PANEL] auditTrailInitializing:', auditTrailInitializing);
+           // console.log('🔍 [AUDIT PANEL] shouldShow:', shouldShow);
          }
          
          return shouldShow;
@@ -4556,14 +4771,24 @@ const fetchCounts = async () => {
                   <p className="text-gray-600 font-medium">Loading audit trail...</p>
                 </div>
               </div>
+            ) : isLoadingExamDetail ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <svg className="animate-spin h-8 w-8 mx-auto mb-3" style={{ color: brandTheme.colors.primary }} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <p className="text-sm font-medium text-gray-500">Loading exam details...</p>
+                </div>
+              </div>
             ) : selectedExam ? (
               // Show Student Exam Interface when student is in EXAMS section
               currentUser?.userType === USER_TYPES.STUDENT && activeItem === ACTIVE_ITEMS.EXAMS ? (
                 (() => {
                   // Check if exam is currently live
-                  const examIsLive = isExamLive(selectedExam.examDate, selectedExam.examTime, selectedExam.duration);
+                  const examIsLive = isExamLive(selectedExam.examDate, selectedExam.examTime, selectedExam.duration, selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0);
                   const isSecureOnlineExam = selectedExam.mode === EXAM_MODES.ONLINE && selectedExam.securityLevel === SECURITY_LEVELS.SECURE;
-                  const isExamOver = isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status);
+                  const isExamOver = isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status, selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0);
                   const isSecureExamBlocked = isSecureOnlineExam && !isExamOver && !isUsingSecureBrowser();
 
                   // If secure exam and not over and NOT using secure browser, show secure browser message
@@ -4651,7 +4876,7 @@ const fetchCounts = async () => {
                                   </svg>
                                   <span className="text-xs font-medium text-gray-700">Duration</span>
                                 </div>
-                                <span className="text-xs font-bold text-orange-700">{formatDuration(selectedExam.duration)}</span>
+                                <span className="text-xs font-bold text-orange-700">{formatDuration((parseInt(selectedExam.duration) || 0) + (selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0))}</span>
                               </div>
                             </div>
                           </div>
@@ -4706,7 +4931,7 @@ const fetchCounts = async () => {
                     return (
                       <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-50 to-white">
                         <div className="flex-1 flex items-center justify-center px-6 py-8">
-                          <div className="text-center max-w-md">
+                          <div className="text-center max-w-xl">
                             {/* Same illustration as existing */}
                             <div className="mb-5 flex justify-center relative">
                               <div className="relative">
@@ -4745,42 +4970,58 @@ const fetchCounts = async () => {
                             </div>
 
                             {/* Message - matching existing design */}
-                            <h3 className="text-2xl font-bold text-gray-900 mb-2 flex items-center justify-center">
+                            <h3 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
                               <FontAwesomeIcon icon={faCheckCircle} className="mr-2" /> Exam Already Submitted
                             </h3>
-                            <p className="text-gray-600 mb-5 text-sm leading-relaxed">
+                            <p className="text-gray-600 mb-5 text-sm leading-relaxed text-left">
                               You have already submitted this exam and cannot re-enter it. Check Results section for your performance.
                             </p>
 
-                            {/* Exam Info Card - same design as existing */}
-                            <div className="bg-white rounded-xl p-4 border-2 border-gray-200 shadow-sm">
+                            {/* Exam Info Card - beautiful design matching scheduled card */}
+                            <div className="bg-white rounded-xl p-5 border-2 border-green-200 shadow-sm">
                               <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
                                 <div className="flex items-center space-x-2">
                                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                                  <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">Submitted</span>
+                                  <span className="text-xs font-bold text-green-700 uppercase tracking-wider">Submitted</span>
                                 </div>
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">
-                                  <FontAwesomeIcon icon={faGlobe} className="mr-1" /> Online
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${selectedExam.mode === EXAM_MODES.ONLINE ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                  {selectedExam.mode === EXAM_MODES.ONLINE ? <><FontAwesomeIcon icon={faGlobe} className="mr-1" /> Online</> : <><FontAwesomeIcon icon={faPenToSquare} className="mr-1" /> Offline</>}
                                 </span>
                               </div>
 
-                              <h4 className="text-lg font-bold text-gray-900 mb-3">{selectedExam.title}</h4>
+                              <h4 className="font-bold text-gray-900 mb-3 text-base">{selectedExam.title}</h4>
 
                               <div className="space-y-2">
-                                <div className="flex items-center text-sm">
-                                  <FontAwesomeIcon icon={faCalendar} className="w-4 mr-2 text-purple-500" />
-                                  <span className="text-gray-600 mr-2">Date</span>
-                                  <span className="font-semibold text-gray-900 ml-auto">{formatExamDate(selectedExam.examDate)}</span>
+                                <div className="flex items-center justify-between p-2 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg">
+                                  <div className="flex items-center space-x-2">
+                                    <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                    <span className="text-xs font-medium text-gray-700">Date</span>
+                                  </div>
+                                  <span className="text-xs font-bold text-purple-700">{formatExamDate(selectedExam.examDate)}</span>
                                 </div>
-                                <div className="flex items-center text-sm">
-                                  <FontAwesomeIcon icon={faClock} className="w-4 mr-2 text-blue-500" />
-                                  <span className="text-gray-600 mr-2">Time</span>
-                                  <span className="font-semibold text-gray-900 ml-auto">{formatExamTime(selectedExam.examTime || '')}</span>
-                                </div>
-                                <div className="flex items-center text-sm">
-                                  <FontAwesomeIcon icon={faClock} className="w-4 mr-2 text-orange-500" />
-                                  <span className="text-gray-600 mr-2">Duration</span>
-                                  <span className="font-semibold text-gray-900 ml-auto">{formatDuration(selectedExam.duration)}</span>
+                                
+                                {selectedExam.examTime && (
+                                  <div className="flex items-center justify-between p-2 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg">
+                                    <div className="flex items-center space-x-2">
+                                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <span className="text-xs font-medium text-gray-700">Time</span>
+                                    </div>
+                                    <span className="text-xs font-bold text-blue-700">{formatExamTime(selectedExam.examTime || '')}</span>
+                                  </div>
+                                )}
+                                
+                                <div className="flex items-center justify-between p-2 bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg">
+                                  <div className="flex items-center space-x-2">
+                                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <span className="text-xs font-medium text-gray-700">Duration</span>
+                                  </div>
+                                  <span className="text-xs font-bold text-orange-700">{formatDuration((parseInt(selectedExam.duration) || 0) + (selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0))}</span>
                                 </div>
                               </div>
                             </div>
@@ -4798,6 +5039,8 @@ const fetchCounts = async () => {
                         currentUser={currentUser}
                         brandTheme={brandTheme}
                         onEnterExam={async () => {
+                          // Block entry if already submitted
+                          if (isSelectedExamSubmitted) return;
                           // Students: Check attendance before allowing to start exam
                           await handleExamStartClick(
                             selectedExam,
@@ -4812,7 +5055,7 @@ const fetchCounts = async () => {
                                   setShowExamInterface(true);
                                 },
                                 () => {
-                                  console.log('Verification cancelled');
+                                  // console.log('Verification cancelled');
                                 },
                                 setShowPreExamVerification,
                                 setPendingExam,
@@ -4842,7 +5085,7 @@ const fetchCounts = async () => {
                     <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-50 to-white">
                       {/* Student Waiting View */}
                       <div className="flex-1 flex items-center justify-center px-6 py-8">
-                        <div className="text-center max-w-md">
+                        <div className="text-center max-w-xl">
                           {/* Colorful Illustration */}
                           <div className="mb-5 flex justify-center relative">
                             <div className="relative">
@@ -4891,29 +5134,79 @@ const fetchCounts = async () => {
                               selectedExam.examDate, 
                               selectedExam.examTime || '', 
                               selectedExam.duration, 
-                              selectedExam.status
+                              selectedExam.status,
+                              selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0
                             );
 
                             if (examHasEnded) {
                               // Exam has ended - show ended message
                               return (
                                 <>
-                                  <h3 className="text-2xl font-bold text-gray-900 mb-2 flex items-center justify-center">
+                                  <h3 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
                                     <FontAwesomeIcon icon={faClock} className="mr-2" /> Exam Time Over
                                   </h3>
-                                  <p className="text-gray-600 mb-5 text-sm leading-relaxed">
-                                    The exam window has closed and is no longer accepting submissions. Check Results section for your performance.
+                                  <p className="text-gray-600 mb-5 text-sm leading-relaxed text-left">
+                                    The exam window has closed and is no longer accepting submissions. Please contact your instructor for any queries.
                                   </p>
+
+                                  {/* Exam Info Card */}
+                                  <div className="bg-white rounded-xl p-5 border-2 border-gray-200 shadow-sm mt-2">
+                                    <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
+                                      <div className="flex items-center space-x-2">
+                                        <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                                        <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Completed</span>
+                                      </div>
+                                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${selectedExam.mode === EXAM_MODES.ONLINE ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                        {selectedExam.mode === EXAM_MODES.ONLINE ? <><FontAwesomeIcon icon={faGlobe} className="mr-1" /> Online</> : <><FontAwesomeIcon icon={faPenToSquare} className="mr-1" /> Offline</>}
+                                      </span>
+                                    </div>
+                                    
+                                    <h4 className="font-bold text-gray-900 mb-3 text-base">{selectedExam.title}</h4>
+                                    
+                                    <div className="space-y-2">
+                                      <div className="flex items-center justify-between p-2 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg">
+                                        <div className="flex items-center space-x-2">
+                                          <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                          </svg>
+                                          <span className="text-xs font-medium text-gray-700">Date</span>
+                                        </div>
+                                        <span className="text-xs font-bold text-purple-700">{formatExamDate(selectedExam.examDate)}</span>
+                                      </div>
+                                      
+                                      {selectedExam.examTime && (
+                                        <div className="flex items-center justify-between p-2 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg">
+                                          <div className="flex items-center space-x-2">
+                                            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <span className="text-xs font-medium text-gray-700">Time</span>
+                                          </div>
+                                          <span className="text-xs font-bold text-blue-700">{formatExamTime(selectedExam.examTime || '')}</span>
+                                        </div>
+                                      )}
+                                      
+                                      <div className="flex items-center justify-between p-2 bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg">
+                                        <div className="flex items-center space-x-2">
+                                          <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                          </svg>
+                                          <span className="text-xs font-medium text-gray-700">Duration</span>
+                                        </div>
+                                        <span className="text-xs font-bold text-orange-700">{formatDuration((parseInt(selectedExam.duration) || 0) + (selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0))}</span>
+                                      </div>
+                                    </div>
+                                  </div>
                                 </>
                               );
                             } else {
                               // Exam hasn't started yet - show locked message
                               return (
                                 <>
-                                  <h3 className="text-2xl font-bold text-gray-900 mb-2 flex items-center justify-center">
+                                  <h3 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
                                     <FontAwesomeIcon icon={faLock} className="mr-2" /> Exam Scheduled
                                   </h3>
-                                  <p className="text-gray-600 mb-5 text-sm leading-relaxed">
+                                  <p className="text-gray-600 mb-5 text-sm leading-relaxed text-left">
                                     The exam will be available on the scheduled date and time. Stay prepared!
                                   </p>
                                   {/* Countdown Timer */}
@@ -4924,7 +5217,7 @@ const fetchCounts = async () => {
                                   />
 
                                   {/* Exam Info Card */}
-                                  <div className="bg-white rounded-xl p-4 border-2 border-gray-200 shadow-sm mt-6">
+                                  <div className="bg-white rounded-xl p-5 border-2 border-gray-200 shadow-sm mt-6">
                             <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
                               <div className="flex items-center space-x-2">
                                 <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
@@ -4967,7 +5260,7 @@ const fetchCounts = async () => {
                                   </svg>
                                   <span className="text-xs font-medium text-gray-700">Duration</span>
                                 </div>
-                                <span className="text-xs font-bold text-orange-700">{formatDuration(selectedExam.duration)}</span>
+                                <span className="text-xs font-bold text-orange-700">{formatDuration((parseInt(selectedExam.duration) || 0) + (selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0))}</span>
                               </div>
                             </div>
                           </div>
@@ -4984,16 +5277,16 @@ const fetchCounts = async () => {
               // Show Result Dashboard when in Results section
               activeItem === ACTIVE_ITEMS.RESULTS ? (
                 (() => {
-                  console.log('🔍 [APP.TSX RENDER] Result section render check:', {
-                    userType: currentUser?.userType,
-                    selectedExam: selectedExam?.id,
-                    selectedStudent: selectedStudentForDetail?.studentName,
-                    isStudent: currentUser?.userType === USER_TYPES.STUDENT
-                  });
+                  // console.log('🔍 [APP.TSX RENDER] Result section render check:', {
+                    // userType: currentUser?.userType,
+                    // selectedExam: selectedExam?.id,
+                    // selectedStudent: selectedStudentForDetail?.studentName,
+                    // isStudent: currentUser?.userType === USER_TYPES.STUDENT
+                  // });
                   
                   // For students with both exam and student data selected
                   if (currentUser?.userType === USER_TYPES.STUDENT && selectedStudentForDetail) {
-                    console.log('✅ [APP.TSX RENDER] Rendering StudentExamDetail for student');
+                    // console.log('✅ [APP.TSX RENDER] Rendering StudentExamDetail for student');
                     return (
                       <StudentExamDetail 
                         exam={selectedExam}
@@ -5002,7 +5295,7 @@ const fetchCounts = async () => {
                         currentUserType={currentUser?.userType}
                         onBack={() => {
                           setSelectedStudentForDetail(null);
-                          setSelectedExam(null);
+                          setSelectedExamSafe(null);
                         }}
                       />
                     );
@@ -5010,7 +5303,7 @@ const fetchCounts = async () => {
                   
                   // For students waiting for data
                   if (currentUser?.userType === USER_TYPES.STUDENT) {
-                    console.log('⏳ [APP.TSX RENDER] Student waiting for data');
+                    // console.log('⏳ [APP.TSX RENDER] Student waiting for data');
                     return (
                       <div className="flex-1 flex items-center justify-center bg-gray-50">
                         <div className="text-center">
@@ -5023,7 +5316,7 @@ const fetchCounts = async () => {
                   
                   // For teacher/admin viewing specific student
                   if (selectedStudentForDetail) {
-                    console.log('✅ [APP.TSX RENDER] Rendering StudentExamDetail for teacher/admin');
+                    // console.log('✅ [APP.TSX RENDER] Rendering StudentExamDetail for teacher/admin');
                     return (
                       <StudentExamDetail 
                         exam={selectedExam}
@@ -5036,7 +5329,7 @@ const fetchCounts = async () => {
                   }
                   
                   // For teacher/admin viewing dashboard
-                  console.log('📊 [APP.TSX RENDER] Rendering ExamDashboard for teacher/admin');
+                  // console.log('📊 [APP.TSX RENDER] Rendering ExamDashboard for teacher/admin');
                   return (
                     <ExamDashboard
                       selectedExam={selectedExam}
@@ -5095,7 +5388,7 @@ const fetchCounts = async () => {
                 // Note: Real students are filtered out above. This section is for teachers/admins only.
                 // The showStudentPreview mode simulates student view for teachers.
                 // Check if exam is over (past exam date + time + duration)
-                const isExamOver = isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status);
+                const isExamOver = isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status, selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0);
 
                  // For preview mode, simulate student restrictions
                 const isSecureExamBlocked = showStudentPreview && isSecureOnlineExam && !isExamOver;
@@ -5188,7 +5481,7 @@ const fetchCounts = async () => {
                                 </svg>
                                 <span className="text-xs font-medium text-gray-700">Duration</span>
                               </div>
-                              <span className="text-xs font-bold text-orange-700">{formatDuration(selectedExam.duration)}</span>
+                              <span className="text-xs font-bold text-orange-700">{formatDuration((parseInt(selectedExam.duration) || 0) + (selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0))}</span>
                             </div>
                           </div>
                         </div>
@@ -5244,7 +5537,7 @@ const fetchCounts = async () => {
                     return (
                       <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-50 to-white">
                         <div className="flex-1 flex items-center justify-center px-6 py-8">
-                          <div className="text-center max-w-md">
+                          <div className="text-center max-w-xl">
                             <div className="mb-5 flex justify-center relative">
                               <div className="relative">
                                 <div className="absolute -top-2 -left-2 w-16 h-16 bg-green-100 rounded-full opacity-40"></div>
@@ -5281,41 +5574,57 @@ const fetchCounts = async () => {
                               </div>
                             </div>
 
-                            <h3 className="text-2xl font-bold text-gray-900 mb-2 flex items-center justify-center">
+                            <h3 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
                               <FontAwesomeIcon icon={faCheckCircle} className="mr-2" /> Exam Already Submitted
                             </h3>
-                            <p className="text-gray-600 mb-5 text-sm leading-relaxed">
+                            <p className="text-gray-600 mb-5 text-sm leading-relaxed text-left">
                               You have already submitted this exam and cannot re-enter it. Check Results section for your performance.
                             </p>
 
-                            <div className="bg-white rounded-xl p-4 border-2 border-gray-200 shadow-sm">
+                            <div className="bg-white rounded-xl p-5 border-2 border-green-200 shadow-sm">
                               <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
                                 <div className="flex items-center space-x-2">
                                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                                  <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">Submitted</span>
+                                  <span className="text-xs font-bold text-green-700 uppercase tracking-wider">Submitted</span>
                                 </div>
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold">
-                                  <FontAwesomeIcon icon={faGlobe} className="mr-1" /> Online
+                                <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${selectedExam.mode === EXAM_MODES.ONLINE ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                  {selectedExam.mode === EXAM_MODES.ONLINE ? <><FontAwesomeIcon icon={faGlobe} className="mr-1" /> Online</> : <><FontAwesomeIcon icon={faPenToSquare} className="mr-1" /> Offline</>}
                                 </span>
                               </div>
 
-                              <h4 className="text-lg font-bold text-gray-900 mb-3">{selectedExam.title}</h4>
+                              <h4 className="font-bold text-gray-900 mb-3 text-base">{selectedExam.title}</h4>
 
                               <div className="space-y-2">
-                                <div className="flex items-center text-sm">
-                                  <FontAwesomeIcon icon={faCalendar} className="w-4 mr-2 text-purple-500" />
-                                  <span className="text-gray-600 mr-2">Date</span>
-                                  <span className="font-semibold text-gray-900 ml-auto">{formatExamDate(selectedExam.examDate)}</span>
+                                <div className="flex items-center justify-between p-2 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg">
+                                  <div className="flex items-center space-x-2">
+                                    <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                    <span className="text-xs font-medium text-gray-700">Date</span>
+                                  </div>
+                                  <span className="text-xs font-bold text-purple-700">{formatExamDate(selectedExam.examDate)}</span>
                                 </div>
-                                <div className="flex items-center text-sm">
-                                  <FontAwesomeIcon icon={faClock} className="w-4 mr-2 text-blue-500" />
-                                  <span className="text-gray-600 mr-2">Time</span>
-                                  <span className="font-semibold text-gray-900 ml-auto">{formatExamTime(selectedExam.examTime || '')}</span>
-                                </div>
-                                <div className="flex items-center text-sm">
-                                  <FontAwesomeIcon icon={faClock} className="w-4 mr-2 text-orange-500" />
-                                  <span className="text-gray-600 mr-2">Duration</span>
-                                  <span className="font-semibold text-gray-900 ml-auto">{formatDuration(selectedExam.duration)}</span>
+                                
+                                {selectedExam.examTime && (
+                                  <div className="flex items-center justify-between p-2 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg">
+                                    <div className="flex items-center space-x-2">
+                                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <span className="text-xs font-medium text-gray-700">Time</span>
+                                    </div>
+                                    <span className="text-xs font-bold text-blue-700">{formatExamTime(selectedExam.examTime || '')}</span>
+                                  </div>
+                                )}
+                                
+                                <div className="flex items-center justify-between p-2 bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg">
+                                  <div className="flex items-center space-x-2">
+                                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <span className="text-xs font-medium text-gray-700">Duration</span>
+                                  </div>
+                                  <span className="text-xs font-bold text-orange-700">{formatDuration((parseInt(selectedExam.duration) || 0) + (selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0))}</span>
                                 </div>
                               </div>
                             </div>
@@ -5326,7 +5635,7 @@ const fetchCounts = async () => {
                   }
                   
                   // Check if exam is live
-                  const examIsLive = isExamLive(selectedExam.examDate, selectedExam.examTime, selectedExam.duration);
+                  const examIsLive = isExamLive(selectedExam.examDate, selectedExam.examTime, selectedExam.duration, selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0);
                   
                   if (examIsLive) {
                     // Show Live Exam Interface
@@ -5338,6 +5647,9 @@ const fetchCounts = async () => {
                         onEnterExam={async () => {
                           const userRole = currentUser?.userType || 'student';
                           const isTeacherRole = ['admin', 'principal', 'dean', 'teacher', 'system_admin'].includes(userRole);
+                          
+                          // Block entry if student already submitted
+                          if (!isTeacherRole && isSelectedExamSubmitted) return;
                           
                           if (!isTeacherRole && selectedExam) {
                             // Students: Check attendance before allowing to start exam
@@ -5354,7 +5666,7 @@ const fetchCounts = async () => {
                                     setShowExamInterface(true);
                                   },
                                   () => {
-                                    console.log('Verification cancelled');
+                                    // console.log('Verification cancelled');
                                   },
                                   setShowPreExamVerification,
                                   setPendingExam,
@@ -5414,7 +5726,7 @@ const fetchCounts = async () => {
                       
                       {/* Student Waiting View */}
                       <div className="flex-1 flex items-center justify-center px-6 py-8">
-                      <div className="text-center max-w-md">
+                      <div className="text-center max-w-xl">
                         {/* Colorful Illustration */}
                         <div className="mb-5 flex justify-center relative">
                           <div className="relative">
@@ -5463,7 +5775,8 @@ const fetchCounts = async () => {
                             selectedExam.examDate, 
                             selectedExam.examTime || '', 
                             selectedExam.duration, 
-                            selectedExam.status
+                            selectedExam.status,
+                            selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0
                           );
 
                           if (examHasEnded) {
@@ -5473,9 +5786,58 @@ const fetchCounts = async () => {
                                 <h3 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
                                   <FontAwesomeIcon icon={faClock} className="mr-2" /> Exam Time Over
                                 </h3>
-                                <p className="text-gray-600 mb-5 text-sm leading-relaxed">
+                                <p className="text-gray-600 mb-5 text-sm leading-relaxed text-left">
                                   The exam window has closed and is no longer accepting submissions. Please contact your instructor for any queries.
                                 </p>
+
+                                {/* Exam Info Card */}
+                                <div className="bg-white rounded-xl p-5 border-2 border-gray-200 shadow-sm mt-2">
+                                  <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
+                                    <div className="flex items-center space-x-2">
+                                      <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                                      <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Completed</span>
+                                    </div>
+                                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${selectedExam.mode === EXAM_MODES.ONLINE ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                      {selectedExam.mode === EXAM_MODES.ONLINE ? <><FontAwesomeIcon icon={faGlobe} className="mr-1" /> Online</> : <><FontAwesomeIcon icon={faPenToSquare} className="mr-1" /> Offline</>}
+                                    </span>
+                                  </div>
+                                  
+                                  <h4 className="font-bold text-gray-900 mb-3 text-base">{selectedExam.title}</h4>
+                                  
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between p-2 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg">
+                                      <div className="flex items-center space-x-2">
+                                        <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <span className="text-xs font-medium text-gray-700">Date</span>
+                                      </div>
+                                      <span className="text-xs font-bold text-purple-700">{formatExamDate(selectedExam.examDate)}</span>
+                                    </div>
+                                    
+                                    {selectedExam.examTime && (
+                                      <div className="flex items-center justify-between p-2 bg-gradient-to-r from-blue-50 to-cyan-50 rounded-lg">
+                                        <div className="flex items-center space-x-2">
+                                          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                          </svg>
+                                          <span className="text-xs font-medium text-gray-700">Time</span>
+                                        </div>
+                                        <span className="text-xs font-bold text-blue-700">{formatExamTime(selectedExam.examTime || '')}</span>
+                                      </div>
+                                    )}
+                                    
+                                    <div className="flex items-center justify-between p-2 bg-gradient-to-r from-orange-50 to-amber-50 rounded-lg">
+                                      <div className="flex items-center space-x-2">
+                                        <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <span className="text-xs font-medium text-gray-700">Duration</span>
+                                      </div>
+                                      <span className="text-xs font-bold text-orange-700">{formatDuration((parseInt(selectedExam.duration) || 0) + (selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0))}</span>
+                                    </div>
+                                  </div>
+                                </div>
                               </>
                             );
                           } else {
@@ -5485,7 +5847,7 @@ const fetchCounts = async () => {
                                 <h3 className="text-2xl font-bold text-gray-900 mb-2 flex items-center">
                                   <FontAwesomeIcon icon={faLock} className="mr-2" /> Exam Details Locked
                                 </h3>
-                                <p className="text-gray-600 mb-5 text-sm leading-relaxed">
+                                <p className="text-gray-600 mb-5 text-sm leading-relaxed text-left">
                                   Full details will be available on the exam date. Only the exam creator can access them before then.
                                 </p>
                                 {/* Countdown Timer */}
@@ -5500,7 +5862,7 @@ const fetchCounts = async () => {
                         })()}
 
                         {/* Exam Info Card */}
-                        <div className="bg-white rounded-xl p-4 border-2 border-gray-200 shadow-sm">
+                        <div className="bg-white rounded-xl p-5 border-2 border-gray-200 shadow-sm">
                           <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
                             <div className="flex items-center space-x-2">
                               <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></div>
@@ -5543,7 +5905,7 @@ const fetchCounts = async () => {
                                 </svg>
                                 <span className="text-xs font-medium text-gray-700">Duration</span>
                               </div>
-                              <span className="text-xs font-bold text-orange-700">{formatDuration(selectedExam.duration)}</span>
+                              <span className="text-xs font-bold text-orange-700">{formatDuration((parseInt(selectedExam.duration) || 0) + (selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0))}</span>
                             </div>
 
                             <div className="flex items-center justify-between p-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg">
@@ -5553,7 +5915,7 @@ const fetchCounts = async () => {
                                 </svg>
                                 <span className="text-xs font-medium text-gray-700">Creator</span>
                               </div>
-                              <span className="text-xs font-bold text-green-700">{selectedExam.createdByName || selectedExam.createdBy}</span>
+                              <span className="text-xs font-bold text-green-700">{(selectedExam.createdByName || selectedExam.createdBy || '').split(' ').map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')}</span>
                             </div>
                           </div>
                         </div>
@@ -5600,7 +5962,7 @@ const fetchCounts = async () => {
                 exam={selectedExam}
                 brandTheme={brandTheme}
                 currentUser={currentUser!}
-                isExamOver={isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status)}
+                isExamOver={isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status, selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0)}
                 onBack={() => {
                   setIsViewingAttendance(false);
                   // Restore panels when going back
@@ -5609,16 +5971,16 @@ const fetchCounts = async () => {
                 }}
               />
             ) : (
-            <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
               {/* Header  */}
               <div className="bg-white sticky top-0 z-10 pt-6 pb-4 px-8 pr-12 mb-2 border-b border-gray-100">
                {/* Title Row with 3-dots Menu */}
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center space-x-3">
-                    <h1 className="text-3xl font-bold text-gray-900">{safeRender(selectedExam.title)}</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">{safeRender(selectedExam.title)}</h1>
                     
                     {/* Live Indicator for Online Exams */}
-                    {selectedExam.mode === EXAM_MODES.ONLINE && isExamLive(selectedExam.examDate, selectedExam.examTime, selectedExam.duration) && (
+                    {selectedExam.mode === EXAM_MODES.ONLINE && isExamLive(selectedExam.examDate, selectedExam.examTime, selectedExam.duration, selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0) && (
                       <div className="flex items-center space-x-2">
                         <div className="relative flex h-3 w-3">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -5848,7 +6210,7 @@ const fetchCounts = async () => {
                                 const menu = document.getElementById('exam-menu-dropdown');
                                 if (menu) menu.style.display = 'none';
                                 
-                                const isCompleted = isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status);
+                                const isCompleted = isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status, selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0);
                                 if (isCompleted) {
                                   // Navigate to Results section and ensure exam stays selected
                                   setActiveItem(ACTIVE_ITEMS.RESULTS);
@@ -5867,8 +6229,8 @@ const fetchCounts = async () => {
                               }}
                               className="w-full text-left px-4 py-3 hover:bg-green-50 transition-colors flex items-center space-x-3 cursor-pointer"
                             >
-                              <FontAwesomeIcon icon={faTrophy} className={isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status) ? 'text-green-600' : 'text-gray-400'} />
-                              <span className={`text-sm font-medium ${isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status) ? 'text-gray-900' : 'text-gray-500'}`}>
+                              <FontAwesomeIcon icon={faTrophy} className={isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status, selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0) ? 'text-green-600' : 'text-gray-400'} />
+                              <span className={`text-sm font-medium ${isExamCompleted(selectedExam.examDate, selectedExam.examTime || '', selectedExam.duration, selectedExam.status, selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0) ? 'text-gray-900' : 'text-gray-500'}`}>
                                 View Result
                               </span>
                             </button>
@@ -5882,7 +6244,7 @@ const fetchCounts = async () => {
                 {/* Created By Row */}
                 <div className="mb-3">
                   <p className="text-[16px] font-medium text-gray-500">
-                    Created By - {safeRender(selectedExam.createdByName || selectedExam.createdBy)}, {safeRender(selectedExam.createdByRole)}
+                    Created By - {((selectedExam.createdByName || selectedExam.createdBy || '') as string).split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')}, {((selectedExam.createdByRole || '') as string).split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')}
                   </p>
                 </div>
                 
@@ -5913,13 +6275,15 @@ const fetchCounts = async () => {
                       const examIsLive = isExamLive(
                         selectedExam.examDate, 
                         selectedExam.examTime, 
-                        selectedExam.duration
+                        selectedExam.duration,
+                        selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0
                       );
                       const examIsCompleted = isExamCompleted(
                         selectedExam.examDate, 
                         selectedExam.examTime, 
                         selectedExam.duration, 
-                        selectedExam.status
+                        selectedExam.status,
+                        selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0
                       );
                       
                       if (examIsCompleted) return 'Completed';
@@ -5937,7 +6301,12 @@ const fetchCounts = async () => {
               </div>
 
               {/* Key Information Grid */}
-              <div className={`grid gap-3 mb-6 px-6 ${actualRightWidth >= 600 ? 'grid-cols-4' : 'grid-cols-2'}`}>
+              {(() => {
+                const hasRegularQuestions = (selectedExam.questionsList?.length || 0) > 0;
+                const hasPool = (selectedExam as any).questionPool?.length > 0 && (selectedExam as any).pickRandomCount > 0;
+                const isPersonalityOnly = selectedExam.personalityAssessment && !hasRegularQuestions && !hasPool;
+                return (
+              <div className={`grid gap-3 mb-6 px-6 ${isPersonalityOnly ? 'grid-cols-3' : (actualRightWidth >= 600 ? 'grid-cols-4' : 'grid-cols-2')}`}>
                 <div 
                   className="rounded-xl p-4 border"
                   style={{ 
@@ -5967,7 +6336,27 @@ const fetchCounts = async () => {
                     </svg>
                     <p className="text-xs font-medium" style={{ color: brandTheme.colors.secondary }}>Duration</p>
                   </div>
-                  <p className="text-lg font-bold text-gray-900">{formatDuration(selectedExam.duration)}</p>
+                  <p className="text-lg font-bold text-gray-900">
+                    {(() => {
+                      const hasRegularQuestions = (selectedExam.questionsList?.length || 0) > 0;
+                      const hasPool = (selectedExam as any).questionPool?.length > 0 && (selectedExam as any).pickRandomCount > 0;
+                      const isPersonalityOnly = selectedExam.personalityAssessment && !hasRegularQuestions && !hasPool;
+                      const examDuration = isPersonalityOnly ? 0 : parseInt(selectedExam.duration) || 0;
+                      const likertDuration = selectedExam.personalityAssessment ? (selectedExam.likertDuration || 0) : 0;
+                      return formatDuration(examDuration + likertDuration);
+                    })()}
+                  </p>
+                  {selectedExam.personalityAssessment && (selectedExam.likertDuration || 0) > 0 && (
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      {(() => {
+                        const hasRegularQuestions = (selectedExam.questionsList?.length || 0) > 0;
+                        const hasPool = (selectedExam as any).questionPool?.length > 0 && (selectedExam as any).pickRandomCount > 0;
+                        const isPersonalityOnly = !hasRegularQuestions && !hasPool;
+                        if (isPersonalityOnly) return `${selectedExam.likertDuration}m assessment only`;
+                        return `${selectedExam.likertDuration}m assessment + ${formatDuration(selectedExam.duration)} exam`;
+                      })()}
+                    </p>
+                  )}
                 </div>
                 <div 
                   className="rounded-xl p-4 border"
@@ -5981,7 +6370,17 @@ const fetchCounts = async () => {
                     <p className="text-xs font-medium" style={{ color: brandTheme.colors.primary }}>Questions</p>
                   </div>
                   <p className="text-lg font-bold text-gray-900">{safeRender(selectedExam.totalQuestions)} Qs</p>
+                  {selectedExam.personalityAssessment && (selectedExam.likertQuestions?.length || 0) > 0 && (
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      {(() => {
+                        const examCount = (selectedExam.totalQuestions || 0) - (selectedExam.likertQuestions?.length || 0);
+                        if (examCount > 0) return `${(selectedExam.likertQuestions?.length || 0)} personality + ${examCount} exam`;
+                        return `${selectedExam.likertQuestions?.length || 0} personality questions`;
+                      })()}
+                    </p>
+                  )}
                 </div>
+                {!isPersonalityOnly && (
                 <div 
                   className="rounded-xl p-4 border"
                   style={{ 
@@ -5995,7 +6394,10 @@ const fetchCounts = async () => {
                   </div>
                   <p className="text-lg font-bold text-gray-900">{safeRender(selectedExam.maxMarks)}</p>
                 </div>
+                )}
               </div>
+                );
+              })()}
 
               
 
@@ -6087,12 +6489,241 @@ const fetchCounts = async () => {
               ) : (
                 // Online Exam - Show Questions List
                 <>
+                  {/* Personality Assessment (Likert) Section */}
+                  {selectedExam.personalityAssessment && selectedExam.likertQuestions && selectedExam.likertQuestions.length > 0 && (
+                    <div className="bg-white p-2 mb-4 px-6">
+                      <div 
+                        className="cursor-pointer select-none"
+                        onClick={() => {
+                          const el = document.getElementById('likert-section-collapse');
+                          if (el) el.classList.toggle('hidden');
+                          const icon = document.getElementById('likert-chevron');
+                          if (icon) icon.classList.toggle('rotate-180');
+                        }}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <h3 className="text-2xl font-semibold text-gray-900 flex items-center space-x-2">
+                            <FontAwesomeIcon icon={faChartBar} className="text-purple-600" />
+                            <span>{(() => { const _hq = (selectedExam.questionsList?.length || 0) > 0; const _hp = !!((selectedExam as any).questionPool?.length > 0 && (selectedExam as any).pickRandomCount > 0); return (_hq || _hp) ? 'Section A — ' : ''; })()}Personality Assessment</span>
+                          </h3>
+                          <div className="flex items-center space-x-3">
+                            <span className="text-xs font-medium text-gray-500 bg-gray-100 px-3 py-1 rounded-full flex items-center space-x-1.5">
+                              <FontAwesomeIcon icon={faClock} className="text-gray-400" />
+                              <span>{selectedExam.likertDuration || 10} min</span>
+                            </span>
+                            <FontAwesomeIcon 
+                              id="likert-chevron"
+                              icon={faChevronDown} 
+                              className="text-gray-400 text-sm transition-transform duration-200" 
+                            />
+                          </div>
+                        </div>
+                        <div className="text-xs font-medium text-gray-500">
+                          Total Questions: {selectedExam.likertQuestions.length} • Big-8 personality traits{((selectedExam.questionsList?.length || 0) > 0 || ((selectedExam as any).questionPool?.length > 0 && (selectedExam as any).pickRandomCount > 0)) ? ' • Completed before the main exam' : ''}
+                        </div>
+                      </div>
+
+                      <div id="likert-section-collapse" className="">
+                        <div className="space-y-4 mt-3">
+                          {selectedExam.likertQuestions.map((q: any, idx: number) => {
+                            const isLikertExpanded = expandedQuestionId === `likert-${q.id || idx}`;
+                            return (
+                            <div 
+                              key={q.id || idx}
+                              className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-200"
+                              onMouseEnter={(e: any) => {
+                                e.currentTarget.style.borderColor = brandTheme.colors.primary;
+                              }}
+                              onMouseLeave={(e: any) => {
+                                e.currentTarget.style.borderColor = '#e5e7eb';
+                              }}
+                            >
+                              {/* Question Header */}
+                              <div className="flex items-start justify-between mb-3">
+                                <div className="flex items-center space-x-3">
+                                  <div
+                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-lg"
+                                    style={{ background: brandTheme.gradients.primary }}
+                                  >
+                                    {idx + 1}
+                                  </div>
+                                  <div>
+                                    <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-purple-100 text-purple-700 mr-2">
+                                      LIKERT
+                                    </span>
+                                    {q.board && (
+                                      <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-purple-100 text-purple-700 mr-2">
+                                        {q.board.toString().toUpperCase()}
+                                      </span>
+                                    )}
+                                    {q.complexity && (
+                                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
+                                        q.complexity === 'easy' ? 'bg-pink-100 text-pink-700' :
+                                        q.complexity === 'medium' ? 'bg-green-100 text-green-700' :
+                                        'bg-cyan-100 text-cyan-700'
+                                      }`}>
+                                        {q.complexity.toUpperCase()}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Question Text */}
+                              <div className="text-sm text-gray-800 mb-3 leading-relaxed">
+                                {q.questionText || q.question_text}
+                              </div>
+
+                              {/* Expanded Likert Detail */}
+                              {isLikertExpanded && (
+                                <div className="mt-3 mb-3 space-y-4">
+                                  <div className="flex items-center space-x-4">
+                                    <div className="flex items-center space-x-2">
+                                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Trait</span>
+                                      <span className="px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm font-semibold">
+                                        {q.likertTrait || q.chapter || '—'}
+                                      </span>
+                                    </div>
+                                    {q.likertDirection && (
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Direction</span>
+                                        <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                                          q.likertDirection === 'positive' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                        }`}>
+                                          {q.likertDirection === 'positive' ? '↑ Positive' : '↓ Reverse'}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div>
+                                    <h4 className="text-base font-semibold text-gray-900 mb-2">Likert Scale</h4>
+                                    <div className="grid grid-cols-5 gap-2">
+                                      {(q.options || ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree']).map((option: string, optIdx: number) => {
+                                        const score = q.correctAnswers?.[optIdx];
+                                        const isHighest = score && Number(score) === 5;
+                                        const isLowest = score && Number(score) === 1;
+                                        return (
+                                          <div 
+                                            key={optIdx}
+                                            className={`rounded-xl p-2.5 text-center border-2 ${
+                                              isHighest ? 'border-green-300 bg-green-50' :
+                                              isLowest ? 'border-red-200 bg-red-50' :
+                                              'border-gray-200 bg-gray-50'
+                                            }`}
+                                          >
+                                            <div className={`text-xl font-bold mb-0.5 ${
+                                              isHighest ? 'text-green-600' :
+                                              isLowest ? 'text-red-500' :
+                                              'text-gray-500'
+                                            }`}>
+                                              {score ?? (optIdx + 1)}
+                                            </div>
+                                            <div className="text-[9px] font-medium text-gray-600 leading-tight">{option}</div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    {q.correctAnswers && (
+                                      <p className="text-[10px] text-gray-400 mt-1.5 mb-2 text-center">
+                                        Score mapping: {q.correctAnswers.join(' → ')}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Footer */}
+                              <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                                <div className="flex items-center space-x-4 text-xs text-gray-500">
+                                  {/* Source Label */}
+                                  <div className="flex items-center space-x-1">
+                                    {q.source === 'custom' ? (
+                                      <div className="flex items-center space-x-1 px-2 py-0.5 rounded-md bg-purple-100 text-purple-700">
+                                        <FontAwesomeIcon icon={faLayerGroup} />
+                                        <span className="font-semibold">Custom</span>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center space-x-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-700">
+                                        <FontAwesomeIcon icon={faBookOpen} />
+                                        <span className="font-semibold">Question Bank</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {q.createdByName && (
+                                    <div className="flex items-center space-x-1">
+                                      <FontAwesomeIcon icon={faUser} />
+                                      <span>Created by: {q.createdByName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')}</span>
+                                    </div>
+                                  )}
+                                  {(() => {
+                                    const qCreatedAt = q.createdAt || selectedExam.createdAt;
+                                    const formatted = qCreatedAt ? formatDate(qCreatedAt) : '';
+                                    return formatted ? (
+                                    <div className="flex items-center space-x-1">
+                                      <FontAwesomeIcon icon={faCalendar} />
+                                      <span>{formatted}</span>
+                                    </div>
+                                    ) : null;
+                                  })()}
+                                </div>
+
+                                <div className="flex items-center space-x-3">
+                                  {q.source === 'custom' || q.isProprietaryQuestion ? (
+                                    <div className="flex items-center space-x-1 px-2 py-1 rounded-md bg-amber-100 text-amber-700">
+                                      <FontAwesomeIcon icon={faTrophy} />
+                                      <span className="text-xs font-semibold">Private</span>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center space-x-1 px-2 py-1 rounded-md bg-green-100 text-green-700">
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="12" cy="12" r="10"/>
+                                        <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+                                        <path d="M2 12h20"/>
+                                      </svg>
+                                      <span className="text-xs font-semibold">Public</span>
+                                    </div>
+                                  )}
+                                  
+                                  <button
+                                    onClick={() => setExpandedQuestionId(isLikertExpanded ? null : `likert-${q.id || idx}`)}
+                                    className="text-xs font-bold px-3 py-1.5 rounded-md transition-colors text-blue-600 hover:bg-blue-50"
+                                  >
+                                    {isLikertExpanded ? 'Hide Details' : 'View Details'}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Questions List - shown only when questionsList has items */}
+                  {(selectedExam.questionsList?.length || 0) > 0 && (
                   <div className="bg-white p-2 mb-6 px-6">
-                  <div className="mb-4">
-                    <h3 className="text-2xl font-semibold text-gray-900 mb-2 flex items-center space-x-2">
+                  <div 
+                    className="mb-4 cursor-pointer select-none"
+                    onClick={() => {
+                      const el = document.getElementById('questions-section-collapse');
+                      if (el) el.classList.toggle('hidden');
+                      const icon = document.getElementById('questions-chevron');
+                      if (icon) icon.classList.toggle('rotate-180');
+                    }}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-2xl font-semibold text-gray-900 flex items-center space-x-2">
                       <FontAwesomeIcon icon={faClipboardList} className="text-gray-600" />
-                      <span>Questions List</span>
+                      <span>{(() => { const _hl = !!(selectedExam.personalityAssessment && (selectedExam.likertQuestions?.length || 0) > 0); const _hp = !!((selectedExam as any).questionPool?.length > 0 && (selectedExam as any).pickRandomCount > 0); if ([_hl, true, _hp].filter(Boolean).length < 2) return ''; return _hl ? 'Section B — ' : 'Section A — '; })()}Questions List</span>
                     </h3>
+                    <FontAwesomeIcon 
+                      id="questions-chevron"
+                      icon={faChevronDown} 
+                      className="text-gray-400 text-sm transition-transform duration-200" 
+                    />
+                    </div>
                     <div className="text-xs font-medium text-gray-500">
                       {(() => {
                         if (!selectedExam.questionsList || selectedExam.questionsList.length === 0) {
@@ -6130,6 +6761,7 @@ const fetchCounts = async () => {
                     </div>
                   </div>
                   
+                  <div id="questions-section-collapse">
                   {selectedExam.questionsList && selectedExam.questionsList.length > 0 ? (
                    <div 
                       className="space-y-4"
@@ -6163,14 +6795,14 @@ const fetchCounts = async () => {
                                     
                                     // Debug logging - check browser console for actual type value
                                     if (hasBlanks || question.type?.toString().toLowerCase().includes('fill')) {
-                                      console.log('🔍 FITB Question Debug:', {
-                                        originalType: question.type,
-                                        typeStr: typeStr,
-                                        hasBlanks: (question as any).blanks?.length || 0,
-                                        hasCorrectAnswers: question.correctAnswers?.length || 0,
-                                        questionTitle: question.title?.substring(0, 50),
-                                        detectedAs: hasBlanks ? 'FITB (by blanks array)' : 'checking type field...'
-                                      });
+                                      // console.log('🔍 FITB Question Debug:', {
+                                        // originalType: question.type,
+                                        // typeStr: typeStr,
+                                        // hasBlanks: (question as any).blanks?.length || 0,
+                                        // hasCorrectAnswers: question.correctAnswers?.length || 0,
+                                        // questionTitle: question.title?.substring(0, 50),
+                                        // detectedAs: hasBlanks ? 'FITB (by blanks array)' : 'checking type field...'
+                                      // });
                                     }
                                     
                                     if (question.type === QUESTION_TYPES.MCQ) return QUESTION_TYPE_LABELS[QUESTION_TYPES.MCQ];
@@ -6205,7 +6837,7 @@ const fetchCounts = async () => {
                                 <button
                                   onClick={() => {
                                     const images = question.imageUrls || [];
-                                    console.log('🖼️ Opening carousel with images:', images);
+                                    // console.log('🖼️ Opening carousel with images:', images);
                                     setCarouselImages(images);
                                     setCurrentImageIndex(0);
                                     setImageCarouselOpen(true);
@@ -6622,8 +7254,71 @@ const fetchCounts = async () => {
                             );
                           })()}
 
+                          {/* ===== LIKERT QUESTIONS - Detail ===== */}
+                          {expandedQuestionId === question.id && question.type === QUESTION_TYPES.LIKERT && (
+                            <div className="mt-4 space-y-4">
+                              {/* Trait & Direction */}
+                              <div className="flex items-center space-x-4">
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Trait</span>
+                                  <span className="px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm font-semibold">
+                                    {(question as any).likertTrait || (question as any).chapter || '—'}
+                                  </span>
+                                </div>
+                                {(question as any).likertDirection && (
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Direction</span>
+                                    <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                                      (question as any).likertDirection === 'positive' 
+                                        ? 'bg-green-100 text-green-700' 
+                                        : 'bg-amber-100 text-amber-700'
+                                    }`}>
+                                      {(question as any).likertDirection === 'positive' ? '↑ Positive' : '↓ Reverse'}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Likert Scale Options with Scoring */}
+                              <div>
+                                <h2 className="text-lg font-bold text-gray-900 mb-3">Likert Scale</h2>
+                                <div className="grid grid-cols-5 gap-2">
+                                  {((question as any).options || ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree']).map((option: string, idx: number) => {
+                                    const score = (question as any).correctAnswers?.[idx];
+                                    const isHighest = score && Number(score) === 5;
+                                    const isLowest = score && Number(score) === 1;
+                                    return (
+                                      <div 
+                                        key={idx}
+                                        className={`rounded-xl p-3 text-center border-2 transition-all ${
+                                          isHighest ? 'border-green-300 bg-green-50' :
+                                          isLowest ? 'border-red-200 bg-red-50' :
+                                          'border-gray-200 bg-gray-50'
+                                        }`}
+                                      >
+                                        <div className={`text-2xl font-bold mb-1 ${
+                                          isHighest ? 'text-green-600' :
+                                          isLowest ? 'text-red-500' :
+                                          'text-gray-500'
+                                        }`}>
+                                          {score ?? (idx + 1)}
+                                        </div>
+                                        <div className="text-[10px] font-medium text-gray-600 leading-tight">{option}</div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                {(question as any).correctAnswers && (
+                                  <p className="text-xs text-gray-400 mt-2 mb-4 text-center">
+                                    Score mapping: {(question as any).correctAnswers.join(' → ')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                           {/* ===== NON-CODE/SQL QUESTIONS - Chapter ===== */}
-                          {expandedQuestionId === question.id && question.type !== 'code' && question.type !== QUESTION_TYPES.SQL && 'chapter' in question && question.chapter && (
+                          {expandedQuestionId === question.id && question.type !== 'code' && question.type !== QUESTION_TYPES.SQL && question.type !== QUESTION_TYPES.LIKERT && 'chapter' in question && question.chapter && (
                             <div className="mt-3">
                               <h2 className="text-lg font-bold text-gray-900 mb-2">Chapter</h2>
                               <p className="text-sm text-gray-900">{(question as any).chapter}</p>
@@ -7190,6 +7885,12 @@ const fetchCounts = async () => {
                                   </div>
                                 )}
                               </div>
+                              {(question as any).createdByName && (
+                                <div className="flex items-center space-x-1">
+                                  <FontAwesomeIcon icon={faUser} />
+                                  <span>Created by: {(question as any).createdByName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')}</span>
+                                </div>
+                              )}
                               {(() => {
                                 const qCreatedAt = question.createdAt || (question as any).createdAt || selectedExam.createdAt;
                                 const formatted = qCreatedAt ? formatDate(qCreatedAt) : '';
@@ -7258,22 +7959,43 @@ const fetchCounts = async () => {
                       </button>
                     </div>
                   )}
+                  </div>
                 </div>
+                )}
 
                 {/* Question Pool Section */}
                 {selectedExam.questionPool && Array.isArray(selectedExam.questionPool) && selectedExam.questionPool.length > 0 && selectedExam.pickRandomCount && selectedExam.pickRandomCount > 0 ? (
                   <div className="bg-white p-5 mb-6 mx-6 rounded-xl border-2 border-purple-200 shadow-md">
+                    <div 
+                      className="cursor-pointer select-none"
+                      onClick={() => {
+                        const el = document.getElementById('pool-section-collapse');
+                        if (el) el.classList.toggle('hidden');
+                        const icon = document.getElementById('pool-chevron');
+                        if (icon) icon.classList.toggle('rotate-180');
+                      }}
+                    >
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-bold text-gray-900 flex items-center space-x-2">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center shadow-md">
                           <FontAwesomeIcon icon={faLayerGroup} className="text-white text-lg" />
                         </div>
-                        <span>Question Pool Configuration</span>
+                        <span>{(() => { const _hl = !!(selectedExam.personalityAssessment && (selectedExam.likertQuestions?.length || 0) > 0); const _hq = (selectedExam.questionsList?.length || 0) > 0; if ([_hl, _hq, true].filter(Boolean).length < 2) return ''; if (_hl && _hq) return 'Section C — '; if (_hl || _hq) return 'Section B — '; return 'Section A — '; })()}Question Pool</span>
                       </h3>
+                      <div className="flex items-center space-x-3">
                       <div className="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-xs font-bold">
                         Random Selection
                       </div>
+                      <FontAwesomeIcon 
+                        id="pool-chevron"
+                        icon={faChevronDown} 
+                        className="text-gray-400 text-sm transition-transform duration-200" 
+                      />
+                      </div>
                     </div>
+                    </div>
+
+                    <div id="pool-section-collapse">
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       {/* Total Questions in Pool */}
@@ -7367,6 +8089,7 @@ const fetchCounts = async () => {
                       <p className="text-xs text-blue-800 leading-relaxed">
                         <strong>Random Selection:</strong> Each student will receive a unique set of {selectedExam.pickRandomCount || 0} questions randomly selected from a pool of {selectedExam.questionPool.length} questions, with each question worth {selectedExam.poolQuestionMarks || 0} marks. This ensures fair and varied assessment.
                       </p>
+                    </div>
                     </div>
                   </div>
                 ) : null}
@@ -7680,6 +8403,44 @@ const fetchCounts = async () => {
                   highlightUserId={highlightUserId}
                   onCountsChange={refreshCounts}
                 />
+            ) : !selectedClassForUsers && activeItem === ACTIVE_ITEMS.USERS ? (
+                <div className="flex flex-col items-center justify-center h-full text-center px-8">
+                  <div className="relative mb-6">
+                    <div className="w-28 h-28 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%)' }}>
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#6366F1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                      </svg>
+                    </div>
+                    <div className="absolute -top-1 -right-1 w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+                      </svg>
+                    </div>
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">No Class Selected</h3>
+                  <p className="text-sm text-gray-500 max-w-xs leading-relaxed">
+                    Select a class from the list to view and manage its students, teachers, and other users.
+                  </p>
+                  <div className="flex items-center gap-4 mt-6 text-xs text-gray-400">
+                    <span className="flex items-center gap-1.5">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                      Students
+                    </span>
+                    <span className="text-gray-300">•</span>
+                    <span className="flex items-center gap-1.5">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                      Teachers
+                    </span>
+                    <span className="text-gray-300">•</span>
+                    <span className="flex items-center gap-1.5">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                      Settings
+                    </span>
+                  </div>
+                </div>
             ) : activeItem === ACTIVE_ITEMS.HALLTICKETS ? (
                 <HallTicketsList
                   selectedHallTicketGroup={selectedHallTicket}
@@ -8307,7 +9068,7 @@ const fetchCounts = async () => {
       activeCollegeName={getActiveCollegeName() || ''}
       currentUser={currentUser}
       onQuestionAdded={() => {
-        console.log('✅ Question added, refreshing list...');
+        // console.log('✅ Question added, refreshing list...');
         // Refresh counts to update menu
         refreshCounts();
         // Increment refresh trigger to reload Questions component stats
@@ -8327,7 +9088,7 @@ const fetchCounts = async () => {
       collegeData={collegeData}
       onUploadComplete={() => {
         // Refresh questions list
-        console.log('✅ Questions uploaded successfully!');
+        // console.log('✅ Questions uploaded successfully!');
         // Refresh counts to update menu
         refreshCounts();
         // Trigger Questions component to refresh
@@ -8341,7 +9102,7 @@ const fetchCounts = async () => {
       onClose={() => setIsCreateUserModalOpen(false)}
       activeCollegeId={getActiveCollegeId() || ''}
       onUserAdded={() => {
-        console.log('✅ User added, refreshing list...');
+        // console.log('✅ User added, refreshing list...');
         // Refresh counts to update menu
         refreshCounts();
         // Trigger Classes component refresh
@@ -8357,7 +9118,7 @@ const fetchCounts = async () => {
       currentUser={currentUser}
       selectedCollege={selectedCollege}
       onPathCreated={() => {
-        console.log('✅ Learning path created');
+        // console.log('✅ Learning path created');
         setIsCreateLearningPathModalOpen(false);
       }}
     />
@@ -8581,10 +9342,10 @@ const fetchCounts = async () => {
                       const nextExamIndex = deletedExamIndex < remainingExams.length 
                         ? deletedExamIndex 
                         : remainingExams.length - 1;
-                      setSelectedExam(remainingExams[nextExamIndex]);
+                      setSelectedExamSafe(remainingExams[nextExamIndex]);
                     } else {
                       // No exams left, clear selection
-                      setSelectedExam(null);
+                      setSelectedExamSafe(null);
                     }
                     
                     // Show success message
@@ -8759,7 +9520,7 @@ const fetchCounts = async () => {
           );
         }}
         onNavigateToProfile={() => {
-          console.log('🔄 Navigating to profile settings...');
+          // console.log('🔄 Navigating to profile settings...');
           
           // Close the proctoring dialog
           setShowProctoringSetupDialog(false);
@@ -8778,13 +9539,13 @@ const fetchCounts = async () => {
           // Close any exam interfaces
           setShowExamInterface(false);
           setActiveExam(null);
-          setSelectedExam(null);
+          setSelectedExamSafe(null);
           
           // Navigate to profile settings
-          console.log('📍 Setting activeItem to: profile');
+          // console.log('📍 Setting activeItem to: profile');
           setActiveItem('profile');
           
-          console.log('✅ Navigation complete');
+          // console.log('✅ Navigation complete');
         }}
         onRefreshUser={async () => {
           // Reload current user from Firestore
@@ -8793,7 +9554,7 @@ const fetchCounts = async () => {
               const refreshedUser = await firebaseService.getUserById(currentUser.userId);
               if (refreshedUser) {
                 setCurrentUser(refreshedUser);
-                console.log('✅ User data refreshed');
+                // console.log('✅ User data refreshed');
               }
             } catch (error) {
               console.error('❌ Failed to refresh user:', error);
@@ -9093,6 +9854,30 @@ const fetchCounts = async () => {
                 </div>
               </div>
             </div>
+
+            {/* Installation Guides */}
+            <div className="mt-4 p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-100">
+              <div className="flex items-center justify-between">
+                <div className="flex items-start space-x-3">
+                  <div className="flex-shrink-0 w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <FontAwesomeIcon icon={faFileLines} className="text-purple-600 text-sm" />
+                  </div>
+                  <div>
+                    <h5 className="text-[12px] font-semibold text-gray-900 mb-0.5">macOS Installation Guide</h5>
+                    <p className="text-[11px] text-gray-500">Step-by-step setup instructions for Mac users</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleDownloadGuide('Mac_Installation_Guide.pdf', 'Mac Installation Guide')}
+                  className="flex-shrink-0 ml-3 inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-lg text-[11px] font-semibold shadow-sm hover:shadow-md transition-all duration-200"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  PDF
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Footer */}
@@ -9259,7 +10044,7 @@ const fetchCounts = async () => {
       currentUser={currentUser}
       onUploadComplete={() => {
         // Refresh colleges list to show newly added universities
-        console.log('✅ University upload complete - refreshing colleges list...');
+        // console.log('✅ University upload complete - refreshing colleges list...');
         loadColleges();
       }}
     />
@@ -9278,4 +10063,4 @@ const fetchCounts = async () => {
     </BrandProvider>
   );
 }
-export default App;
+export default AppRouter;

@@ -531,7 +531,6 @@ const [isSubmitting, setIsSubmitting] = useState(false);
       }`}>
         <div 
           className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"
-          onClick={onClose}
         />
         
         <div 

@@ -29,7 +29,6 @@ import {
   addDoc, 
   getDoc, 
   getDocs,
-  getDocsFromServer,
   getCountFromServer,
   setDoc, 
   updateDoc, 
@@ -201,7 +200,11 @@ function createQuestionInputToQuestion(input: CreateQuestionInput): Partial<Ques
     // SQL-specific fields
     sqlSchema: input.sql_schema,
     sqlTestCases: input.sql_test_cases,
-  };
+
+    // Likert-specific fields
+    likertTrait: (input as any).likertTrait,
+    likertDirection: (input as any).likertDirection,
+  } as Partial<QuestionBankItem>;
 }
 
 function validateQuestionData(questionData: Partial<QuestionBankItem>): { valid: boolean; errors: string[] } {
@@ -345,15 +348,22 @@ interface ExamDashboardData {
     subject: string;
     class: string;
     duration: number;
+    likertDuration?: number;
+    personalityAssessment?: boolean;
+    likertQuestions?: any[];
     totalMarks: number;
     passingMarks: number;
     totalQuestions: number;
+    examDate?: any;
+    examTime?: any;
     startDate: Date;
     endDate: Date;
   };
   presentStudents: DashboardStudent[];
   absentStudents: DashboardStudent[];
   totalStudents: number;
+  totalPresentCount: number;
+  totalAbsentCount: number;
   attempts: StudentExamAttempt[];
 }
 
@@ -361,6 +371,7 @@ interface DashboardStudent {
   studentId: string;
   studentName: string;
   studentEmail: string;
+  studentPhone?: string;
   rollNumber: string;
   class: string;
   hasAttempt: boolean;
@@ -485,6 +496,7 @@ export interface StudentExamAttempt {
   examId: string;
   studentId: string;
   studentName: string;
+  studentPhone?: string;
   studentEmail: string;
   rollNumber: string;
   class: string;
@@ -573,6 +585,7 @@ export interface StudentQuestionResponse {
   lastEvaluationAttempt?: Date;
   evaluationError?: string;
   pool?: boolean;  // Flag to indicate if question is from question pool
+  programmingLanguage?: string;  // Student's selected language for code/sql questions
   createdAt: Date;
   updatedAt: Date;
 }
@@ -1005,6 +1018,10 @@ export interface ExamModel {
   // New: Class-independent exam fields
   enrolledClasses?: string[]; // Classes from which students are enrolled (for display/filtering)
   enrolledStudentIds?: string[]; // Only used for small exams (<500 students) for quick access
+  // Personality Assessment (Likert) fields
+  personalityAssessment?: boolean;
+  likertQuestions?: any[];
+  likertDuration?: number;
 }
 
 export interface ExamEnrollmentModel {
@@ -1115,6 +1132,10 @@ export interface QuestionBankItem {
     expected_output: { columns: string[]; rows: string[][] };
     marks: number;
   }>;
+
+  // Likert specific fields
+  likertTrait?: string;
+  likertDirection?: string;
 }
 
 export interface SubjectQuestionStats {
@@ -1134,6 +1155,7 @@ export interface SubjectQuestionStats {
   descriptiveCount: number;
   codeCount: number;
   sqlCount: number;
+  likertCount: number;
 }
 // ==================== TYPE DEFINITIONS ====================
 
@@ -1362,7 +1384,7 @@ class FirebaseService {
     try {
       if (!this.storage) throw new Error('Firebase Storage not initialized');
 
-      console.log(`📤 Uploading proctoring evidence for ${violationType}...`);
+      // console.log(`📤 Uploading proctoring evidence for ${violationType}...`);
 
       const timestamp = Date.now();
       
@@ -1392,7 +1414,7 @@ class FirebaseService {
       
       // Get URL
       const downloadURL = await getDownloadURL(storageRef);
-      console.log(`✅ Evidence uploaded (${fileExtension}):`, downloadURL);
+      // console.log(`✅ Evidence uploaded (${fileExtension}):`, downloadURL);
       
       return downloadURL;
 
@@ -1424,12 +1446,27 @@ async startExamAttempt(
 ): Promise<StudentExamAttempt> {
   if (!this.firestore) throw new Error('Firestore not initialized');
 
+  // ✅ GUARD: Block non-students from creating exam attempt records in DB
+  try {
+    const userDoc = await getDoc(doc(this.firestore, COLLECTIONS.USERS, student.userId));
+    if (userDoc.exists()) {
+      const userType = userDoc.data().userType;
+      if (userType && userType !== USER_TYPES.STUDENT) {
+        // console.warn(`🚫 Non-student (${userType}) attempted to create exam attempt — blocked.`);
+        throw new Error('NON_STUDENT_BLOCKED');
+      }
+    }
+  } catch (err: any) {
+    if (err.message === 'NON_STUDENT_BLOCKED') throw err;
+    console.error('⚠️ Could not verify userType before attempt creation:', err);
+  }
+
   // 🔥 FIX: Create unique key for this student + exam combo
   const attemptKey = `${examId}_${student.userId}`;
 
   // 🔥 FIX: If we're already creating this attempt, wait for it
   if (this.creatingAttempts.has(attemptKey)) {
-    console.log('⏳ Attempt creation already in progress, waiting for existing creation...');
+    // console.log('⏳ Attempt creation already in progress, waiting for existing creation...');
     return this.creatingAttempts.get(attemptKey)!;
   }
 
@@ -1450,7 +1487,7 @@ async startExamAttempt(
     // Clean up after 5 seconds to prevent memory leaks
     setTimeout(() => {
       this.creatingAttempts.delete(attemptKey);
-      console.log('🧹 Cleaned up attempt creation lock for:', attemptKey);
+      // console.log('🧹 Cleaned up attempt creation lock for:', attemptKey);
     }, 5000);
   }
 }
@@ -1479,28 +1516,32 @@ private async _createAttemptInternal(
   if (!this.firestore) throw new Error('Firestore not initialized');
 
   // ✅ FIX: If roll number is missing or "N/A", fetch from user document
+  // ✅ Always fetch user document for rollNumber, studentClass, phone
   let rollNumber = student.rollNumber;
-  if (!rollNumber || rollNumber.trim() === '' || rollNumber === 'N/A') {
-    console.log('🔍 Roll number missing or N/A, fetching from user document...');
-    try {
-      const userDoc = await getDoc(doc(this.firestore, COLLECTIONS.USERS, student.userId));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
+  let studentClass = student.class || '';
+  let studentPhone = '';
+  try {
+    const userDoc = await getDoc(doc(this.firestore, COLLECTIONS.USERS, student.userId));
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      if (!rollNumber || rollNumber.trim() === '' || rollNumber === 'N/A') {
         rollNumber = userData.rollNumber || userData.studentRoll || 'N/A';
-        console.log('✅ Fetched roll number from user document:', rollNumber);
-      } else {
-        console.warn('⚠️ User document not found, keeping roll number as:', rollNumber);
       }
-    } catch (error) {
-      console.error('❌ Error fetching roll number:', error);
-      rollNumber = student.rollNumber || 'N/A';
+      if (!studentClass || studentClass.trim() === '') {
+        studentClass = userData.studentClass || userData.class || '';
+      }
+      studentPhone = userData.phone || userData.phoneRaw || '';
+      // console.log('✅ Fetched user data: roll=', rollNumber, 'class=', studentClass, 'phone=', studentPhone ? 'yes' : 'no');
     }
+  } catch (error) {
+    console.error('⚠️ Error fetching user document:', error);
+    rollNumber = student.rollNumber || 'N/A';
   }
 
   // 🔥 PREVENT DUPLICATES: Check if an active attempt already exists
   const existingAttempt = await this.getActiveAttempt(examId, student.userId);
   if (existingAttempt) {
-    console.log('⚠️ Active attempt already exists, returning existing:', existingAttempt.attemptId);
+    // console.log('⚠️ Active attempt already exists, returning existing:', existingAttempt.attemptId);
     return existingAttempt;
   }
 
@@ -1517,7 +1558,8 @@ private async _createAttemptInternal(
     studentName: student.fullName,
     studentEmail: student.email,
     rollNumber: rollNumber,  // ✅ Use fetched roll number
-    class: student.class,
+    class: studentClass || student.class,
+    studentPhone: studentPhone,
     board: exam.board,
     
     // Exam context
@@ -1592,8 +1634,31 @@ private async _createAttemptInternal(
 
   await setDoc(doc(this.firestore, COLLECTIONS.EXAM_ATTEMPTS, attemptId), attempt);
   
-  console.log('✅ Exam attempt started:', attemptId);
+  // console.log('✅ Exam attempt started:', attemptId);
   return attempt;
+}
+
+/**
+ * Save the pool question IDs that were presented to the student.
+ * Called once after pool questions are selected, so grading can know exactly
+ * which questions were shown (even if the student never answered them).
+ */
+async savePoolQuestionIds(attemptId: string, poolQuestionIds: string[], poolQuestionMarks: number): Promise<void> {
+  try {
+    if (!this.firestore) {
+      // console.warn('⚠️ Firestore not initialized');
+      return;
+    }
+    const attemptRef = doc(this.firestore, COLLECTIONS.EXAM_ATTEMPTS, attemptId);
+    await updateDoc(attemptRef, {
+      poolQuestionIds,
+      poolQuestionMarks,
+      updatedAt: new Date()
+    });
+    // console.log(`✅ Saved ${poolQuestionIds.length} pool question IDs (${poolQuestionMarks} marks each) to attempt ${attemptId}`);
+  } catch (error) {
+    console.error('❌ Error saving pool question IDs:', error);
+  }
 }
 
 /**
@@ -1602,7 +1667,7 @@ private async _createAttemptInternal(
 async logEnterActivity(attemptId: string, ipAddress: string): Promise<void> {
   try {
     if (!this.firestore) {
-      console.warn('⚠️ Firestore not initialized');
+      // console.warn('⚠️ Firestore not initialized');
       return;
     }
 
@@ -1610,7 +1675,7 @@ async logEnterActivity(attemptId: string, ipAddress: string): Promise<void> {
     const attemptDoc = await getDoc(attemptRef);
     
     if (!attemptDoc.exists()) {
-      console.warn('⚠️ Attempt not found');
+      // console.warn('⚠️ Attempt not found');
       return;
     }
 
@@ -1630,7 +1695,7 @@ async logEnterActivity(attemptId: string, ipAddress: string): Promise<void> {
     });
 
     if (recentEnter) {
-      console.log('⏭️ Recent enter activity found (within 10s), skipping duplicate');
+      // console.log('⏭️ Recent enter activity found (within 10s), skipping duplicate');
       return;
     }
 
@@ -1645,7 +1710,7 @@ async logEnterActivity(attemptId: string, ipAddress: string): Promise<void> {
       updatedAt: now
     });
 
-    console.log('✅ Enter activity logged for attempt:', attemptId);
+    // console.log('✅ Enter activity logged for attempt:', attemptId);
   } catch (error) {
     console.error('❌ Error logging enter activity:', error);
   }
@@ -1702,11 +1767,11 @@ async getAnyAttempt(examId: string, studentId: string): Promise<StudentExamAttem
 async checkSubmittedExams(examIds: string[], studentId: string): Promise<Record<string, boolean>> {
   if (!this.firestore) throw new Error('Firestore not initialized');
   
-  console.log('🔍 [checkSubmittedExams] Checking submissions for:', {
-    studentId,
-    examCount: examIds.length,
-    examIds
-  });
+  // console.log('🔍 [checkSubmittedExams] Checking submissions for:', {
+        // studentId,
+        // examCount: examIds.length,
+        // examIds
+    // });
   
   const submittedMap: Record<string, boolean> = {};
   
@@ -1725,24 +1790,28 @@ async checkSubmittedExams(examIds: string[], studentId: string): Promise<Record<
     
     const snapshot = await getDocs(q);
     
-    console.log('🔍 [checkSubmittedExams] Found attempts:', snapshot.size);
+    // console.log('🔍 [checkSubmittedExams] Found attempts:', snapshot.size);
     
     snapshot.docs.forEach(doc => {
       const attempt = doc.data() as StudentExamAttempt;
+      const attemptStatus = attempt.status as string;
       const isSubmitted = !!(
         attempt.submitTime || 
-        attempt.status === 'submitted' || 
-        attempt.status === 'evaluated' || 
-        attempt.status === 'under_review'
+        attemptStatus === 'submitted' || 
+        attemptStatus === 'auto_submitted' ||
+        attemptStatus === 'evaluated' || 
+        attemptStatus === 'under_review' ||
+        attemptStatus === 'expired' ||
+        attemptStatus === 'timeout'
       );
       
       if (isSubmitted) {
         submittedMap[attempt.examId] = true;
-        console.log('✅ [checkSubmittedExams] Exam submitted:', {
-          examId: attempt.examId,
-          status: attempt.status,
-          submitTime: attempt.submitTime
-        });
+        // console.log('✅ [checkSubmittedExams] Exam submitted:', {
+                    // examId: attempt.examId,
+                    // status: attempt.status,
+                    // submitTime: attempt.submitTime
+                // });
       }
     });
     
@@ -1753,7 +1822,7 @@ async checkSubmittedExams(examIds: string[], studentId: string): Promise<Record<
       Object.assign(submittedMap, remainingMap);
     }
     
-    console.log('📊 [checkSubmittedExams] Final result:', submittedMap);
+    // console.log('📊 [checkSubmittedExams] Final result:', submittedMap);
     return submittedMap;
   } catch (error) {
     console.error('❌ [checkSubmittedExams] Error:', error);
@@ -1772,7 +1841,7 @@ async checkSubmittedExams(examIds: string[], studentId: string): Promise<Record<
 async searchAll(
   searchTerm: string,
   collegeId?: string,
-  searchAllColleges: boolean = false
+  _searchAllColleges: boolean = false
 ): Promise<{
   users: Array<{
     id: string;
@@ -1806,7 +1875,7 @@ async searchAll(
   }
 
   try {
-    console.log('🔍 [SEARCH_ALL] Starting search for:', term, 'collegeId:', collegeId, 'searchAllColleges:', searchAllColleges);
+    // console.log('🔍 [SEARCH_ALL] Starting search for:', term, 'collegeId:', collegeId, 'searchAllColleges:', searchAllColleges);
     
     // Run all searches in parallel
     const [users, exams, questions] = await Promise.all([
@@ -1815,13 +1884,13 @@ async searchAll(
       this.searchQuestionsForGlobalSearch(term, collegeId)
     ]);
 
-    console.log('✅ [SEARCH_ALL] Results:', {
-      users: users.length,
-      exams: exams.length,
-      questions: questions.length
-    });
+    // console.log('✅ [SEARCH_ALL] Results:', {
+            // users: users.length,
+            // exams: exams.length,
+            // questions: questions.length
+        // });
     
-    console.log('📊 [SEARCH_ALL] User results structure:', users);
+    // console.log('📊 [SEARCH_ALL] User results structure:', users);
 
     return { users, exams, questions };
   } catch (error) {
@@ -1847,13 +1916,13 @@ private async searchUsersForGlobalSearch(
 }>> {
   try {
     if (!this.isInitialized() || !this.firestore) {
-      console.warn('⚠️ Firebase not initialized');
+      // console.warn('⚠️ Firebase not initialized');
       return [];
     }
 
     // ✅ PRIVACY: Only search own college users
     if (!collegeId) {
-      console.warn('⚠️ [USER_SEARCH] No collegeId provided - returning empty results');
+      // console.warn('⚠️ [USER_SEARCH] No collegeId provided - returning empty results');
       return [];
     }
 
@@ -1866,12 +1935,12 @@ private async searchUsersForGlobalSearch(
       where('collegeId', '==', collegeId)
     ];
     
-    console.log(`🔍 [USER_SEARCH] Searching users from college: ${collegeId}`);
+    // console.log(`🔍 [USER_SEARCH] Searching users from college: ${collegeId}`);
     
     const q = query(usersRef, ...constraints);
     const snapshot = await getDocs(q);
     
-    console.log(`🔍 [USER_SEARCH] Found ${snapshot.size} active users to search through`);
+    // console.log(`🔍 [USER_SEARCH] Found ${snapshot.size} active users to search through`);
     
     snapshot.forEach((doc) => {
       const data = doc.data();
@@ -1898,14 +1967,14 @@ private async searchUsersForGlobalSearch(
         searchablePhone.includes(cleanSearchTerm) ||
         searchableParentPhone.includes(cleanSearchTerm)
       ) {
-        console.log(`✅ [SEARCH] Match found:`, {
-          id: doc.id,
-          fullName,
-          email,
-          studentRoll,
-          phone,
-          userType: data.userType
-        });
+        // console.log(`✅ [SEARCH] Match found:`, {
+                    // id: doc.id,
+                    // fullName,
+                    // email,
+                    // studentRoll,
+                    // phone,
+                    // userType: data.userType
+                // });
         
         // Build subtitle with email and phone
         let subtitle = '';
@@ -1945,7 +2014,7 @@ private async searchUsersForGlobalSearch(
       }
     });
 
-    console.log(`🎯 [SEARCH] Returning ${results.length} user results`);
+    // console.log(`🎯 [SEARCH] Returning ${results.length} user results`);
 
     // Sort by relevance
     return results
@@ -1987,13 +2056,13 @@ private async searchExamsForGlobalSearch(
 }>> {
   try {
     if (!this.isInitialized() || !this.firestore) {
-      console.warn('⚠️ Firebase not initialized');
+      // console.warn('⚠️ Firebase not initialized');
       return [];
     }
 
     // ✅ PRIVACY: Only search own college exams
     if (!collegeId) {
-      console.warn('⚠️ [EXAM_SEARCH] No collegeId provided - returning empty results');
+      // console.warn('⚠️ [EXAM_SEARCH] No collegeId provided - returning empty results');
       return [];
     }
 
@@ -2006,12 +2075,12 @@ private async searchExamsForGlobalSearch(
       orderBy('createdAt', 'desc')
     ];
     
-    console.log(`🔍 [EXAM_SEARCH] Searching exams from college: ${collegeId}`);
+    // console.log(`🔍 [EXAM_SEARCH] Searching exams from college: ${collegeId}`);
     
     const q = query(examsRef, ...constraints);
     const snapshot = await getDocs(q);
     
-    console.log(`🔍 [EXAM_SEARCH] Found ${snapshot.size} exams to search through`);
+    // console.log(`🔍 [EXAM_SEARCH] Found ${snapshot.size} exams to search through`);
     
     snapshot.forEach((doc) => {
       const data = doc.data();
@@ -2027,12 +2096,12 @@ private async searchExamsForGlobalSearch(
         subject.includes(searchTerm) ||
         examType.includes(searchTerm)
       ) {
-        console.log(`✅ [EXAM_SEARCH] Exam match:`, {
-          id: doc.id,
-          title: data.title,
-          class: data.class,
-          subject: data.subject
-        });
+        // console.log(`✅ [EXAM_SEARCH] Exam match:`, {
+                    // id: doc.id,
+                    // title: data.title,
+                    // class: data.class,
+                    // subject: data.subject
+                // });
         
         results.push({
           id: doc.id,
@@ -2046,7 +2115,7 @@ private async searchExamsForGlobalSearch(
       }
     });
 
-    console.log(`🎯 [SEARCH] Returning ${results.length} exam results`);
+    // console.log(`🎯 [SEARCH] Returning ${results.length} exam results`);
 
     // Sort by relevance and date
     return results
@@ -2084,12 +2153,12 @@ private async searchQuestionsForGlobalSearch(
 }>> {
   try {
     if (!this.isInitialized() || !this.firestore) {
-      console.warn('⚠️ Firebase not initialized');
+      // console.warn('⚠️ Firebase not initialized');
       return [];
     }
 
-    console.log('🔍 [QUESTION_SEARCH] Starting search for:', searchTerm, 'collegeId:', collegeId);
-    console.log('🔍 [QUESTION_SEARCH] Privacy: Public questions + Own college private questions');
+    // console.log('🔍 [QUESTION_SEARCH] Starting search for:', searchTerm, 'collegeId:', collegeId);
+    // console.log('🔍 [QUESTION_SEARCH] Privacy: Public questions + Own college private questions');
 
     const results: Array<any> = [];
     const questionsRef = collection(this.firestore!, COLLECTIONS.QUESTION_BANK);
@@ -2100,9 +2169,9 @@ private async searchQuestionsForGlobalSearch(
     };
     
     // Fetch ALL questions (we'll filter by privacy in code)
-    console.log('🔍 [QUESTION_SEARCH] Fetching ALL questions from database...');
+    // console.log('🔍 [QUESTION_SEARCH] Fetching ALL questions from database...');
     const snapshot = await getDocs(questionsRef);
-    console.log('🔍 [QUESTION_SEARCH] Found', snapshot.size, 'total questions in database');
+    // console.log('🔍 [QUESTION_SEARCH] Found', snapshot.size, 'total questions in database');
     
     let matchCount = 0;
     let sampleCount = 0;
@@ -2132,16 +2201,16 @@ private async searchQuestionsForGlobalSearch(
       // Log first 5 questions for debugging (regardless of match)
       if (sampleCount < 5) {
         sampleCount++;
-        console.log(`🔍 [QUESTION_SEARCH] Sample question #${sampleCount}:`, {
-          id: doc.id,
-          questionTextStripped: questionText.substring(0, 100),
-          subject,
-          class: className,
-          collegeId: data.collegeId,
-          isPublic,
-          isOwnCollege,
-          searchTerm: searchTerm
-        });
+        // console.log(`🔍 [QUESTION_SEARCH] Sample question #${sampleCount}:`, {
+                    // id: doc.id,
+                    // questionTextStripped: questionText.substring(0, 100),
+                    // subject,
+                    // class: className,
+                    // collegeId: data.collegeId,
+                    // isPublic,
+                    // isOwnCollege,
+                    // searchTerm: searchTerm
+                // });
       }
       
       // Check if search term matches
@@ -2153,33 +2222,33 @@ private async searchQuestionsForGlobalSearch(
       
       // Log detailed matching info for first question
       if (sampleCount === 1) {
-        console.log('🔍 [QUESTION_SEARCH] Detailed match check for first question:', {
-          searchTerm: `"${searchTerm}"`,
-          questionText: `"${questionText.substring(0, 150)}"`,
-          matchesQuestionText,
-          matchesSubject,
-          matchesClass,
-          matchesChapter,
-          matchesTags,
-          tags
-        });
+        // console.log('🔍 [QUESTION_SEARCH] Detailed match check for first question:', {
+                    // searchTerm: `"${searchTerm}"`,
+                    // questionText: `"${questionText.substring(0, 150)}"`,
+                    // matchesQuestionText,
+                    // matchesSubject,
+                    // matchesClass,
+                    // matchesChapter,
+                    // matchesTags,
+                    // tags
+                // });
       }
       
       if (matchesQuestionText || matchesSubject || matchesClass || matchesChapter || matchesTags) {
         matchCount++;
         
         if (matchCount <= 5) {
-          console.log('✅ [QUESTION_SEARCH] Match found:', {
-            id: doc.id,
-            matchType: matchesQuestionText ? 'questionText' : 
-                       matchesSubject ? 'subject' :
-                       matchesClass ? 'class' :
-                       matchesChapter ? 'chapter' : 'tags',
-            questionPreview: questionText.substring(0, 80),
-            collegeId: data.collegeId,
-            isPublic,
-            isOwnCollege
-          });
+          // console.log('✅ [QUESTION_SEARCH] Match found:', {
+                        // id: doc.id,
+                        // matchType: matchesQuestionText ? 'questionText' : 
+                                              // matchesSubject ? 'subject' :
+                                              // matchesClass ? 'class' :
+                                              // matchesChapter ? 'chapter' : 'tags',
+                        // questionPreview: questionText.substring(0, 80),
+                        // collegeId: data.collegeId,
+                        // isPublic,
+                        // isOwnCollege
+                    // });
         }
         
         // Show college info if from different college
@@ -2200,20 +2269,20 @@ private async searchQuestionsForGlobalSearch(
       }
     });
 
-    console.log('🎯 [QUESTION_SEARCH] Search complete:', {
-      totalQuestionsSearched: snapshot.size,
-      skippedPrivate: skippedPrivate,
-      matchesFound: matchCount,
-      rawResultsCount: results.length,
-      searchTerm: `"${searchTerm}"`,
-      collegeId: collegeId
-    });
+    // console.log('🎯 [QUESTION_SEARCH] Search complete:', {
+            // totalQuestionsSearched: snapshot.size,
+            // skippedPrivate: skippedPrivate,
+            // matchesFound: matchCount,
+            // rawResultsCount: results.length,
+            // searchTerm: `"${searchTerm}"`,
+            // collegeId: collegeId
+        // });
     
     // Log first few results to check for duplicates
     if (results.length > 0) {
-      console.log('🔍 [QUESTION_SEARCH] First 5 raw results:');
-      results.slice(0, 5).forEach((r, idx) => {
-        console.log(`   ${idx + 1}. ID: ${r.id}, Title: ${r.title.substring(0, 50)}`);
+      // console.log('🔍 [QUESTION_SEARCH] First 5 raw results:');
+      results.slice(0, 5).forEach((_r, _idx) => {
+        // console.log(`   ${idx + 1}. ID: ${r.id}, Title: ${r.title.substring(0, 50)}`);
       });
     }
 
@@ -2224,11 +2293,11 @@ private async searchQuestionsForGlobalSearch(
     
     const duplicatesRemoved = results.length - uniqueResults.length;
     if (duplicatesRemoved > 0) {
-      console.log(`⚠️ [QUESTION_SEARCH] Removed ${duplicatesRemoved} duplicate(s)`);
+      // console.log(`⚠️ [QUESTION_SEARCH] Removed ${duplicatesRemoved} duplicate(s)`);
     }
     
-    console.log('🎯 [QUESTION_SEARCH] After dedup:', uniqueResults.length, 'unique results');
-    console.log('🎯 [QUESTION_SEARCH] Returning top', Math.min(uniqueResults.length, 10), 'unique results');
+    // console.log('🎯 [QUESTION_SEARCH] After dedup:', uniqueResults.length, 'unique results');
+    // console.log('🎯 [QUESTION_SEARCH] Returning top', Math.min(uniqueResults.length, 10), 'unique results');
 
     // Sort by relevance
     return uniqueResults
@@ -2362,57 +2431,33 @@ private formatSearchDate(dateString: string): string {
  * Helper: Convert violation timestamp to IST format
  * Ensures every violation has a valid IST timestamp string
  */
-private ensureViolationIST(violation: any): any {
-  const convertToIST = (date: Date): string => {
-    const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
-    const istTime = new Date(date.getTime() + istOffset);
-    
-    // Format: YYYY-MM-DD HH:mm:ss IST
-    const year = istTime.getUTCFullYear();
-    const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(istTime.getUTCDate()).padStart(2, '0');
-    const hours = String(istTime.getUTCHours()).padStart(2, '0');
-    const minutes = String(istTime.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(istTime.getUTCSeconds()).padStart(2, '0');
-    
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} IST`;
-  };
-  
+private ensureViolationISO(violation: any): any {
   let dateObj: Date;
   
-  // Check if timestamp exists and is valid
   if (!violation.timestamp || 
       (typeof violation.timestamp === 'object' && Object.keys(violation.timestamp).length === 0)) {
-    // No timestamp or empty object - use current time
-    console.warn('⚠️ Violation missing timestamp, using current time');
     dateObj = new Date();
   } else if (violation.timestamp instanceof Date) {
     dateObj = violation.timestamp;
   } else if (typeof violation.timestamp === 'string') {
-    // Check if already in IST format
     if (violation.timestamp.includes(' IST')) {
-      return violation; // Already in IST format
+      const d = new Date(violation.timestamp.replace(' IST', '+05:30').replace(' ', 'T'));
+      dateObj = isNaN(d.getTime()) ? new Date() : d;
+    } else {
+      const d = new Date(violation.timestamp);
+      if (!isNaN(d.getTime())) return violation; // Already valid parseable string
+      dateObj = new Date();
     }
-    dateObj = new Date(violation.timestamp);
   } else if (typeof violation.timestamp === 'object' && 'seconds' in violation.timestamp) {
-    // Firestore Timestamp format
-    const firestoreTimestamp = violation.timestamp as { seconds: number; nanoseconds?: number };
-    dateObj = new Date(firestoreTimestamp.seconds * 1000 + (firestoreTimestamp.nanoseconds || 0) / 1000000);
+    const ft = violation.timestamp as { seconds: number; nanoseconds?: number };
+    dateObj = new Date(ft.seconds * 1000 + (ft.nanoseconds || 0) / 1000000);
   } else {
-    console.warn('⚠️ Invalid timestamp format, using current time');
     dateObj = new Date();
   }
   
-  // Validate the date
-  if (isNaN(dateObj.getTime())) {
-    console.error('❌ Invalid date created, using current time');
-    dateObj = new Date();
-  }
+  if (isNaN(dateObj.getTime())) dateObj = new Date();
   
-  return {
-    ...violation,
-    timestamp: convertToIST(dateObj)
-  };
+  return { ...violation, timestamp: dateObj.toISOString() };
 }
 
 /**
@@ -2426,6 +2471,7 @@ private ensureViolationIST(violation: any): any {
  */
 async submitAnswer(
   attemptId: string,
+  questionId: string,
   questionNo: number,
   answer: string | string[],
   question: Question,
@@ -2437,28 +2483,30 @@ async submitAnswer(
 ): Promise<{ success: boolean; message: string }> {
   if (!this.firestore) throw new Error('Firestore not initialized');
 
-  console.log(`📝 submitAnswer called for Q${questionNo} (ID: ${question.id})`);
+  // console.log(`📝 submitAnswer called for Q${questionNo} (ID: ${questionId})`);
 
   try {
     // ✅ DEBUG: Log incoming question data for MCQ and FITB
     if (question.type === QUESTION_TYPES.MCQ) {
-      console.log('🔍 MCQ Question Data Received in submitAnswer:', {
-        questionNo,
-        hasOptions: !!question.options,
-        optionsCount: question.options?.length || 0,
-        options: question.options,
-        hasCorrectAnswers: !!question.correctAnswers,
-        correctAnswers: question.correctAnswers,
-        studentAnswer: answer
-      });
+      // console.log('🔍 MCQ Question Data Received in submitAnswer:', {
+                // questionNo,
+                // questionId,
+                // hasOptions: !!question.options,
+                // optionsCount: question.options?.length || 0,
+                // options: question.options,
+                // hasCorrectAnswers: !!question.correctAnswers,
+                // correctAnswers: question.correctAnswers,
+                // studentAnswer: answer
+            // });
     } else if (question.type === QUESTION_TYPES.FITB) {
-      console.log('🔍 FITB Question Data Received in submitAnswer:', {
-        questionNo,
-        hasCorrectAnswers: !!question.correctAnswers,
-        correctAnswersCount: question.correctAnswers?.length || 0,
-        correctAnswers: question.correctAnswers,
-        studentAnswer: answer
-      });
+      // console.log('🔍 FITB Question Data Received in submitAnswer:', {
+                // questionNo,
+                // questionId,
+                // hasCorrectAnswers: !!question.correctAnswers,
+                // correctAnswersCount: question.correctAnswers?.length || 0,
+                // correctAnswers: question.correctAnswers,
+                // studentAnswer: answer
+            // });
     }
     
     const attemptRef = doc(this.firestore, COLLECTIONS.EXAM_ATTEMPTS, attemptId);
@@ -2470,8 +2518,8 @@ async submitAnswer(
 
     const attempt = attemptDoc.data() as StudentExamAttempt;
     
-    // Find existing response or create new
-    const existingIndex = attempt.responses.findIndex(r => r.questionNo === questionNo);
+    // 🔥 CRITICAL: Find existing response by questionId (unique), NOT questionNo
+    const existingIndex = attempt.responses.findIndex((r: any) => r.questionId === questionId);
     const isNewResponse = existingIndex === -1;
     
     const now = new Date();
@@ -2502,7 +2550,7 @@ async submitAnswer(
         evaluationMethod: 'exact_match',
         evaluatedAt: null,
         
-        violations: (violations || []).map(v => this.ensureViolationIST(v)),  // ✅ Convert all violations to IST format
+        violations: (violations || []).map(v => this.ensureViolationISO(v)),  // ✅ Convert all violations to IST format
         
         timeSpent: timeSpent || 0,
         markedForReview,
@@ -2519,55 +2567,68 @@ async submitAnswer(
         lastModifiedAt: now,
       };
       
+      // ✅ Add likert-specific fields
+      if (question.type?.toLowerCase() === 'likert') {
+        if ((question as any).likertTrait) newResponse.likertTrait = (question as any).likertTrait;
+        if ((question as any).likertDirection) newResponse.likertDirection = (question as any).likertDirection;
+      }
+      
+      // ✅ Add programmingLanguage for code/sql questions
+      if (question.type?.toLowerCase() === 'code' || question.type?.toLowerCase() === 'sql') {
+        if ((question as any).programmingLanguage) {
+          newResponse.programmingLanguage = (question as any).programmingLanguage;
+        }
+      }
+      
       // ✅ DEBUG: Log questionBankItem received
-      console.log('📖 CHAPTER DEBUG - firebase_service.submitAnswer():');
-      console.log('  1. questionBankItem received:', questionBankItem);
-      console.log('  2. questionBankItem?.chapter:', questionBankItem?.chapter);
-      console.log('  3. questionBankItem?.complexity:', questionBankItem?.complexity);
-      console.log('  4. typeof chapter:', typeof questionBankItem?.chapter);
-      console.log('  5. chapter !== undefined:', questionBankItem?.chapter !== undefined);
+      // console.log('📖 CHAPTER DEBUG - firebase_service.submitAnswer():');
+      // console.log('  1. questionBankItem received:', questionBankItem);
+      // console.log('  2. questionBankItem?.chapter:', questionBankItem?.chapter);
+      // console.log('  3. questionBankItem?.complexity:', questionBankItem?.complexity);
+      // console.log('  4. typeof chapter:', typeof questionBankItem?.chapter);
+      // console.log('  5. chapter !== undefined:', questionBankItem?.chapter !== undefined);
       
       // Only add optional fields if they have values
       if (questionBankItem?.complexity !== undefined) {
         newResponse.complexity = questionBankItem.complexity;
-        console.log('  ✅ Added complexity to response:', questionBankItem.complexity);
+        // console.log('  ✅ Added complexity to response:', questionBankItem.complexity);
       }
       if (questionBankItem?.chapter !== undefined) {
         newResponse.chapter = questionBankItem.chapter;
-        console.log('  ✅ Added chapter to response:', questionBankItem.chapter);
+        // console.log('  ✅ Added chapter to response:', questionBankItem.chapter);
       } else {
-        console.log('  ❌ Chapter NOT added - questionBankItem?.chapter is undefined');
+        // console.log('  ❌ Chapter NOT added - questionBankItem?.chapter is undefined');
       }
       if (imageUrl !== undefined) {
         newResponse.imageUrl = imageUrl;
       }
       
-      console.log('📖 CHAPTER DEBUG - Final newResponse object:', {
-        questionNo: newResponse.questionNo,
-        chapter: newResponse.chapter,
-        complexity: newResponse.complexity,
-        hasChapter: 'chapter' in newResponse,
-      });
+      // console.log('📖 CHAPTER DEBUG - Final newResponse object:', {
+                // questionNo: newResponse.questionNo,
+                // chapter: newResponse.chapter,
+                // complexity: newResponse.complexity,
+                // hasChapter: 'chapter' in newResponse,
+            // });
       
       // ✅ DEBUG: Log what's being saved for MCQ and FITB
       if (question.type === QUESTION_TYPES.MCQ) {
-        console.log('💾 MCQ Response Being Saved to Firebase:', {
-          questionNo: newResponse.questionNo,
-          hasOptions: !!newResponse.options,
-          optionsCount: newResponse.options?.length || 0,
-          options: newResponse.options,
-          hasCorrectAnswers: !!newResponse.correctAnswers,
-          correctAnswers: newResponse.correctAnswers,
-          studentAnswer: newResponse.studentAnswer
-        });
+        // console.log('💾 MCQ Response Being Saved to Firebase:', {
+                    // questionNo: newResponse.questionNo,
+                    // hasOptions: !!newResponse.options,
+                    // optionsCount: newResponse.options?.length || 0,
+                    // options: newResponse.options,
+                    // hasCorrectAnswers: !!newResponse.correctAnswers,
+                    // correctAnswers: newResponse.correctAnswers,
+                    // studentAnswer: newResponse.studentAnswer
+                // });
       } else if (question.type === QUESTION_TYPES.FITB) {
-        console.log('💾 FITB Response Being Saved to Firebase:', {
-          questionNo: newResponse.questionNo,
-          hasCorrectAnswers: !!newResponse.correctAnswers,
-          correctAnswersCount: newResponse.correctAnswers?.length || 0,
-          correctAnswers: newResponse.correctAnswers,
-          studentAnswer: newResponse.studentAnswer
-        });
+        // console.log('💾 FITB Response Being Saved to Firebase:', {
+                    // questionNo: newResponse.questionNo,
+                    // hasCorrectAnswers: !!newResponse.correctAnswers,
+                    // correctAnswersCount: newResponse.correctAnswers?.length || 0,
+                    // correctAnswers: newResponse.correctAnswers,
+                    // studentAnswer: newResponse.studentAnswer
+                // });
       }
       
       response = newResponse as StudentQuestionResponse;
@@ -2575,7 +2636,7 @@ async submitAnswer(
       
       // ✅ Violations stored at question level only (in response.violations)
       if (violations && violations.length > 0) {
-        console.log(`📋 Stored ${violations.length} violations at question level for Q${questionNo}`);
+        // console.log(`📋 Stored ${violations.length} violations at question level for Q${questionNo}`);
       }
       
     } else {
@@ -2585,15 +2646,15 @@ async submitAnswer(
       if ((response as any).answered === false) {
         (response as any).answered = true;
         (response as any).firstAttemptedAt = now;
-        console.log(`✅ Q${questionNo}: Placeholder converted to answered response`);
+        // console.log(`✅ Q${questionNo}: Placeholder converted to answered response`);
       }
       
       // ✅ ALWAYS increment revisitCount (even if answer unchanged)
       (response as any).revisitCount = ((response as any).revisitCount || 0) + 1;
       (response as any).lastModifiedAt = now;
       
-      // Update time spent regardless of answer change
-      if (timeSpent) response.timeSpent = (response.timeSpent || 0) + timeSpent;
+      // ✅ FIX: Replace timeSpent (not accumulate) — caller passes cumulative total from getTotalTimeSpent()
+      if (timeSpent !== undefined && timeSpent > 0) response.timeSpent = timeSpent;
       
       // Update markedForReview flag
       response.markedForReview = markedForReview;
@@ -2602,17 +2663,32 @@ async submitAnswer(
       // This ensures if the data was missing before, it gets updated on revisit
       if (question.correctAnswers !== undefined && !(response as any).correctAnswers) {
         (response as any).correctAnswers = question.correctAnswers;
-        console.log(`📝 Updated missing correctAnswers for Q${questionNo}`);
+        // console.log(`📝 Updated missing correctAnswers for Q${questionNo}`);
       }
       if (question.options !== undefined && !(response as any).options) {
         (response as any).options = question.options;
-        console.log(`📝 Updated missing options for Q${questionNo}`);
+        // console.log(`📝 Updated missing options for Q${questionNo}`);
+      }
+      if (question.type?.toLowerCase() === 'likert') {
+        if ((question as any).likertTrait && !(response as any).likertTrait) {
+          (response as any).likertTrait = (question as any).likertTrait;
+        }
+        if ((question as any).likertDirection && !(response as any).likertDirection) {
+          (response as any).likertDirection = (question as any).likertDirection;
+        }
       }
       
       // ✅ ADD: Update pool flag if not present or different
       if (question.fromPool !== undefined && (response as any).pool !== question.fromPool) {
         (response as any).pool = question.fromPool === true;
-        console.log(`📝 Updated pool flag for Q${questionNo}: ${(response as any).pool}`);
+        // console.log(`📝 Updated pool flag for Q${questionNo}: ${(response as any).pool}`);
+      }
+      
+      // ✅ ADD: Always update programmingLanguage for code/sql (student may change language)
+      if (question.type?.toLowerCase() === 'code' || question.type?.toLowerCase() === 'sql') {
+        if ((question as any).programmingLanguage) {
+          (response as any).programmingLanguage = (question as any).programmingLanguage;
+        }
       }
       
       // ✅ FIX 1: Check if answer actually changed
@@ -2628,14 +2704,14 @@ async submitAnswer(
         
         await updateDoc(attemptRef, updateData);
         
-        console.log(`⏭️ Q${questionNo} answer unchanged but visit counted (revisitCount: ${(response as any).revisitCount})`);
+        // console.log(`⏭️ Q${questionNo} answer unchanged but visit counted (revisitCount: ${(response as any).revisitCount})`);
         return { 
           success: true, 
           message: 'Visit counted - no answer change' 
         };
       }
       
-      console.log(`📝 Q${questionNo} answer changed, updating Firebase & triggering evaluation`);
+      // console.log(`📝 Q${questionNo} answer changed, updating Firebase & triggering evaluation`);
       
       // Only increment attemptCount if answer actually changed
       response.studentAnswer = answer;
@@ -2644,13 +2720,13 @@ async submitAnswer(
       // ✅ STEP 3 FIX: Mark as answered and update evaluationStatus
       if ((response as any).answered === false) {
         (response as any).answered = true;
-        console.log(`✅ Q${questionNo}: answered changed from false → true`);
+        // console.log(`✅ Q${questionNo}: answered changed from false → true`);
       }
 
       // ✅ Update evaluationStatus from 'not_attempted' to 'pending'
       if (response.evaluationStatus === 'not_attempted') {
         response.evaluationStatus = EVALUATION_STATUS.PENDING;
-        console.log(`✅ Q${questionNo}: evaluationStatus changed from not_attempted → pending`);
+        // console.log(`✅ Q${questionNo}: evaluationStatus changed from not_attempted → pending`);
       }
 
       // ✅ Set firstAttemptedAt if this is the first answer
@@ -2672,14 +2748,34 @@ async submitAnswer(
         (response as any).imageUrl = imageUrl;
       }
       
-      // ✅ FIX: Append new violations to existing ones at BOTH levels
+      // ✅ FIX: Replace violations (not append) — addViolation() is the primary writer,
+      // answer saves just ensure the latest snapshot is persisted (prevents duplicates)
       if (violations && violations.length > 0) {
-        console.log(`📋 Processing ${violations.length} violations for EXISTING response Q${questionNo}`);
+        // console.log(`📋 Processing ${violations.length} violations for EXISTING response Q${questionNo}`);
         
-        // Add to question-level - convert violations to IST format first
-        const convertedViolations = violations.map(v => this.ensureViolationIST(v));
-        response.violations = [...(response.violations || []), ...convertedViolations];
-        console.log(`✅ Added to question-level: Q${questionNo} now has ${response.violations.length} violations`);
+        // Convert violations to IST format
+        const convertedViolations = violations.map(v => this.ensureViolationISO(v));
+        
+        // Merge: keep existing Firestore violations that aren't in the new set, then add new ones
+        // This prevents duplicates while preserving violations added by addViolation()
+        const existingViolations = response.violations || [];
+        
+        // Build a set of existing timestamps to dedup
+        const existingTimestamps = new Set(
+          existingViolations.map((v: any) => `${v.type}_${v.timestamp}`)
+        );
+        
+        // Only add violations that don't already exist in Firestore
+        const newViolations = convertedViolations.filter(v => 
+          !existingTimestamps.has(`${v.type}_${v.timestamp}`)
+        );
+        
+        if (newViolations.length > 0) {
+          response.violations = [...existingViolations, ...newViolations];
+          // console.log(`✅ Added ${newViolations.length} new violations to Q${questionNo} (skipped ${convertedViolations.length - newViolations.length} duplicates). Total: ${response.violations.length}`);
+        } else {
+          // console.log(`⏭️ All ${convertedViolations.length} violations already exist in Q${questionNo}, skipping`);
+        }
       }
       // Reset evaluation if answer changed
       if (response.evaluationStatus === EVALUATION_STATUS.COMPLETED) {
@@ -2701,7 +2797,7 @@ async submitAnswer(
     await updateDoc(attemptRef, updateData);
 
     // ✅ Evaluation happens server-side when exam is submitted via Cloud Function
-    console.log(`✅ Answer saved for Q${questionNo} - will be graded server-side on exam submission`);
+    // console.log(`✅ Answer saved for Q${questionNo} - will be graded server-side on exam submission`);
 
     return { 
       success: true, 
@@ -2737,7 +2833,8 @@ private async updateResponseStatus(
   if (!attemptDoc.exists()) return;
 
   const attempt = attemptDoc.data() as StudentExamAttempt;
-  const responseIndex = attempt.responses.findIndex(r => r.questionNo === questionNo);
+  // Try questionId first, fallback to questionNo for backward compatibility
+  const responseIndex = attempt.responses.findIndex((r: any) => r.questionNo === questionNo);
   
   if (responseIndex === -1) return;
 
@@ -2787,7 +2884,7 @@ private async updateResponseRetryStatus(
   });
 
   await updateDoc(attemptRef, updateData);
-  console.log(`✅ Updated retry status for Q${questionNo}: retry ${retries}, next attempt scheduled`);
+  // console.log(`✅ Updated retry status for Q${questionNo}: retry ${retries}, next attempt scheduled`);
 }
 
 /**
@@ -2899,7 +2996,7 @@ async submitExam(
     });
     
     // Call Cloud Function for secure server-side grading (fire and forget)
-    console.log('🔐 Triggering Cloud Function for background grading...');
+    // console.log('🔐 Triggering Cloud Function for background grading...');
 
     const functions = getFunctions();
     const submitAndGradeExam = httpsCallable(functions, 'submitAndGradeExam');
@@ -2910,12 +3007,12 @@ async submitExam(
       attemptId: attemptId,
       responses: attempt.responses
     }).then(() => {
-      console.log(`✅ Background grading completed for: ${attemptId}`);
+      // console.log(`✅ Background grading completed for: ${attemptId}`);
     }).catch((error) => {
       console.error(`❌ Background grading failed for ${attemptId}:`, error);
     });
 
-    console.log(`✅ Exam submitted, grading in progress: ${attemptId}`);
+    // console.log(`✅ Exam submitted, grading in progress: ${attemptId}`);
 
     // ✅ Return immediately - don't wait for grading
     return {
@@ -2987,80 +3084,49 @@ async addViolation(
     (sum, r) => sum + (r.violations?.length || 0), 0
   );
   if (totalExistingViolations >= 250) {
-    console.warn(`🚫 VIOLATION LIMIT (250) already reached in Firebase (${totalExistingViolations}). Skipping save.`);
+    // console.warn(`🚫 VIOLATION LIMIT (250) already reached in Firebase (${totalExistingViolations}). Skipping save.`);
     return;
   }
 
-  // 🔥 FIX: Convert timestamp to IST format string
-  const convertToIST = (date: Date): string => {
-    // Get IST time (UTC + 5:30)
-    const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
-    const istTime = new Date(date.getTime() + istOffset);
-    
-    // Format: YYYY-MM-DD HH:mm:ss IST
-    const year = istTime.getUTCFullYear();
-    const month = String(istTime.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(istTime.getUTCDate()).padStart(2, '0');
-    const hours = String(istTime.getUTCHours()).padStart(2, '0');
-    const minutes = String(istTime.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(istTime.getUTCSeconds()).padStart(2, '0');
-    
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} IST`;
-  };
-  
+  // ✅ Store timestamp as ISO string (universally parseable by new Date())
   let timestampToStore: string = '';
   let dateObj: Date = new Date();
   
-  // ✅ Check if timestamp is missing or empty object
   if (!violation.timestamp || 
       (typeof violation.timestamp === 'object' && Object.keys(violation.timestamp).length === 0)) {
-    console.warn('⚠️ Violation missing or has empty timestamp, using current time');
     dateObj = new Date();
   } else if (violation.timestamp instanceof Date) {
     dateObj = violation.timestamp;
   } else if (typeof violation.timestamp === 'string') {
-    // Store timestamp as string to help TypeScript narrow the type
     const timestampStr = violation.timestamp as string;
-    // Check if already in IST format
     if (timestampStr.includes(' IST')) {
-      timestampToStore = timestampStr;
-      console.log('✅ Violation already has IST timestamp:', timestampToStore);
+      const d = new Date(timestampStr.replace(' IST', '+05:30').replace(' ', 'T'));
+      dateObj = isNaN(d.getTime()) ? new Date() : d;
     } else {
-      dateObj = new Date(timestampStr);
+      const d = new Date(timestampStr);
+      dateObj = isNaN(d.getTime()) ? new Date() : d;
     }
   } else if (violation.timestamp && typeof violation.timestamp === 'object' && 'seconds' in violation.timestamp) {
-    // Firestore Timestamp format
     const firestoreTimestamp = violation.timestamp as { seconds: number; nanoseconds?: number };
     dateObj = new Date(firestoreTimestamp.seconds * 1000 + (firestoreTimestamp.nanoseconds || 0) / 1000000);
   } else {
-    console.warn('⚠️ Invalid timestamp format, using current time');
     dateObj = new Date();
   }
   
-  // Only convert if we haven't already set timestampToStore
-  if (!timestampToStore) {
-    // Validate the date
-    if (isNaN(dateObj.getTime())) {
-      console.error('❌ Invalid date created, using current time');
-      dateObj = new Date();
-    }
-    timestampToStore = convertToIST(dateObj);
+  if (isNaN(dateObj.getTime())) {
+    dateObj = new Date();
   }
+  timestampToStore = dateObj.toISOString();
   
-  console.log('✅ Storing violation with IST timestamp:', {
-    type: violation.type,
-    originalTimestamp: violation.timestamp,
-    storedAsIST: timestampToStore,
-    utcTime: dateObj.toISOString()
-  });
+  // console.log('✅ Storing violation:', violation.type, 'at', timestampToStore);
   
-  // 🔥 QUESTION-LEVEL: Find the specific question response
-  let questionResponse = attempt.responses.find(r => r.questionNo === violation.questionNo);
+  // 🔥 QUESTION-LEVEL: Find the specific question response by questionId
+  let questionResponse = attempt.responses.find((r: any) => r.questionId === (violation.questionId || `q_${violation.questionNo}`));
   
   // ✅ FIX: Create placeholder response if none exists for this question
   // This ensures violations are never lost
   if (!questionResponse) {
-    console.log(`⚠️ No response for Q${violation.questionNo} - creating placeholder for violation`);
+    // console.log(`⚠️ No response for Q${violation.questionNo} - creating placeholder for violation`);
     
     // Create a minimal placeholder response
     questionResponse = {
@@ -3075,9 +3141,9 @@ async addViolation(
     
     // Add to responses array
     attempt.responses.push(questionResponse!);
-    console.log(`✅ Created placeholder response for Q${violation.questionNo}`);
+    // console.log(`✅ Created placeholder response for Q${violation.questionNo}`);
   } else {
-    console.log(`✅ Found existing response for Q${violation.questionNo} - adding violation`);
+    // console.log(`✅ Found existing response for Q${violation.questionNo} - adding violation`);
   }
   
   // ✅ Initialize violations array if it doesn't exist
@@ -3085,7 +3151,7 @@ async addViolation(
     questionResponse!.violations = [];
   }
 
-  console.log(`✅ Q${violation.questionNo} has ${questionResponse!.violations.length} violations before adding`);
+  // console.log(`✅ Q${violation.questionNo} has ${questionResponse!.violations.length} violations before adding`);
 
   // Store violation with ISO string timestamp
   const violationWithTimestamp = {
@@ -3093,14 +3159,24 @@ async addViolation(
     timestamp: timestampToStore  // Store as ISO string
   };
   
+  // ✅ Dedup check: skip if same type+timestamp already exists
+  const isDuplicate = questionResponse!.violations.some((v: any) => 
+    v.type === violationWithTimestamp.type && v.timestamp === violationWithTimestamp.timestamp
+  );
+  
+  if (isDuplicate) {
+    // console.log(`⏭️ Skipping duplicate violation: ${violation.type} at ${timestampToStore}`);
+    return;
+  }
+  
   // ✅ Add violation to question level
   questionResponse!.violations.push(violationWithTimestamp as any);
-  console.log(`🚨 Violation added to Q${violation.questionNo}:`, violation.type);
-  console.log(`   Timestamp stored: ${timestampToStore}`);
-  console.log(`   Total violations on Q${violation.questionNo}:`, questionResponse!.violations.length);
+  // console.log(`🚨 Violation added to Q${violation.questionNo}:`, violation.type);
+  // console.log(`   Timestamp stored: ${timestampToStore}`);
+  // console.log(`   Total violations on Q${violation.questionNo}:`, questionResponse!.violations.length);
   
   // ✅ Violations are stored at question level only
-  console.log(`✅ Violation stored at question level for Q${violation.questionNo}`);
+  // console.log(`✅ Violation stored at question level for Q${violation.questionNo}`);
 
   // Update Firebase with responses only
   await updateDoc(attemptRef, {
@@ -3109,7 +3185,7 @@ async addViolation(
   });
   
   
-  console.log('✅ Violation synced to Firebase:', violation.type, `(Q${violation.questionNo})`);
+  // console.log('✅ Violation synced to Firebase:', violation.type, `(Q${violation.questionNo})`);
   
   // ℹ️ NOTE: Global violations may be > question-level violations
   // This is intentional: violations on unanswered questions only go to global level
@@ -3143,10 +3219,10 @@ async createPlaceholderResponse(
 
     const attempt = attemptDoc.data() as StudentExamAttempt;
     
-    // Check if response already exists
-    const existingResponse = attempt.responses.find(r => r.questionNo === questionNo);
+    // Check if response already exists — find by questionId (unique)
+    const existingResponse = attempt.responses.find((r: any) => r.questionId === questionId);
     if (existingResponse) {
-      console.log(`⏭️ Response for Q${questionNo} already exists - skipping placeholder creation`);
+      // console.log(`⏭️ Response for Q${questionNo} (ID: ${questionId}) already exists - skipping placeholder creation`);
       return { success: true, message: 'Response already exists' };
     }
 
@@ -3200,8 +3276,8 @@ async createPlaceholderResponse(
     attempt.responses.push(placeholderResponse as StudentQuestionResponse);
 
     // 🐛 DEBUG: Check ALL responses for undefined values
-    console.log('🐛 DEBUG - Total responses before save:', attempt.responses.length);
-    attempt.responses.forEach((r: any, index: number) => {
+    // console.log('🐛 DEBUG - Total responses before save:', attempt.responses.length);
+    attempt.responses.forEach((r: any, _index: number) => {
       const undefinedFields: string[] = [];
       Object.keys(r).forEach(key => {
         if (r[key] === undefined) {
@@ -3209,7 +3285,7 @@ async createPlaceholderResponse(
         }
       });
       if (undefinedFields.length > 0) {
-        console.log(`🐛 Response #${index} (Q${r.questionNo}) has undefined fields:`, undefinedFields);
+        // console.log(`🐛 Response #${index} (Q${r.questionNo}) has undefined fields:`, undefinedFields);
       }
     });
 
@@ -3219,7 +3295,7 @@ async createPlaceholderResponse(
       updatedAt: now
     });
 
-    console.log(`✅ Placeholder created for Q${questionNo} (viewed but not answered)`);
+    // console.log(`✅ Placeholder created for Q${questionNo} (viewed but not answered)`);
     
     return { success: true, message: 'Placeholder response created' };
   } catch (error) {
@@ -3297,8 +3373,8 @@ async overrideMarks(
       percentage
     });
 
-    console.log(`✅ Marks overridden by ${teacherName} for Q${questionNo}: ${newMarks}/${response.maxMarks}`);
-    console.log(`✅ Total score recalculated: ${totalMarks}/${maxMarks} (${percentage}%)`);
+    // console.log(`✅ Marks overridden by ${teacherName} for Q${questionNo}: ${newMarks}/${response.maxMarks}`);
+    // console.log(`✅ Total score recalculated: ${totalMarks}/${maxMarks} (${percentage}%)`);
 
     return {
       success: true,
@@ -3362,7 +3438,7 @@ async retriggerEvaluation(
     await updateDoc(attemptRef, updateData);
 
     // ✅ Individual question re-evaluation removed - call Cloud Function to re-grade entire attempt
-    console.log(`🔄 Triggering server-side re-evaluation for entire attempt ${attemptId}...`);
+    // console.log(`🔄 Triggering server-side re-evaluation for entire attempt ${attemptId}...`);
     
     try {
       const functions = getFunctions();
@@ -3374,7 +3450,7 @@ async retriggerEvaluation(
         responses: attempt.responses
       });
       
-      console.log(`✅ Entire attempt re-graded successfully via Cloud Function`);
+      // console.log(`✅ Entire attempt re-graded successfully via Cloud Function`);
       
       return {
         success: true,
@@ -3487,50 +3563,33 @@ async getExamAttempts(examId: string): Promise<StudentExamAttempt[]> {
   return snapshot.docs.map(doc => {
     const data = doc.data();
     
-    // ✅ CORRECT: Calculate violationCount from responses array
+    // ✅ violationCount — global (most complete, includes violations on unanswered questions)
     let violationCount = 0;
-    
-    // Priority 1: Check if violationCount already exists in Firestore
     if (typeof data.violationCount === 'number') {
       violationCount = data.violationCount;
-    }
-    // Priority 2: Check violationSummary.total (if exists)
-    else if (data.violationSummary && typeof data.violationSummary.total === 'number') {
+    } else if (data.violationSummary?.total) {
       violationCount = data.violationSummary.total;
-    }
-    // Priority 3: Count from top-level violations array (if exists)
-    else if (data.violations && Array.isArray(data.violations)) {
+    } else if (data.violations && Array.isArray(data.violations)) {
       violationCount = data.violations.length;
-    }
-    // Priority 4: ✅ Count violations from ALL responses
-    else if (data.responses && Array.isArray(data.responses)) {
+    } else if (data.responses && Array.isArray(data.responses)) {
       violationCount = data.responses.reduce((total: number, response: any) => {
-        if (response.violations && Array.isArray(response.violations)) {
-          return total + response.violations.length;
-        }
-        return total;
+        return total + (response.violations?.length || 0);
       }, 0);
     }
-    // Default: 0
-    else {
-      violationCount = 0;
-    }
-    
-    // ✅ ADDED: Calculate timeSpent from responses array (consistent with violations!)
-    let calculatedTimeSpent = data.timeSpent || 0;  // Start with existing value as fallback
-    
-    // If responses exist, sum timeSpent from each response (most accurate)
-    if (data.responses && Array.isArray(data.responses)) {
-      const summedTime = data.responses.reduce((total: number, response: any) => {
-        if (response.timeSpent && typeof response.timeSpent === 'number') {
-          return total + response.timeSpent;
-        }
-        return total;
-      }, 0);
-      
-      // Use summed time if it's greater than 0
-      if (summedTime > 0) {
-        calculatedTimeSpent = summedTime;
+
+    // ✅ timeSpent — from startTime → submitTime (matches StudentExamDetail)
+    let calculatedTimeSpent = data.timeSpent || 0;
+    if (data.startTime && data.submitTime) {
+      const toMs = (t: any): number => {
+        if (t?.toDate) return t.toDate().getTime();
+        if (t instanceof Date) return t.getTime();
+        if (typeof t === 'number') return t;
+        return new Date(t).getTime();
+      };
+      const start = toMs(data.startTime);
+      const end = toMs(data.submitTime);
+      if (start > 0 && end > start) {
+        calculatedTimeSpent = Math.floor((end - start) / 1000);
       }
     }
     
@@ -3541,6 +3600,51 @@ async getExamAttempts(examId: string): Promise<StudentExamAttempt[]> {
       timeSpent: calculatedTimeSpent  // ✅ Calculated from responses (like violations!)
     } as StudentExamAttempt;
   });
+}
+
+/**
+ * Get a single exam attempt by its document ID (for on-demand full data loading)
+ */
+async getExamAttemptById(attemptId: string): Promise<any | null> {
+  if (!this.firestore) throw new Error('Firestore not initialized');
+  try {
+    const attemptDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAM_ATTEMPTS, attemptId));
+    if (!attemptDoc.exists()) return null;
+    const data = attemptDoc.data();
+    
+    // Calculate violationCount
+    let violationCount = 0;
+    if (typeof data.violationCount === 'number') {
+      violationCount = data.violationCount;
+    } else if (data.violationSummary?.total) {
+      violationCount = data.violationSummary.total;
+    } else if (data.violations && Array.isArray(data.violations)) {
+      violationCount = data.violations.length;
+    } else if (data.responses && Array.isArray(data.responses)) {
+      violationCount = data.responses.reduce((total: number, response: any) => {
+        return total + (response.violations?.length || 0);
+      }, 0);
+    }
+    
+    // Calculate timeSpent
+    let timeSpent = data.timeSpent || 0;
+    if (data.startTime && data.submitTime) {
+      const toMs = (t: any): number => {
+        if (t?.toDate) return t.toDate().getTime();
+        if (t instanceof Date) return t.getTime();
+        if (typeof t === 'number') return t;
+        return new Date(t).getTime();
+      };
+      const start = toMs(data.startTime);
+      const end = toMs(data.submitTime);
+      if (start > 0 && end > start) timeSpent = Math.floor((end - start) / 1000);
+    }
+    
+    return { ...data, attemptId: attemptDoc.id, violationCount, timeSpent };
+  } catch (error) {
+    console.error('❌ Error fetching attempt by ID:', error);
+    return null;
+  }
 }
 
 /**
@@ -3964,6 +4068,93 @@ async getLeaderboard(
 }
 
 /**
+ * Get paginated leaderboard using Cloud Function
+ * Reads from pre-computed leaderboardStats collection
+ */
+async getLeaderboardPaginated(
+  collegeId: string,
+  filters: {
+    academicYear?: string;
+    class?: string;
+    subject?: string;
+    pageSize?: number;
+    lastDocId?: string | null;
+  }
+): Promise<{
+  students: LeaderboardStudent[];
+  hasMore: boolean;
+  lastDocId: string | null;
+  totalCount: number;
+}> {
+  try {
+    const functions = getFunctions();
+    const fn = httpsCallable(functions, 'getLeaderboardPaginated');
+    const result = await fn({
+      collegeId,
+      pageSize: filters.pageSize || 20,
+      lastDocId: filters.lastDocId || null,
+      filterClass: filters.class || 'all',
+      filterSubject: filters.subject || 'all',
+      filterAcademicYear: filters.academicYear || 'all',
+    });
+
+    const data = result.data as any;
+
+    // Map to LeaderboardStudent and assign ranks
+    const students: LeaderboardStudent[] = (data.students || []).map((s: any, index: number) => ({
+      userId: s.userId,
+      userName: s.userName,
+      rollNumber: s.rollNumber,
+      collegeId: s.collegeId,
+      class: s.class,
+      board: s.board,
+      academicYear: s.academicYear,
+      totalExams: s.totalExams,
+      totalMarks: s.totalMarks,
+      totalMaxMarks: s.totalMaxMarks,
+      averagePercentage: s.averagePercentage,
+      highestScore: s.highestScore || 0,
+      lowestScore: s.lowestScore || 0,
+      rank: index + 1,
+      docId: s.docId,
+    }));
+
+    return {
+      students,
+      hasMore: data.hasMore || false,
+      lastDocId: data.lastDocId || null,
+      totalCount: data.totalCount || 0,
+    };
+  } catch (error) {
+    console.error('Error fetching paginated leaderboard:', error);
+    // Fallback to client-side method — returns all students, no pagination needed
+    // console.warn('⚠️ Falling back to client-side leaderboard');
+    const allStudents = await this.getLeaderboard(collegeId, {
+      academicYear: filters.academicYear,
+      class: filters.class,
+      subject: filters.subject,
+    });
+    return {
+      students: allStudents,
+      hasMore: false,
+      lastDocId: null,
+      totalCount: allStudents.length,
+    };
+  }
+}
+
+/**
+ * Run one-time migration to backfill leaderboardStats for existing data
+ */
+async migrateLeaderboardStats(collegeId: string): Promise<{ totalAttempts: number; totalStudents: number }> {
+  const functions = getFunctions();
+  const fn = httpsCallable(functions, 'migrateLeaderboardStats');
+  const result = await fn({ collegeId });
+  const data = result.data as any;
+  return { totalAttempts: data.totalAttempts, totalStudents: data.totalStudents };
+}
+
+/**
  * Get student's rank in the leaderboard
  */
 async getStudentRank(
@@ -4180,7 +4371,7 @@ private calculateStatistics(numbers: number[]): {
   // Initialize Firebase
   initialize(firebaseConfig: any, firestoreDbName?: string): void {
     if (this.app) {
-      console.log('Firebase already initialized');
+      // console.log('Firebase already initialized');
       return;
     }
 
@@ -4193,8 +4384,8 @@ private calculateStatistics(numbers: number[]): {
         : getFirestore(this.app);
       this.storage = getStorage(this.app);
       this.functions = getFunctions(this.app, 'us-central1');
-      console.log('✅ Functions initialized');
-      console.log(`✅ Firebase initialized successfully (DB: ${firestoreDbName || '(default)'})`);
+      // console.log('✅ Functions initialized');
+      // console.log(`✅ Firebase initialized successfully (DB: ${firestoreDbName || '(default)'})`);
     } catch (error) {
       console.error('❌ Firebase initialization error:', error);
       throw error;
@@ -4250,7 +4441,7 @@ private calculateStatistics(numbers: number[]): {
       }
 
       if (!this.firestore) {
-        console.warn('⚠️ Firebase not initialized, using free API');
+        // console.warn('⚠️ Firebase not initialized, using free API');
         return null;
       }
 
@@ -4262,14 +4453,14 @@ private calculateStatistics(numbers: number[]): {
         this.geoApiKey = data.geoApiKey || null;
         
         if (this.geoApiKey) {
-          console.log('✅ GEO API key loaded from Firestore');
+          // console.log('✅ GEO API key loaded from Firestore');
         } else {
-          console.warn('⚠️ GEO API key not found in settings, using free API');
+          // console.warn('⚠️ GEO API key not found in settings, using free API');
         }
         
         return this.geoApiKey;
       } else {
-        console.warn('⚠️ Settings document not found, using free API');
+        // console.warn('⚠️ Settings document not found, using free API');
         return null;
       }
       
@@ -4293,11 +4484,11 @@ private calculateStatistics(numbers: number[]): {
       if (apiKey) {
         // Use PRO API with key
         apiUrl = `${this.geoApiUrl}?key=${apiKey}&fields=${fields}`;
-        console.log('🌐 Using PRO Geo API');
+        // console.log('🌐 Using PRO Geo API');
       } else {
         // Fallback to free API
         apiUrl = `http://ip-api.com/json/?fields=${fields}`;
-        console.log('🌐 Using FREE Geo API');
+        // console.log('🌐 Using FREE Geo API');
       }
       
       // Get IP and geolocation data
@@ -4384,67 +4575,30 @@ private calculateStatistics(numbers: number[]): {
       const userDoc = await getDoc(doc(this.firestore, COLLECTIONS.USERS, userId));
       
       if (!userDoc.exists()) {
-        console.warn('⚠️ User exists in Auth but not in Firestore. Creating profile...');
+        // console.warn('⚠️ No Firestore doc found by Auth UID. Searching by email...');
         
-        // Get email from Firebase Auth user
+        // ✅ FIX: Look up by email instead of creating ghost profile
         const authUser = userCredential.user;
         const userEmail = authUser.email || '';
         
-        // Create basic user profile in Firestore
-        const basicUserData = {
-          userId: userId,
-          fullName: userEmail.split('@')[0] || 'User',
-          email: userEmail.toLowerCase(),
-          phone: '',
-          phoneRaw: '',
-          userType: 'student', // Default to student
-          collegeId: 'default',
-          board: 'Not Specified',
-          status: USER_STATUS.ACTIVE,
-          createdBy: 'auto-system',
-          permissions: this.getPermissions('student'),
-          
-          // Security fields
-          mustChangePassword: true,
-          firstLogin: true,
-          passwordChangedAt: null,
-          temporaryPassword: false,
-          accountLocked: false,
-          failedLoginAttempts: 0,
-          lastLoginAt: null,
-          
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        };
-        
-        try {
-          // Create the user document
-          await setDoc(doc(this.firestore, COLLECTIONS.USERS, userId), basicUserData);
-          console.log('✅ User profile created in Firestore');
-          
-          // Now fetch the newly created document
-          const newUserDoc = await getDoc(doc(this.firestore, COLLECTIONS.USERS, userId));
-          if (!newUserDoc.exists()) {
-            throw new Error('Failed to create user profile');
+        if (userEmail) {
+          const existingUser = await this.getUserByEmail(userEmail);
+          if (existingUser) {
+            // console.log('✅ Found existing user by email:', userEmail);
+            return {
+              success: true,
+              user: existingUser,
+              requiresPasswordChange: false
+            };
           }
-          
-          // Continue with login using the new profile
-          const userData = this.parseUserFromFirestore(newUserDoc);
-          
-          return {
-            success: true,
-            user: userData,
-            requiresPasswordChange: true // Force password change for auto-created users
-          };
-          
-        } catch (createError) {
-          console.error('❌ Failed to create user profile:', createError);
-          await this.signOut();
-          return { 
-            success: false, 
-            error: 'Failed to create user profile. Please contact administrator.' 
-          };
         }
+        
+        // No user found by UID or email — block login, do NOT create ghost profile
+        await this.signOut();
+        return {
+          success: false,
+          error: 'Account not found. Please contact your administrator.'
+        };
       }
       
       const userData = this.parseUserFromFirestore(userDoc);
@@ -4492,9 +4646,9 @@ private calculateStatistics(numbers: number[]): {
         const updatedHistory = [loginHistoryEntry, ...currentHistory].slice(0, 20);
         updateData.loginHistory = updatedHistory;
         
-        console.log('📍 Login from:', ipInfo.city, ipInfo.region, ipInfo.country);
-        console.log('🌐 ISP:', ipInfo.isp);
-        console.log('💻 Device:', ipInfo.deviceType);
+        // console.log('📍 Login from:', ipInfo.city, ipInfo.region, ipInfo.country);
+        // console.log('🌐 ISP:', ipInfo.isp);
+        // console.log('💻 Device:', ipInfo.deviceType);
       }
       
       await updateDoc(doc(this.firestore, COLLECTIONS.USERS, userId), updateData);
@@ -4683,7 +4837,7 @@ private calculateStatistics(numbers: number[]): {
   async getUserProfile(userId: string): Promise<UserModel | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return null; // Return null to match UserModel | null return type
       }
       
@@ -4722,7 +4876,7 @@ private calculateStatistics(numbers: number[]): {
       const userDoc = await getDoc(doc(this.firestore, COLLECTIONS.USERS, userId));
       
       if (!userDoc.exists()) {
-        console.warn('⚠️ User not found:', userId);
+        // console.warn('⚠️ User not found:', userId);
         return null;
       }
 
@@ -4750,7 +4904,7 @@ private calculateStatistics(numbers: number[]): {
   ): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false; // Return false to match boolean return type
       }
       
@@ -4784,7 +4938,7 @@ private calculateStatistics(numbers: number[]): {
           })
         });
       } catch (logError) {
-        console.warn('⚠️ Failed to log user update (non-critical):', logError);
+        // console.warn('⚠️ Failed to log user update (non-critical):', logError);
       }
       
       return true;
@@ -4814,14 +4968,14 @@ private calculateStatistics(numbers: number[]): {
         throw new Error('Firebase Storage not initialized');
       }
 
-      console.log('📤 Starting profile picture upload...');
+      // console.log('📤 Starting profile picture upload...');
 
       // Use the actual filename passed from the component
       // This allows for standardized names like 'profile_picture.jpg', 'proctoring_front.jpg', etc.
       const fileName = file.name;
       const path = `profile_pictures/${targetUserId}/${fileName}`;
 
-      console.log('📍 Upload path:', path);
+      // console.log('📍 Upload path:', path);
 
       // Get storage reference
       const storageRef = ref(this.storage, path);
@@ -4835,14 +4989,14 @@ private calculateStatistics(numbers: number[]): {
         },
       };
 
-      console.log('📤 Uploading to Firebase Storage...');
+      // console.log('📤 Uploading to Firebase Storage...');
       await uploadBytes(storageRef, file, metadata);
-      console.log('✅ Upload complete');
+      // console.log('✅ Upload complete');
 
       // Get download URL
       const downloadUrl = await getDownloadURL(storageRef);
-      console.log('✅ Download URL obtained');
-      console.log('✅ URL:', downloadUrl);
+      // console.log('✅ Download URL obtained');
+      // console.log('✅ URL:', downloadUrl);
 
       return downloadUrl;
     } catch (error) {
@@ -4868,7 +5022,7 @@ private calculateStatistics(numbers: number[]): {
         updatedAt: serverTimestamp(),
       });
 
-      console.log('✅ Profile picture URL updated in Firestore');
+      // console.log('✅ Profile picture URL updated in Firestore');
       return true;
     } catch (error) {
       console.error('❌ Error updating profile picture URL:', error);
@@ -4886,7 +5040,7 @@ private calculateStatistics(numbers: number[]): {
 
       if (!this.firestore) throw new Error('Firestore not initialized');
 
-      console.log('🗑️ Removing profile picture...');
+      // console.log('🗑️ Removing profile picture...');
 
       const userDoc = await getDoc(doc(this.firestore, COLLECTIONS.USERS, targetUserId));
       const userData = userDoc.data();
@@ -4896,9 +5050,9 @@ private calculateStatistics(numbers: number[]): {
         try {
           const storageRef = ref(this.storage, profilePictureUrl);
           await deleteObject(storageRef);
-          console.log('✅ Deleted profile picture from storage');
+          // console.log('✅ Deleted profile picture from storage');
         } catch (error) {
-          console.warn('⚠️ Error deleting from storage:', error);
+          // console.warn('⚠️ Error deleting from storage:', error);
         }
       }
 
@@ -4908,7 +5062,7 @@ private calculateStatistics(numbers: number[]): {
         updatedAt: serverTimestamp(),
       });
 
-      console.log('✅ Profile picture removed from Firestore');
+      // console.log('✅ Profile picture removed from Firestore');
       return true;
     } catch (error) {
       console.error('❌ Error removing profile picture:', error);
@@ -4943,7 +5097,7 @@ const targetUserId = userId || currentUser?.uid;
         throw new Error('Failed to update profile picture URL');
       }
 
-      console.log('✅ Profile picture uploaded and updated successfully');
+      // console.log('✅ Profile picture uploaded and updated successfully');
       return downloadUrl;
     } catch (error) {
       console.error('❌ Error in uploadAndUpdateProfilePicture:', error);
@@ -4957,7 +5111,7 @@ const targetUserId = userId || currentUser?.uid;
   async getUsersByType(userType: UserType, collegeId?: string): Promise<UserModel[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty string instead of throwing error
       }
       
@@ -4991,7 +5145,7 @@ const targetUserId = userId || currentUser?.uid;
   async getAllUsers(collegeId: string): Promise<UserModel[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty string instead of throwing error
       }
       
@@ -5014,9 +5168,13 @@ const targetUserId = userId || currentUser?.uid;
    * Get count of all users for a specific college
    */
   async getUsersCount(collegeId: string): Promise<number> {
+    // Role check to prevent student permission errors
+    const user = this.getCurrentUser();
+    if (!user) return 0;
+    
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return 0; // Return empty string instead of throwing error
       }
       
@@ -5049,7 +5207,7 @@ const targetUserId = userId || currentUser?.uid;
   ): Promise<PaginatedUsersResult> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return {
           users: [],
           lastDoc: null,
@@ -5198,11 +5356,11 @@ const targetUserId = userId || currentUser?.uid;
           else if (userType === USER_TYPES.DEAN) counts.deans = activeCount;
           else if (userType === USER_TYPES.TEACHER) counts.teachers = activeCount;
         } catch (typeError) {
-          console.warn(`Error counting ${userType} users:`, typeError);
+          // console.warn(`Error counting ${userType} users:`, typeError);
         }
       }
 
-      console.log('📊 Administrative user counts:', counts);
+      // console.log('📊 Administrative user counts:', counts);
       return counts;
     } catch (error) {
       console.error('Error getting administrative user counts:', error);
@@ -5225,7 +5383,7 @@ const targetUserId = userId || currentUser?.uid;
   ): Promise<PaginatedUsersResult> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return {
           users: [],
           lastDoc: null,
@@ -5496,7 +5654,7 @@ const targetUserId = userId || currentUser?.uid;
       counts.teachers = totalTeachers - disabledTeachers;
       counts.disabled += disabledTeachers;
 
-      console.log('📊 Class user counts:', counts);
+      // console.log('📊 Class user counts:', counts);
       return counts;
     } catch (error) {
       console.error('Error getting class user counts:', error);
@@ -5515,7 +5673,7 @@ const targetUserId = userId || currentUser?.uid;
   ): Promise<UserModel[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty array
       }
       
@@ -5557,6 +5715,190 @@ const targetUserId = userId || currentUser?.uid;
       return [];
     }
   }
+
+  /**
+   * Get students paginated for enrollment modal (server-side cursor pagination)
+   * Supports optional class filter and search query
+   */
+  async getStudentsForEnrollmentPaginated(
+    collegeId: string,
+    pageSize: number = 25,
+    lastDocument: DocumentSnapshot | null = null,
+    classFilter?: string,
+    searchQuery?: string
+  ): Promise<{ students: UserModel[]; lastDoc: DocumentSnapshot | null; hasMore: boolean }> {
+    try {
+      if (!this.isInitialized() || !this.firestore) {
+        return { students: [], lastDoc: null, hasMore: false };
+      }
+
+      // Build query based on filters
+      const constraints: any[] = [
+        where('collegeId', '==', collegeId),
+        where('userType', '==', USER_TYPES.STUDENT),
+        where('status', '==', USER_STATUS.ACTIVE),
+      ];
+
+      if (classFilter && classFilter !== 'all') {
+        constraints.push(where('studentClass', '==', classFilter));
+      }
+
+      constraints.push(orderBy('fullName'));
+
+      if (lastDocument) {
+        constraints.push(startAfter(lastDocument));
+      }
+
+      // If search query, fetch more to filter client-side, else use pageSize
+      const fetchLimit = searchQuery?.trim() ? pageSize * 4 : pageSize;
+      constraints.push(limit(fetchLimit));
+
+      const q = query(collection(this.firestore, COLLECTIONS.USERS), ...constraints);
+      const snapshot = await getDocs(q);
+
+      let students = snapshot.docs.map(doc => this.parseUserFromFirestore(doc));
+      let newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+
+      // Client-side search filter (Firestore doesn't support text search)
+      if (searchQuery?.trim()) {
+        const searchLower = searchQuery.toLowerCase();
+        students = students.filter(s =>
+          s.fullName?.toLowerCase().includes(searchLower) ||
+          s.email?.toLowerCase().includes(searchLower) ||
+          s.studentRoll?.toLowerCase().includes(searchLower)
+        );
+        // If we filtered and have fewer than pageSize, but there were more docs, keep fetching
+        // For simplicity, return what we have — UI can call again
+      }
+
+      // Trim to pageSize
+      if (students.length > pageSize) {
+        students = students.slice(0, pageSize);
+        // Adjust lastDoc to the last student we're actually returning
+        // We need the original doc snapshot, so find it by userId
+        const lastReturnedUserId = students[students.length - 1].userId;
+        const matchingDoc = snapshot.docs.find(d => d.id === lastReturnedUserId);
+        if (matchingDoc) {
+          newLastDoc = matchingDoc;
+        }
+      }
+
+      const hasMore = snapshot.docs.length === fetchLimit;
+
+      return { students, lastDoc: newLastDoc, hasMore };
+    } catch (error) {
+      console.error('❌ Error fetching students for enrollment (paginated):', error);
+      return { students: [], lastDoc: null, hasMore: false };
+    }
+  }
+
+  /**
+   * Get total count of students matching filters (for enrollment modal pagination display)
+   */
+  async getStudentsCountForEnrollment(
+    collegeId: string,
+    classFilter?: string
+  ): Promise<number> {
+    try {
+      if (!this.isInitialized() || !this.firestore) return 0;
+
+      const constraints: any[] = [
+        where('collegeId', '==', collegeId),
+        where('userType', '==', USER_TYPES.STUDENT),
+        where('status', '==', USER_STATUS.ACTIVE),
+      ];
+
+      if (classFilter && classFilter !== 'all') {
+        constraints.push(where('studentClass', '==', classFilter));
+      }
+
+      const q = query(collection(this.firestore, COLLECTIONS.USERS), ...constraints);
+      const countSnapshot = await getCountFromServer(q);
+      return countSnapshot.data().count;
+    } catch (error) {
+      console.error('❌ Error getting student count for enrollment:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get all student IDs matching filters (for "Select All" in enrollment modal)
+   * Only fetches userId field — lightweight for large datasets
+   */
+  async getAllStudentIdsForEnrollment(
+    collegeId: string,
+    classFilter?: string,
+    searchQuery?: string
+  ): Promise<string[]> {
+    try {
+      if (!this.isInitialized() || !this.firestore) return [];
+
+      const constraints: any[] = [
+        where('collegeId', '==', collegeId),
+        where('userType', '==', USER_TYPES.STUDENT),
+        where('status', '==', USER_STATUS.ACTIVE),
+      ];
+
+      if (classFilter && classFilter !== 'all') {
+        constraints.push(where('studentClass', '==', classFilter));
+      }
+
+      constraints.push(orderBy('fullName'));
+
+      const q = query(collection(this.firestore, COLLECTIONS.USERS), ...constraints);
+      const snapshot = await getDocs(q);
+
+      let studentIds = snapshot.docs.map(d => d.id);
+
+      // Client-side search filter if needed
+      if (searchQuery?.trim()) {
+        const searchLower = searchQuery.toLowerCase();
+        studentIds = snapshot.docs
+          .filter(d => {
+            const data = d.data();
+            return (
+              data.fullName?.toLowerCase().includes(searchLower) ||
+              data.email?.toLowerCase().includes(searchLower) ||
+              data.studentRoll?.toLowerCase().includes(searchLower)
+            );
+          })
+          .map(d => d.id);
+      }
+
+      return studentIds;
+    } catch (error) {
+      console.error('❌ Error fetching all student IDs for enrollment:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get full UserModel objects for a list of student IDs (for enrollment confirmation)
+   * Fetches in batches of 30 (Firestore 'in' query limit)
+   */
+  async getStudentsByIds(studentIds: string[]): Promise<UserModel[]> {
+    try {
+      if (!this.isInitialized() || !this.firestore || studentIds.length === 0) return [];
+
+      const students: UserModel[] = [];
+      const batchSize = 30; // Firestore 'in' query limit
+
+      for (let i = 0; i < studentIds.length; i += batchSize) {
+        const batch = studentIds.slice(i, i + batchSize);
+        const q = query(
+          collection(this.firestore, COLLECTIONS.USERS),
+          where('__name__', 'in', batch)
+        );
+        const snapshot = await getDocs(q);
+        snapshot.docs.forEach(doc => students.push(this.parseUserFromFirestore(doc)));
+      }
+
+      return students;
+    } catch (error) {
+      console.error('❌ Error fetching students by IDs:', error);
+      return [];
+    }
+  }
   
   /**
    * Get students for an exam with pagination (database-level)
@@ -5573,7 +5915,7 @@ const targetUserId = userId || currentUser?.uid;
   }> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return { students: [], lastDoc: null, hasMore: false };
       }
       
@@ -5590,24 +5932,20 @@ const targetUserId = userId || currentUser?.uid;
       
       if (enrollmentCount > 0) {
         // NEW PATH: Use exam_enrollments collection
-        console.log(`📋 Using exam_enrollments (${enrollmentCount} enrolled students)`);
+        // console.log(`📋 Using exam_enrollments (${enrollmentCount} enrolled students)`);
         
         const enrollResult = await this.getExamEnrollmentsPaginated(examId, pageSize, lastDoc);
         
-        // Fetch full UserModel for each enrolled student
-        const studentIds = enrollResult.enrollments.map(e => e.studentId);
-        const students: UserModel[] = [];
-        
-        for (const studentId of studentIds) {
-          try {
-            const userDoc = await getDoc(doc(this.firestore, COLLECTIONS.USERS, studentId));
-            if (userDoc.exists()) {
-              students.push(this.parseUserFromFirestore(userDoc));
-            }
-          } catch (err) {
-            console.warn(`⚠️ Could not fetch user ${studentId}:`, err);
-          }
-        }
+        // Use enrollment data directly — no need for individual user fetches
+        const students: UserModel[] = enrollResult.enrollments.map(e => ({
+          userId: e.studentId,
+          fullName: e.studentName || '',
+          email: e.studentEmail || '',
+          studentRoll: e.studentRoll || '',
+          studentClass: e.studentClass || '',
+          collegeId: e.collegeId || '',
+          userType: 'student',
+        } as UserModel));
         
         return {
           students,
@@ -5617,7 +5955,7 @@ const targetUserId = userId || currentUser?.uid;
       }
       
       // No enrollments found — exams now require enrollment, no class-based fallback
-      console.log('📋 No exam_enrollments found for this exam. Students must be enrolled first.');
+      // console.log('📋 No exam_enrollments found for this exam. Students must be enrolled first.');
       return { students: [], lastDoc: null, hasMore: false };
       
     } catch (error) {
@@ -5642,17 +5980,17 @@ const targetUserId = userId || currentUser?.uid;
   ): Promise<void> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return ; // Return empty string instead of throwing error
       }
       
-      console.log('🐛 DEBUG: Checking students in Firestore');
-      console.log('==========================================');
-      console.log('Search Parameters:');
-      console.log('  - College ID:', collegeId);
-      console.log('  - Class:', className);
-      console.log('  - Board:', board || '(any)');
-      console.log('');
+      // console.log('🐛 DEBUG: Checking students in Firestore');
+      // console.log('==========================================');
+      // console.log('Search Parameters:');
+      // console.log('  - College ID:', collegeId);
+      // console.log('  - Class:', className);
+      // console.log('  - Board:', board || '(any)');
+      // console.log('');
       
       // Query all students without status filter first
       const allStudentsQuery = query(
@@ -5662,30 +6000,30 @@ const targetUserId = userId || currentUser?.uid;
         where('studentClass', '==', className)
       );
       
-      console.log('⏳ Querying all students (no status filter)...');
+      // console.log('⏳ Querying all students (no status filter)...');
       const allSnapshot = await getDocs(allStudentsQuery);
-      console.log(`📊 Found ${allSnapshot.size} total students`);
-      console.log('');
+      // console.log(`📊 Found ${allSnapshot.size} total students`);
+      // console.log('');
       
       if (allSnapshot.size === 0) {
-        console.log('❌ NO STUDENTS FOUND!');
-        console.log('');
-        console.log('Possible reasons:');
-        console.log('  1. No students exist in this college/class');
-        console.log('  2. collegeId mismatch - check exact spelling');
-        console.log('  3. studentClass mismatch - check exact value');
-        console.log('');
-        console.log('Try this query in Firebase Console:');
-        console.log(`  Collection: users`);
-        console.log(`  Filter: userType == "student"`);
-        console.log(`  Filter: collegeId == "${collegeId}"`);
-        console.log(`  Filter: studentClass == "${className}"`);
+        // console.log('❌ NO STUDENTS FOUND!');
+        // console.log('');
+        // console.log('Possible reasons:');
+        // console.log('  1. No students exist in this college/class');
+        // console.log('  2. collegeId mismatch - check exact spelling');
+        // console.log('  3. studentClass mismatch - check exact value');
+        // console.log('');
+        // console.log('Try this query in Firebase Console:');
+        // console.log(`  Collection: users`);
+        // console.log(`  Filter: userType == "student"`);
+        // console.log(`  Filter: collegeId == "${collegeId}"`);
+        // console.log(`  Filter: studentClass == "${className}"`);
         return;
       }
       
       // Analyze each student
-      console.log('📋 Student Analysis:');
-      console.log('----------------------------------------');
+      // console.log('📋 Student Analysis:');
+      // console.log('----------------------------------------');
       
       const statusCounts: Record<string, number> = {};
       const boardCounts: Record<string, number> = {};
@@ -5704,39 +6042,39 @@ const targetUserId = userId || currentUser?.uid;
         }
       });
       
-      console.log('Status Breakdown:');
-      Object.entries(statusCounts).forEach(([status, count]) => {
-        console.log(`  - ${status}: ${count} students`);
+      // console.log('Status Breakdown:');
+      Object.entries(statusCounts).forEach(([_status, _count]) => {
+        // console.log(`  - ${status}: ${count} students`);
       });
-      console.log('');
+      // console.log('');
       
-      console.log('Board Breakdown:');
-      Object.entries(boardCounts).forEach(([b, count]) => {
-        console.log(`  - ${b}: ${count} students`);
+      // console.log('Board Breakdown:');
+      Object.entries(boardCounts).forEach(([_b, _count]) => {
+        // console.log(`  - ${b}: ${count} students`);
       });
-      console.log('');
+      // console.log('');
       
-      console.log(`✅ Active Students: ${activeStudents.length}`);
+      // console.log(`✅ Active Students: ${activeStudents.length}`);
       
       if (activeStudents.length > 0) {
-        console.log('');
-        console.log('Sample Active Students:');
-        activeStudents.slice(0, 3).forEach(s => {
-          console.log(`  - ${s.studentRoll}: ${s.fullName}`);
-          console.log(`    Class: ${s.studentClass}, Board: ${s.board}, Status: ${s.status}`);
+        // console.log('');
+        // console.log('Sample Active Students:');
+        activeStudents.slice(0, 3).forEach(_s => {
+          // console.log(`  - ${s.studentRoll}: ${s.fullName}`);
+          // console.log(`    Class: ${s.studentClass}, Board: ${s.board}, Status: ${s.status}`);
         });
       }
       
-      console.log('');
-      console.log('==========================================');
+      // console.log('');
+      // console.log('==========================================');
       
       if (board) {
         const boardFilteredCount = activeStudents.filter(s => s.board === board).length;
-        console.log(`📊 Active students with board "${board}": ${boardFilteredCount}`);
+        // console.log(`📊 Active students with board "${board}": ${boardFilteredCount}`);
         
         if (boardFilteredCount === 0 && activeStudents.length > 0) {
-          console.log(`⚠️  WARNING: No active students match board "${board}"`);
-          console.log(`   Available boards:`, Object.keys(boardCounts).join(', '));
+          // console.log(`⚠️  WARNING: No active students match board "${board}"`);
+          // console.log(`   Available boards:`, Object.keys(boardCounts).join(', '));
         }
       }
       
@@ -5753,7 +6091,7 @@ const targetUserId = userId || currentUser?.uid;
   async getCollege(collegeId: string): Promise<CollegeModel | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return null as any; // Return empty string instead of throwing error
       }
       
@@ -5776,6 +6114,65 @@ const targetUserId = userId || currentUser?.uid;
    */
   async getCollegeById(collegeId: string): Promise<CollegeModel | null> {
     return this.getCollege(collegeId);
+  }
+
+  /**
+   * Get raw college document data (untyped, includes all fields like instituteLogo)
+   */
+  async getCollegeRawData(collegeId: string): Promise<Record<string, any> | null> {
+    try {
+      if (!this.firestore) return null;
+      const collegeSnap = await getDoc(doc(this.firestore, COLLECTIONS.COLLEGES, collegeId));
+      if (!collegeSnap.exists()) return null;
+      return { id: collegeSnap.id, ...collegeSnap.data() };
+    } catch (error) {
+      // console.warn('Error fetching raw college data:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get college dashboard stats (single doc read)
+   * Returns totalStudents + learningStats for dashboard cards
+   */
+  async getCollegeDashboardStats(collegeId: string): Promise<{
+    totalStudents: number;
+    totalEnrollments: number;
+    totalCoursesCompleted: number;
+    avgCompletionRate: number;
+    totalLearningHours: number;
+    totalLecturesCompleted: number;
+    totalQuizzesCompleted: number;
+    totalExercisesCompleted: number;
+  } | null> {
+    try {
+      if (!this.firestore) return null;
+      const collegeSnap = await getDoc(doc(this.firestore, COLLECTIONS.COLLEGES, collegeId));
+      if (!collegeSnap.exists()) return null;
+
+      const data = collegeSnap.data();
+      const ls = data.learningStats || {};
+
+      // console.log('📊 College dashboard raw data:', { 
+                // totalStudents: data.totalStudents, 
+                // totalEnrollments: data.totalEnrollments,
+                // learningStats: ls 
+            // });
+
+      return {
+        totalStudents: data.totalStudents || 0,
+        totalEnrollments: data.totalEnrollments || ls.totalCoursesEnrolled || 0,
+        totalCoursesCompleted: ls.totalCoursesCompleted || 0,
+        avgCompletionRate: ls.avgCompletionRate || 0,
+        totalLearningHours: ls.totalLearningHours || Math.round((ls.totalLearningSeconds || 0) / 3600 * 10) / 10,
+        totalLecturesCompleted: ls.totalLecturesCompleted || 0,
+        totalQuizzesCompleted: ls.totalQuizzesCompleted || 0,
+        totalExercisesCompleted: ls.totalExercisesCompleted || 0,
+      };
+    } catch (error) {
+      console.error('Error fetching college dashboard stats:', error);
+      return null;
+    }
   }
 
   /**
@@ -5816,7 +6213,7 @@ const targetUserId = userId || currentUser?.uid;
   async getAllColleges(): Promise<CollegeModel[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty string instead of throwing error
       }
       
@@ -5843,7 +6240,7 @@ const targetUserId = userId || currentUser?.uid;
   ): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false; // Return empty string instead of throwing error
       }
       
@@ -5865,6 +6262,100 @@ const targetUserId = userId || currentUser?.uid;
     }
   }
   
+  // ==================== BRAND PROFILE ====================
+
+  /**
+   * Get brand profile for a college
+   */
+  async getBrandProfile(collegeId: string): Promise<{
+    instituteLogo?: string;
+    collegeName?: string;
+    primaryColor?: string;
+    secondaryColor?: string;
+    accentColor?: string;
+  } | null> {
+    try {
+      if (!this.isInitialized() || !this.firestore) {
+        // console.warn('⚠️ Firebase not initialized');
+        return null;
+      }
+
+      const collegeDoc = await getDoc(doc(this.firestore, COLLECTIONS.COLLEGES, collegeId));
+      if (!collegeDoc.exists()) return null;
+
+      const data = collegeDoc.data();
+      return {
+        instituteLogo: data.instituteLogo || '',
+        collegeName: data.collegeName || '',
+        primaryColor: data.primaryColor || '#4F46E5',
+        secondaryColor: data.secondaryColor || '#7C3AED',
+        accentColor: data.accentColor || '#EC4899',
+      };
+    } catch (error) {
+      console.error('❌ Error fetching brand profile:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Update brand profile for a college
+   */
+  async updateBrandProfile(
+    collegeId: string,
+    brandData: {
+      instituteLogo?: string;
+      collegeName?: string;
+      primaryColor?: string;
+      secondaryColor?: string;
+      accentColor?: string;
+    }
+  ): Promise<boolean> {
+    try {
+      if (!this.isInitialized() || !this.firestore) {
+        // console.warn('⚠️ Firebase not initialized');
+        return false;
+      }
+
+      const cleanUpdates: any = {};
+      Object.entries(brandData).forEach(([key, value]) => {
+        if (value !== undefined) {
+          cleanUpdates[key] = value;
+        }
+      });
+      cleanUpdates.updatedAt = serverTimestamp();
+
+      await updateDoc(doc(this.firestore, COLLECTIONS.COLLEGES, collegeId), cleanUpdates);
+      // console.log('✅ Brand profile updated for college:', collegeId);
+      return true;
+    } catch (error) {
+      console.error('❌ Error updating brand profile:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Upload institute logo to Firebase Storage (48x48px)
+   */
+  async uploadInstituteLogo(
+    collegeId: string,
+    file: File
+  ): Promise<string | null> {
+    try {
+      if (!this.storage) throw new Error('Storage not initialized');
+
+      const storageRef = ref(this.storage, `colleges/${collegeId}/brand/institute_logo`);
+      const snapshot = await uploadBytes(storageRef, file, {
+        contentType: file.type,
+      });
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      // console.log('✅ Institute logo uploaded:', downloadURL);
+      return downloadURL;
+    } catch (error) {
+      console.error('❌ Error uploading institute logo:', error);
+      return null;
+    }
+  }
+
   // ==================== CODING LANGUAGES ====================
   
   /**
@@ -5874,7 +6365,7 @@ const targetUserId = userId || currentUser?.uid;
   async getCodingLanguages(): Promise<string[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty string instead of throwing error
       }
       
@@ -5905,7 +6396,7 @@ const targetUserId = userId || currentUser?.uid;
       // Convert Set to Array and sort alphabetically
       const languagesArray = Array.from(languagesSet).sort();
       
-      console.log('✅ Fetched coding languages:', languagesArray);
+      // console.log('✅ Fetched coding languages:', languagesArray);
       return languagesArray;
       
     } catch (error) {
@@ -5927,9 +6418,12 @@ const targetUserId = userId || currentUser?.uid;
     roomType?: string,
     roomStatus?: string
   ): Promise<RoomStats[]> {
+    // Role check: Students cannot fetch room statistics
+    if (this.auth?.currentUser?.uid && !this.isInitialized()) return [];
+
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return [];
       }
 
@@ -5974,7 +6468,7 @@ const targetUserId = userId || currentUser?.uid;
   async getRoomById(collegeId: string, roomId: string): Promise<RoomModel | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return null;
       }
 
@@ -6019,7 +6513,7 @@ const targetUserId = userId || currentUser?.uid;
   async addRoom(roomData: Omit<RoomModel, 'id' | 'room_id' | 'created_date_time' | 'updated_date_time'>): Promise<string | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return null;
       }
 
@@ -6061,7 +6555,7 @@ const targetUserId = userId || currentUser?.uid;
   ): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return false;
       }
 
@@ -6106,7 +6600,7 @@ const targetUserId = userId || currentUser?.uid;
   async deleteRoom(roomId: string, collegeId: string, userId: string): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return false;
       }
 
@@ -6144,7 +6638,7 @@ const targetUserId = userId || currentUser?.uid;
   async getCollegeUsers(collegeId: string): Promise<Array<{ userId: string; name: string; userType: string }>> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return [];
       }
 
@@ -6176,7 +6670,7 @@ const targetUserId = userId || currentUser?.uid;
   async getUserById(userId: string): Promise<any | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return null;
       }
 
@@ -6200,7 +6694,7 @@ const targetUserId = userId || currentUser?.uid;
   async getUserByEmail(email: string): Promise<any | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return null;
       }
 
@@ -6210,7 +6704,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       const querySnapshot = await getDocs(q);
 
       if (querySnapshot.empty) {
-        console.log(`No user found with email: ${email}`);
+        // console.log(`No user found with email: ${email}`);
         return null;
       }
 
@@ -6240,7 +6734,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return false;
       }
 
@@ -6285,7 +6779,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return false;
       }
 
@@ -6352,10 +6846,10 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   /**
    * Generate readable exam ID (unique system-wide)
    */
-  private async generateExamId(collegeId: string, examType: string): Promise<string> {
+  private async generateExamId(collegeId: string, _examType: string): Promise<string> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log', examType);
+        // console.warn('⚠️ Firebase not initialized, skipping activity log', examType);
         return ''; // Return empty string instead of throwing error
       }
       
@@ -6387,16 +6881,16 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         const examDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId));
         
         if (!examDoc.exists()) {
-          console.log(`✅ Generated unique exam ID: ${examId} (attempt ${attempts})`);
+          // console.log(`✅ Generated unique exam ID: ${examId} (attempt ${attempts})`);
           return examId;
         }
         
-        console.warn(`⚠️ Exam ID ${examId} already exists, regenerating... (attempt ${attempts})`);
+        // console.warn(`⚠️ Exam ID ${examId} already exists, regenerating... (attempt ${attempts})`);
       }
       
       // If all attempts failed (extremely unlikely), use timestamp-based fallback
       const fallbackId = `${collegePrefix}-${year}-${Date.now().toString().slice(-6)}`;
-      console.warn(`⚠️ Using fallback exam ID: ${fallbackId}`);
+      // console.warn(`⚠️ Using fallback exam ID: ${fallbackId}`);
       return fallbackId;
       
     } catch (error) {
@@ -6421,20 +6915,20 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         throw new Error('Firebase Storage not initialized');
       }
 
-      console.log(`📄 Starting upload for ${questions.length} questions...`);
+      // console.log(`📄 Starting upload for ${questions.length} questions...`);
       
       // Use same path pattern as mobile app: question_papers/{examId}/
       const storagePath = `question_papers/${examId}/questions.json`;
       const storageRef = ref(this.storage, storagePath);
       
-      console.log(`📍 Upload path: ${storagePath}`);
+      // console.log(`📍 Upload path: ${storagePath}`);
 
       // Convert questions to JSON blob
       const questionsJson = JSON.stringify(questions);
       const blob = new Blob([questionsJson], { type: 'application/json' });
       
-      console.log(`📦 Data size: ${(blob.size / 1024).toFixed(2)} KB`);
-      console.log(`📤 Uploading to Firebase Storage...`);
+      // console.log(`📦 Data size: ${(blob.size / 1024).toFixed(2)} KB`);
+      // console.log(`📤 Uploading to Firebase Storage...`);
 
       // Upload to Storage with metadata like mobile app
       const metadata = {
@@ -6449,12 +6943,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       };
       
       await uploadBytes(storageRef, blob, metadata);
-      console.log(`✅ Upload complete`);
+      // console.log(`✅ Upload complete`);
 
       // Get download URL
       const downloadUrl = await getDownloadURL(storageRef);
-      console.log(`✅ Download URL obtained`);
-      console.log(`✅ URL: ${downloadUrl}`);
+      // console.log(`✅ Download URL obtained`);
+      // console.log(`✅ URL: ${downloadUrl}`);
 
       return { path: storagePath, url: downloadUrl };
     } catch (error) {
@@ -6472,7 +6966,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   // @ts-ignore - Unused method preserved for potential future use
   private async fetchQuestionsFromStorage(url: string): Promise<Question[] | null> {
     try {
-      console.log(`📥 Fetching questions from Storage: ${url}`);
+      // console.log(`📥 Fetching questions from Storage: ${url}`);
       const response = await fetch(url);
       
       if (!response.ok) {
@@ -6480,7 +6974,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       }
 
       const questions = await response.json();
-      console.log(`✅ Questions fetched successfully from Storage (${questions.length} questions)`);
+      // console.log(`✅ Questions fetched successfully from Storage (${questions.length} questions)`);
       return questions;
     } catch (error) {
       console.error('❌ Error fetching questions from Storage:', error);
@@ -6509,18 +7003,18 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       // because Firestore adds metadata and indexes
       const threshold = 500 * 1024; // 500KB
       
-      console.log(`📏 Data size check: ${Math.round(sizeInBytes / 1024)}KB (threshold: ${Math.round(threshold / 1024)}KB)`);
+      // console.log(`📏 Data size check: ${Math.round(sizeInBytes / 1024)}KB (threshold: ${Math.round(threshold / 1024)}KB)`);
       
       if (sizeInBytes > threshold) {
-        console.warn(`⚠️ Data size (${Math.round(sizeInBytes / 1024)}KB) exceeds threshold (${Math.round(threshold / 1024)}KB)`);
-        console.warn(`⚠️ Number of questions: ${data.questionsList.length}`);
+        // console.warn(`⚠️ Data size (${Math.round(sizeInBytes / 1024)}KB) exceeds threshold (${Math.round(threshold / 1024)}KB)`);
+        // console.warn(`⚠️ Number of questions: ${data.questionsList.length}`);
         return true;
       }
       
       // Also check based on number of questions as a safety
       // If more than 30 questions, automatically use Storage
       if (data.questionsList.length > 30) {
-        console.warn(`⚠️ Question count (${data.questionsList.length}) exceeds safe limit (30)`);
+        // console.warn(`⚠️ Question count (${data.questionsList.length}) exceeds safe limit (30)`);
         return true;
       }
       
@@ -6541,7 +7035,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): Promise<string | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return ''; // Return empty string instead of throwing error
       }
       
@@ -6563,12 +7057,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       // We use VERY conservative thresholds to avoid ANY Firestore size errors
       if (dataToSave.questionsList && Array.isArray(dataToSave.questionsList)) {
         const questionCount = dataToSave.questionsList.length;
-        console.log(`📊 Exam has ${questionCount} questions`);
+        // console.log(`📊 Exam has ${questionCount} questions`);
         
         // Calculate actual size
         const examSize = new Blob([JSON.stringify(dataToSave)]).size;
         const examSizeKB = Math.round(examSize / 1024);
-        console.log(`📏 Exam data size: ${examSizeKB}KB`);
+        // console.log(`📏 Exam data size: ${examSizeKB}KB`);
         
         // ULTRA AGGRESSIVE: Force Storage for ANY of these conditions:
         // 1. More than 20 questions (was 30)
@@ -6577,10 +7071,10 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         const shouldUseStorage = questionCount > 20 || examSizeKB > 200;
         
         if (shouldUseStorage) {
-          console.log('📦 Questions list detected, moving to Storage for safety...');
-          console.log(`   - Question count: ${questionCount} (threshold: 20)`);
-          console.log(`   - Data size: ${examSizeKB}KB (threshold: 200KB)`);
-          console.log(`   - Using Storage to avoid Firestore 1MB limit`);
+          // console.log('📦 Questions list detected, moving to Storage for safety...');
+          // console.log(`   - Question count: ${questionCount} (threshold: 20)`);
+          // console.log(`   - Data size: ${examSizeKB}KB (threshold: 200KB)`);
+          // console.log(`   - Using Storage to avoid Firestore 1MB limit`);
           
           // Upload questions to Storage
           const storageResult = await this.uploadQuestionsToStorage(
@@ -6594,22 +7088,22 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
             dataToSave.questionsStorageUrl = storageResult.url;
             // Remove questionsList from Firestore document
             delete dataToSave.questionsList;
-            console.log('✅ Questions moved to Storage, Firestore will store reference only');
+            // console.log('✅ Questions moved to Storage, Firestore will store reference only');
           } else {
             console.error('❌ Failed to upload to Storage, will try Firestore');
             // Don't throw error, let it try Firestore
           }
         } else {
-          console.log(`   - Small exam (${questionCount} questions, ${examSizeKB}KB), using Firestore`);
+          // console.log(`   - Small exam (${questionCount} questions, ${examSizeKB}KB), using Firestore`);
         }
       }
 
       // CRITICAL: Check if question paper images exist (OFFLINE EXAMS)
       // ALWAYS upload offline exam images to Storage - they're always large base64 data
       if (dataToSave.questionPaperImages && Array.isArray(dataToSave.questionPaperImages) && dataToSave.questionPaperImages.length > 0) {
-        const imageCount = dataToSave.questionPaperImages.length;
-        console.log(`📸 Offline exam detected with ${imageCount} question paper images`);
-        console.log(`📦 Uploading all images to Storage (offline exams always use Storage)...`);
+        // const _imageCount = dataToSave.questionPaperImages.length;
+        // console.log(`📸 Offline exam detected with ${imageCount} question paper images`);
+        // console.log(`📦 Uploading all images to Storage (offline exams always use Storage)...`);
         
         try {
           // Upload each image to Storage (like mobile app does)
@@ -6621,7 +7115,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
             const base64Data = imageData.image || imageData.base64 || imageData.data || imageData;
             
             if (base64Data && typeof base64Data === 'string') {
-              console.log(`📤 Uploading page ${pageNumber}...`);
+              // console.log(`📤 Uploading page ${pageNumber}...`);
               
               // Convert base64 to blob
               const base64Clean = base64Data.replace(/^data:image\/\w+;base64,/, '');
@@ -6655,7 +7149,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
                 image_url: imageUrl
               });
               
-              console.log(`✅ Uploaded page ${pageNumber}`);
+              // console.log(`✅ Uploaded page ${pageNumber}`);
             }
           }
           
@@ -6663,8 +7157,8 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           dataToSave.questionPaperPages = uploadedImages;
           delete dataToSave.questionPaperImages;
           
-          console.log(`✅ All ${uploadedImages.length} images uploaded to Storage`);
-          console.log('✅ Firestore will store image URLs only, not base64 data');
+          // console.log(`✅ All ${uploadedImages.length} images uploaded to Storage`);
+          // console.log('✅ Firestore will store image URLs only, not base64 data');
         } catch (error) {
           console.error('❌ Error uploading question paper images:', error);
           throw new Error('Failed to upload question paper images to Storage');
@@ -6672,11 +7166,11 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       }
       
       // Debug: Log data before cleaning
-      console.log('📝 Data before cleaning:', {
-        hasQuestionsList: !!dataToSave.questionsList,
-        hasStorageRef: !!dataToSave.questionsStoragePath,
-        totalQuestions: dataToSave.totalQuestions
-      });
+      // console.log('📝 Data before cleaning:', {
+                // hasQuestionsList: !!dataToSave.questionsList,
+                // hasStorageRef: !!dataToSave.questionsStoragePath,
+                // totalQuestions: dataToSave.totalQuestions
+            // });
       
       // Deep clean to remove all undefined and null values (including nested)
       const cleanedData = deepCleanObject(dataToSave);
@@ -6685,12 +7179,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       if (cleanedData.questionsStorageUrl && cleanedData.questionsList) {
         console.error('❌ SAFETY ERROR: questionsList should have been removed!');
         delete cleanedData.questionsList;
-        console.log('✅ Removed questionsList as safety measure');
+        // console.log('✅ Removed questionsList as safety measure');
       }
       
       // Final size check before writing to Firestore
       const finalSize = new Blob([JSON.stringify(cleanedData)]).size;
-      console.log(`📏 Final document size: ${Math.round(finalSize / 1024)}KB`);
+      // console.log(`📏 Final document size: ${Math.round(finalSize / 1024)}KB`);
       
       if (finalSize > 1000000) {
         console.error(`❌ CRITICAL: Document size ${Math.round(finalSize / 1024)}KB exceeds 1MB limit!`);
@@ -6698,16 +7192,16 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       }
       
       // Debug: Log data after cleaning
-      console.log('✨ Data after cleaning:', {
-        hasQuestionsList: !!cleanedData.questionsList,
-        hasStorageRef: !!cleanedData.questionsStoragePath,
-        totalQuestions: cleanedData.totalQuestions,
-        sizeKB: Math.round(finalSize / 1024)
-      });
+      // console.log('✨ Data after cleaning:', {
+                // hasQuestionsList: !!cleanedData.questionsList,
+                // hasStorageRef: !!cleanedData.questionsStoragePath,
+                // totalQuestions: cleanedData.totalQuestions,
+                // sizeKB: Math.round(finalSize / 1024)
+            // });
       
       await setDoc(examRef, cleanedData);
       
-      console.log('✅ Exam created successfully:', examId);
+      // console.log('✅ Exam created successfully:', examId);
       
       // Log activity (non-blocking - won't affect exam creation)
       try {
@@ -6729,7 +7223,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           })
         });
       } catch (logError) {
-        console.warn('⚠️ Failed to log exam creation (non-critical):', logError);
+        // console.warn('⚠️ Failed to log exam creation (non-critical):', logError);
         // Don't throw - logging failure shouldn't break exam creation
       }
       
@@ -6744,56 +7238,110 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   /**
    * Get exam by ID
    */
-  async getExamById(examId: string): Promise<ExamModel | null> {
-  try {
-    console.log('🔍 Calling Cloud Function to get sanitized exam:', examId);
-    
-    const functions = getFunctions();
-    const getExamForStudent = httpsCallable(functions, 'getExamForStudent');
-    
-    const result = await getExamForStudent({ examId });
-    const response = result.data as { success: boolean; exam: any };
-    
-    if (!response.success || !response.exam) {
-      console.error('❌ Cloud Function returned error');
+  async getExamById(examId: string, viewContext?: 'result'): Promise<ExamModel | null> {
+    try {
+      const functions = getFunctions();
+      const getExamForStudent = httpsCallable(functions, 'getExamForStudent');
+      const result = await getExamForStudent({ examId, viewContext });
+      const response = result.data as { success: boolean; exam: any };
+      if (!response.success || !response.exam) {
+        console.error('❌ getExamForStudent returned error');
+        return null;
+      }
+      
+      // 🔍 DEBUG: Log what Cloud Function returned
+      const examData = response.exam;
+      console.log('🔍 [DEBUG getExamById] Exam received:', {
+        id: examData.id,
+        title: examData.title,
+        hasQuestionsList: !!examData.questionsList,
+        questionsCount: examData.questionsList?.length || 0,
+        hasQuestionPool: !!examData.questionPool,
+        questionsHidden: examData.questionsHidden || false,
+        questionsStorageUrl: !!examData.questionsStorageUrl,
+      });
+      
+      if (examData.questionsList && examData.questionsList.length > 0) {
+        const q = examData.questionsList[0];
+        console.log('🔍 [DEBUG getExamById] First question ALL KEYS:', Object.keys(q));
+        console.log('🔍 [DEBUG getExamById] First question answer fields:', {
+          correctAnswers: q.correctAnswers,
+          correctAnswer: q.correctAnswer,
+          correct_answers: q.correct_answers,
+          correct_answer: q.correct_answer,
+          answer: q.answer,
+          answers: q.answers,
+          type: q.type,
+          optionsCount: q.options?.length || 0,
+        });
+      }
+      
+      const exam = examData as ExamModel;
+      exam.id = examData.id || examId;
+      return exam;
+    } catch (error) {
+      console.error('❌ Error in getExamById:', error);
       return null;
     }
-    
-    console.log('✅ Received sanitized exam from server');
-    console.log('   - Questions count:', response.exam.questionsList?.length || 0);
-    
-    // ✅ Return exam directly (Cloud Function already structured it correctly)
-    const exam = response.exam as ExamModel;
-    exam.id = response.exam.id || examId;
-    
-    // Debug: Check questions
-    if (exam.questionsList && exam.questionsList.length > 0) {
-      exam.questionsList.forEach((q: any, index: number) => {
-        console.log(`   Q${index + 1} (${q.type}):`, {
-          hasJumbledOptions: !!q.jumbledOptions,
-          jumbledOptionsCount: q.jumbledOptions?.length || 0,
-          hasBoilerplate: !!q.boilerplate,
-          boilerplateLength: q.boilerplate?.length || 0
-        });
-      });
-    }
-    
-    return exam;
-    
-  } catch (error) {
-    console.error('❌ Error fetching exam:', error);
-    return null;
   }
-}
+
+  async getExamQuestionsList(examId: string): Promise<{
+    questionsList: any[];
+    questionPool: any[];
+    likertQuestions: any[];
+    enableQuestionPool: boolean;
+    pickRandomCount: number;
+    poolQuestionMarks: number;
+    personalityAssessment: boolean;
+    likertDuration: number;
+  } | null> {
+    try {
+      const functions = getFunctions();
+      const getExamQuestionsListFn = httpsCallable(functions, 'getExamQuestionsList');
+      const result = await getExamQuestionsListFn({ examId });
+      const response = result.data as { 
+        success: boolean; 
+        questionsList: any[];
+        questionPool: any[];
+        likertQuestions: any[];
+        enableQuestionPool: boolean;
+        pickRandomCount: number;
+        poolQuestionMarks: number;
+        personalityAssessment: boolean;
+        likertDuration: number;
+      };
+      if (!response.success) {
+        console.error('❌ getExamQuestionsList returned error');
+        return null;
+      }
+      return {
+        questionsList: response.questionsList || [],
+        questionPool: response.questionPool || [],
+        likertQuestions: response.likertQuestions || [],
+        enableQuestionPool: response.enableQuestionPool || false,
+        pickRandomCount: response.pickRandomCount || 0,
+        poolQuestionMarks: response.poolQuestionMarks || 0,
+        personalityAssessment: response.personalityAssessment || false,
+        likertDuration: response.likertDuration || 0,
+      };
+    } catch (error: any) {
+      console.error('❌ Error in getExamQuestionsList:', error);
+      // Re-throw "No active attempt" errors so callers can retry
+      if (error?.message?.includes('No active attempt') || error?.code === 'permission-denied') {
+        throw error;
+      }
+      return null;
+    }
+  }
   
   /**
    * Get exams for a college
    */
   async getExams(collegeId?: string, academicYear?: string): Promise<ExamModel[]> {
-    console.log('🔍 [FIREBASE_SERVICE] getExams called with:', { collegeId, academicYear });
+    // console.log('🔍 [FIREBASE_SERVICE] getExams called with:', { collegeId, academicYear });
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty string instead of throwing error
       }
       
@@ -6802,38 +7350,38 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       
       // Add filters first
       if (collegeId) {
-        console.log('🔍 [FIREBASE_SERVICE] Adding collegeId filter:', collegeId);
+        // console.log('🔍 [FIREBASE_SERVICE] Adding collegeId filter:', collegeId);
         constraints.push(where('collegeId', '==', collegeId));
       }
       if (academicYear && academicYear !== 'all') {
-        console.log('🔍 [FIREBASE_SERVICE] Adding academicYear filter:', academicYear);
+        // console.log('🔍 [FIREBASE_SERVICE] Adding academicYear filter:', academicYear);
         constraints.push(where('year', '==', academicYear));
       }
       
       // Add ordering and limit
       constraints.push(orderBy('createdAt', 'desc'));
-      constraints.push(limit(100));
+      constraints.push(limit(500));
       
-      console.log('🔍 [FIREBASE_SERVICE] Executing query with', constraints.length, 'constraints');
+      // console.log('🔍 [FIREBASE_SERVICE] Executing query with', constraints.length, 'constraints');
       const examsQuery = query(
         collection(this.firestore, COLLECTIONS.EXAMS),
         ...constraints
       );
       
-      // Force fetch from server to get latest data including new questionPool fields
-      const snapshot = await getDocsFromServer(examsQuery);
-      console.log('🔍 [FIREBASE_SERVICE] Query returned', snapshot.docs.length, 'documents');
+      // ✅ PERF: Use getDocs (leverages Firestore cache) instead of getDocsFromServer
+      const snapshot = await getDocs(examsQuery);
+      // console.log('🔍 [FIREBASE_SERVICE] Query returned', snapshot.docs.length, 'documents');
       
-      const parsedExams = snapshot.docs.map((doc, index) => {
-        console.log(`🔍 [FIREBASE_SERVICE] Parsing exam ${index + 1}/${snapshot.docs.length}: ${doc.id}`);
-        return this.parseExamFromFirestore(doc);
+      const parsedExams = snapshot.docs.map((doc, _index) => {
+        // console.log(`🔍 [FIREBASE_SERVICE] Parsing exam ${index + 1}/${snapshot.docs.length}: ${doc.id}`);
+        // ✅ PERF: Use lite parser — questions loaded on-demand via getExamFullById
+        return this.parseExamFromFirestoreLite(doc);
       });
       
-      console.log('✅ [FIREBASE_SERVICE] getExams completed successfully');
+      // console.log('✅ [FIREBASE_SERVICE] getExams completed successfully');
       
-      // ✅ Return full exam data for teachers/admins (no sanitization)
-      // Students should use getExamById() which calls Cloud Function for sanitized data
-      console.log('📋 Returning', parsedExams.length, 'exams (full data for teachers)');
+      // ✅ PERF: Lite exams for list view — full data loaded on select
+      // console.log('📋 Returning', parsedExams.length, 'exams (lite data for list view)');
       
       return parsedExams;
       
@@ -6853,22 +7401,22 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async updateExam(examId: string, updates: Partial<ExamModel>, currentUser: UserModel): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, cannot update exam');
+        // console.warn('⚠️ Firebase not initialized, cannot update exam');
         return false;
       }
       
-      console.log('\n🔥 FIREBASE: Updating exam');
-      console.log('  - Exam ID:', examId);
-      console.log('  - Update keys:', Object.keys(updates));
-      console.log('  - Timestamp:', new Date().toISOString());
+      // console.log('\n🔥 FIREBASE: Updating exam');
+      // console.log('  - Exam ID:', examId);
+      // console.log('  - Update keys:', Object.keys(updates));
+      // console.log('  - Timestamp:', new Date().toISOString());
       
       // Special logging for questionsList updates
       if (updates.questionsList) {
-        console.log('  - Updating questionsList:');
-        console.log('    • New question count:', updates.questionsList.length);
+        // console.log('  - Updating questionsList:');
+        // console.log('    • New question count:', updates.questionsList.length);
         if (updates.questionsList.length > 0) {
-          console.log('    • First question title:', updates.questionsList[0].title || updates.questionsList[0].questionText);
-          console.log('    • First question keys:', Object.keys(updates.questionsList[0]));
+          // console.log('    • First question title:', updates.questionsList[0].title || updates.questionsList[0].questionText);
+          // console.log('    • First question keys:', Object.keys(updates.questionsList[0]));
         }
       }
       
@@ -6881,20 +7429,20 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       // CRITICAL: Check if questions list exists and force Storage
       if (dataToUpdate.questionsList && Array.isArray(dataToUpdate.questionsList)) {
         const questionCount = dataToUpdate.questionsList.length;
-        console.log(`📊 Update has ${questionCount} questions`);
+        // console.log(`📊 Update has ${questionCount} questions`);
         
         // Calculate actual size
         const updateSize = new Blob([JSON.stringify(dataToUpdate)]).size;
         const updateSizeKB = Math.round(updateSize / 1024);
-        console.log(`📏 Update data size: ${updateSizeKB}KB`);
+        // console.log(`📏 Update data size: ${updateSizeKB}KB`);
         
         // ULTRA AGGRESSIVE: Force Storage for ANY of these conditions:
         const shouldUseStorage = questionCount > 20 || updateSizeKB > 200;
         
         if (shouldUseStorage) {
-          console.log('📦 Questions list detected, moving to Storage...');
-          console.log(`   - Question count: ${questionCount} (threshold: 20)`);
-          console.log(`   - Data size: ${updateSizeKB}KB (threshold: 200KB)`);
+          // console.log('📦 Questions list detected, moving to Storage...');
+          // console.log(`   - Question count: ${questionCount} (threshold: 20)`);
+          // console.log(`   - Data size: ${updateSizeKB}KB (threshold: 200KB)`);
           
           // Upload questions to Storage
           const storageResult = await this.uploadQuestionsToStorage(
@@ -6908,12 +7456,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
             dataToUpdate.questionsStorageUrl = storageResult.url;
             // Remove questionsList from Firestore document
             delete dataToUpdate.questionsList;
-            console.log('✅ Questions moved to Storage, Firestore will store reference only');
+            // console.log('✅ Questions moved to Storage, Firestore will store reference only');
           } else {
             console.error('❌ Failed to upload to Storage');
           }
         } else {
-          console.log(`   - Small update (${questionCount} questions, ${updateSizeKB}KB), using Firestore`);
+          // console.log(`   - Small update (${questionCount} questions, ${updateSizeKB}KB), using Firestore`);
         }
       }
       
@@ -6924,28 +7472,28 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       if (cleanUpdates.questionsStorageUrl && cleanUpdates.questionsList) {
         console.error('❌ SAFETY ERROR: questionsList should have been removed!');
         delete cleanUpdates.questionsList;
-        console.log('✅ Removed questionsList as safety measure');
+        // console.log('✅ Removed questionsList as safety measure');
       }
       
       // Final size check
       const finalSize = new Blob([JSON.stringify(cleanUpdates)]).size;
-      console.log(`📏 Final update size: ${Math.round(finalSize / 1024)}KB`);
+      // console.log(`📏 Final update size: ${Math.round(finalSize / 1024)}KB`);
       
       if (finalSize > 1000000) {
         console.error(`❌ CRITICAL: Update size ${Math.round(finalSize / 1024)}KB exceeds 1MB limit!`);
         throw new Error(`Update too large (${Math.round(finalSize / 1024)}KB). This should not happen.`);
       }
       
-      console.log('  - Clean updates keys:', Object.keys(cleanUpdates));
+      // console.log('  - Clean updates keys:', Object.keys(cleanUpdates));
       if (cleanUpdates.questionsList) {
-        console.log('  - Cleaned questionsList length:', cleanUpdates.questionsList.length);
+        // console.log('  - Cleaned questionsList length:', cleanUpdates.questionsList.length);
       } else if (cleanUpdates.questionsStoragePath) {
-        console.log('  - Questions stored in Storage:', cleanUpdates.questionsStoragePath);
+        // console.log('  - Questions stored in Storage:', cleanUpdates.questionsStoragePath);
       }
       
       await updateDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId), cleanUpdates);
       
-      console.log('✅ FIREBASE: Exam updated successfully');
+      // console.log('✅ FIREBASE: Exam updated successfully');
       
       // Log activity (non-blocking - won't affect exam update)
       try {
@@ -6963,21 +7511,21 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           })
         });
       } catch (logError) {
-        console.warn('⚠️ Failed to log exam update (non-critical):', logError);
+        // console.warn('⚠️ Failed to log exam update (non-critical):', logError);
       }
       
       // Verify the update by fetching the document
       const verifyDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId));
       if (verifyDoc.exists()) {
         const verifyData = verifyDoc.data();
-        console.log('  ✅ VERIFICATION: Document refetched after update');
-        console.log('    • questionsList count:', verifyData?.questionsList?.length || 0);
-        console.log('    • questionsStorageUrl exists:', !!verifyData?.questionsStorageUrl);
+        // console.log('  ✅ VERIFICATION: Document refetched after update');
+        // console.log('    • questionsList count:', verifyData?.questionsList?.length || 0);
+        // console.log('    • questionsStorageUrl exists:', !!verifyData?.questionsStorageUrl);
         if (verifyData?.questionsList && verifyData.questionsList.length > 0) {
-          console.log('    • First question title:', verifyData.questionsList[0].title || verifyData.questionsList[0].questionText);
+          // console.log('    • First question title:', verifyData.questionsList[0].title || verifyData.questionsList[0].questionText);
         }
       }
-      console.log('');
+      // console.log('');
       
       return true;
       
@@ -6996,7 +7544,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async deleteExam(examId: string, currentUser: UserModel): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false;
       }
       
@@ -7008,12 +7556,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         // If questions are stored in Storage, delete them
         if (examData.questionsStoragePath) {
           try {
-            console.log('🗑️ Deleting questions from Storage:', examData.questionsStoragePath);
+            // console.log('🗑️ Deleting questions from Storage:', examData.questionsStoragePath);
             const storageRef = ref(this.storage!, examData.questionsStoragePath);
             await deleteObject(storageRef);
-            console.log('✅ Questions deleted from Storage');
+            // console.log('✅ Questions deleted from Storage');
           } catch (storageError) {
-            console.warn('⚠️ Failed to delete questions from Storage:', storageError);
+            // console.warn('⚠️ Failed to delete questions from Storage:', storageError);
             // Continue with Firestore deletion even if Storage deletion fails
           }
         }
@@ -7022,9 +7570,40 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       // Get exam data before deletion for audit trail
       const examData = examDoc.exists() ? examDoc.data() : null;
       
+      // ✅ Clean up exam_enrollments for this exam (non-blocking errors)
+      try {
+        const enrollmentsRef = collection(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS);
+        const enrollmentsQuery = query(enrollmentsRef, where('examId', '==', examId));
+        const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
+        
+        if (!enrollmentsSnapshot.empty) {
+          const batchSize = 500;
+          let currentBatch = writeBatch(this.firestore!);
+          let operationCount = 0;
+          
+          for (const enrollmentDoc of enrollmentsSnapshot.docs) {
+            currentBatch.delete(enrollmentDoc.ref);
+            operationCount++;
+            
+            if (operationCount >= batchSize) {
+              await currentBatch.commit();
+              currentBatch = writeBatch(this.firestore!);
+              operationCount = 0;
+            }
+          }
+          
+          if (operationCount > 0) {
+            await currentBatch.commit();
+          }
+          // console.log(`✅ Deleted ${enrollmentsSnapshot.size} enrollments for exam ${examId}`);
+        }
+      } catch (enrollmentError) {
+        console.error('⚠️ Failed to delete enrollments (non-critical):', enrollmentError);
+      }
+      
       // Delete the Firestore document
       await deleteDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId));
-      console.log('✅ Exam deleted from Firestore');
+      // console.log('✅ Exam deleted from Firestore');
       
       // Log activity (non-blocking - won't affect exam deletion)
       try {
@@ -7046,7 +7625,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           });
         }
       } catch (logError) {
-        console.warn('⚠️ Failed to log exam deletion (non-critical):', logError);
+        // console.warn('⚠️ Failed to log exam deletion (non-critical):', logError);
       }
       
       return true;
@@ -7077,7 +7656,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         return { success: false, enrolledCount: 0, errors: ['Firebase not initialized'] };
       }
 
-      console.log(`📋 Enrolling ${students.length} students in exam: ${examId}`);
+      // console.log(`📋 Enrolling ${students.length} students in exam: ${examId}`);
 
       // Use batched writes for efficiency (Firestore limit: 500 per batch)
       const batchSize = 500;
@@ -7092,7 +7671,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         try {
           // Create enrollment document with deterministic ID to prevent duplicates
           const enrollmentId = `${examId}_${student.userId}`;
-          const enrollmentRef = doc(this.firestore!, 'exam_enrollments', enrollmentId);
+          const enrollmentRef = doc(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS, enrollmentId);
           
           const enrollmentData = {
             examId,
@@ -7148,7 +7727,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           
           // Count actual active enrollments to get accurate totalStudents
           const enrollmentsQuery = query(
-            collection(this.firestore!, 'exam_enrollments'),
+            collection(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS),
             where('examId', '==', examId),
             where('status', '==', 'active')
           );
@@ -7163,7 +7742,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         }
       }
 
-      console.log(`✅ Enrolled ${enrolledCount} students in exam ${examId}`);
+      // console.log(`✅ Enrolled ${enrolledCount} students in exam ${examId}`);
       return { success: true, enrolledCount, errors };
     } catch (error) {
       console.error('❌ Error enrolling students in exam:', error);
@@ -7190,7 +7769,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
 
       for (const studentId of studentIds) {
         const enrollmentId = `${examId}_${studentId}`;
-        const enrollmentRef = doc(this.firestore!, 'exam_enrollments', enrollmentId);
+        const enrollmentRef = doc(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS, enrollmentId);
         currentBatch.delete(enrollmentRef);
         operationCount++;
         removedCount++;
@@ -7215,7 +7794,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         });
       }
 
-      console.log(`✅ Removed ${removedCount} students from exam ${examId}`);
+      // console.log(`✅ Removed ${removedCount} students from exam ${examId}`);
       return { success: true, removedCount };
     } catch (error) {
       console.error('❌ Error removing students from exam:', error);
@@ -7238,7 +7817,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         return { enrollments: [], lastDoc: null, hasMore: false, total: 0 };
       }
 
-      const enrollmentsRef = collection(this.firestore!, 'exam_enrollments');
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS);
       
       // Build query
       const constraints: any[] = [
@@ -7301,11 +7880,76 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   /**
    * Get count of students enrolled in an exam
    */
+  /**
+   * Get exam students with server-side pagination and search.
+   * Calls the getExamStudentsPaginated Cloud Function.
+   * Handles: browsing (paginated), search (name/roll/email), tabs (all/present/absent)
+   */
+  async getExamStudentsPaginated(
+    examId: string,
+    options: {
+      page?: number;
+      pageSize?: number;
+      filter?: 'all' | 'present' | 'absent';
+      searchQuery?: string;
+    } = {}
+  ): Promise<{
+    present: any[];
+    absent: any[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      totalFiltered: number;
+      totalPages: number;
+      hasMore: boolean;
+    };
+    counts: {
+      totalAll: number;
+      totalPresent: number;
+      totalAbsent: number;
+    };
+  }> {
+    try {
+      const { page = 1, pageSize = 20, filter = 'all', searchQuery = '' } = options;
+
+      // console.log('📊 [FIREBASE_SERVICE] getExamStudentsPaginated:', { examId, page, pageSize, filter, searchQuery });
+
+      const functions = getFunctions();
+      const fn = httpsCallable(functions, 'getExamStudentsPaginated');
+      const result = await fn({ examId, page, pageSize, filter, searchQuery });
+      const data = result.data as any;
+
+      // console.log('✅ [FIREBASE_SERVICE] getExamStudentsPaginated result:', {
+                // present: data?.present?.length || 0,
+                // absent: data?.absent?.length || 0,
+                // page: data?.pagination?.page,
+                // totalPages: data?.pagination?.totalPages,
+                // hasMore: data?.pagination?.hasMore,
+            // });
+
+      return {
+        present: data?.present || [],
+        absent: data?.absent || [],
+        pagination: data?.pagination || { page: 1, pageSize, totalFiltered: 0, totalPages: 0, hasMore: false },
+        counts: data?.counts || { totalAll: 0, totalPresent: 0, totalAbsent: 0 },
+      };
+    } catch (error) {
+      console.error('❌ [FIREBASE_SERVICE] Error in getExamStudentsPaginated:', error);
+      return {
+        present: [],
+        absent: [],
+        pagination: { page: 1, pageSize: 20, totalFiltered: 0, totalPages: 0, hasMore: false },
+        counts: { totalAll: 0, totalPresent: 0, totalAbsent: 0 },
+      };
+    }
+  }
+
+
   async getExamEnrollmentCount(examId: string): Promise<number> {
     try {
       if (!this.isInitialized() || !this.firestore) return 0;
       
-      const enrollmentsRef = collection(this.firestore!, 'exam_enrollments');
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS);
       const q = query(
         enrollmentsRef,
         where('examId', '==', examId),
@@ -7327,13 +7971,43 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       if (!this.isInitialized() || !this.firestore) return false;
       
       const enrollmentId = `${examId}_${studentId}`;
-      const enrollmentRef = doc(this.firestore!, 'exam_enrollments', enrollmentId);
+      const enrollmentRef = doc(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS, enrollmentId);
       const enrollmentDoc = await getDoc(enrollmentRef);
       
       return enrollmentDoc.exists() && enrollmentDoc.data()?.status === 'active';
     } catch (error) {
       console.error('❌ Error checking exam enrollment:', error);
       return false;
+    }
+  }
+
+  /**
+   * Get all enrolled exam IDs for a specific student in a college
+   * Returns a Set of examIds for quick lookup
+   */
+  async getEnrolledExamIdsForStudent(studentId: string, collegeId: string): Promise<Set<string>> {
+    try {
+      if (!this.isInitialized() || !this.firestore) return new Set();
+
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS);
+      const q = query(
+        enrollmentsRef,
+        where('studentId', '==', studentId),
+        where('collegeId', '==', collegeId),
+        where('status', '==', 'active')
+      );
+
+      const snapshot = await getDocs(q);
+      const examIds = new Set<string>();
+      snapshot.docs.forEach(docSnap => {
+        examIds.add(docSnap.data().examId);
+      });
+
+      // console.log(`📋 Student ${studentId} is enrolled in ${examIds.size} exams`);
+      return examIds;
+    } catch (error) {
+      console.error('❌ Error fetching enrolled exam IDs for student:', error);
+      return new Set();
     }
   }
 
@@ -7345,7 +8019,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
     try {
       if (!this.isInitialized() || !this.firestore) return new Set();
       
-      const enrollmentsRef = collection(this.firestore!, 'exam_enrollments');
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS);
       const q = query(
         enrollmentsRef,
         where('examId', '==', examId),
@@ -7378,7 +8052,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false; // Return empty string instead of throwing error
       }
       
@@ -7437,7 +8111,107 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       return false;
     }
   }
-  
+
+  /**
+   * Student marks their own attendance (auto-mark on exam start)
+   * Uses direct doc ID (examId_studentId) so Firestore rules allow it
+   */
+  async markOwnAttendance(
+    examId: string,
+    student: {
+      userId: string;
+      fullName: string;
+      email?: string;
+      studentRoll?: string;
+      collegeId: string;
+    },
+    status: AttendanceStatus
+  ): Promise<boolean> {
+    try {
+      if (!this.isInitialized() || !this.firestore) {
+        return false;
+      }
+
+      const attendanceId = `${examId}_${student.userId}`;
+      const attendanceRef = doc(this.firestore, COLLECTIONS.ATTENDANCE, attendanceId);
+      
+      const existingRecord = await getDoc(attendanceRef);
+      const now = new Date();
+
+      if (existingRecord.exists()) {
+        // Only update if current user is the owner
+        await updateDoc(attendanceRef, {
+          status,
+          updatedAt: now
+        });
+      } else {
+        const attendanceData: AttendanceRecord = {
+          id: attendanceId,
+          examId,
+          studentId: student.userId,
+          userId: student.userId,
+          studentName: student.fullName,
+          studentRollNumber: student.studentRoll || 'N/A',
+          examinerId: student.userId,
+          examinerName: 'Self',
+          examinerRole: 'Student',
+          status,
+          markedAt: now,
+          updatedAt: now,
+          collegeId: student.collegeId
+        };
+        
+        await setDoc(attendanceRef, attendanceData);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error marking own attendance:', error);
+      return false;
+    }
+  }
+  async getLiveExamStats(
+    examId: string,
+    collegeId: string,
+    page: number = 1,
+    pageSize: number = 20,
+    filter: 'present' | 'absent' = 'present'
+  ): Promise<{
+    summary: {
+      presentCount: number;
+      absentCount: number;
+      totalEnrolled: number;
+      attendancePercent: number;
+      examStatus: 'not_started' | 'in_progress' | 'ended';
+      submittedCount: number;
+      avgProgress: number;
+      totalViolations: number;
+      violationStudentCount: number;
+      totalDisconnectionMinutes: number;
+      totalDisconnectionTimes: number;
+      affectedUsersPercent: number;
+      progressPercent: number;
+      elapsedMinutes: number;
+      remainingMinutes: number;
+      mode: string;
+      totalQuestions: number;
+      durationMinutes: number;
+    };
+    students: any[];
+    pagination: {
+      page: number;
+      pageSize: number;
+      totalStudents: number;
+      totalPages: number;
+      hasMore: boolean;
+    };
+  }> {
+    const functions = getFunctions();
+    const fn = httpsCallable(functions, 'getLiveExamStats');
+    const result = await fn({ examId, collegeId, page, pageSize, filter });
+    return result.data as any;
+  }
+
   /**
    * Get attendance records for a specific exam
    */
@@ -7445,7 +8219,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
 
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty string instead of throwing error
       }
       
@@ -7476,7 +8250,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         });
       });
       
-      console.log('Attendance records', attendanceRecords);
+      // console.log('Attendance records', attendanceRecords);
 
       return attendanceRecords;
       
@@ -7492,7 +8266,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async getStudentAttendance(examId: string, studentId: string): Promise<AttendanceRecord | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return null as any; // Return empty string instead of throwing error
       }
       
@@ -7563,41 +8337,42 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   }> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return { totalStudents: 0, present: 0, absent: 0, notMarked: 0, attendanceRate: 0 }; // Return empty string instead of throwing error
       }
       
-      // Get exam details to know the class
-      const examDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId));
-      if (!examDoc.exists()) {
-        return { totalStudents: 0, present: 0, absent: 0, notMarked: 0, attendanceRate: 0 };
-      }
-      
-      const examData = examDoc.data();
-      
-      // Get all students in the exam's class
-      const studentsQuery = query(
-        collection(this.firestore, COLLECTIONS.USERS),
-        where('userType', '==', USER_TYPES.STUDENT),
-        where('className', '==', examData.class),
-        where('collegeId', '==', examData.collegeId)
-      );
-      
-      const studentsSnapshot = await getDocs(studentsQuery);
-      const totalStudents = studentsSnapshot.size;
+      // ✅ Get total enrolled students from exam_enrollments (source of truth)
+      const totalStudents = await this.getExamEnrollmentCount(examId);
       
       // Get attendance records for this exam
       const attendanceRecords = await this.getExamAttendance(examId);
       
       const present = attendanceRecords.filter(r => r.status === 'present').length;
       const absent = attendanceRecords.filter(r => r.status === 'absent').length;
-      const notMarked = totalStudents - attendanceRecords.length;
-      const attendanceRate = totalStudents > 0 ? (present / totalStudents) * 100 : 0;
+
+      // Also count students with attempts but not in attendance as present
+      const attemptsRef = collection(this.firestore, COLLECTIONS.EXAM_ATTEMPTS);
+      const attemptsQuery = query(attemptsRef, where('examId', '==', examId));
+      const attemptsSnapshot = await getDocs(attemptsQuery);
+      const presentAttendanceIds = new Set(
+        attendanceRecords.filter(r => r.status === 'present').map(r => r.studentId)
+      );
+      let extraPresent = 0;
+      attemptsSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        if (!presentAttendanceIds.has(data.studentId)) {
+          extraPresent++;
+        }
+      });
+      
+      const totalPresent = present + extraPresent;
+      const notMarked = Math.max(0, totalStudents - totalPresent - absent);
+      const attendanceRate = totalStudents > 0 ? (totalPresent / totalStudents) * 100 : 0;
       
       return {
         totalStudents,
-        present,
-        absent,
+        present: totalPresent,
+        absent: Math.max(0, totalStudents - totalPresent),
         notMarked,
         attendanceRate: Math.round(attendanceRate * 100) / 100
       };
@@ -7614,7 +8389,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async deleteAttendance(examId: string, studentId: string): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false; // Return empty string instead of throwing error
       }
       
@@ -7640,7 +8415,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): Promise<string | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
        return ''; // Return empty string instead of throwing error
       }
       
@@ -7679,7 +8454,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       
       await setDoc(noticeRef, dataToSave);
       
-      console.log('✅ Notice created successfully:', noticeId);
+      // console.log('✅ Notice created successfully:', noticeId);
       return noticeId;
       
     } catch (error) {
@@ -7694,7 +8469,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async getNoticeById(noticeId: string): Promise<NoticeModel | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return null as any; // Return empty string instead of throwing error
       }
       
@@ -7716,14 +8491,14 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
    * Get active notices for a specific user based on their role and class
    */
   async getNoticesForUser(
-    userId: string,
+    _userId: string,
     collegeId: string,
     userType: UserType,
     studentClass?: string
   ): Promise<NoticeModel[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log userID - ', userId);
+        // console.warn('⚠️ Firebase not initialized, skipping activity log userID - ', userId);
        return []; // Return empty string instead of throwing error
       }
       
@@ -7769,7 +8544,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async updateNotice(noticeId: string, updates: Partial<NoticeModel>): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false; // Return empty string instead of throwing error
       }
       
@@ -7790,7 +8565,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       
       await updateDoc(noticeRef, dataToUpdate);
       
-      console.log('✅ Notice updated successfully:', noticeId);
+      // console.log('✅ Notice updated successfully:', noticeId);
       return true;
       
     } catch (error) {
@@ -7870,8 +8645,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         marks: tc.marks || 0,
         table_data: typeof tc.table_data === 'string' ? JSON.parse(tc.table_data) : (tc.table_data || {}),
         expected_output: typeof tc.expected_output === 'string' ? JSON.parse(tc.expected_output) : (tc.expected_output || { columns: [], rows: [] })
-      }))
-    };
+      })),
+
+      // Likert specific fields
+      likertTrait: data.likertTrait,
+      likertDirection: data.likertDirection
+    } as QuestionBankItem;
   }
   
   /**
@@ -7885,31 +8664,34 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
     boardFilter?: string,
     subjectFilter?: string
   ): Promise<QuestionBankItem[]> {
+    // Security check: Return empty if student attempts to list bank
+    if (!this.isInitialized()) return [];
+
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return [];// Return empty string instead of throwing error
       }
       
-      console.log('\n' + '═'.repeat(80));
-      console.log('🔥 FIREBASE SERVICE - getQuestions() called');
-      console.log('═'.repeat(80));
-      console.log('Parameters received:');
-      console.log('  collegeId:', collegeId || 'undefined');
-      console.log('  classFilter:', classFilter || 'undefined');
-      console.log('  boardFilter:', boardFilter || 'undefined');
-      console.log('  subjectFilter:', subjectFilter || 'undefined');
+      // console.log('\n' + '═'.repeat(80));
+      // console.log('🔥 FIREBASE SERVICE - getQuestions() called');
+      // console.log('═'.repeat(80));
+      // console.log('Parameters received:');
+      // console.log('  collegeId:', collegeId || 'undefined');
+      // console.log('  classFilter:', classFilter || 'undefined');
+      // console.log('  boardFilter:', boardFilter || 'undefined');
+      // console.log('  subjectFilter:', subjectFilter || 'undefined');
       
       if (classFilter && classFilter !== 'all') {
-        console.log('\n📤 CLASS FILTER WILL BE APPLIED:');
-        console.log('   where("class", "==", "' + classFilter + '")');
-        console.log('   Filter value type:', typeof classFilter);
-        console.log('   Filter value length:', classFilter.length);
-        console.log('   Filter char codes:', `[${Array.from(classFilter).map(c => c.charCodeAt(0)).join(', ')}]`);
+        // console.log('\n📤 CLASS FILTER WILL BE APPLIED:');
+        // console.log('   where("class", "==", "' + classFilter + '")');
+        // console.log('   Filter value type:', typeof classFilter);
+        // console.log('   Filter value length:', classFilter.length);
+        // console.log('   Filter char codes:', `[${Array.from(classFilter).map(c => c.charCodeAt(0)).join(', ')}]`);
       } else {
-        console.log('\n⚠️  NO CLASS FILTER - will return all classes');
+        // console.log('\n⚠️  NO CLASS FILTER - will return all classes');
       }
-      console.log('═'.repeat(80) + '\n');
+      // console.log('═'.repeat(80) + '\n');
       
       let questionsQuery = query(
         collection(this.firestore, COLLECTIONS.QUESTION_BANK),
@@ -7934,14 +8716,14 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         questionsQuery = query(questionsQuery, where('subject', '==', subjectFilter));
       }
       
-      console.log('\n' + '═'.repeat(80));
-      console.log('🔥 FIREBASE - Executing query...');
-      console.log('═'.repeat(80));
+      // console.log('\n' + '═'.repeat(80));
+      // console.log('🔥 FIREBASE - Executing query...');
+      // console.log('═'.repeat(80));
       
       const querySnapshot = await getDocs(questionsQuery);
       const allQuestions: QuestionBankItem[] = [];
       
-      console.log('\n📊 Query returned', querySnapshot.size, 'documents');
+      // console.log('\n📊 Query returned', querySnapshot.size, 'documents');
       
       querySnapshot.forEach((doc) => {
         const question = this.parseQuestionFromFirestore(doc);
@@ -7950,33 +8732,33 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       
       // Log first 3 questions to see actual class values
       if (allQuestions.length > 0) {
-        console.log('\n📝 First', Math.min(3, allQuestions.length), 'questions from database:');
-        allQuestions.slice(0, 3).forEach((q, i) => {
-          console.log(`\n  [${i}] Question ID: ${q.id}`);
-          console.log(`      Subject: ${q.subject}`);
-          console.log(`      Class: "${q.class}"`);
-          console.log(`      Class type: ${typeof q.class}`);
-          console.log(`      Class length: ${q.class.length}`);
-          console.log(`      Class char codes: [${Array.from(q.class).map(c => c.charCodeAt(0)).join(', ')}]`);
-          console.log(`      Board: ${q.board}`);
+        // console.log('\n📝 First', Math.min(3, allQuestions.length), 'questions from database:');
+        allQuestions.slice(0, 3).forEach((q, _i) => {
+          // console.log(`\n  [${i}] Question ID: ${q.id}`);
+          // console.log(`      Subject: ${q.subject}`);
+          // console.log(`      Class: "${q.class}"`);
+          // console.log(`      Class type: ${typeof q.class}`);
+          // console.log(`      Class length: ${q.class.length}`);
+          // console.log(`      Class char codes: [${Array.from(q.class).map(c => c.charCodeAt(0)).join(', ')}]`);
+          // console.log(`      Board: ${q.board}`);
           
           if (classFilter && classFilter !== 'all') {
-            console.log(`      Matches filter? ${q.class === classFilter ? '✓ YES' : '✗ NO'}`);
+            // console.log(`      Matches filter? ${q.class === classFilter ? '✓ YES' : '✗ NO'}`);
             if (q.class !== classFilter) {
-              console.log(`      Why no match?`);
-              console.log(`        DB value: "${q.class}" [${Array.from(q.class).map(c => c.charCodeAt(0)).join(', ')}]`);
-              console.log(`        Filter:   "${classFilter}" [${Array.from(classFilter).map(c => c.charCodeAt(0)).join(', ')}]`);
+              // console.log(`      Why no match?`);
+              // console.log(`        DB value: "${q.class}" [${Array.from(q.class).map(c => c.charCodeAt(0)).join(', ')}]`);
+              // console.log(`        Filter:   "${classFilter}" [${Array.from(classFilter).map(c => c.charCodeAt(0)).join(', ')}]`);
             }
           }
         });
       } else {
-        console.log('\n⚠️  NO QUESTIONS RETURNED FROM QUERY!');
+        // console.log('\n⚠️  NO QUESTIONS RETURNED FROM QUERY!');
         if (classFilter && classFilter !== 'all') {
-          console.log('\n🔍 Troubleshooting:');
-          console.log('   1. The query was: where("class", "==", "' + classFilter + '")');
-          console.log('   2. Check Firebase Console → questionBank collection');
-          console.log('   3. Look at the "class" field in documents');
-          console.log('   4. Does it match exactly?');
+          // console.log('\n🔍 Troubleshooting:');
+          // console.log('   1. The query was: where("class", "==", "' + classFilter + '")');
+          // console.log('   2. Check Firebase Console → questionBank collection');
+          // console.log('   3. Look at the "class" field in documents');
+          // console.log('   4. Does it match exactly?');
         }
       }
       
@@ -7989,22 +8771,22 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         questions = allQuestions.filter(q => {
           return q.collegeId === DEFAULT_COLLEGE_ID || q.collegeId === collegeId;
         });
-        const commonCount = allQuestions.filter(q => q.collegeId === DEFAULT_COLLEGE_ID).length;
-        const collegeSpecificCount = questions.length - commonCount;
-        console.log(`\n✅ After collegeId filter: ${questions.length} questions (${commonCount} common + ${collegeSpecificCount} college-specific)`);
+        // const commonCount = allQuestions.filter(q => q.collegeId === DEFAULT_COLLEGE_ID).length;
+        // const _collegeSpecificCount = questions.length - commonCount;
+        // console.log(`\n✅ After collegeId filter: ${questions.length} questions (${commonCount} common + ${collegeSpecificCount} college-specific)`);
       } else {
         // If no collegeId provided, show all questions
         questions = allQuestions;
-        console.log(`\n✅ Total questions: ${questions.length}`);
+        // console.log(`\n✅ Total questions: ${questions.length}`);
       }
       
       // Client-side class filter to handle both string and array class fields
       if (classFilter && classFilter !== FILTER_VALUES.ALL) {
         questions = questions.filter(q => this.classMatchesFilter(q.class, classFilter));
-        console.log(`✅ After class filter ("${classFilter}"): ${questions.length} questions`);
+        // console.log(`✅ After class filter ("${classFilter}"): ${questions.length} questions`);
       }
       
-      console.log('═'.repeat(80) + '\n');
+      // console.log('═'.repeat(80) + '\n');
       
       return questions;
       
@@ -8033,32 +8815,38 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
     complexityFilter?: string,
     chapterFilter?: string,
     tagFilter?: string,
-    lastDocSnapshot?: DocumentSnapshot | null
+    lastDocSnapshot?: DocumentSnapshot | null,
+    excludeType?: string
   ): Promise<{ questions: QuestionBankItem[]; lastDoc: DocumentSnapshot | null; hasMore: boolean; total: number }> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return { questions: [], lastDoc: null, hasMore: false, total: 0 };
       }
       
-      console.log('🔍 Fetching paginated questions (server-side):', {
-        collegeId,
-        classFilter,
-        boardFilter,
-        subjectFilter,
-        chapterFilter,
-        tagFilter,
-        questionTypeFilter,
-        proprietaryFilter,
-        complexityFilter,
-        pageSize,
-        currentPage,
-        hasCursor: !!lastDocSnapshot,
-        searchQuery: searchQuery || 'NONE'
-      });
+      // console.log('🔍 Fetching paginated questions (server-side):', {
+                // collegeId,
+                // classFilter,
+                // boardFilter,
+                // subjectFilter,
+                // chapterFilter,
+                // tagFilter,
+                // questionTypeFilter,
+                // proprietaryFilter,
+                // complexityFilter,
+                // pageSize,
+                // currentPage,
+                // hasCursor: !!lastDocSnapshot,
+                // searchQuery: searchQuery || 'NONE'
+            // });
       
       // ── Build server-side filter constraints ──
       const constraints: any[] = [];
+      
+      // ✅ CollegeId filter at Firestore level — show own college + common questions
+      if (collegeId) {
+        constraints.push(where('collegeId', 'in', [collegeId, DEFAULT_COLLEGE_ID]));
+      }
       
       if (classFilter && classFilter !== 'all') {
         // Class filter done client-side to handle both string and array class fields
@@ -8071,6 +8859,9 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       }
       if (questionTypeFilter !== 'all') {
         constraints.push(where('type', '==', questionTypeFilter));
+      }
+      if (excludeType) {
+        // ✅ Exclude type handled client-side — Firestore '!=' breaks orderBy/pagination
       }
       if (complexityFilter && complexityFilter !== 'all') {
         constraints.push(where('complexity', '==', complexityFilter));
@@ -8089,12 +8880,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         (proprietaryFilter && proprietaryFilter !== 'all') ||
         (classFilter && classFilter !== 'all') ||
         (chapterFilter && chapterFilter !== 'all') ||
-        collegeId
+        excludeType
       );
       
       // ── Large fetch mode (select all / tags fetch) ──
       if (pageSize >= 1000) {
-        console.log('📦 Large fetch mode — fetching up to', pageSize, 'questions');
+        // console.log('📦 Large fetch mode — fetching up to', pageSize, 'questions');
         const largeQuery = query(
           collection(this.firestore, COLLECTIONS.QUESTION_BANK),
           ...constraints,
@@ -8107,7 +8898,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         });
         
         // Apply client-side filters
-        allQuestions = this.applyClientSideFilters(allQuestions, collegeId, proprietaryFilter, searchQuery, tagFilter, subjectFilter, classFilter, chapterFilter);
+        allQuestions = this.applyClientSideFilters(allQuestions, collegeId, proprietaryFilter, searchQuery, tagFilter, subjectFilter, classFilter, chapterFilter, excludeType);
         
         return {
           questions: allQuestions,
@@ -8135,7 +8926,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       
       if (lastDocSnapshot && currentPage > 1) {
         paginationConstraints.push(startAfter(lastDocSnapshot));
-        console.log('📄 Using cursor for page', currentPage);
+        // console.log('📄 Using cursor for page', currentPage);
       }
       paginationConstraints.push(limit(fetchSize));
       
@@ -8150,10 +8941,10 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         fetchedQuestions.push(this.parseQuestionFromFirestore(doc));
       });
       
-      console.log(`📊 Fetched ${fetchedQuestions.length} docs from Firestore (fetchSize: ${fetchSize})`);
+      // console.log(`📊 Fetched ${fetchedQuestions.length} docs from Firestore (fetchSize: ${fetchSize})`);
       
       // ── Apply client-side filters ──
-      let filteredQuestions = this.applyClientSideFilters(fetchedQuestions, collegeId, proprietaryFilter, searchQuery, tagFilter, subjectFilter, classFilter, chapterFilter);
+      let filteredQuestions = this.applyClientSideFilters(fetchedQuestions, collegeId, proprietaryFilter, searchQuery, tagFilter, subjectFilter, classFilter, chapterFilter, excludeType);
       
       // Take only pageSize items after filtering
       const pageQuestions = filteredQuestions.slice(0, pageSize);
@@ -8185,14 +8976,14 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           fullSnapshot.forEach((doc) => {
             allForCount.push(this.parseQuestionFromFirestore(doc));
           });
-          allForCount = this.applyClientSideFilters(allForCount, collegeId, proprietaryFilter, searchQuery, tagFilter, subjectFilter, classFilter, chapterFilter);
+          allForCount = this.applyClientSideFilters(allForCount, collegeId, proprietaryFilter, searchQuery, tagFilter, subjectFilter, classFilter, chapterFilter, excludeType);
           total = allForCount.length;
         }
       }
       
       const hasMore = querySnapshot.docs.length === fetchSize || filteredQuestions.length > pageSize;
       
-      console.log(`✅ Server-side paginated: returning ${pageQuestions.length} questions (total: ${total}, page: ${currentPage}, hasMore: ${hasMore})`);
+      // console.log(`✅ Server-side paginated: returning ${pageQuestions.length} questions (total: ${total}, page: ${currentPage}, hasMore: ${hasMore})`);
       
       return {
         questions: pageQuestions,
@@ -8239,9 +9030,15 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
     tagFilter?: string,
     subjectFilter?: string,
     classFilter?: string,
-    chapterFilter?: string
+    chapterFilter?: string,
+    excludeType?: string
   ): QuestionBankItem[] {
     let filtered = [...questions];
+    
+    // Exclude type (e.g., exclude likert from normal question bank)
+    if (excludeType) {
+      filtered = filtered.filter(q => q.type !== excludeType);
+    }
     
     // Filter by collegeId (show own + tutorialspoint common questions)
     if (collegeId) {
@@ -8305,15 +9102,15 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): Promise<string[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return [];
       }
       
-      console.log('📚 Fetching chapters for:', {
-        collegeId,
-        class: classFilter,
-        subject: subjectFilter
-      });
+      // console.log('📚 Fetching chapters for:', {
+                // collegeId,
+                // class: classFilter,
+                // subject: subjectFilter
+            // });
       
       // Build query to get all questions for the subject (class filtered client-side for array support)
       let questionsQuery = query(
@@ -8342,7 +9139,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       // Convert map values to sorted array (case-insensitive deduplication)
       const chapters = Array.from(chaptersMap.values()).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
       
-      console.log(`✅ Found ${chapters.length} unique chapters:`, chapters);
+      // console.log(`✅ Found ${chapters.length} unique chapters:`, chapters);
       
       return chapters;
       
@@ -8363,7 +9160,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): Promise<SubjectQuestionStats[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty string instead of throwing error
       }
       
@@ -8398,9 +9195,9 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       // Apply question type filter if specified
       if (questionTypeFilter) {
         questions = questions.filter(q => q.type === questionTypeFilter);
-        console.log(`📊 Calculating stats for ${questions.length} ${questionTypeFilter} questions`);
+        // console.log(`📊 Calculating stats for ${questions.length} ${questionTypeFilter} questions`);
       } else {
-        console.log(`📊 Calculating stats for ${questions.length} questions`);
+        // console.log(`📊 Calculating stats for ${questions.length} questions`);
       }
       
       // Group by subject (normalize to handle case differences)
@@ -8415,7 +9212,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         const key = `${normalizedSubject.toUpperCase()}-${normalizedClass.toUpperCase()}`;
         
         // Debug logging to track what's happening
-        console.log(`🔍 Question: "${question.subject}" | "${question.class}" → Key: "${key}"`);
+        // console.log(`🔍 Question: "${question.subject}" | "${question.class}" → Key: "${key}"`);
         
         if (!subjectMap.has(key)) {
           // Generate subject code if not available
@@ -8440,7 +9237,8 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
             jumbledCount: 0,
             descriptiveCount: 0,
             codeCount: 0,
-            sqlCount: 0
+            sqlCount: 0,
+            likertCount: 0
           });
         }
         
@@ -8477,6 +9275,9 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         else if (question.type === QUESTION_TYPES.SQL) {
           stats.sqlCount++;
         }
+        else if (question.type === QUESTION_TYPES.LIKERT) {
+          stats.likertCount++;
+        }
       });
       
       // Convert map to array and sort by subject name
@@ -8484,9 +9285,9 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         a.subject.localeCompare(b.subject)
       );
       
-      console.log(`✅ Calculated stats for ${statsArray.length} unique Class + Subject combinations (boards merged)`);
-      statsArray.forEach(s => {
-        console.log(`   📊 ${s.subject} | Class ${s.class} | Total: ${s.totalQuestions} (MCQ: ${s.mcqCount}, FITB: ${s.fitbCount}, Long: ${s.longCount}, Jumbled: ${s.jumbledCount}, Descriptive: ${s.descriptiveCount}, Code: ${s.codeCount}, SQL: ${s.sqlCount})`);
+      // console.log(`✅ Calculated stats for ${statsArray.length} unique Class + Subject combinations (boards merged)`);
+      statsArray.forEach(_s => {
+        // console.log(`   📊 ${s.subject} | Class ${s.class} | Total: ${s.totalQuestions} (MCQ: ${s.mcqCount}, FITB: ${s.fitbCount}, Long: ${s.longCount}, Jumbled: ${s.jumbledCount}, Descriptive: ${s.descriptiveCount}, Code: ${s.codeCount}, SQL: ${s.sqlCount}, Likert: ${s.likertCount})`);
       });
       
       return statsArray;
@@ -8517,7 +9318,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   private async isQuestionIdUnique(questionId: string): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false; // Return empty string instead of throwing error
       }
       const questionDoc = await getDoc(doc(this.firestore, COLLECTIONS.QUESTION_BANK, questionId));
@@ -8558,11 +9359,11 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   }> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return { success: false, error: 'Firebase not initialized' }; // Return empty string instead of throwing error
       }
 
-      console.log('\n🔥 Adding new question to Firebase...');
+      // console.log('\n🔥 Adding new question to Firebase...');
 
       // Validate required fields
       if (!questionData.questionText || !questionData.subject || !questionData.class) {
@@ -8571,7 +9372,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
 
       // Generate unique question ID
       const questionId = await this.generateUniqueQuestionId();
-      console.log('✅ Generated question ID:', questionId);
+      // console.log('✅ Generated question ID:', questionId);
 
       // Get current year for academic year
       const currentYear = new Date().getFullYear();
@@ -8587,7 +9388,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         year: questionData.year || academicYear,
         type: questionData.type || 'long',
         complexity: questionData.complexity || 'medium',
-        marks: questionData.marks || 1,
+        marks: questionData.marks ?? 1,
         isProprietaryQuestion: questionData.isProprietaryQuestion || false,
         collegeId: questionData.collegeId || DEFAULT_COLLEGE_ID,
         collegeName: questionData.collegeName || 'Tutorials Point',
@@ -8620,14 +9421,14 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         if (questionData.correctAnswers && Array.isArray(questionData.correctAnswers)) {
           // New format: array of correct answer strings
           questionDoc.correctAnswers = questionData.correctAnswers;
-          console.log('📝 MCQ Question (Multiple Correct Answers):');
-          console.log('   Options:', questionData.options);
-          console.log('   Correct Answers:', questionData.correctAnswers);
+          // console.log('📝 MCQ Question (Multiple Correct Answers):');
+          // console.log('   Options:', questionData.options);
+          // console.log('   Correct Answers:', questionData.correctAnswers);
         } else {
           // Old format: single index
           questionDoc.correctAnswers = [questionData.correctAnswers ?? 0];
-          console.log('📝 MCQ Question (Single Correct Answer):');
-          console.log('   Options:', questionData.options);
+          // console.log('📝 MCQ Question (Single Correct Answer):');
+          // console.log('   Options:', questionData.options);
         }
       } 
       else if (questionData.type === QUESTION_TYPES.FITB) {
@@ -8636,8 +9437,8 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         }
         questionDoc.correctAnswers = questionData.correctAnswers;
         
-        console.log('📝 FITB Question:');
-        console.log('   Correct Answers:', questionData.correctAnswers);
+        // console.log('📝 FITB Question:');
+        // console.log('   Correct Answers:', questionData.correctAnswers);
       }
       else if (questionData.type === QUESTION_TYPES.JUMBLED) {
         // Store both correctAnswers (the correct order) and jumbledItems (shuffled for display)
@@ -8654,9 +9455,9 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           questionDoc.jumbledItems = [...questionData.correctAnswers].sort(() => Math.random() - 0.5);
         }
         
-        console.log('📝 Jumbled Question:');
-        console.log('   Correct Answers:', questionData.correctAnswers);
-        console.log('   Jumbled Items:', questionDoc.jumbledItems);
+        // console.log('📝 Jumbled Question:');
+        // console.log('   Correct Answers:', questionData.correctAnswers);
+        // console.log('   Jumbled Items:', questionDoc.jumbledItems);
       }
       else if (questionData.type === QUESTION_TYPES.CODE) {
         // Test cases with marks per test case
@@ -8681,10 +9482,10 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           questionDoc.programmingLanguage = questionData.programmingLanguage;
         }
         
-        console.log('📝 Code Question:');
-        console.log('   Test Cases:', questionData.testCases?.length || 0);
-        console.log('   Has Test Stub:', !!questionData.testStub);
-        console.log('   Starter Codes:', questionData.starterCodes?.length || 0);
+        // console.log('📝 Code Question:');
+        // console.log('   Test Cases:', questionData.testCases?.length || 0);
+        // console.log('   Has Test Stub:', !!questionData.testStub);
+        // console.log('   Starter Codes:', questionData.starterCodes?.length || 0);
       }
       else if (questionData.type === QUESTION_TYPES.SQL) {
         // SQL schema tables (handle both camelCase and snake_case)
@@ -8709,21 +9510,35 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           questionDoc.sqlTestCases = [];
         }
         
-        console.log('📝 SQL Question:');
-        console.log('   Schema Tables:', questionDoc.sqlSchema?.length || 0);
-        console.log('   Test Cases:', questionDoc.sqlTestCases?.length || 0);
+        // console.log('📝 SQL Question:');
+        // console.log('   Schema Tables:', questionDoc.sqlSchema?.length || 0);
+        // console.log('   Test Cases:', questionDoc.sqlTestCases?.length || 0);
+      }
+      else if (questionData.type === QUESTION_TYPES.LIKERT) {
+        questionDoc.options = questionData.options || ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'];
+        questionDoc.correctAnswers = questionData.correctAnswers || ['1', '2', '3', '4', '5'];
+        if ((questionData as any).likertTrait) {
+          questionDoc.likertTrait = (questionData as any).likertTrait;
+        }
+        if ((questionData as any).likertDirection) {
+          questionDoc.likertDirection = (questionData as any).likertDirection;
+        }
+        
+        // console.log('📝 Likert Question:');
+        // console.log('   Trait:', questionDoc.likertTrait);
+        // console.log('   Direction:', questionDoc.likertDirection);
       }
 
       // Save to Firestore
       await setDoc(doc(this.firestore, COLLECTIONS.QUESTION_BANK, questionId), questionDoc);
 
-      console.log(`✅ Question ${questionId} added successfully!`);
-      console.log('   Type:', questionDoc.type);
-      console.log('   Subject:', questionDoc.subject);
-      console.log('   Class:', questionDoc.class);
-      console.log('   Board:', questionDoc.board);
-      console.log('   College:', questionDoc.collegeId);
-      console.log('   Proprietary:', questionDoc.isProprietaryQuestion);
+      // console.log(`✅ Question ${questionId} added successfully!`);
+      // console.log('   Type:', questionDoc.type);
+      // console.log('   Subject:', questionDoc.subject);
+      // console.log('   Class:', questionDoc.class);
+      // console.log('   Board:', questionDoc.board);
+      // console.log('   College:', questionDoc.collegeId);
+      // console.log('   Proprietary:', questionDoc.isProprietaryQuestion);
 
       // Log activity (non-blocking - won't affect question creation)
       try {
@@ -8744,7 +9559,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           })
         });
       } catch (logError) {
-        console.warn('⚠️ Failed to log question creation (non-critical):', logError);
+        // console.warn('⚠️ Failed to log question creation (non-critical):', logError);
       }
 
       return {
@@ -8768,12 +9583,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async createQuestion(input: CreateQuestionInput): Promise<CreateQuestionResult> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return { success: false, error: 'Firebase not initialized' };
       }
 
-      console.log('\n🔥 Creating new question...');
-      console.log('Question input:', input);
+      // console.log('\n🔥 Creating new question...');
+      // console.log('Question input:', input);
 
       // Transform input to Question format using unified function
       const questionData = createQuestionInputToQuestion(input);
@@ -8794,7 +9609,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       if (!result.success) {
         console.error('❌ Failed to add question:', result.error);
       } else {
-        console.log('✅ Question created successfully!');
+        // console.log('✅ Question created successfully!');
       }
       
       return result;
@@ -8838,13 +9653,13 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       const storageRef = ref(this.storage, fileName);
       
       // Upload file
-      console.log('📤 Uploading image to Firebase Storage...');
+      // console.log('📤 Uploading image to Firebase Storage...');
       const snapshot = await uploadBytes(storageRef, file);
-      console.log('✅ Image uploaded successfully');
+      // console.log('✅ Image uploaded successfully');
       
       // Get download URL
       const downloadURL = await getDownloadURL(snapshot.ref);
-      console.log('🔗 Image URL:', downloadURL);
+      // console.log('🔗 Image URL:', downloadURL);
       
       return downloadURL;
     } catch (error: any) {
@@ -8859,7 +9674,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async getQuestionById(questionId: string): Promise<QuestionBankItem | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return null as any; // Return empty string instead of throwing error
       }
       
@@ -8883,7 +9698,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async deleteQuestionFromBank(questionId: string): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return false;
       }
 
@@ -8891,12 +9706,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       const questionDoc = await getDoc(questionRef);
 
       if (!questionDoc.exists()) {
-        console.warn('⚠️ Question not found:', questionId);
+        // console.warn('⚠️ Question not found:', questionId);
         return false;
       }
 
       await deleteDoc(questionRef);
-      console.log('✅ Question deleted successfully:', questionId);
+      // console.log('✅ Question deleted successfully:', questionId);
       return true;
     } catch (error) {
       console.error('❌ Error deleting question:', error);
@@ -8916,7 +9731,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): Promise<QuestionBankItem[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return [];// Return empty string instead of throwing error
       }
       
@@ -8942,7 +9757,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         return bTime - aTime;
       });
       
-      console.log(`✅ Fetched ${filteredQuestions.length} questions for ${subject} - ${className} - ${board}${questionType ? ` (${questionType})` : ''}`);
+      // console.log(`✅ Fetched ${filteredQuestions.length} questions for ${subject} - ${className} - ${board}${questionType ? ` (${questionType})` : ''}`);
       return filteredQuestions;
       
     } catch (error) {
@@ -8962,7 +9777,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): Promise<NotificationModel[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty string instead of throwing error
       }
       
@@ -8995,7 +9810,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async createNotification(notificationData: Omit<NotificationModel, 'id' | 'createdAt'>): Promise<string | null> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return ''; // Return empty string instead of throwing error
       }
       
@@ -9022,7 +9837,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async getNotices(collegeId: string, userType: string): Promise<NoticeModel[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty string instead of throwing error
       }
       
@@ -9064,7 +9879,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): (() => void) | null {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return () => {}; // Return empty string instead of throwing error
       }
       
@@ -9108,7 +9923,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async markNoticeAsRead(noticeId: string, userId: string): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false; // Return empty string instead of throwing error
       }
       
@@ -9145,7 +9960,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async deleteNotice(noticeId: string): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false; // Return empty string instead of throwing error
       }
       
@@ -9373,76 +10188,76 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
    * Parse exam from Firestore document
    */
 private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
-  console.log('🔍 [FIREBASE_SERVICE] parseExamFromFirestore called for doc:', doc.id);
+  // console.log('🔍 [FIREBASE_SERVICE] parseExamFromFirestore called for doc:', doc.id);
   const data = doc.data() as DocumentData;
   
   // ✅ ADD THIS COMPLETE DEBUG BLOCK
-  console.log('🔥🔥🔥 RAW FIRESTORE DATA:', {
-    examId: doc.id,
-    examTitle: data?.title,
-    examClass: data?.class,
-    examSubject: data?.subject,
-    hasCompletionPolicy: 'completionPolicy' in data,
-    completionPolicyValue: data?.completionPolicy,
-    completionPolicyType: typeof data?.completionPolicy,
-    allFields: data ? Object.keys(data) : [],
-    firstFewCharsOfEachField: data ? Object.keys(data).reduce((acc, key) => {
-      acc[key] = typeof data[key] === 'string' ? data[key].substring(0, 30) : typeof data[key];
-      return acc;
-    }, {} as any) : {}
-  });
+  // console.log('🔥🔥🔥 RAW FIRESTORE DATA:', {
+        // examId: doc.id,
+        // examTitle: data?.title,
+        // examClass: data?.class,
+        // examSubject: data?.subject,
+        // hasCompletionPolicy: 'completionPolicy' in data,
+        // completionPolicyValue: data?.completionPolicy,
+        // completionPolicyType: typeof data?.completionPolicy,
+        // allFields: data ? Object.keys(data) : [],
+        // firstFewCharsOfEachField: data ? Object.keys(data).reduce((acc, key) => {
+            // acc[key] = typeof data[key] === 'string' ? data[key].substring(0, 30) : typeof data[key];
+            // return acc;
+        // }, {} as any) : {}
+    // });
   
   if (!data) {
     console.error('❌ [FIREBASE_SERVICE] Document data is null/undefined for:', doc.id);
   } else {
-      console.log('🔍 [FIREBASE_SERVICE] Document data keys:', Object.keys(data));
-      console.log('🔍 [FIREBASE_SERVICE] Raw document data:', {
-        id: doc.id,
-        type: data.type,
-        title: data.title,
-        mode: data.mode,
-        status: data.status,
-        class: data.class,
-        board: data.board,
-        examDate: data.examDate,
-        examTime: data.examTime,
-        totalStudents: data.totalStudents,  // ✅ ADDED: Show totalStudents
-        collegeId: data.collegeId,  // ✅ Show collegeId
-        college_id: data.college_id,  // ✅ Check alternative name
-        createdBy: data.createdBy,
-        createdByRole: data.createdByRole,
-        questionPaperImagesCount: data.questionPaperImages?.length || 0,
-        questionsListCount: data.questionsList?.length || 0,
-        hasQuestionPool: !!data.questionPool,
-        questionPoolCount: data.questionPool?.length || 0,
-        pickRandomCount: data.pickRandomCount,
-        poolQuestionMarks: data.poolQuestionMarks
-      });
+      // console.log('🔍 [FIREBASE_SERVICE] Document data keys:', Object.keys(data));
+      // console.log('🔍 [FIREBASE_SERVICE] Raw document data:', {
+                // id: doc.id,
+                // type: data.type,
+                // title: data.title,
+                // mode: data.mode,
+                // status: data.status,
+                // class: data.class,
+                // board: data.board,
+                // examDate: data.examDate,
+                // examTime: data.examTime,
+                // totalStudents: data.totalStudents,  // ✅ ADDED: Show totalStudents
+                // collegeId: data.collegeId,  // ✅ Show collegeId
+                // college_id: data.college_id,  // ✅ Check alternative name
+                // createdBy: data.createdBy,
+                // createdByRole: data.createdByRole,
+                // questionPaperImagesCount: data.questionPaperImages?.length || 0,
+                // questionsListCount: data.questionsList?.length || 0,
+                // hasQuestionPool: !!data.questionPool,
+                // questionPoolCount: data.questionPool?.length || 0,
+                // pickRandomCount: data.pickRandomCount,
+                // poolQuestionMarks: data.poolQuestionMarks
+            // });
       
       // ✅ ADDED: Explicit field comparison
-      console.log('🔍 [FIREBASE_SERVICE] Critical fields comparison:', {
-        'totalStudents': {
-          value: data.totalStudents,
-          type: typeof data.totalStudents,
-          exists: 'totalStudents' in data,
-          truthy: !!data.totalStudents
-        },
-        'collegeId': {
-          value: data.collegeId,
-          type: typeof data.collegeId,
-          exists: 'collegeId' in data,
-          truthy: !!data.collegeId
-        }
-      });
+      // console.log('🔍 [FIREBASE_SERVICE] Critical fields comparison:', {
+                // 'totalStudents': {
+                    // value: data.totalStudents,
+                    // type: typeof data.totalStudents,
+                    // exists: 'totalStudents' in data,
+                    // truthy: !!data.totalStudents
+                // },
+                // 'collegeId': {
+                    // value: data.collegeId,
+                    // type: typeof data.collegeId,
+                    // exists: 'collegeId' in data,
+                    // truthy: !!data.collegeId
+                // }
+            // });
       
       // ✅ ADDED: Explicit collegeId check
-      console.log('🏢 [FIREBASE_SERVICE] College ID fields check:', {
-        'data.collegeId': data.collegeId,
-        'data.college_id': data.college_id,
-        'data.collegeName': data.collegeName,
-        'collegeId exists': 'collegeId' in data,
-        'college_id exists': 'college_id' in data
-      });
+      // console.log('🏢 [FIREBASE_SERVICE] College ID fields check:', {
+                // 'data.collegeId': data.collegeId,
+                // 'data.college_id': data.college_id,
+                // 'data.collegeName': data.collegeName,
+                // 'collegeId exists': 'collegeId' in data,
+                // 'college_id exists': 'college_id' in data
+            // });
     }
     
     // Parse questionsList to ensure all fields are preserved
@@ -9497,6 +10312,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       if (q.testStub) parsedQuestion.testStub = q.testStub;
       if (q.testCases) parsedQuestion.testCases = q.testCases;
       if (q.starterCodes) parsedQuestion.starterCodes = q.starterCodes;
+      else if (q.starter_codes) parsedQuestion.starterCodes = q.starter_codes;
       if (q.programmingLanguage) parsedQuestion.programmingLanguage = q.programmingLanguage;
       
       // Jumbled question specific fields
@@ -9521,37 +10337,37 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       return parsedQuestion;
     }) : [];
     
-    console.log(`📋 [FIREBASE_SERVICE] Parsed ${parsedQuestionsList.length} questions with preserved fields`);
+    // console.log(`📋 [FIREBASE_SERVICE] Parsed ${parsedQuestionsList.length} questions with preserved fields`);
     if (parsedQuestionsList.length > 0) {
-      const firstQ = parsedQuestionsList[0];
-      const rawFirstQ = data.questionsList[0];
-      console.log('  Sample question RAW from Firebase:', {
-        type: rawFirstQ.type,
-        maxMarks: rawFirstQ.maxMarks,
-        description: rawFirstQ.description?.substring(0, 30) + '...',
-        title: rawFirstQ.title?.substring(0, 30) + '...'
-      });
-      console.log('  Sample question PARSED for frontend:', {
-        type: firstQ.type,
-        marks: firstQ.marks,
-        maximumMarks: firstQ.maximumMarks,
-        questionText: firstQ.questionText?.substring(0, 30) + '...',
-        title: firstQ.title?.substring(0, 30) + '...'
-      });
+      // const _firstQ = parsedQuestionsList[0];
+      // const _rawFirstQ = data.questionsList[0];
+      // console.log('  Sample question RAW from Firebase:', {
+                // type: rawFirstQ.type,
+                // maxMarks: rawFirstQ.maxMarks,
+                // description: rawFirstQ.description?.substring(0, 30) + '...',
+                // title: rawFirstQ.title?.substring(0, 30) + '...'
+            // });
+      // console.log('  Sample question PARSED for frontend:', {
+                // type: firstQ.type,
+                // marks: firstQ.marks,
+                // maximumMarks: firstQ.maximumMarks,
+                // questionText: firstQ.questionText?.substring(0, 30) + '...',
+                // title: firstQ.title?.substring(0, 30) + '...'
+            // });
     }
     
     // 🔥 CRITICAL DEBUG: Show raw questionPool data BEFORE parsing
-    console.log('🔥🔥🔥 RAW FIREBASE DATA - QUESTION POOL FIELDS:', {
-      hasQuestionPool: 'questionPool' in data,
-      questionPoolType: typeof data.questionPool,
-      questionPoolValue: data.questionPool,
-      questionPoolLength: Array.isArray(data.questionPool) ? data.questionPool.length : 'not array',
-      hasPickRandomCount: 'pickRandomCount' in data,
-      pickRandomCountValue: data.pickRandomCount,
-      hasPoolQuestionMarks: 'poolQuestionMarks' in data,
-      poolQuestionMarksValue: data.poolQuestionMarks,
-      allDataKeys: Object.keys(data)
-    });
+    // console.log('🔥🔥🔥 RAW FIREBASE DATA - QUESTION POOL FIELDS:', {
+            // hasQuestionPool: 'questionPool' in data,
+            // questionPoolType: typeof data.questionPool,
+            // questionPoolValue: data.questionPool,
+            // questionPoolLength: Array.isArray(data.questionPool) ? data.questionPool.length : 'not array',
+            // hasPickRandomCount: 'pickRandomCount' in data,
+            // pickRandomCountValue: data.pickRandomCount,
+            // hasPoolQuestionMarks: 'poolQuestionMarks' in data,
+            // poolQuestionMarksValue: data.poolQuestionMarks,
+            // allDataKeys: Object.keys(data)
+        // });
     
     const parsedExam = {
       id: doc.id,
@@ -9583,6 +10399,10 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       questionPool: data.questionPool || [],
       pickRandomCount: data.pickRandomCount || 0,
       poolQuestionMarks: data.poolQuestionMarks || 0,
+      // Personality Assessment (Likert) fields
+      personalityAssessment: data.personalityAssessment || false,
+      likertQuestions: data.likertQuestions || [],
+      likertDuration: data.likertDuration || 0,
       collegeId: data.collegeId,  // ✅ NO FALLBACK - must be present in Firestore
       collegeName: data.collegeName || '',
       createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt || new Date()) || new Date(),
@@ -9592,16 +10412,16 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : (data.updatedAt || new Date())
     };
     
-    console.log('🔥 PARSER - completionPolicy:', data.completionPolicy, '→', parsedExam.completionPolicy);
+    // console.log('🔥 PARSER - completionPolicy:', data.completionPolicy, '→', parsedExam.completionPolicy);
 
     // 🔥 CRITICAL DEBUG: Verify questionPool fields are in parsedExam
-    console.log('🔥🔥🔥 PARSED EXAM - QUESTION POOL FIELDS:', {
-      hasQuestionPool: 'questionPool' in parsedExam,
-      questionPoolValue: (parsedExam as any).questionPool,
-      questionPoolLength: Array.isArray((parsedExam as any).questionPool) ? (parsedExam as any).questionPool.length : 'not array',
-      pickRandomCount: (parsedExam as any).pickRandomCount,
-      poolQuestionMarks: (parsedExam as any).poolQuestionMarks
-    });
+    // console.log('🔥🔥🔥 PARSED EXAM - QUESTION POOL FIELDS:', {
+            // hasQuestionPool: 'questionPool' in parsedExam,
+            // questionPoolValue: (parsedExam as any).questionPool,
+            // questionPoolLength: Array.isArray((parsedExam as any).questionPool) ? (parsedExam as any).questionPool.length : 'not array',
+            // pickRandomCount: (parsedExam as any).pickRandomCount,
+            // poolQuestionMarks: (parsedExam as any).poolQuestionMarks
+        // });
     
     // ✅ CRITICAL CHECK: collegeId must exist
     if (!parsedExam.collegeId) {
@@ -9624,33 +10444,102 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
         isEmpty: data.collegeId === '',
       });
     } else {
-      console.log('✅ [FIREBASE_SERVICE] Exam has collegeId:', parsedExam.collegeId);
+      // console.log('✅ [FIREBASE_SERVICE] Exam has collegeId:', parsedExam.collegeId);
     }
     
-    console.log('✅ [FIREBASE_SERVICE] Parsed exam:', {
-      id: parsedExam.id,
-      title: parsedExam.title,
-      totalStudents: parsedExam.totalStudents,  // ✅ Show what was parsed
-      avProctoring: (parsedExam as any).avProctoring,  // ✅ Show avProctoring value
-      attendance: parsedExam.attendance,  // ✅ Show attendance for comparison
-      collegeId: parsedExam.collegeId,  // ✅ Show what was parsed
-      collegeName: parsedExam.collegeName,
-      hasQuestionsList: !!parsedExam.questionsList,
-      questionsCount: parsedExam.questionsList?.length || 0,
-      hasQuestionPool: !!(parsedExam as any).questionPool,
-      questionPoolCount: ((parsedExam as any).questionPool || []).length,
-      pickRandomCount: (parsedExam as any).pickRandomCount,
-      poolQuestionMarks: (parsedExam as any).poolQuestionMarks
-    });
+    // console.log('✅ [FIREBASE_SERVICE] Parsed exam:', {
+            // id: parsedExam.id,
+            // title: parsedExam.title,
+            // totalStudents: parsedExam.totalStudents,  // ✅ Show what was parsed
+            // avProctoring: (parsedExam as any).avProctoring,  // ✅ Show avProctoring value
+            // attendance: parsedExam.attendance,  // ✅ Show attendance for comparison
+            // collegeId: parsedExam.collegeId,  // ✅ Show what was parsed
+            // collegeName: parsedExam.collegeName,
+            // hasQuestionsList: !!parsedExam.questionsList,
+            // questionsCount: parsedExam.questionsList?.length || 0,
+            // hasQuestionPool: !!(parsedExam as any).questionPool,
+            // questionPoolCount: ((parsedExam as any).questionPool || []).length,
+            // pickRandomCount: (parsedExam as any).pickRandomCount,
+            // poolQuestionMarks: (parsedExam as any).poolQuestionMarks
+        // });
     
     // CRITICAL DEBUG: Check if examTime is being retrieved
     if (data.examTime) {
-      console.log(`🕐 [EXAM TIME DEBUG] ${parsedExam.id}: Firebase has examTime="${data.examTime}", Parsed has examTime="${parsedExam.examTime}"`);
+      // console.log(`🕐 [EXAM TIME DEBUG] ${parsedExam.id}: Firebase has examTime="${data.examTime}", Parsed has examTime="${parsedExam.examTime}"`);
     } else {
-      console.log(`⚠️ [EXAM TIME DEBUG] ${parsedExam.id}: No examTime in Firebase document`);
+      // console.log(`⚠️ [EXAM TIME DEBUG] ${parsedExam.id}: No examTime in Firebase document`);
     }
     
     return parsedExam;
+  }
+
+  /**
+   * Lightweight exam parser for list views — skips heavy questionsList/questionPool parsing.
+   * Only includes metadata needed for exam cards. Questions are lazy-loaded on select.
+   */
+  private parseExamFromFirestoreLite(doc: DocumentSnapshot): ExamModel {
+    const data = doc.data() as DocumentData;
+
+    return {
+      id: doc.id,
+      type: data.type || '',
+      typeColor: data.typeColor || 'blue',
+      year: data.year || '',
+      class: Array.isArray(data.class) ? data.class.join(', ') : (data.class || ''),
+      subject: data.subject || '',
+      title: data.title || '',
+      board: data.board || '',
+      status: data.status || 'upcoming',
+      mode: data.mode || 'offline',
+      securityLevel: data.securityLevel,
+      attendance: data.attendance,
+      avProctoring: data.avProctoring,
+      examDate: data.examDate || '',
+      examTime: data.examTime || '',
+      duration: data.duration || '',
+      completionPolicy: data.completionPolicy || 'strict',
+      totalQuestions: data.totalQuestions || 0,
+      maxMarks: data.maxMarks || '0',
+      totalStudents: data.totalStudents || 0,
+      // Skip heavy data — will be loaded on demand via getExamFullById
+      questionPaperImages: [],
+      questionsList: [],
+      questionPool: [],
+      pickRandomCount: data.pickRandomCount || 0,
+      poolQuestionMarks: data.poolQuestionMarks || 0,
+      personalityAssessment: data.personalityAssessment || false,
+      likertQuestions: data.likertQuestions || [],
+      likertDuration: data.likertDuration || 0,
+      collegeId: data.collegeId,
+      collegeName: data.collegeName || '',
+      createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt || new Date()) || new Date(),
+      createdBy: data.createdBy || '',
+      createdByName: data.createdByName || '',
+      createdByRole: data.createdByRole || '',
+      updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : (data.updatedAt || new Date()),
+      // Flag to indicate this is a lite version — questions not yet loaded
+      _isLite: true,
+    } as ExamModel;
+  }
+
+  /**
+   * Fetch a single exam with FULL data (including questionsList, questionPool).
+   * Used when user selects an exam for viewing details or editing.
+   */
+  async getExamFullById(examId: string): Promise<ExamModel | null> {
+    try {
+      if (!this.isInitialized() || !this.firestore) {
+        return null;
+      }
+      const examDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId));
+      if (!examDoc.exists()) {
+        return null;
+      }
+      return this.parseExamFromFirestore(examDoc);
+    } catch (error) {
+      console.error('❌ Error fetching full exam:', error);
+      return null;
+    }
   }
   
   /**
@@ -9720,29 +10609,29 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   async sendPasswordResetOTP(email: string): Promise<{ success: boolean; error?: string }> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return { success: false, error: 'Firebase not initialized' };// Return empty string instead of throwing error
       }
       
-      console.log('🔍 Starting password reset for:', email);
+      // console.log('🔍 Starting password reset for:', email);
       
       // Check if user exists
       if (!this.firestore) throw new Error('Firestore not initialized');
       const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       const q = query(usersRef, where('email', '==', email.toLowerCase()));
       
-      console.log('🔍 Checking if user exists...');
+      // console.log('🔍 Checking if user exists...');
       const querySnapshot = await getDocs(q);
       
       if (querySnapshot.empty) {
-        console.log('❌ No user found with email:', email);
+        // console.log('❌ No user found with email:', email);
         return {
           success: false,
           error: 'No account found with this email address'
         };
       }
       
-      console.log('✅ User found');
+      // console.log('✅ User found');
       
       // Generate OTP
       const otp = this.generateOTP();
@@ -9750,11 +10639,11 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       
       // Encode email for document ID
       const encodedEmail = this.encodeEmailForDocId(email);
-      console.log('🔍 Encoded email for doc ID:', encodedEmail);
+      // console.log('🔍 Encoded email for doc ID:', encodedEmail);
       
       // Store OTP in Firestore
       const otpRef = doc(this.firestore, COLLECTIONS.PASSWORD_RESET_OTPS, encodedEmail);
-      console.log('🔍 Attempting to write to Firestore path: passwordResetOTPs/', encodedEmail);
+      // console.log('🔍 Attempting to write to Firestore path: passwordResetOTPs/', encodedEmail);
       
       await setDoc(otpRef, {
         otp: otp,
@@ -9764,7 +10653,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
         used: false
       });
       
-      console.log('✅ OTP stored successfully in Firestore');
+      // console.log('✅ OTP stored successfully in Firestore');
       
       // Send email via API call
       const emailSent = await this.sendOTPEmail(email, otp);
@@ -9776,7 +10665,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
         };
       }
       
-      console.log('✅ OTP sent successfully');
+      // console.log('✅ OTP sent successfully');
       return { success: true };
       
     } catch (error: any) {
@@ -9799,7 +10688,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
         throw new Error('Firebase Functions not initialized');
       }
 
-      console.log(`📧 Sending OTP email to: ${toEmail}`);
+      // console.log(`📧 Sending OTP email to: ${toEmail}`);
       
       // Call the Cloud Function to send OTP email
       const sendOTPEmailFn = httpsCallable(this.functions, 'sendOTPEmail');
@@ -9813,7 +10702,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       const response = result.data as { success: boolean; message: string };
       
       if (response.success) {
-        console.log(`✅ OTP email sent successfully to: ${toEmail}`);
+        // console.log(`✅ OTP email sent successfully to: ${toEmail}`);
         return true;
       } else {
         console.error(`❌ Failed to send OTP email:`, response.message);
@@ -9823,7 +10712,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   } catch (error) {
       console.error('❌ Error sending OTP email:', error);
       // Log OTP to console as fallback for development
-      console.log(`📧 [FALLBACK] OTP for ${toEmail}: ${otp}`);
+      // console.log(`📧 [FALLBACK] OTP for ${toEmail}: ${otp}`);
       return false;
     }
   }
@@ -9834,7 +10723,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   async verifyPasswordResetOTP(email: string, otp: string): Promise<{ success: boolean; error?: string }> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return { success: false, error: 'Firebase not initialized' };// Return empty string instead of throwing error
       }
       
@@ -9924,7 +10813,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
         };
       }
 
-      console.log('🔒 Calling secure Cloud Function to reset password...');
+      // console.log('🔒 Calling secure Cloud Function to reset password...');
       
       // Call the secure Cloud Function
       const resetPasswordFn = httpsCallable(this.functions, 'resetPasswordSecurely');
@@ -9937,7 +10826,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       const data = result.data as { success: boolean; error?: string; message?: string };
       
       if (data.success) {
-        console.log('✅ Password reset successful via Cloud Function');
+        // console.log('✅ Password reset successful via Cloud Function');
         return {
           success: true,
           message: data.message || 'Password has been reset successfully'
@@ -9981,7 +10870,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   async cleanupExpiredOTPs(): Promise<void> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return; // Return empty string instead of throwing error
       }
       
@@ -9992,7 +10881,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
       await Promise.all(deletePromises);
       
-      console.log(`🧹 Cleaned up ${querySnapshot.size} expired OTPs`);
+      // console.log(`🧹 Cleaned up ${querySnapshot.size} expired OTPs`);
     } catch (error) {
       console.error('Cleanup error:', error);
     }
@@ -10006,7 +10895,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   async checkUserExistsByPhone(phone: string): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false; // Return empty string instead of throwing error
       }
       
@@ -10028,7 +10917,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   async checkUserExistsByEmail(email: string): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return false; // Return empty string instead of throwing error
       }
       if (!email || !email.trim()) return false;
@@ -10061,7 +10950,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   ): Promise<boolean> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return false;
       }
       
@@ -10091,7 +10980,8 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   /**
    * Get permissions based on user type
    */
-  private getPermissions(userType: UserType): UserPermissions {
+  // @ts-ignore
+  private _getPermissions(userType: UserType): UserPermissions {
     const permissions: Record<UserType, UserPermissions> = {
       super_admin: {
         canEvaluate: true,
@@ -10222,7 +11112,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
         createdByRole: 'admin'
       });
       
-      console.log('✅ Bulk user created via Cloud Function:', userData.fullName);
+      // console.log('✅ Bulk user created via Cloud Function:', userData.fullName);
     } catch (error: any) {
       console.error('Error creating bulk user:', error);
       
@@ -10241,7 +11131,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
    */
   async createUser(userData: any): Promise<void> {
     try {
-      console.log('Creating user via Cloud Function:', userData);
+      // console.log('Creating user via Cloud Function:', userData);
       
       if (!this.functions) {
         throw new Error('Firebase Functions not initialized');
@@ -10265,7 +11155,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       
       // Call Cloud Function (Admin SDK - won't log out current user)
       const createUserFn = httpsCallable(this.functions, 'createUser');
-      const result = await createUserFn({
+      await createUserFn({
         fullName: userData.full_name,
         title: userData.title || '',
         email: userData.email || '',
@@ -10282,7 +11172,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
         createdByRole: currentUser?.userType || 'admin'
       });
       
-      console.log('✅ User created successfully via Cloud Function:', result.data);
+      // console.log('✅ User created successfully via Cloud Function:', result.data);
       
     } catch (error: any) {
       console.error('Error in createUser:', error);
@@ -10316,41 +11206,39 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
     try {
       // ========== STEP 1: Initialization Check ==========
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, cannot fetch exam students');
+        // console.warn('⚠️ Firebase not initialized, cannot fetch exam students');
         return { presentStudents: [], absentStudents: [], totalStudents: 0 };
       }
 
-      console.log('🔍 Fetching exam students for:', { examId, className, board });
+      // console.log('🔍 Fetching exam students for:', { examId, className, board });
 
-      // ========== STEP 2: Get ALL students from Users table ==========
-      if (!this.firestore) throw new Error('Firestore not initialized');
-const usersRef = collection(this.firestore, COLLECTIONS.USERS);
-      const studentsQuery = query(
-        usersRef,
-        where('userType', '==', USER_TYPES.STUDENT),
-        where('studentClass', '==', className),
-        where('board', '==', board)
+      // ========== STEP 2: Get ALL enrolled students from exam_enrollments ==========
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS);
+      const enrollmentsQuery = query(
+        enrollmentsRef,
+        where('examId', '==', examId),
+        where('status', '==', 'active')
       );
-      const studentsSnapshot = await getDocs(studentsQuery);
+      const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
 
-      console.log('📋 Total students in Users table:', studentsSnapshot.size);
+      // console.log('📋 Total enrolled students:', enrollmentsSnapshot.size);
 
-      if (studentsSnapshot.empty) {
-        console.warn('⚠️ No students found for class:', className, 'board:', board);
+      if (enrollmentsSnapshot.empty) {
+        // console.warn('⚠️ No enrolled students found for exam:', examId);
         return { presentStudents: [], absentStudents: [], totalStudents: 0 };
       }
 
-      // Create a map of all students with their details
+      // Create a map of all enrolled students
       const allStudentsMap = new Map<string, any>();
-      studentsSnapshot.docs.forEach(doc => {
-        const studentData = doc.data();
-        allStudentsMap.set(doc.id, {
-          studentId: doc.id,
-          studentName: studentData.fullName || studentData.name || 'Unknown',
-          rollNumber: studentData.studentRoll || studentData.rollNumber || 'N/A',
-          email: studentData.email || '',
-          className: studentData.studentClass,
-          board: studentData.board
+      enrollmentsSnapshot.docs.forEach(enrollDoc => {
+        const enrollData = enrollDoc.data();
+        allStudentsMap.set(enrollData.studentId, {
+          studentId: enrollData.studentId,
+          studentName: enrollData.studentName || 'Unknown',
+          rollNumber: enrollData.studentRoll || enrollData.rollNumber || 'N/A',
+          email: enrollData.studentEmail || '',
+          className: enrollData.class || className,
+          board: enrollData.board || board
         });
       });
 
@@ -10362,24 +11250,34 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       );
       const attendanceSnapshot = await getDocs(attendanceQuery);
 
-      console.log('✅ Attendance records found for this exam:', attendanceSnapshot.size);
+      // console.log('✅ Attendance records found for this exam:', attendanceSnapshot.size);
 
-      // ========== STEP 4: Identify Present Students ==========
-      // Students who HAVE attendance records = Present
+      // ========== STEP 4: Identify Present Students from attendance ==========
       const presentStudentIds = new Set<string>();
       const attendanceDataMap = new Map<string, any>();
 
-      attendanceSnapshot.docs.forEach(doc => {
-        const attendanceData = doc.data();
+      attendanceSnapshot.docs.forEach(aDoc => {
+        const attendanceData = aDoc.data();
         const studentId = attendanceData.studentId || attendanceData.userId;
         
-        if (studentId && allStudentsMap.has(studentId)) {
+        if (studentId && attendanceData.status === 'present') {
           presentStudentIds.add(studentId);
           attendanceDataMap.set(studentId, {
-            attendanceDocId: doc.id,
+            attendanceDocId: aDoc.id,
             markedAt: attendanceData.markedAt || attendanceData.createdAt,
             ...attendanceData
           });
+        }
+      });
+
+      // ========== STEP 4b: Also include students with attempts but not in attendance ==========
+      const attemptsRef = collection(this.firestore, COLLECTIONS.EXAM_ATTEMPTS);
+      const attemptsQuery = query(attemptsRef, where('examId', '==', examId));
+      const attemptsSnapshot = await getDocs(attemptsQuery);
+      attemptsSnapshot.docs.forEach(aDoc => {
+        const aData = aDoc.data();
+        if (!presentStudentIds.has(aData.studentId)) {
+          presentStudentIds.add(aData.studentId);
         }
       });
 
@@ -10389,13 +11287,11 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
 
       allStudentsMap.forEach((studentData, studentId) => {
         if (presentStudentIds.has(studentId)) {
-          // Student IS in Attendance = Present
           presentStudentsData.push({
             ...studentData,
             ...attendanceDataMap.get(studentId)
           });
         } else {
-          // Student NOT in Attendance = Absent
           absentStudents.push({
             ...studentData,
             status: ATTENDANCE_STATUS.ABSENT,
@@ -10405,22 +11301,22 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         }
       });
 
-      console.log('📊 Student breakdown:', {
-        total: allStudentsMap.size,
-        present: presentStudentsData.length,
-        absent: absentStudents.length
-      });
+      // console.log('📊 Student breakdown:', {
+                // total: allStudentsMap.size,
+                // present: presentStudentsData.length,
+                // absent: absentStudents.length
+            // });
 
       // ========== STEP 6: Fetch Exam Attempts for Present Students (Parallel) ==========
       const presentStudents: any[] = [];
 
       if (presentStudentsData.length > 0) {
-        console.log('🔄 Fetching exam attempts for', presentStudentsData.length, 'present students...');
+        // console.log('🔄 Fetching exam attempts for', presentStudentsData.length, 'present students...');
 
         const attemptPromises = presentStudentsData.map(async (student) => {
           try {
             if (!this.firestore) throw new Error('Firestore not initialized');
-            const attemptRef = collection(this.firestore, 'examAttempts');
+            const attemptRef = collection(this.firestore, COLLECTIONS.EXAM_ATTEMPTS);
             const attemptQuery = query(
               attemptRef,
               where('examId', '==', examId),
@@ -10472,22 +11368,22 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         const results = await Promise.all(attemptPromises);
         presentStudents.push(...results);
         
-        console.log('✅ Exam attempts fetched:', {
-          withAttempts: presentStudents.filter(s => s.hasAttempt).length,
-          withoutAttempts: presentStudents.filter(s => !s.hasAttempt).length
-        });
+        // console.log('✅ Exam attempts fetched:', {
+                    // withAttempts: presentStudents.filter(s => s.hasAttempt).length,
+                    // withoutAttempts: presentStudents.filter(s => !s.hasAttempt).length
+                // });
       }
 
       // ========== STEP 7: Calculate Final Statistics ==========
       const totalStudents = presentStudents.length + absentStudents.length;
 
-      console.log('✅ Successfully fetched exam students:', {
-        total: totalStudents,
-        present: presentStudents.length,
-        absent: absentStudents.length,
-        withSubmissions: presentStudents.filter(s => s.hasAttempt).length,
-        pendingSubmissions: presentStudents.filter(s => !s.hasAttempt).length
-      });
+      // console.log('✅ Successfully fetched exam students:', {
+                // total: totalStudents,
+                // present: presentStudents.length,
+                // absent: absentStudents.length,
+                // withSubmissions: presentStudents.filter(s => s.hasAttempt).length,
+                // pendingSubmissions: presentStudents.filter(s => !s.hasAttempt).length
+            // });
 
       return {
         presentStudents,
@@ -10580,11 +11476,11 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async logInternetDisconnection(examId: string, userId: string): Promise<string> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return ''; // Return empty string instead of throwing error
       }
 
-      console.log('🔌 Logging internet disconnection for exam:', examId, 'user:', userId);
+      // console.log('🔌 Logging internet disconnection for exam:', examId, 'user:', userId);
 
       const networkInfo = await this.getUserNetworkInfo();
       const entryId = `${examId}_${userId}_${Date.now()}`;
@@ -10607,7 +11503,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       // Save to InternetStatus collection
       await setDoc(doc(this.firestore, COLLECTIONS.INTERNET_STATUS, entryId), internetStatusEntry);
 
-      console.log('✅ Internet disconnection logged successfully:', entryId);
+      // console.log('✅ Internet disconnection logged successfully:', entryId);
       return entryId;
     } catch (error) {
       console.error('❌ Error logging internet disconnection:', error);
@@ -10621,11 +11517,11 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async logInternetReconnection(disconnectionEntryId: string, internetUnavailableDuration: number): Promise<void> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return; // Return empty string instead of throwing error
       }
 
-      console.log('🔌 Logging internet reconnection for entry:', disconnectionEntryId);
+      // console.log('🔌 Logging internet reconnection for entry:', disconnectionEntryId);
 
       const entryRef = doc(this.firestore, COLLECTIONS.INTERNET_STATUS, disconnectionEntryId);
       
@@ -10637,7 +11533,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         updatedAt: new Date()
       });
 
-      console.log('✅ Internet reconnection logged successfully');
+      // console.log('✅ Internet reconnection logged successfully');
     } catch (error) {
       console.error('❌ Error logging internet reconnection:', error);
       throw error;
@@ -10656,11 +11552,11 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   ): Promise<string> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return ''; // Return empty string instead of throwing error
       }
 
-      console.log('🔌 Logging complete connectivity cycle for exam:', examId, 'user:', userId);
+      // console.log('🔌 Logging complete connectivity cycle for exam:', examId, 'user:', userId);
 
       // Calculate duration when internet was unavailable
       const internetUnavailableDuration = Math.round((reconnectionTimestamp.getTime() - disconnectionTimestamp.getTime()) / 1000);
@@ -10690,10 +11586,10 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       // Save to InternetStatus collection - ONE operation with ALL data
       await setDoc(doc(this.firestore, COLLECTIONS.INTERNET_STATUS, entryId), internetStatusEntry);
 
-      console.log('✅ Complete connectivity cycle logged successfully:', entryId);
-      console.log('   Disconnection:', disconnectionTimestamp);
-      console.log('   Reconnection:', reconnectionTimestamp);
-      console.log('   Internet Unavailable Duration:', internetUnavailableDuration, 'seconds');
+      // console.log('✅ Complete connectivity cycle logged successfully:', entryId);
+      // console.log('   Disconnection:', disconnectionTimestamp);
+      // console.log('   Reconnection:', reconnectionTimestamp);
+      // console.log('   Internet Unavailable Duration:', internetUnavailableDuration, 'seconds');
       
       return entryId;
     } catch (error) {
@@ -10714,7 +11610,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   }> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return { totalDisconnections: 0, totalInternetUnavailableDuration: 0, affectedUsers: 0, averageUnavailableDurationPerIncident: 0, disconnectionsByConnectionType: {} };
       }
 
@@ -10765,12 +11661,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async getUserConnectivityHistory(examId: string, userId: string): Promise<InternetStatusEntry[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
        return []; // Return empty string instead of throwing error
       }
 
-      console.log('📡 getUserConnectivityHistory called:', { examId, userId });
-      console.log('📡 Collection name from COLLECTIONS:', COLLECTIONS.INTERNET_STATUS);
+      // console.log('📡 getUserConnectivityHistory called:', { examId, userId });
+      // console.log('📡 Collection name from COLLECTIONS:', COLLECTIONS.INTERNET_STATUS);
 
       // Try different collection name variations
       const collectionNames = [
@@ -10781,11 +11677,11 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       ];
 
       let history: InternetStatusEntry[] = [];
-      let successfulCollection: string | null = null;
+      // let successfulCollection: string | null = null;
 
       for (const collectionName of collectionNames) {
         try {
-          console.log(`📡 Trying collection: "${collectionName}"`);
+          // console.log(`📡 Trying collection: "${collectionName}"`);
           const internetStatusRef = collection(this.firestore, collectionName);
           
           // Try with orderBy first (requires composite index)
@@ -10799,18 +11695,18 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
             );
             
             querySnapshot = await getDocs(q);
-            console.log(`✅ Query with orderBy successful for "${collectionName}", documents found:`, querySnapshot.size);
+            // console.log(`✅ Query with orderBy successful for "${collectionName}", documents found:`, querySnapshot.size);
           } catch (indexError: any) {
             // If composite index is missing, try without orderBy
             if (indexError.code === 'failed-precondition' || indexError.message?.includes('index')) {
-              console.warn(`⚠️ Composite index missing for "${collectionName}", trying without orderBy`);
+              // console.warn(`⚠️ Composite index missing for "${collectionName}", trying without orderBy`);
               const simpleQuery = query(
                 internetStatusRef, 
                 where('examId', '==', examId),
                 where('userId', '==', userId)
               );
               querySnapshot = await getDocs(simpleQuery);
-              console.log(`✅ Simple query successful for "${collectionName}", documents found:`, querySnapshot.size);
+              // console.log(`✅ Simple query successful for "${collectionName}", documents found:`, querySnapshot.size);
             } else {
               throw indexError;
             }
@@ -10819,13 +11715,13 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           if (querySnapshot.size > 0) {
             querySnapshot.forEach((doc) => {
               const data = doc.data();
-              console.log('📡 Processing connectivity document:', {
-                docId: doc.id,
-                examId: data.examId,
-                userId: data.userId,
-                duration: data.internetUnavailableDuration,
-                status: data.status
-              });
+              // console.log('📡 Processing connectivity document:', {
+                                // docId: doc.id,
+                                // examId: data.examId,
+                                // userId: data.userId,
+                                // duration: data.internetUnavailableDuration,
+                                // status: data.status
+                            // });
               
               history.push({
                 ...data,
@@ -10836,25 +11732,25 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
               } as InternetStatusEntry);
             });
             
-            successfulCollection = collectionName;
-            console.log(`✅ Found ${history.length} records in collection "${collectionName}"`);
+            // successfulCollection = collectionName;
+            // console.log(`✅ Found ${history.length} records in collection "${collectionName}"`);
             break; // Stop trying other collection names
           } else {
-            console.log(`⚠️ No documents found in "${collectionName}"`);
+            // console.log(`⚠️ No documents found in "${collectionName}"`);
           }
         } catch (collectionError: any) {
-          console.warn(`⚠️ Error querying "${collectionName}":`, collectionError.message);
+          // console.warn(`⚠️ Error querying "${collectionName}":`, collectionError.message);
           // Continue to next collection name
         }
       }
 
       if (history.length === 0) {
-        console.warn('❌ No connectivity data found in any collection variation');
-        console.warn('   Tried collections:', collectionNames);
-        console.warn('   examId:', examId);
-        console.warn('   userId:', userId);
+        // console.warn('❌ No connectivity data found in any collection variation');
+        // console.warn('   Tried collections:', collectionNames);
+        // console.warn('   examId:', examId);
+        // console.warn('   userId:', userId);
       } else {
-        console.log(`✅ getUserConnectivityHistory returning ${history.length} records from "${successfulCollection}"`);
+        // console.log(`✅ getUserConnectivityHistory returning ${history.length} records from "${successfulCollection}"`);
       }
 
       return history;
@@ -10884,12 +11780,12 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async getAllExamConnectivityRecords(examId: string): Promise<InternetStatusEntry[]> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return []; // Return empty array instead of throwing error
       }
 
-      console.log('📡 getAllExamConnectivityRecords called for exam:', examId);
-      console.log('📡 Collection name from COLLECTIONS:', COLLECTIONS.INTERNET_STATUS);
+      // console.log('📡 getAllExamConnectivityRecords called for exam:', examId);
+      // console.log('📡 Collection name from COLLECTIONS:', COLLECTIONS.INTERNET_STATUS);
 
       // Try different collection name variations
       const collectionNames = [
@@ -10900,11 +11796,11 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       ];
 
       let records: InternetStatusEntry[] = [];
-      let successfulCollection: string | null = null;
+      // let successfulCollection: string | null = null;
 
       for (const collectionName of collectionNames) {
         try {
-          console.log(`📡 Trying collection: "${collectionName}" for exam records`);
+          // console.log(`📡 Trying collection: "${collectionName}" for exam records`);
           const internetStatusRef = collection(this.firestore, collectionName);
           
           // Try with orderBy first (requires composite index)
@@ -10917,17 +11813,17 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
             );
             
             querySnapshot = await getDocs(q);
-            console.log(`✅ Query with orderBy successful for "${collectionName}", documents found:`, querySnapshot.size);
+            // console.log(`✅ Query with orderBy successful for "${collectionName}", documents found:`, querySnapshot.size);
           } catch (indexError: any) {
             // If composite index is missing, try without orderBy
             if (indexError.code === 'failed-precondition' || indexError.message?.includes('index')) {
-              console.warn(`⚠️ Composite index missing for "${collectionName}", trying without orderBy`);
+              // console.warn(`⚠️ Composite index missing for "${collectionName}", trying without orderBy`);
               const simpleQuery = query(
                 internetStatusRef, 
                 where('examId', '==', examId)
               );
               querySnapshot = await getDocs(simpleQuery);
-              console.log(`✅ Simple query successful for "${collectionName}", documents found:`, querySnapshot.size);
+              // console.log(`✅ Simple query successful for "${collectionName}", documents found:`, querySnapshot.size);
             } else {
               throw indexError;
             }
@@ -10945,24 +11841,24 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
               } as InternetStatusEntry);
             });
             
-            successfulCollection = collectionName;
-            console.log(`✅ Found ${records.length} records in collection "${collectionName}"`);
+            // successfulCollection = collectionName;
+            // console.log(`✅ Found ${records.length} records in collection "${collectionName}"`);
             break; // Stop trying other collection names
           } else {
-            console.log(`⚠️ No documents found in "${collectionName}"`);
+            // console.log(`⚠️ No documents found in "${collectionName}"`);
           }
         } catch (collectionError: any) {
-          console.warn(`⚠️ Error querying "${collectionName}":`, collectionError.message);
+          // console.warn(`⚠️ Error querying "${collectionName}":`, collectionError.message);
           // Continue to next collection name
         }
       }
 
       if (records.length === 0) {
-        console.warn('❌ No connectivity records found in any collection variation');
-        console.warn('   Tried collections:', collectionNames);
-        console.warn('   examId:', examId);
+        // console.warn('❌ No connectivity records found in any collection variation');
+        // console.warn('   Tried collections:', collectionNames);
+        // console.warn('   examId:', examId);
       } else {
-        console.log(`✅ getAllExamConnectivityRecords returning ${records.length} records from "${successfulCollection}"`);
+        // console.log(`✅ getAllExamConnectivityRecords returning ${records.length} records from "${successfulCollection}"`);
       }
 
       return records;
@@ -10980,7 +11876,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   async deleteExamConnectivityRecords(examId: string): Promise<void> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized, skipping activity log');
+        // console.warn('⚠️ Firebase not initialized, skipping activity log');
         return; // Return empty string instead of throwing error
       }
 
@@ -10994,7 +11890,7 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       });
 
       await Promise.all(deletePromises);
-      console.log('✅ All connectivity records deleted for exam:', examId);
+      // console.log('✅ All connectivity records deleted for exam:', examId);
     } catch (error) {
       console.error('❌ Error deleting connectivity records:', error);
       throw error;
@@ -11019,16 +11915,16 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
     lastDoc: DocumentSnapshot | null;
     hasMore: boolean;
   }> {
-    console.log('🔍 [FIREBASE_SERVICE] getExamsPaginated called with:', { 
-      collegeId, 
-      academicYear, 
-      pageSize,
-      hasLastDoc: !!lastDocument 
-    });
+    // console.log('🔍 [FIREBASE_SERVICE] getExamsPaginated called with:', { 
+            // collegeId, 
+            // academicYear, 
+            // pageSize,
+            // hasLastDoc: !!lastDocument 
+        // });
     
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return { exams: [], lastDoc: null, hasMore: false };
       }
       
@@ -11037,11 +11933,11 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       
       // Add filters first
       if (collegeId) {
-        console.log('🔍 [FIREBASE_SERVICE] Adding collegeId filter:', collegeId);
+        // console.log('🔍 [FIREBASE_SERVICE] Adding collegeId filter:', collegeId);
         constraints.push(where('collegeId', '==', collegeId));
       }
       if (academicYear && academicYear !== 'all') {
-        console.log('🔍 [FIREBASE_SERVICE] Adding academicYear filter:', academicYear);
+        // console.log('🔍 [FIREBASE_SERVICE] Adding academicYear filter:', academicYear);
         constraints.push(where('year', '==', academicYear));
       }
       
@@ -11050,22 +11946,22 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       
       // Add pagination - start after last document if provided
       if (lastDocument) {
-        console.log('🔍 [FIREBASE_SERVICE] Adding startAfter pagination');
+        // console.log('🔍 [FIREBASE_SERVICE] Adding startAfter pagination');
         constraints.push(startAfter(lastDocument));
       }
       
       // Add limit (fetch one extra to check if there are more)
       constraints.push(limit(pageSize + 1));
       
-      console.log('🔍 [FIREBASE_SERVICE] Executing paginated query with', constraints.length, 'constraints');
+      // console.log('🔍 [FIREBASE_SERVICE] Executing paginated query with', constraints.length, 'constraints');
       const examsQuery = query(
         collection(this.firestore, COLLECTIONS.EXAMS),
         ...constraints
       );
       
-      // Force fetch from server to get latest data including new questionPool fields
-      const snapshot = await getDocsFromServer(examsQuery);
-      console.log('🔍 [FIREBASE_SERVICE] Query returned', snapshot.docs.length, 'documents');
+      // ✅ PERF: Use getDocs (leverages Firestore cache) instead of getDocsFromServer
+      const snapshot = await getDocs(examsQuery);
+      // console.log('🔍 [FIREBASE_SERVICE] Query returned', snapshot.docs.length, 'documents');
       
       // Check if there are more documents
       const hasMore = snapshot.docs.length > pageSize;
@@ -11073,35 +11969,34 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       // Get the actual documents (excluding the extra one if present)
       const docs = hasMore ? snapshot.docs.slice(0, pageSize) : snapshot.docs;
       
-            // Parse exams
-      const parsedExams = docs.map((doc, index) => {
-        console.log(`🔍 [FIREBASE_SERVICE] Parsing exam ${index + 1}/${docs.length}: ${doc.id}`);
-        // ✅ Return full exam data for teachers/admins (no sanitization)
-        // Students should use getExamById() which calls Cloud Function for sanitized data
-        return this.parseExamFromFirestore(doc);
+            // Parse exams — use LITE parser for list view (skip heavy questionsList parsing)
+      const parsedExams = docs.map((doc, _index) => {
+        // console.log(`🔍 [FIREBASE_SERVICE] Parsing exam ${index + 1}/${docs.length}: ${doc.id}`);
+        // ✅ PERF: Use lite parser — questions loaded on-demand via getExamFullById
+        return this.parseExamFromFirestoreLite(doc);
       });
       
       // Get the last document for next pagination
       const lastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
       
       // 🔥 CRITICAL DEBUG: Verify questionPool fields are in returned exams
-      console.log('✅ [FIREBASE_SERVICE] getExamsPaginated completed:', {
-        examsFetched: parsedExams.length,
-        hasMore,
-        lastDocId: lastDoc?.id
-      });
+      // console.log('✅ [FIREBASE_SERVICE] getExamsPaginated completed:', {
+                // examsFetched: parsedExams.length,
+                // hasMore,
+                // lastDocId: lastDoc?.id
+            // });
       
       // Log first exam's questionPool data if available
       if (parsedExams.length > 0) {
-        const firstExam = parsedExams[0];
-        console.log('🔥🔥🔥 FIRST EXAM RETURNED BY getExamsPaginated:', {
-          examId: firstExam.id,
-          hasQuestionPool: 'questionPool' in firstExam,
-          questionPoolLength: Array.isArray(firstExam.questionPool) ? firstExam.questionPool.length : 'not array',
-          pickRandomCount: firstExam.pickRandomCount,
-          poolQuestionMarks: firstExam.poolQuestionMarks,
-          questionPoolValue: firstExam.questionPool
-        });
+        // const _firstExam = parsedExams[0];
+        // console.log('🔥🔥🔥 FIRST EXAM RETURNED BY getExamsPaginated:', {
+                    // examId: firstExam.id,
+                    // hasQuestionPool: 'questionPool' in firstExam,
+                    // questionPoolLength: Array.isArray(firstExam.questionPool) ? firstExam.questionPool.length : 'not array',
+                    // pickRandomCount: firstExam.pickRandomCount,
+                    // poolQuestionMarks: firstExam.poolQuestionMarks,
+                    // questionPoolValue: firstExam.questionPool
+                // });
       }
       
       return {
@@ -11538,108 +12433,203 @@ async getSearchSuggestions(
  */
 async getExamPresentStudentsPaginated(
   examId: string, 
-  className: string, 
-  board: string,
+  _className: string, 
+  _board: string,
   pageSize: number = 25,
-  lastDocument?: DocumentSnapshot | null
+  lastDocument?: DocumentSnapshot | null,
+  skipTotalCount: boolean = false
 ): Promise<{
-  students: any[];
-  lastDoc: DocumentSnapshot | null;
+  students: any[];  lastDoc: DocumentSnapshot | null;
   hasMore: boolean;
   totalCount: number;
 }> {
-  console.log('👥 [FIREBASE_SERVICE] getExamPresentStudentsPaginated called:', { 
-    examId, 
-    className, 
-    board,
-    pageSize,
-    hasLastDoc: !!lastDocument 
-  });
+  // console.log('👥 [FIREBASE_SERVICE] getExamPresentStudentsPaginated called:', { 
+        // examId, 
+        // className, 
+        // board,
+        // pageSize,
+        // hasLastDoc: !!lastDocument 
+    // });
   
   try {
     if (!this.isInitialized() || !this.firestore) {
-      console.warn('⚠️ Firebase not initialized');
+      // console.warn('⚠️ Firebase not initialized');
       return { students: [], lastDoc: null, hasMore: false, totalCount: 0 };
     }
 
-    // Get exam attempts for this exam
-    const attemptsRef = collection(this.firestore, COLLECTIONS.EXAM_ATTEMPTS);
-    const constraints: any[] = [
+    // ✅ STEP 1: Get present students from ATTENDANCE table (source of truth for presence)
+    const attendanceRef = collection(this.firestore, COLLECTIONS.ATTENDANCE);
+    const attendanceQuery = query(
+      attendanceRef,
       where('examId', '==', examId),
-      orderBy('studentName', 'asc')
-    ];
-
-    // Add pagination
-    if (lastDocument) {
-      constraints.push(startAfter(lastDocument));
-    }
+      where('status', '==', 'present')
+    );
+    const attendanceSnapshot = await getDocs(attendanceQuery);
     
-    // Fetch one extra to check if there are more
-    constraints.push(limit(pageSize + 1));
-
-    const attemptsQuery = query(attemptsRef, ...constraints);
-    const attemptsSnapshot = await getDocs(attemptsQuery);
-
-    // Get all students from class for this board (to find absent students)
-    //const studentsRef = collection(this.firestore, COLLECTIONS.USERS);
-    // const studentsQuery = query(
-    //   studentsRef,
-    //   where('userType', '==', USER_TYPES.STUDENT),
-    //   where('studentClass', '==', className),
-    //   where('board', '==', board)
-    // );
-
-    // Map student IDs who attempted
-    const attemptedStudentIds = new Set<string>();
-    attemptsSnapshot.docs.forEach(doc => {
-      const data = doc.data();
-      attemptedStudentIds.add(data.studentId);
+    // Build set of present student IDs from attendance
+    const presentStudentIds = new Set<string>();
+    const attendanceMap = new Map<string, any>();
+    attendanceSnapshot.docs.forEach(aDoc => {
+      const aData = aDoc.data();
+      const studentId = aData.studentId || aData.userId;
+      if (studentId) {
+        presentStudentIds.add(studentId);
+        attendanceMap.set(studentId, {
+          studentName: aData.studentName || '',
+          studentEmail: aData.studentEmail || '',
+          rollNumber: aData.studentRollNumber || '',
+          markedAt: aData.markedAt,
+        });
+      }
     });
 
-    // Check if there are more documents
-    const hasMore = attemptsSnapshot.docs.length > pageSize;
-    const docs = hasMore ? attemptsSnapshot.docs.slice(0, pageSize) : attemptsSnapshot.docs;
+    // console.log('📋 [FIREBASE_SERVICE] Present from attendance:', presentStudentIds.size);
 
-    // Build present students array
-    const presentStudents = docs.map(attemptDoc => {
-      const attemptData = attemptDoc.data();
-      return {
-        studentId: attemptData.studentId,
-        studentName: attemptData.studentName,
-        studentEmail: attemptData.studentEmail,
-        rollNumber: attemptData.rollNumber,
-        hasAttempt: true,
-        attemptData: {
-          attemptId: attemptDoc.id,
-          obtainedMarks: attemptData.obtainedMarks || 0,
-          totalScore: attemptData.maximumScore || 0,
-          percentage: attemptData.percentage || 0,
-          attemptedQuestions: attemptData.attemptedQuestions || 0,
-          totalQuestions: attemptData.totalQuestions || 0,
-          status: attemptData.status || ATTEMPT_STATUS.PENDING,
-          timeSpent: attemptData.timeSpent || 0,
-          violationCount: attemptData.violations?.length || 0,
-          startTime: attemptData.startTime,
-          submitTime: attemptData.submitTime
-        }
-      };
-    });
-
-    const lastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
-
-    // Get total count of students who attempted (for progress tracking)
-    const totalAttemptsQuery = query(
+    // ✅ STEP 2: Also include students who have attempts but NOT in attendance (edge case)
+    const attemptsRef = collection(this.firestore, COLLECTIONS.EXAM_ATTEMPTS);
+    const allAttemptsQuery = query(
       attemptsRef,
       where('examId', '==', examId)
     );
-    const totalAttemptsSnapshot = await getDocs(totalAttemptsQuery);
-    const totalCount = totalAttemptsSnapshot.size;
-
-    console.log('✅ [FIREBASE_SERVICE] Present students paginated:', {
-      fetched: presentStudents.length,
-      hasMore,
-      totalCount
+    const allAttemptsSnapshot = await getDocs(allAttemptsQuery);
+    
+    // Build attempt map keyed by studentId
+    const attemptsByStudent = new Map<string, any>();
+    allAttemptsSnapshot.docs.forEach(aDoc => {
+      const aData = aDoc.data();
+      // Keep latest attempt per student (by startTime)
+      const existing = attemptsByStudent.get(aData.studentId);
+      if (!existing) {
+        attemptsByStudent.set(aData.studentId, { doc: aDoc, data: aData });
+      } else {
+        const toMs = (t: any) => t?.toDate ? t.toDate().getTime() : new Date(t || 0).getTime();
+        if (toMs(aData.startTime) > toMs(existing.data.startTime)) {
+          attemptsByStudent.set(aData.studentId, { doc: aDoc, data: aData });
+        }
+      }
     });
+
+    // Add students with attempts but not in attendance to present set
+    attemptsByStudent.forEach((_val, studentId) => {
+      if (!presentStudentIds.has(studentId)) {
+        presentStudentIds.add(studentId);
+      }
+    });
+
+    // console.log('📋 [FIREBASE_SERVICE] Total present (attendance + attempts):', presentStudentIds.size);
+
+    // ✅ STEP 3: Build combined present list, sorted by percentage desc (attempts first, then attendance-only)
+    const allPresentArr: { studentId: string; hasAttempt: boolean; percentage: number }[] = [];
+    presentStudentIds.forEach(sid => {
+      const attempt = attemptsByStudent.get(sid);
+      allPresentArr.push({
+        studentId: sid,
+        hasAttempt: !!attempt,
+        percentage: attempt?.data?.percentage || -1,
+      });
+    });
+    // Sort: students with attempts first (by percentage desc), then attendance-only
+    allPresentArr.sort((a, b) => {
+      if (a.hasAttempt && !b.hasAttempt) return -1;
+      if (!a.hasAttempt && b.hasAttempt) return 1;
+      return b.percentage - a.percentage;
+    });
+
+    // ✅ STEP 4: Manual pagination over the sorted array
+    let startIndex = 0;
+    if (lastDocument) {
+      // Find the index after the last document's studentId
+      const lastStudentId = lastDocument.data()?.studentId || lastDocument.id;
+      const foundIdx = allPresentArr.findIndex(s => s.studentId === lastStudentId);
+      if (foundIdx >= 0) startIndex = foundIdx + 1;
+    }
+
+    const pageSlice = allPresentArr.slice(startIndex, startIndex + pageSize + 1);
+    const hasMore = pageSlice.length > pageSize;
+    const currentPage = hasMore ? pageSlice.slice(0, pageSize) : pageSlice;
+
+    // ✅ STEP 5: Build present students with attempt data enrichment
+    const presentStudents = currentPage.map(entry => {
+      const attempt = attemptsByStudent.get(entry.studentId);
+      const attendanceInfo = attendanceMap.get(entry.studentId);
+      const attemptData = attempt?.data;
+
+      if (attemptData) {
+        // ✅ violationCount — pre-compute from heavy arrays
+        let violationCount = 0;
+        if (typeof attemptData.violationCount === 'number') {
+          violationCount = attemptData.violationCount;
+        } else if (attemptData.violationSummary?.total) {
+          violationCount = attemptData.violationSummary.total;
+        } else if (attemptData.violations && Array.isArray(attemptData.violations)) {
+          violationCount = attemptData.violations.length;
+        } else if (attemptData.responses && Array.isArray(attemptData.responses)) {
+          violationCount = attemptData.responses.reduce((t: number, r: any) => t + (r.violations?.length || 0), 0);
+        }
+        // ✅ timeSpent — startTime → submitTime
+        let timeSpent = attemptData.timeSpent || 0;
+        if (attemptData.startTime && attemptData.submitTime) {
+          const toMs = (t: any) => t?.toDate ? t.toDate().getTime() : t instanceof Date ? t.getTime() : typeof t === 'number' ? t : new Date(t).getTime();
+          const start = toMs(attemptData.startTime);
+          const end = toMs(attemptData.submitTime);
+          if (start > 0 && end > start) timeSpent = Math.floor((end - start) / 1000);
+        }
+        // ✅ attemptedQuestions — compute from responses using isAnswered
+        let attemptedQuestions = 0;
+        if (attemptData.responses && Array.isArray(attemptData.responses)) {
+          attemptedQuestions = attemptData.responses.filter((r: any) => {
+            const ans = r.studentAnswer;
+            if (ans === undefined || ans === null || ans === '') return false;
+            if (Array.isArray(ans)) return ans.length > 0;
+            return true;
+          }).length;
+        } else if (typeof attemptData.attemptedQuestions === 'number') {
+          attemptedQuestions = attemptData.attemptedQuestions;
+        }
+
+        // Strip heavy arrays (responses, violations) to save memory
+        const { responses, violations, ...lightData } = attemptData;
+        return {
+          studentId: entry.studentId,
+          studentName: attemptData.studentName || attendanceInfo?.studentName || 'Unknown',
+          studentEmail: attemptData.studentEmail || attendanceInfo?.studentEmail || '',
+          rollNumber: attemptData.rollNumber || attendanceInfo?.rollNumber || '',
+          hasAttempt: true,
+          attemptData: {
+            ...lightData,
+            attemptId: attempt.doc.id,
+            violationCount,
+            timeSpent,
+            attemptedQuestions,
+            totalQuestions: attemptData.totalQuestions || 0,
+            likertResponses: attemptData.likertResponses || null,
+          }
+        };
+      } else {
+        // Attendance-only (no attempt yet)
+        return {
+          studentId: entry.studentId,
+          studentName: attendanceInfo?.studentName || 'Unknown',
+          studentEmail: attendanceInfo?.studentEmail || '',
+          rollNumber: attendanceInfo?.rollNumber || '',
+          hasAttempt: false,
+          attemptData: null
+        };
+      }
+    });
+
+    // For pagination lastDoc, use the attempt doc if available (for startAfter compatibility)
+    const lastEntry = currentPage.length > 0 ? currentPage[currentPage.length - 1] : null;
+    const lastDoc = lastEntry ? (attemptsByStudent.get(lastEntry.studentId)?.doc || null) : null;
+
+    // ✅ STEP 6: Total count = all present students (attendance + attempts)
+    const totalCount = skipTotalCount ? 0 : allPresentArr.length;
+
+    // console.log('✅ [FIREBASE_SERVICE] Present students paginated:', {
+            // fetched: presentStudents.length,
+            // hasMore,
+            // totalCount
+        // });
 
     return {
       students: presentStudents,
@@ -11648,8 +12638,10 @@ async getExamPresentStudentsPaginated(
       totalCount
     };
     
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ [FIREBASE_SERVICE] Error fetching paginated present students:', error);
+    console.error('❌ Full error message:', error?.message);
+    console.error('❌ Error code:', error?.code);
     return { students: [], lastDoc: null, hasMore: false, totalCount: 0 };
   }
 }
@@ -11668,22 +12660,23 @@ async getExamAbsentStudentsPaginated(
   _className: string, 
   _board: string,
   pageSize: number = 25,
-  lastDocument?: DocumentSnapshot | null
+  lastDocument?: DocumentSnapshot | null,
+  skipTotalCount: boolean = false
 ): Promise<{
   students: any[];
   lastDoc: DocumentSnapshot | null;
   hasMore: boolean;
   totalCount: number;
 }> {
-  console.log('👥 [FIREBASE_SERVICE] getExamAbsentStudentsPaginated called:', { 
-    examId, 
-    pageSize,
-    hasLastDoc: !!lastDocument 
-  });
+  // console.log('👥 [FIREBASE_SERVICE] getExamAbsentStudentsPaginated called:', { 
+        // examId, 
+        // pageSize,
+        // hasLastDoc: !!lastDocument 
+    // });
   
   try {
     if (!this.isInitialized() || !this.firestore) {
-      console.warn('⚠️ Firebase not initialized');
+      // console.warn('⚠️ Firebase not initialized');
       return { students: [], lastDoc: null, hasMore: false, totalCount: 0 };
     }
 
@@ -11709,11 +12702,10 @@ async getExamAbsentStudentsPaginated(
     );
 
     // Get enrolled students (paginated) - replaces class-based Users query
-    const enrollmentsRef = collection(this.firestore!, 'exam_enrollments');
+    const enrollmentsRef = collection(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS);
     const constraints: any[] = [
       where('examId', '==', examId),
-      where('status', '==', 'active'),
-      orderBy('studentName', 'asc')
+      where('status', '==', 'active')
     ];
 
     // Add pagination
@@ -11759,15 +12751,21 @@ async getExamAbsentStudentsPaginated(
 
     const lastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
 
-    // Calculate total absent count
-    const totalEnrolled = await this.getExamEnrollmentCount(examId);
-    const totalAbsent = totalEnrolled - attemptedStudentIds.size;
+    // Calculate total absent count only on initial load
+    // Absent = totalEnrolled - all present students (from attendance + attempts combined)
+    let totalAbsent = 0;
+    if (!skipTotalCount) {
+      const totalEnrolled = await this.getExamEnrollmentCount(examId);
+      // Combine attendance present + attempted into single set for accurate present count
+      const allPresentIds = new Set([...presentAttendanceIds, ...attemptedStudentIds]);
+      totalAbsent = totalEnrolled - allPresentIds.size;
+    }
 
-    console.log('✅ [FIREBASE_SERVICE] Absent students paginated:', {
-      fetched: absentStudents.length,
-      hasMore,
-      totalAbsent
-    });
+    // console.log('✅ [FIREBASE_SERVICE] Absent students paginated:', {
+            // fetched: absentStudents.length,
+            // hasMore,
+            // totalAbsent
+        // });
 
     return {
       students: absentStudents,
@@ -11778,6 +12776,8 @@ async getExamAbsentStudentsPaginated(
     
   } catch (error) {
     console.error('❌ [FIREBASE_SERVICE] Error fetching paginated absent students:', error);
+    console.error('❌ Full error message:', (error as any)?.message);
+    console.error('❌ Error code:', (error as any)?.code);
     return { students: [], lastDoc: null, hasMore: false, totalCount: 0 };
   }
 }
@@ -11796,17 +12796,17 @@ async getExamAbsentStudentsPaginated(
   }): Promise<void> {
     try {
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized - cannot add activity log');
+        // console.warn('⚠️ Firebase not initialized - cannot add activity log');
         return;
       }
 
-      const activityRef = collection(this.firestore, 'activityLogs');
+      const activityRef = collection(this.firestore, COLLECTIONS.ACTIVITY_LOGS);
       await addDoc(activityRef, {
         ...logData,
         timestamp: serverTimestamp(),
       });
       
-      console.log('✅ Activity logged:', logData.action);
+      // console.log('✅ Activity logged:', logData.action);
     } catch (error) {
       console.error('❌ Error adding activity log:', error);
       // Don't throw - logging shouldn't break the main operation
@@ -11869,12 +12869,12 @@ async getExamAbsentStudentsPaginated(
     board: string
   ): Promise<UserModel[]> {
     try {
-      console.log('👥 [FIREBASE_SERVICE] Getting all students for class:', { collegeId, classId, board });
+      // console.log('👥 [FIREBASE_SERVICE] Getting all students for class:', { collegeId, classId, board });
       
       // Use existing getStudentsByClass method with reordered parameters
       const students = await this.getStudentsByClass(classId, collegeId, board);
       
-      console.log('✅ [FIREBASE_SERVICE] Retrieved students:', students.length);
+      // console.log('✅ [FIREBASE_SERVICE] Retrieved students:', students.length);
       return students;
       
     } catch (error) {
@@ -11898,10 +12898,10 @@ async getExamAbsentStudentsPaginated(
     _board: string
   ): Promise<AttendanceRecord[]> {
     try {
-      console.log('📊 [FIREBASE_SERVICE] Getting attendance for exam:', { examId });
+      // console.log('📊 [FIREBASE_SERVICE] Getting attendance for exam:', { examId });
       
       if (!this.isInitialized() || !this.firestore) {
-        console.warn('⚠️ Firebase not initialized');
+        // console.warn('⚠️ Firebase not initialized');
         return [];
       }
       
@@ -11935,7 +12935,7 @@ async getExamAbsentStudentsPaginated(
         });
       });
       
-      console.log('✅ [FIREBASE_SERVICE] Retrieved attendance records:', attendanceRecords.length);
+      // console.log('✅ [FIREBASE_SERVICE] Retrieved attendance records:', attendanceRecords.length);
       return attendanceRecords;
       
     } catch (error) {
@@ -11950,10 +12950,10 @@ async getExamAbsentStudentsPaginated(
 private extractSessionData(attemptData: any): any {
 
 
-  console.log('🔥🔥 🔥 🔥 🔥 extractSessionData CALLED');
-  console.log('   attemptData keys:', attemptData ? Object.keys(attemptData) : 'null');
-  console.log('   activities:', attemptData?.activities?.length || 0);
-  console.log('   deviceInfo:', !!attemptData?.deviceInfo);
+  // console.log('🔥🔥 🔥 🔥 🔥 extractSessionData CALLED');
+  // console.log('   attemptData keys:', attemptData ? Object.keys(attemptData) : 'null');
+  // console.log('   activities:', attemptData?.activities?.length || 0);
+  // console.log('   deviceInfo:', !!attemptData?.deviceInfo);
 
 
   // Extract IPs from activities array
@@ -12038,7 +13038,7 @@ private extractSessionData(attemptData: any): any {
   };
   
   // ADD THIS LOG 👇
-  console.log('✅✅✅ extractSessionData RETURNING:', result);
+  // console.log('✅✅✅ extractSessionData RETURNING:', result);
   
   return result;
 
@@ -12046,7 +13046,7 @@ private extractSessionData(attemptData: any): any {
 
 async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
 
-  console.log('🔥🔥🔥 getExamDashboardData CALLED with examId:', examId);
+  // console.log('🔥🔥🔥 getExamDashboardData CALLED with examId:', examId);
 
   if (!this.firestore) throw new Error('Firestore not initialized');
 
@@ -12058,21 +13058,21 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
   const examData = examDoc.data();
 
   // 2. Get exam metadata
-  const collegeId = examData.collegeId;
-  const board = examData.board;
+  // const _collegeId = examData.collegeId;
+  // const _board = examData.board;
   
-  console.log('📚 Exam metadata:');
-  console.log('  - College ID:', collegeId);
-  console.log('  - Board:', board);
+  // console.log('📚 Exam metadata:');
+  // console.log('  - College ID:', collegeId);
+  // console.log('  - Board:', board);
 
   // 3. Get enrollment count for this exam
   const totalEnrolled = await this.getExamEnrollmentCount(examId);
-  console.log('✅ Total enrolled students:', totalEnrolled);
+  // console.log('✅ Total enrolled students:', totalEnrolled);
 
   // 3. Get attendance records from Attendance table  
   const attendanceRecords = await this.getExamAttendance(examId);
 
-  console.log('✅ Found attendance records:', attendanceRecords.length);
+  // console.log('✅ Found attendance records:', attendanceRecords.length);
 
   // 4. Get all exam attempts
   const attemptsQuery = query(
@@ -12085,48 +13085,24 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
  const attempts = attemptsSnapshot.docs.map(doc => {
     const data = doc.data() as StudentExamAttempt;
     
-    // ✅ Calculate violationCount from responses array (consistent with getExamAttempts)
+    // ✅ Always recalculate violationCount from per-response violations (matches Result.tsx display)
     let violationCount = 0;
-    
-    // Priority 1: Check if violationCount already exists
-    if (typeof data.violationCount === 'number') {
-      violationCount = data.violationCount;
-    }
-    // Priority 2: Check violationSummary.total
-    else if (data.violationSummary && typeof data.violationSummary.total === 'number') {
-      violationCount = data.violationSummary.total;
-    }
-    // Priority 3: Count from top-level violations array
-    else if (data.violations && Array.isArray(data.violations)) {
+    if (data.responses && Array.isArray(data.responses)) {
+      violationCount = data.responses.reduce((total: number, response: any) => {
+        return total + (Array.isArray(response.violations) ? response.violations.length : 0);
+      }, 0);
+    } else if (data.violations && Array.isArray(data.violations)) {
       violationCount = data.violations.length;
     }
-    // Priority 4: ✅ Count violations from ALL responses (most accurate!)
-    else if (data.responses && Array.isArray(data.responses)) {
-      violationCount = data.responses.reduce((total: number, response: any) => {
-        if (response.violations && Array.isArray(response.violations)) {
-          return total + response.violations.length;
-        }
-        return total;
-      }, 0);
+
+    // ✅ Calculate timeSpent from startTime → submitTime (most accurate, avoids double-counting)
+    let calculatedTimeSpent = 0;
+    if (data.startTime && data.submitTime) {
+      const start = (data.startTime as any).toDate ? (data.startTime as any).toDate().getTime() : new Date(data.startTime as any).getTime();
+      const end = (data.submitTime as any).toDate ? (data.submitTime as any).toDate().getTime() : new Date(data.submitTime as any).getTime();
+      if (end > start) calculatedTimeSpent = Math.floor((end - start) / 1000);
     }
-    
-    // ✅ Calculate timeSpent from responses array (consistent with getExamAttempts)
-    let calculatedTimeSpent = data.timeSpent || 0;
-    
-    // Sum timeSpent from each response
-    if (data.responses && Array.isArray(data.responses)) {
-      const summedTime = data.responses.reduce((total: number, response: any) => {
-        if (response.timeSpent && typeof response.timeSpent === 'number') {
-          return total + response.timeSpent;
-        }
-        return total;
-      }, 0);
-      
-      // Use summed time if it's greater than 0
-      if (summedTime > 0) {
-        calculatedTimeSpent = summedTime;
-      }
-    }
+    if (calculatedTimeSpent === 0) calculatedTimeSpent = data.timeSpent || 0;
     
     return {
       ...data,
@@ -12135,12 +13111,36 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
     };
   });
 
-  console.log('✅ Found attempts:', attempts.length);
+  // console.log('✅ Found attempts:', attempts.length);
 
-  // 5. Create a map of attempts by studentId
+  // 5. Create a map of attempts by studentId, deduplicating by email/roll across different studentIds
   const attemptsByStudent = new Map<string, StudentExamAttempt>();
+  const emailToStudentId = new Map<string, string>();
+  const rollToStudentId = new Map<string, string>();
+
   attempts.forEach(attempt => {
-    attemptsByStudent.set(attempt.studentId, attempt);
+    const email = (attempt.studentEmail || '').trim().toLowerCase();
+    const roll = (attempt.rollNumber || '').trim().toLowerCase();
+
+    // Check if we've already seen this email or roll under a different studentId
+    const existingId = (email && emailToStudentId.get(email)) || (roll && roll !== 'n/a' && rollToStudentId.get(roll));
+    
+    if (existingId && existingId !== attempt.studentId) {
+      // Keep the latest attempt (by startTime)
+      const existing = attemptsByStudent.get(existingId);
+      const toMs = (t: any) => t?.toDate ? t.toDate().getTime() : new Date(t || 0).getTime();
+      if (existing && toMs(attempt.startTime) > toMs(existing.startTime)) {
+        attemptsByStudent.delete(existingId);
+        attemptsByStudent.set(attempt.studentId, attempt);
+        if (email) emailToStudentId.set(email, attempt.studentId);
+        if (roll && roll !== 'n/a') rollToStudentId.set(roll, attempt.studentId);
+      }
+      // else keep existing, skip this one
+    } else {
+      attemptsByStudent.set(attempt.studentId, attempt);
+      if (email) emailToStudentId.set(email, attempt.studentId);
+      if (roll && roll !== 'n/a') rollToStudentId.set(roll, attempt.studentId);
+    }
   });
 
   // 6. Categorize students from ATTENDANCE + ATTEMPTS (no full student list needed for dashboard)
@@ -12161,14 +13161,17 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
         studentName: record.studentName || attempt.studentName || 'Unknown',
         studentEmail: record.studentEmail || attempt.studentEmail || '',
         rollNumber: record.studentRollNumber || attempt.rollNumber || '',
+        studentPhone: (attempt as any).studentPhone || '',
         class: attempt.class || '',
         hasAttempt: true,
         attemptData: {
           attemptId: attempt.attemptId,
           percentage: attempt.percentage,
           obtainedMarks: attempt.obtainedMarks,
+          maximumScore: attempt.maximumScore,
           totalScore: attempt.totalScore,
           violationCount: (attempt as any).violationCount || 0,
+          violations: (attempt as any).violations || [],
           status: attempt.status,
           startTime: attempt.startTime,
           submitTime: attempt.submitTime,
@@ -12176,6 +13179,9 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
           correctAnswers: attempt.correctAnswers,
           attemptedQuestions: attempt.attemptedQuestions,
           totalQuestions: attempt.totalQuestions,
+          studentClass: (attempt as any).studentClass || attempt.class || "",
+          studentPhone: (attempt as any).studentPhone || "",
+          studentEmail: attempt.studentEmail || "",
           enterIPAddress: sessionData.enterIPAddress,
           exitIPAddress: sessionData.exitIPAddress,
           browser: sessionData.browser,
@@ -12187,7 +13193,10 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
           exitCount: sessionData.exitCount,
           answers: (attempt as any).responses || [],
           responses: (attempt as any).responses || [],
-          questionResponses: (attempt as any).responses || []
+          questionResponses: (attempt as any).responses || [],
+          personalityProfile: (attempt as any).personalityProfile || null,
+          personalityType: (attempt as any).personalityType || null,
+          responseStyle: (attempt as any).responseStyle || null
         } as any
       });
     } else {
@@ -12212,14 +13221,17 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
         studentName: attempt.studentName || 'Unknown Student',
         studentEmail: attempt.studentEmail || '',
         rollNumber: attempt.rollNumber || '',
+        studentPhone: (attempt as any).studentPhone || '',
         class: attempt.class || '',
         hasAttempt: true,
         attemptData: {
           attemptId: attempt.attemptId,
           percentage: attempt.percentage,
           obtainedMarks: attempt.obtainedMarks,
+          maximumScore: attempt.maximumScore,
           totalScore: attempt.totalScore,
           violationCount: (attempt as any).violationCount || 0,
+          violations: (attempt as any).violations || [],
           status: attempt.status,
           startTime: attempt.startTime,
           submitTime: attempt.submitTime,
@@ -12227,6 +13239,9 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
           correctAnswers: attempt.correctAnswers,
           attemptedQuestions: attempt.attemptedQuestions,
           totalQuestions: attempt.totalQuestions,
+          studentClass: (attempt as any).studentClass || attempt.class || "",
+          studentPhone: (attempt as any).studentPhone || "",
+          studentEmail: attempt.studentEmail || "",
           enterIPAddress: sessionData.enterIPAddress,
           exitIPAddress: sessionData.exitIPAddress,
           browser: sessionData.browser,
@@ -12238,29 +13253,52 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
           exitCount: sessionData.exitCount,
           answers: (attempt as any).responses || [],
           responses: (attempt as any).responses || [],
-          questionResponses: (attempt as any).responses || []
+          questionResponses: (attempt as any).responses || [],
+          personalityProfile: (attempt as any).personalityProfile || null,
+          personalityType: (attempt as any).personalityType || null,
+          responseStyle: (attempt as any).responseStyle || null
         } as any
       });
     }
   });
 
-  // Build absent list from attendance records with status='absent'
-  const absentAttendanceRecords = attendanceRecords.filter((r: any) => r.status === 'absent');
-  absentAttendanceRecords.forEach((record: any) => {
-    if (!processedStudentIds.has(record.studentId)) {
-      processedStudentIds.add(record.studentId);
-      absentStudents.push({
-        studentId: record.studentId,
-        studentName: record.studentName || 'Unknown',
-        studentEmail: record.studentEmail || '',
-        rollNumber: record.studentRollNumber || '',
-        class: '',
-        hasAttempt: false
-      });
-    }
-  });
+  // Build absent list from enrollments NOT in present set (attendance or attempts)
+  // The Attendance table only has 'present' records — absence is implied by NOT being in it
+  try {
+    const enrollmentsRef = collection(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS);
+    const enrollmentsQuery = query(
+      enrollmentsRef,
+      where('examId', '==', examId),
+      where('status', '==', 'active')
+    );
+    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
+    
+    enrollmentsSnapshot.docs.forEach(enrollDoc => {
+      const enrollData = enrollDoc.data();
+      const studentId = enrollData.studentId;
+      if (!processedStudentIds.has(studentId)) {
+        processedStudentIds.add(studentId);
+        absentStudents.push({
+          studentId,
+          studentName: enrollData.studentName || 'Unknown',
+          studentEmail: enrollData.studentEmail || '',
+          rollNumber: enrollData.studentRoll || enrollData.rollNumber || '',
+          class: enrollData.class || '',
+          hasAttempt: false
+        });
+      }
+    });
+  } catch (enrollError) {
+    // console.warn('⚠️ Failed to fetch enrollments for absent list:', enrollError);
+  }
   
-  console.log(`✅ Final: ${totalEnrolled} enrolled, ${presentStudents.length} present (${presentStudents.filter(s => s.hasAttempt).length} with attempts), ${absentStudents.length} absent from attendance`);
+  // console.log(`✅ Final: ${totalEnrolled} enrolled, ${presentStudents.length} present (${presentStudents.filter(s => s.hasAttempt).length} with attempts), ${absentStudents.length} absent from attendance`);
+
+  // Calculate correct totalPresentCount and totalAbsentCount
+  // Present = attendance present + students with attempts not in attendance
+  const totalPresentCount = presentStudents.length;
+  // Absent = totalEnrolled - present (matches paginated absent calculation)
+  const totalAbsentCount = Math.max(0, totalEnrolled - totalPresentCount);
 
   // 6. Return structured data
   return {
@@ -12270,15 +13308,21 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
       subject: examData.subject,
       class: examData.class,
       duration: examData.duration,
+      personalityAssessment: examData.personalityAssessment || false,
+      likertQuestions: examData.likertQuestions || [],
       totalMarks: examData.totalMarks,
       passingMarks: examData.passingMarks || 40,
       totalQuestions: examData.totalQuestions,
+      examDate: examData.examDate,
+      examTime: examData.examTime,
       startDate: examData.startDate,
       endDate: examData.endDate
     },
     presentStudents,
     absentStudents,
     totalStudents: totalEnrolled,
+    totalPresentCount,
+    totalAbsentCount,
     attempts
   };
 }
@@ -12357,6 +13401,54 @@ async getExamViolationStats(examId: string): Promise<ExamViolationStats> {
       : 0
   };
 }
+
+/**
+ * Get aggregated live stats for an exam via Cloud Function.
+ * Uses server-side .select() + .count() for minimal data transfer.
+ * Stats panel shows these numbers for ALL students — right panel is paginated separately.
+ */
+async getExamLiveStatsAggregated(examId: string): Promise<{
+  totalEnrolled: number;
+  presentCount: number;
+  submittedCount: number;
+  activeCount: number;
+  expiredCount: number;
+  notStartedCount: number;
+  totalViolations: number;
+  avgProgress: number;
+  totalAttempts: number;
+  studentsWithViolations: number;
+  connectivityAffected: number;
+}> {
+  const defaultStats = { totalEnrolled: 0, presentCount: 0, submittedCount: 0, activeCount: 0, expiredCount: 0, notStartedCount: 0, totalViolations: 0, avgProgress: 0, totalAttempts: 0, studentsWithViolations: 0, connectivityAffected: 0 };
+  try {
+    const functions = getFunctions();
+    const getStats = httpsCallable(functions, 'getExamLiveStatsAggregated');
+    const result = await getStats({ examId });
+    const data = result.data as any;
+    if (!data?.success) {
+      console.error('❌ Cloud function returned error:', data);
+      return defaultStats;
+    }
+    return {
+      totalEnrolled: data.totalEnrolled || 0,
+      presentCount: data.presentCount || 0,
+      submittedCount: data.submittedCount || 0,
+      activeCount: data.activeCount || 0,
+      expiredCount: data.expiredCount || 0,
+      notStartedCount: data.notStartedCount || 0,
+      totalViolations: data.totalViolations || 0,
+      avgProgress: data.avgProgress || 0,
+      totalAttempts: data.totalAttempts || 0,
+      studentsWithViolations: data.studentsWithViolations || 0,
+      connectivityAffected: data.connectivityAffected || 0,
+    };
+  } catch (error) {
+    console.error('❌ Error calling getExamLiveStatsAggregated cloud function:', error);
+    return defaultStats;
+  }
+}
+
 /**
  * Get detailed exam attempts with all question-level data for export
  * Includes IP addresses, browser info, OS, violations, and per-question performance
@@ -12368,94 +13460,94 @@ async getExamViolationStats(examId: string): Promise<ExamViolationStats> {
 // ==========================================
 
 async getDetailedExamAttemptsForExport(examId: string): Promise<any[]> {
-  console.log('🔍 ========== getDetailedExamAttemptsForExport START ==========');
-  console.log('📋 Input examId:', examId);
-  console.log('📋 examId type:', typeof examId);
-  console.log('📋 examId length:', examId?.length);
+  // console.log('🔍 ========== getDetailedExamAttemptsForExport START ==========');
+  // console.log('📋 Input examId:', examId);
+  // console.log('📋 examId type:', typeof examId);
+  // console.log('📋 examId length:', examId?.length);
   
   if (!this.firestore) {
     console.error('❌ Firestore not initialized!');
     throw new Error('Firestore not initialized');
   }
   
-  console.log('✅ Firestore is initialized');
+  // console.log('✅ Firestore is initialized');
 
   try {
     // ✅ Use lowercase collection name
-    console.log('🔍 Step 1: Creating query...');
-    console.log('   Collection: examAttempts (lowercase)');
-    console.log('   Where: examId ==', examId);
-    console.log('   Where: status == submitted');
+    // console.log('🔍 Step 1: Creating query...');
+    // console.log('   Collection: examAttempts (lowercase)');
+    // console.log('   Where: examId ==', examId);
+    // console.log('   Where: status == submitted');
     
-    const attemptsRef = collection(this.firestore, 'examAttempts');
-    console.log('✅ Collection reference created');
+    const attemptsRef = collection(this.firestore, COLLECTIONS.EXAM_ATTEMPTS);
+    // console.log('✅ Collection reference created');
     
     const q = query(
       attemptsRef,
       where('examId', '==', examId),
       where('status', '==', 'submitted')
     );
-    console.log('✅ Query created');
+    // console.log('✅ Query created');
 
-    console.log('🔍 Step 2: Executing query...');
+    // console.log('🔍 Step 2: Executing query...');
     const snapshot = await getDocs(q);
-    console.log('✅ Query executed');
-    console.log('📊 Documents found:', snapshot.docs.length);
+    // console.log('✅ Query executed');
+    // console.log('📊 Documents found:', snapshot.docs.length);
     
     if (snapshot.docs.length === 0) {
-      console.warn('⚠️ No submitted attempts found!');
-      console.warn('   Trying to fetch ALL attempts (any status) for this exam...');
+      // console.warn('⚠️ No submitted attempts found!');
+      // console.warn('   Trying to fetch ALL attempts (any status) for this exam...');
       
       const allQuery = query(attemptsRef, where('examId', '==', examId));
       const allSnapshot = await getDocs(allQuery);
-      console.log('📊 Total attempts (all statuses):', allSnapshot.docs.length);
+      // console.log('📊 Total attempts (all statuses):', allSnapshot.docs.length);
       
       if (allSnapshot.docs.length > 0) {
-        allSnapshot.docs.forEach((doc, index) => {
-          console.log(`   Attempt ${index + 1}: status = ${doc.data().status}`);
+        allSnapshot.docs.forEach((_doc, _index) => {
+          // console.log(`   Attempt ${index + 1}: status = ${doc.data().status}`);
         });
       }
       
       return [];
     }
     
-    console.log('🔍 Step 3: Processing', snapshot.docs.length, 'attempts...');
+    // console.log('🔍 Step 3: Processing', snapshot.docs.length, 'attempts...');
     
-    const detailedAttempts = snapshot.docs.map((doc, index) => {
-      console.log(`\n📄 Processing attempt ${index + 1}/${snapshot.docs.length}`);
-      console.log('   Document ID:', doc.id);
+    const detailedAttempts = snapshot.docs.map((doc, _index) => {
+      // console.log(`\n📄 Processing attempt ${index + 1}/${snapshot.docs.length}`);
+      // console.log('   Document ID:', doc.id);
       
       const data = doc.data();
-      console.log('   Student ID:', data.studentId);
-      console.log('   Status:', data.status);
-      console.log('   Has activities:', !!data.activities);
-      console.log('   Has deviceInfo:', !!data.deviceInfo);
-      console.log('   Has responses:', !!data.responses);
-      console.log('   Has answers:', !!data.answers);
+      // console.log('   Student ID:', data.studentId);
+      // console.log('   Status:', data.status);
+      // console.log('   Has activities:', !!data.activities);
+      // console.log('   Has deviceInfo:', !!data.deviceInfo);
+      // console.log('   Has responses:', !!data.responses);
+      // console.log('   Has answers:', !!data.answers);
       
       // ✅ Extract IPs from activities array
       const activities = data.activities || [];
-      console.log('   Activities count:', activities.length);
+      // console.log('   Activities count:', activities.length);
       
       const enterActivity = activities.find((a: any) => a.type === 'enter');
       const exitActivity = activities.find((a: any) => a.type === 'exit');
       
-      console.log('   Enter activity found:', !!enterActivity);
-      console.log('   Exit activity found:', !!exitActivity);
+      // console.log('   Enter activity found:', !!enterActivity);
+      // console.log('   Exit activity found:', !!exitActivity);
       
       // ✅ Also get from deviceInfo as fallback
       const deviceInfo = data.deviceInfo || {};
-      console.log('   Device info IP:', deviceInfo.ipAddress || 'none');
+      // console.log('   Device info IP:', deviceInfo.ipAddress || 'none');
       
       const enterIP = enterActivity?.ipAddress || deviceInfo.ipAddress || 'N/A';
       const exitIP = exitActivity?.ipAddress || deviceInfo.ipAddress || enterIP || 'N/A';
       
-      console.log('   ✅ Enter IP:', enterIP);
-      console.log('   ✅ Exit IP:', exitIP);
+      // console.log('   ✅ Enter IP:', enterIP);
+      // console.log('   ✅ Exit IP:', exitIP);
       
       // ✅ Extract browser/OS from deviceInfo
       const userAgent = deviceInfo.userAgent || '';
-      console.log('   User Agent:', userAgent ? userAgent.substring(0, 50) + '...' : 'none');
+      // console.log('   User Agent:', userAgent ? userAgent.substring(0, 50) + '...' : 'none');
       
       let browser = 'N/A';
       let os = 'N/A';
@@ -12497,19 +13589,19 @@ async getDetailedExamAttemptsForExport(examId: string): Promise<any[]> {
         os = deviceInfo.platform;
       }
       
-      console.log('   ✅ Browser:', browser);
-      console.log('   ✅ OS:', os);
+      // console.log('   ✅ Browser:', browser);
+      // console.log('   ✅ OS:', os);
       
       // ✅ CRITICAL: Get responses/answers
       const responses = data.responses || data.answers || [];
-      console.log('   ✅ Responses count:', responses.length);
+      // console.log('   ✅ Responses count:', responses.length);
       
       if (responses.length > 0) {
-        console.log('   Sample response:', {
-          questionId: responses[0].questionId,
-          obtainedMarks: responses[0].obtainedMarks,
-          hasStudentAnswer: !!responses[0].studentAnswer
-        });
+        // console.log('   Sample response:', {
+                    // questionId: responses[0].questionId,
+                    // obtainedMarks: responses[0].obtainedMarks,
+                    // hasStudentAnswer: !!responses[0].studentAnswer
+                // });
       }
       
       const result = {
@@ -12582,26 +13674,26 @@ async getDetailedExamAttemptsForExport(examId: string): Promise<any[]> {
         _rawDeviceInfo: deviceInfo
       };
       
-      console.log('   ✅ Attempt processed successfully');
+      // console.log('   ✅ Attempt processed successfully');
       
       return result;
     });
 
-    console.log('\n✅ ========== Processing Complete ==========');
-    console.log('📊 Total attempts processed:', detailedAttempts.length);
+    // console.log('\n✅ ========== Processing Complete ==========');
+    // console.log('📊 Total attempts processed:', detailedAttempts.length);
     
     if (detailedAttempts.length > 0) {
-      const sample = detailedAttempts[0];
-      console.log('\n📊 Sample Result:');
-      console.log('   Enter IP:', sample.enterIPAddress);
-      console.log('   Exit IP:', sample.exitIPAddress);
-      console.log('   Browser:', sample.browser);
-      console.log('   OS:', sample.operatingSystem);
-      console.log('   Answers count:', sample.answers?.length || 0);
-      console.log('   Responses count:', sample.responses?.length || 0);
+      // const _sample = detailedAttempts[0];
+      // console.log('\n📊 Sample Result:');
+      // console.log('   Enter IP:', sample.enterIPAddress);
+      // console.log('   Exit IP:', sample.exitIPAddress);
+      // console.log('   Browser:', sample.browser);
+      // console.log('   OS:', sample.operatingSystem);
+      // console.log('   Answers count:', sample.answers?.length || 0);
+      // console.log('   Responses count:', sample.responses?.length || 0);
     }
     
-    console.log('✅ ========== getDetailedExamAttemptsForExport END ==========\n');
+    // console.log('✅ ========== getDetailedExamAttemptsForExport END ==========\n');
     
     return detailedAttempts;
 
@@ -12631,20 +13723,19 @@ async getExamWithQuestionDetails(examId: string): Promise<any> {
   if (!this.firestore) throw new Error('Firestore not initialized');
 
   try {
-    console.log('📊 Fetching exam with question details for:', examId);
+    // console.log('📊 Fetching exam with question details for:', examId);
     
-    // Use existing getExamById which handles both Storage and Firestore questions
-    const exam = await this.getExamById(examId);
+    // ✅ Read directly from Firestore (NOT via Cloud Function which sanitizes/strips fields)
+    const examDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId));
+    if (!examDoc.exists()) throw new Error('Exam not found');
     
-    if (!exam) {
-      throw new Error('Exam not found');
-    }
+    const exam = this.parseExamFromFirestore(examDoc);
 
-    console.log('✅ Exam fetched:', {
-      name: exam.title,
-      totalQuestions: exam.totalQuestions || 0,
-      hasQuestionsInStorage: !!exam.questionsStorageUrl
-    });
+    // console.log('✅ Exam fetched:', {
+            // name: exam.title,
+            // totalQuestions: exam.totalQuestions || 0,
+            // hasQuestionsInStorage: !!exam.questionsStorageUrl
+        // });
 
     // Format questions for export
     let questionsList: any[] = [];
@@ -12655,7 +13746,7 @@ async getExamWithQuestionDetails(examId: string): Promise<any> {
         questionId: q.id || q.questionId || `Q${index + 1}`,
         type: q.type || 'mcq',
         questionText: q.questionText || q.title || q.question || '',
-        maximumMarks: q.maximumMarks || q.marks || 1,
+        maximumMarks: q.maximumMarks ?? q.marks ?? 1,
         difficulty: q.difficulty || q.difficultyLevel || 'Medium',
         difficultyLevel: q.difficulty || q.difficultyLevel || 'Medium',
         chapter: q.chapter || q.topic || 'N/A',
@@ -12665,13 +13756,13 @@ async getExamWithQuestionDetails(examId: string): Promise<any> {
         order: index + 1
       }));
       
-      console.log('✅ Formatted questions:', {
-        total: questionsList.length,
-        first: questionsList[0]?.questionId,
-        types: [...new Set(questionsList.map(q => q.type))]
-      });
+      // console.log('✅ Formatted questions:', {
+                // total: questionsList.length,
+                // first: questionsList[0]?.questionId,
+                // types: [...new Set(questionsList.map(q => q.type))]
+            // });
     } else {
-      console.warn('⚠️ No questions found in exam');
+      // console.warn('⚠️ No questions found in exam');
     }
 
     return {
@@ -12684,10 +13775,19 @@ async getExamWithQuestionDetails(examId: string): Promise<any> {
       board: exam.board,
       year: exam.year,
       duration: exam.duration,
+      likertDuration: exam.likertDuration || 0,
+      personalityAssessment: exam.personalityAssessment || false,
+      likertQuestions: exam.likertQuestions || [],
+      examDate: exam.examDate,
+      examTime: exam.examTime,
+      maxMarks: exam.maxMarks,
       totalMarks: parseInt(exam.maxMarks) || 0,
       totalQuestions: exam.totalQuestions || 0,
       passingMarks: 40,
       questionsList: questionsList,
+      questionPool: exam.questionPool || [],
+      pickRandomCount: exam.pickRandomCount || 0,
+      poolQuestionMarks: exam.poolQuestionMarks || 0,
       createdAt: exam.createdAt,
       status: exam.status
     };
@@ -12709,62 +13809,62 @@ async getExamWithQuestionDetails(examId: string): Promise<any> {
 // Make it ignore classId and fetch ALL students like dashboard does
 // ==========================================
 
-async getComprehensiveExportData(examId: string, classId?: string): Promise<any> {
+async getComprehensiveExportData(examId: string, _classId?: string): Promise<any> {
   if (!this.firestore) throw new Error('Firestore not initialized');
 
   try {
-    console.log('🔍 ========== getComprehensiveExportData START ==========');
-    console.log('📋 Input examId:', examId);
-    console.log('📋 Input classId:', classId, '(will be ignored for export)');
-    console.log('📊 Fetching comprehensive export data...');
+    // console.log('🔍 ========== getComprehensiveExportData START ==========');
+    // console.log('📋 Input examId:', examId);
+    // console.log('📋 Input classId:', classId, '(will be ignored for export)');
+    // console.log('📊 Fetching comprehensive export data...');
 
     // 1. Get exam with all question details
-    console.log('\n🔍 Step 1: Fetching exam with questions...');
+    // console.log('\n🔍 Step 1: Fetching exam with questions...');
     const examWithQuestions = await this.getExamWithQuestionDetails(examId);
-    console.log('✅ Exam fetched:', {
-      name: examWithQuestions.name,
-      questionCount: examWithQuestions.questionsList?.length || 0
-    });
+    // console.log('✅ Exam fetched:', {
+            // name: examWithQuestions.name,
+            // questionCount: examWithQuestions.questionsList?.length || 0
+        // });
 
     // 2. Get all detailed attempts
-    console.log('\n🔍 Step 2: Fetching detailed attempts...');
+    // console.log('\n🔍 Step 2: Fetching detailed attempts...');
     const detailedAttempts = await this.getDetailedExamAttemptsForExport(examId);
-    console.log('✅ Detailed attempts fetched:', detailedAttempts.length);
+    // console.log('✅ Detailed attempts fetched:', detailedAttempts.length);
     if (detailedAttempts.length > 0) {
-      console.log('   First attempt:', {
-        studentId: detailedAttempts[0].studentId,
-        hasAnswers: !!detailedAttempts[0].answers,
-        answersCount: detailedAttempts[0].answers?.length || 0
-      });
+      // console.log('   First attempt:', {
+                // studentId: detailedAttempts[0].studentId,
+                // hasAnswers: !!detailedAttempts[0].answers,
+                // answersCount: detailedAttempts[0].answers?.length || 0
+            // });
     }
 
     // 3. Get dashboard data (students, attendance)
     // ✅ FIX: Don't pass classId - get ALL students who attempted
-    console.log('\n🔍 Step 3: Fetching dashboard data...');
-    console.log('   NOT passing classId - will fetch ALL students');
+    // console.log('\n🔍 Step 3: Fetching dashboard data...');
+    // console.log('   NOT passing classId - will fetch ALL students');
     const dashboardData = await this.getExamDashboardData(examId);
-    console.log('✅ Dashboard data fetched:');
-    console.log('   Present students:', dashboardData.presentStudents?.length || 0);
-    console.log('   Absent students:', dashboardData.absentStudents?.length || 0);
-    console.log('   Total students:', dashboardData.totalStudents);
+    // console.log('✅ Dashboard data fetched:');
+    // console.log('   Present students:', dashboardData.presentStudents?.length || 0);
+    // console.log('   Absent students:', dashboardData.absentStudents?.length || 0);
+    // console.log('   Total students:', dashboardData.totalStudents);
     
     if (dashboardData.presentStudents?.length > 0) {
-      console.log('   First present student:', {
-        studentId: dashboardData.presentStudents[0].studentId,
-        studentName: dashboardData.presentStudents[0].studentName,
-        hasAttempt: dashboardData.presentStudents[0].hasAttempt
-      });
+      // console.log('   First present student:', {
+                // studentId: dashboardData.presentStudents[0].studentId,
+                // studentName: dashboardData.presentStudents[0].studentName,
+                // hasAttempt: dashboardData.presentStudents[0].hasAttempt
+            // });
     } else {
-      console.warn('⚠️ No present students found!');
+      // console.warn('⚠️ No present students found!');
     }
 
     // 4. Enrich student data with attempt details
-    console.log('\n🔍 Step 4: Enriching student data...');
+    // console.log('\n🔍 Step 4: Enriching student data...');
     const enrichedPresentStudents = dashboardData.presentStudents.map((student: any) => {
       const attempt = detailedAttempts.find(a => a.studentId === student.studentId);
       
       if (attempt && student.hasAttempt) {
-        console.log('   ✅ Enriching student:', student.studentId, 'with', attempt.answers?.length || 0, 'answers');
+        // console.log('   ✅ Enriching student:', student.studentId, 'with', attempt.answers?.length || 0, 'answers');
         return {
           ...student,
           attemptData: {
@@ -12788,8 +13888,8 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       return student;
     });
 
-    console.log('✅ Enrichment complete');
-    console.log('   Enriched students count:', enrichedPresentStudents.length);
+    // console.log('✅ Enrichment complete');
+    // console.log('   Enriched students count:', enrichedPresentStudents.length);
 
     const result = {
       exam: examWithQuestions,
@@ -12799,24 +13899,24 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       attempts: detailedAttempts
     };
 
-    console.log('\n📊 Final Result:');
-    console.log('   Exam:', !!result.exam);
-    console.log('   Exam name:', result.exam?.name || result.exam?.title);
-    console.log('   Exam questionsList:', result.exam?.questionsList?.length || 0);
-    console.log('   Present students:', result.presentStudents.length);
-    console.log('   Absent students:', result.absentStudents.length);
-    console.log('   Total students:', result.totalStudents);
-    console.log('   Attempts:', result.attempts.length);
+    // console.log('\n📊 Final Result:');
+    // console.log('   Exam:', !!result.exam);
+    // console.log('   Exam name:', result.exam?.name || result.exam?.title);
+    // console.log('   Exam questionsList:', result.exam?.questionsList?.length || 0);
+    // console.log('   Present students:', result.presentStudents.length);
+    // console.log('   Absent students:', result.absentStudents.length);
+    // console.log('   Total students:', result.totalStudents);
+    // console.log('   Attempts:', result.attempts.length);
     
     if (result.presentStudents.length > 0 && result.presentStudents[0].attemptData) {
-      console.log('\n   First student enriched data check:');
-      console.log('     - answers:', result.presentStudents[0].attemptData.answers?.length || 0);
-      console.log('     - responses:', result.presentStudents[0].attemptData.responses?.length || 0);
-      console.log('     - enterIPAddress:', result.presentStudents[0].attemptData.enterIPAddress);
-      console.log('     - browser:', result.presentStudents[0].attemptData.browser);
+      // console.log('\n   First student enriched data check:');
+      // console.log('     - answers:', result.presentStudents[0].attemptData.answers?.length || 0);
+      // console.log('     - responses:', result.presentStudents[0].attemptData.responses?.length || 0);
+      // console.log('     - enterIPAddress:', result.presentStudents[0].attemptData.enterIPAddress);
+      // console.log('     - browser:', result.presentStudents[0].attemptData.browser);
     }
     
-    console.log('✅ ========== getComprehensiveExportData END ==========\n');
+    // console.log('✅ ========== getComprehensiveExportData END ==========\n');
 
     return result;
 
@@ -12855,7 +13955,7 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       }
 
       let q = query(
-        collection(this.firestore, 'activityLogs'),
+        collection(this.firestore, COLLECTIONS.ACTIVITY_LOGS),
         where('userId', '==', userId),
         orderBy('timestamp', 'desc'),
         limit(limitCount)
@@ -12863,7 +13963,7 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
 
       if (lastVisible) {
         q = query(
-          collection(this.firestore, 'activityLogs'),
+          collection(this.firestore, COLLECTIONS.ACTIVITY_LOGS),
           where('userId', '==', userId),
           orderBy('timestamp', 'desc'),
           startAfter(lastVisible),
@@ -12908,11 +14008,11 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
   ): Promise<void> {
     try {
       if (!this.firestore) {
-        console.warn('⚠️ Firestore not initialized, skipping activity log');
+        // console.warn('⚠️ Firestore not initialized, skipping activity log');
         return;
       }
 
-      await addDoc(collection(this.firestore, 'activityLogs'), {
+      await addDoc(collection(this.firestore, COLLECTIONS.ACTIVITY_LOGS), {
         userId,
         userName,
         userType,
@@ -13086,16 +14186,16 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       }
       
       // ✅ DEBUG: Log all details for troubleshooting 403 error
-      console.log(`📤 Uploading violation proof: ${fileName} (${(proofBlob.size / 1024 / 1024).toFixed(2)}MB)`);
-      console.log(`🔍 DEBUG upload details:`, {
-        path: `proctoring_evidence/${examId}/${user.uid}/${fileName}`,
-        examId,
-        uid: user.uid,
-        originalContentType: proofBlob.type,
-        normalizedContentType: contentType,
-        sizeBytes: proofBlob.size,
-        sizeMB: (proofBlob.size / 1024 / 1024).toFixed(2),
-      });
+      // console.log(`📤 Uploading violation proof: ${fileName} (${(proofBlob.size / 1024 / 1024).toFixed(2)}MB)`);
+      // console.log(`🔍 DEBUG upload details:`, {
+                // path: `proctoring_evidence/${examId}/${user.uid}/${fileName}`,
+                // examId,
+                // uid: user.uid,
+                // originalContentType: proofBlob.type,
+                // normalizedContentType: contentType,
+                // sizeBytes: proofBlob.size,
+                // sizeMB: (proofBlob.size / 1024 / 1024).toFixed(2),
+            // });
       
       // Upload blob with metadata
       const snapshot = await uploadBytes(storageRef, proofBlob, {
@@ -13105,7 +14205,7 @@ async getComprehensiveExportData(examId: string, classId?: string): Promise<any>
       // Get download URL
       const downloadURL = await getDownloadURL(snapshot.ref);
       
-      console.log(`✅ Violation proof uploaded: ${downloadURL}`);
+      // console.log(`✅ Violation proof uploaded: ${downloadURL}`);
       
       return {
         url: downloadURL,
@@ -13146,7 +14246,7 @@ async generateLogicAnalysis(
     const data = result.data as { success: boolean; data: LogicAnalysisResult };
     
     if (data.success && data.data) {
-      console.log('✅ Logic analysis generated successfully');
+      // console.log('✅ Logic analysis generated successfully');
       return {
         success: true,
         data: data.data
@@ -13197,7 +14297,7 @@ async generateLearningPathAI(
     const data = result.data as any;
 
     if (data?.success) {
-      console.log('✅ Learning path generated successfully');
+      // console.log('✅ Learning path generated successfully');
       return { success: true, data };
     }
 
@@ -13224,6 +14324,7 @@ async generateLearningPathAI(
     courses: any[];
     jdText?: string;
     collegeId: string;
+    createdByName?: string;
   }): Promise<{ success: boolean; pathId?: string; error?: string }> {
     try {
       const user = this.auth?.currentUser;
@@ -13248,12 +14349,12 @@ async generateLearningPathAI(
         courses: pathData.courses,
         jdText: pathData.jdText || '',
         collegeId: pathData.collegeId,
-        createdBy: user.uid,
+        createdBy: pathData.createdByName || user.displayName || user.email || '',
         createdAt: now,
         updatedAt: now,
       });
 
-      console.log('✅ Learning path saved:', docRef.id);
+      // console.log('✅ Learning path saved:', docRef.id);
       return { success: true, pathId: docRef.id };
     } catch (error: any) {
       console.error('Error saving learning path:', error);
@@ -13311,6 +14412,212 @@ async generateLearningPathAI(
   }
 
   // ==========================================
+  // LEARNING PATH ENROLLMENTS
+  // ==========================================
+
+  /**
+   * Enroll users to a learning path
+   * Creates individual enrollment records in path_enrollments collection
+   * and updates the assignedStudents array on the learningPaths document
+   */
+  async enrollUsersToLearningPath(
+    pathId: string,
+    userIds: string[],
+    enrolledBy: string,
+    collegeId: string,
+    expiryDate?: Date | null,
+    enrollmentType: 'manual' | 'self' | 'bulk' = 'manual'
+  ): Promise<{ success: boolean; enrolledCount: number; errors: string[] }> {
+    const errors: string[] = [];
+    let enrolledCount = 0;
+
+    try {
+      // console.log(`📚 Enrolling ${userIds.length} users to learning path: ${pathId}`);
+
+      const batchSize = 500;
+      const batches: WriteBatch[] = [];
+      let currentBatch = writeBatch(this.firestore!);
+      let operationCount = 0;
+
+      for (const userId of userIds) {
+        try {
+          // Check if already enrolled
+          const existingEnrollment = await this.getPathEnrollment(pathId, userId);
+          if (existingEnrollment) {
+            errors.push(`User ${userId} is already enrolled`);
+            continue;
+          }
+
+          const enrollmentRef = doc(collection(this.firestore!, COLLECTIONS.PATH_ENROLLMENTS));
+          const enrollmentData = {
+            enrollmentId: enrollmentRef.id,
+            pathId,
+            userId,
+            collegeId,
+            enrolledAt: serverTimestamp(),
+            enrolledBy,
+            enrollmentType,
+            expiryDate: expiryDate ? Timestamp.fromDate(expiryDate) : null,
+            status: 'active',
+            progress: {
+              percentage: 0,
+              completedCourses: [],
+              lastAccessedAt: null,
+              lastCourseId: null,
+            },
+            completedAt: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+
+          currentBatch.set(enrollmentRef, enrollmentData);
+          operationCount++;
+          enrolledCount++;
+
+          if (operationCount >= batchSize) {
+            batches.push(currentBatch);
+            currentBatch = writeBatch(this.firestore!);
+            operationCount = 0;
+          }
+        } catch (error) {
+          console.error(`Error preparing enrollment for user ${userId}:`, error);
+          errors.push(`Failed to enroll user ${userId}`);
+        }
+      }
+
+      if (operationCount > 0) {
+        batches.push(currentBatch);
+      }
+
+      for (const batch of batches) {
+        await batch.commit();
+      }
+
+      // Update the learning path document
+      if (enrolledCount > 0) {
+        const pathRef = doc(this.firestore!, COLLECTIONS.LEARNING_PATHS, pathId);
+        
+        // Count actual path_enrollments records for accurate count
+        const enrollmentsRef = collection(this.firestore!, COLLECTIONS.PATH_ENROLLMENTS);
+        const countQ = query(
+          enrollmentsRef,
+          where('pathId', '==', pathId),
+          where('status', '==', 'active')
+        );
+        const countSnapshot = await getDocs(countQ);
+        const actualEnrollmentCount = countSnapshot.size;
+
+        // Also update assignedStudents array for backward compatibility
+        const pathDoc = await getDoc(pathRef);
+        const currentAssigned = pathDoc.exists() ? (pathDoc.data()?.assignedStudents || []) : [];
+        const updatedAssigned = [...new Set([...currentAssigned, ...userIds.filter(id => !errors.some(e => e.includes(id)))])];
+
+        await updateDoc(pathRef, {
+          assignedStudents: updatedAssigned,
+          enrollmentCount: actualEnrollmentCount,
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      // console.log(`✅ Enrolled ${enrolledCount} users to learning path`);
+      return { success: true, enrolledCount, errors };
+    } catch (error: any) {
+      console.error('Error enrolling users to learning path:', error);
+      return { success: false, enrolledCount, errors: [...errors, error.message] };
+    }
+  }
+
+  /**
+   * Get a single path enrollment for a user
+   */
+  async getPathEnrollment(pathId: string, userId: string): Promise<any | null> {
+    try {
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.PATH_ENROLLMENTS);
+      const q = query(
+        enrollmentsRef,
+        where('pathId', '==', pathId),
+        where('userId', '==', userId),
+        where('status', '==', 'active'),
+        limit(1)
+      );
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) return null;
+      return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+    } catch (error) {
+      console.error('Error getting path enrollment:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get paginated enrollments for a learning path filtered by college
+   * Index required: path_enrollments - pathId (Asc), collegeId (Asc), status (Asc), enrolledAt (Desc)
+   */
+  async getPathEnrollmentsPaginated(
+    pathId: string,
+    collegeId: string,
+    pageSize: number = 100,
+    lastDocument: DocumentSnapshot | null = null
+  ): Promise<{ enrollments: any[]; lastDoc: DocumentSnapshot | null; hasMore: boolean }> {
+    try {
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.PATH_ENROLLMENTS);
+
+      let q;
+      if (lastDocument) {
+        q = query(
+          enrollmentsRef,
+          where('pathId', '==', pathId),
+          where('collegeId', '==', collegeId),
+          where('status', '==', 'active'),
+          orderBy('enrolledAt', 'desc'),
+          startAfter(lastDocument),
+          limit(pageSize)
+        );
+      } else {
+        q = query(
+          enrollmentsRef,
+          where('pathId', '==', pathId),
+          where('collegeId', '==', collegeId),
+          where('status', '==', 'active'),
+          orderBy('enrolledAt', 'desc'),
+          limit(pageSize)
+        );
+      }
+
+      const snapshot = await getDocs(q);
+      const enrollments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
+      const hasMore = snapshot.docs.length === pageSize;
+
+      // console.log(`✅ Found ${enrollments.length} path enrollments`);
+      return { enrollments, lastDoc: newLastDoc, hasMore };
+    } catch (error) {
+      console.error('Error fetching path enrollments:', error);
+      return { enrollments: [], lastDoc: null, hasMore: false };
+    }
+  }
+
+  /**
+   * Get all path enrollments for a user
+   */
+  async getUserPathEnrollments(userId: string): Promise<any[]> {
+    try {
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.PATH_ENROLLMENTS);
+      const q = query(
+        enrollmentsRef,
+        where('userId', '==', userId),
+        where('status', '==', 'active'),
+        orderBy('enrolledAt', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    } catch (error) {
+      console.error('Error fetching user path enrollments:', error);
+      return [];
+    }
+  }
+
+  // ==========================================
   // STUDENT ENROLLMENTS
   // ==========================================
 
@@ -13325,7 +14632,7 @@ async generateLearningPathAI(
     status: string;
   }[]> {
     try {
-      console.log('📚 Fetching enrollments for user:', userId);
+      // console.log('📚 Fetching enrollments for user:', userId);
       
       // Query exam_attempts collection for this student
       const attemptsRef = collection(this.firestore!, COLLECTIONS.EXAM_ATTEMPTS);
@@ -13361,7 +14668,7 @@ async generateLearningPathAI(
               subjectName = examData.subjectName || examData.subject || '';
             }
           } catch (e) {
-            console.warn('Could not fetch exam details:', e);
+            // console.warn('Could not fetch exam details:', e);
           }
         }
         
@@ -13374,7 +14681,7 @@ async generateLearningPathAI(
         });
       }
       
-      console.log('✅ Found', enrollments.length, 'enrollments');
+      // console.log('✅ Found', enrollments.length, 'enrollments');
       return enrollments;
     } catch (error) {
       console.error('❌ Error fetching student enrollments:', error);
@@ -13413,7 +14720,7 @@ async generateLearningPathAI(
         throw new Error('Firestore not initialized');
       }
 
-      const docRef = doc(this.firestore, 'problems', slug);
+      const docRef = doc(this.firestore, COLLECTIONS.PROBLEMS, slug);
       const docSnap = await getDoc(docRef);
 
       if (docSnap.exists()) {
@@ -13445,13 +14752,13 @@ async generateLearningPathAI(
 
       // Check if this device has viewed within the last 24 hours
       if (lastViewTime && (now - parseInt(lastViewTime)) < twentyFourHours) {
-        console.log('⏳ View already counted for this device within 24 hours');
+        // console.log('⏳ View already counted for this device within 24 hours');
         return false;
       }
 
       // Record this view in Firestore
-      const problemRef = doc(this.firestore, 'problems', slug);
-      const viewsRef = doc(this.firestore, 'problem_views', `${slug}_${deviceId}`);
+      const problemRef = doc(this.firestore, COLLECTIONS.PROBLEMS, slug);
+      const viewsRef = doc(this.firestore, COLLECTIONS.PROBLEM_VIEWS, `${slug}_${deviceId}`);
 
       // Check if device has viewed before (server-side check)
       const viewDoc = await getDoc(viewsRef);
@@ -13463,7 +14770,7 @@ async generateLearningPathAI(
         if ((now - lastServerView) < twentyFourHours) {
           // Update local storage to sync with server
           localStorage.setItem(viewKey, lastServerView.toString());
-          console.log('⏳ View already counted (server check)');
+          // console.log('⏳ View already counted (server check)');
           return false;
         }
       }
@@ -13484,7 +14791,7 @@ async generateLearningPathAI(
 
       // Update local storage
       localStorage.setItem(viewKey, now.toString());
-      console.log('✅ View counted for problem:', slug);
+      // console.log('✅ View counted for problem:', slug);
       return true;
     } catch (error) {
       console.error('Error tracking problem view:', error);
@@ -13507,14 +14814,14 @@ async generateLearningPathAI(
       
       // Check local storage first
       if (localStorage.getItem(likeKey) === 'true') {
-        console.log('❤️ Already liked from this device (local check)');
-        const problemDoc = await getDoc(doc(this.firestore, 'problems', slug));
+        // console.log('❤️ Already liked from this device (local check)');
+        const problemDoc = await getDoc(doc(this.firestore, COLLECTIONS.PROBLEMS, slug));
         const currentLikes = problemDoc.data()?.stats?.likes || problemDoc.data()?.likes || 0;
         return { success: false, alreadyLiked: true, totalLikes: currentLikes };
       }
 
-      const problemRef = doc(this.firestore, 'problems', slug);
-      const likesRef = doc(this.firestore, 'problem_likes', `${slug}_${deviceId}`);
+      const problemRef = doc(this.firestore, COLLECTIONS.PROBLEMS, slug);
+      const likesRef = doc(this.firestore, COLLECTIONS.PROBLEM_LIKES, `${slug}_${deviceId}`);
 
       // Check server-side if device has already liked
       const likeDoc = await getDoc(likesRef);
@@ -13522,7 +14829,7 @@ async generateLearningPathAI(
       if (likeDoc.exists()) {
         // Device has already liked - sync local storage
         localStorage.setItem(likeKey, 'true');
-        console.log('❤️ Already liked from this device (server check)');
+        // console.log('❤️ Already liked from this device (server check)');
         const problemDoc = await getDoc(problemRef);
         const currentLikes = problemDoc.data()?.stats?.likes || problemDoc.data()?.likes || 0;
         return { success: false, alreadyLiked: true, totalLikes: currentLikes };
@@ -13548,7 +14855,7 @@ async generateLearningPathAI(
       const updatedProblemDoc = await getDoc(problemRef);
       const totalLikes = updatedProblemDoc.data()?.stats?.likes || updatedProblemDoc.data()?.likes || 0;
       
-      console.log('✅ Like recorded for problem:', slug);
+      // console.log('✅ Like recorded for problem:', slug);
       return { success: true, alreadyLiked: false, totalLikes };
     } catch (error) {
       console.error('Error liking coding problem:', error);
@@ -13568,14 +14875,14 @@ async generateLearningPathAI(
       const deviceId = this.getDeviceId();
       const likeKey = `tp_like_${slug}`;
 
-      const problemRef = doc(this.firestore, 'problems', slug);
-      const likesRef = doc(this.firestore, 'problem_likes', `${slug}_${deviceId}`);
+      const problemRef = doc(this.firestore, COLLECTIONS.PROBLEMS, slug);
+      const likesRef = doc(this.firestore, COLLECTIONS.PROBLEM_LIKES, `${slug}_${deviceId}`);
 
       // Check if device has liked
       const likeDoc = await getDoc(likesRef);
       
       if (!likeDoc.exists()) {
-        console.log('⚠️ Cannot unlike - not previously liked');
+        // console.log('⚠️ Cannot unlike - not previously liked');
         const problemDoc = await getDoc(problemRef);
         const currentLikes = problemDoc.data()?.stats?.likes || problemDoc.data()?.likes || 0;
         return { success: false, totalLikes: currentLikes };
@@ -13597,7 +14904,7 @@ async generateLearningPathAI(
       const updatedProblemDoc = await getDoc(problemRef);
       const totalLikes = updatedProblemDoc.data()?.stats?.likes || updatedProblemDoc.data()?.likes || 0;
       
-      console.log('✅ Like removed for problem:', slug);
+      // console.log('✅ Like removed for problem:', slug);
       return { success: true, totalLikes: Math.max(0, totalLikes) };
     } catch (error) {
       console.error('Error unliking coding problem:', error);
@@ -13622,7 +14929,7 @@ async generateLearningPathAI(
 
       // Check server
       const deviceId = this.getDeviceId();
-      const likesRef = doc(this.firestore, 'problem_likes', `${slug}_${deviceId}`);
+      const likesRef = doc(this.firestore, COLLECTIONS.PROBLEM_LIKES, `${slug}_${deviceId}`);
       const likeDoc = await getDoc(likesRef);
       
       if (likeDoc.exists()) {
@@ -13647,7 +14954,7 @@ async generateLearningPathAI(
         throw new Error('Firestore not initialized');
       }
 
-      const problemRef = doc(this.firestore, 'problems', slug);
+      const problemRef = doc(this.firestore, COLLECTIONS.PROBLEMS, slug);
       const problemDoc = await getDoc(problemRef);
       
       if (!problemDoc.exists()) {
@@ -13709,7 +15016,7 @@ async generateLearningPathAI(
       constraints.push(limit(limitCount + 1));
       
       // Build and execute query
-      const q = query(collection(this.firestore, 'problems'), ...constraints);
+      const q = query(collection(this.firestore, COLLECTIONS.PROBLEMS), ...constraints);
       const snapshot = await getDocs(q);
       
       const problems: any[] = [];
@@ -13733,8 +15040,8 @@ async generateLearningPathAI(
     } catch (error) {
       console.error('Error fetching coding problems:', error);
       if (error instanceof Error && error.message.includes('index')) {
-        console.log('💡 Index required! Create composite index: problems collection with fields used in filter + number (Asc)');
-        console.log('💡 Go to Firebase Console > Firestore > Indexes to create the required index');
+        // console.log('💡 Index required! Create composite index: problems collection with fields used in filter + number (Asc)');
+        // console.log('💡 Go to Firebase Console > Firestore > Indexes to create the required index');
       }
       return { problems: [], lastDoc: null, hasMore: false };
     }
@@ -13750,7 +15057,7 @@ async generateLearningPathAI(
       }
 
       // Get all problems and filter client-side (Firestore doesn't support full-text search)
-      const snapshot = await getDocs(collection(this.firestore, 'problems'));
+      const snapshot = await getDocs(collection(this.firestore, COLLECTIONS.PROBLEMS));
       const problems: any[] = [];
       const searchLower = searchTerm.toLowerCase();
 
@@ -13781,7 +15088,7 @@ async generateLearningPathAI(
       }
 
       // Use getCountFromServer for efficient counting without downloading documents
-      const countSnapshot = await getCountFromServer(collection(this.firestore, 'problems'));
+      const countSnapshot = await getCountFromServer(collection(this.firestore, COLLECTIONS.PROBLEMS));
       return countSnapshot.data().count;
     } catch (error) {
       console.error('Error getting problems count:', error);
@@ -13808,12 +15115,12 @@ async generateLearningPathAI(
     }
   ): Promise<void> {
     try {
-      console.log(`📝 Submitting exercise: ${submissionId} for enrollment: ${enrollmentId}`);
+      // console.log(`📝 Submitting exercise: ${submissionId} for enrollment: ${enrollmentId}`);
       
       // Save to exerciseSubmissions subcollection
       const submissionRef = doc(
         this.firestore!,
-        'course_enrollments',
+        COLLECTIONS.COURSE_ENROLLMENTS,
         enrollmentId,
         'exerciseSubmissions',
         submissionId
@@ -13826,7 +15133,7 @@ async generateLearningPathAI(
       }, { merge: true });
       
       // Update progress.completedLectures array (use lectureId only, not submissionId)
-      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      const enrollmentRef = doc(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS, enrollmentId);
       await updateDoc(enrollmentRef, {
         'progress.completedLectures': arrayUnion(parseInt(submissionData.lectureId) || submissionData.lectureId),
         'progress.lastLectureId': submissionData.lectureId,
@@ -13834,7 +15141,7 @@ async generateLearningPathAI(
         updatedAt: serverTimestamp(),
       });
       
-      console.log(`✅ Exercise submitted successfully`);
+      // console.log(`✅ Exercise submitted successfully`);
     } catch (error) {
       console.error('❌ Error submitting exercise:', error);
       throw error;
@@ -13850,11 +15157,11 @@ async generateLearningPathAI(
     submissionId: string
   ): Promise<any | null> {
     try {
-      console.log(`📖 Getting exercise submission: ${submissionId} for enrollment: ${enrollmentId}`);
+      // console.log(`📖 Getting exercise submission: ${submissionId} for enrollment: ${enrollmentId}`);
       
       const submissionRef = doc(
         this.firestore!,
-        'course_enrollments',
+        COLLECTIONS.COURSE_ENROLLMENTS,
         enrollmentId,
         'exerciseSubmissions',
         submissionId
@@ -13863,11 +15170,11 @@ async generateLearningPathAI(
       const snapshot = await getDoc(submissionRef);
       
       if (snapshot.exists()) {
-        console.log(`✅ Found exercise submission`);
+        // console.log(`✅ Found exercise submission`);
         return { id: snapshot.id, ...snapshot.data() };
       }
       
-      console.log(`ℹ️ No exercise submission found`);
+      // console.log(`ℹ️ No exercise submission found`);
       return null;
     } catch (error) {
       console.error('❌ Error getting exercise submission:', error);
@@ -13875,6 +15182,10 @@ async generateLearningPathAI(
     }
   }
 
+  /**
+   * Get ALL exercise submissions for an enrollment (for marksheet)
+   * Returns array of all submissions with evaluation scores
+   */
   /**
    * Call Cloud Function to queue exercise for AI evaluation (via Pub/Sub)
    * Returns immediately - evaluation happens in background
@@ -13889,13 +15200,13 @@ async generateLearningPathAI(
     progLanguage?: string;
   }): Promise<any> {
     try {
-      console.log(`🚀 Queueing AI evaluation for: ${params.visibilityId}`);
+      // console.log(`🚀 Queueing AI evaluation for: ${params.visibilityId}`);
       
       // Call the Pub/Sub publisher function (returns immediately)
       const submitExerciseForEvaluation = httpsCallable(this.functions!, 'submitExerciseForEvaluation');
       const result = await submitExerciseForEvaluation(params);
       
-      console.log(`✅ Exercise queued for evaluation`);
+      // console.log(`✅ Exercise queued for evaluation`);
       return result.data;
     } catch (error) {
       console.error('❌ Error queueing exercise evaluation:', error);
@@ -13908,11 +15219,11 @@ async generateLearningPathAI(
    */
   async getAllExerciseSubmissions(enrollmentId: string): Promise<any[]> {
     try {
-      console.log(`📚 Getting all exercise submissions for enrollment: ${enrollmentId}`);
+      // console.log(`📚 Getting all exercise submissions for enrollment: ${enrollmentId}`);
       
       const submissionsRef = collection(
         this.firestore!,
-        'course_enrollments',
+        COLLECTIONS.COURSE_ENROLLMENTS,
         enrollmentId,
         'exerciseSubmissions'
       );
@@ -13923,7 +15234,7 @@ async generateLearningPathAI(
         ...doc.data()
       }));
       
-      console.log(`✅ Found ${submissions.length} exercise submissions`);
+      // console.log(`✅ Found ${submissions.length} exercise submissions`);
       return submissions;
     } catch (error) {
       console.error('❌ Error getting exercise submissions:', error);
@@ -13940,11 +15251,11 @@ async generateLearningPathAI(
     submissionId: string,
     callback: (submission: any) => void
   ): () => void {
-    console.log(`👂 Setting up real-time listener for: ${submissionId}`);
+    // console.log(`👂 Setting up real-time listener for: ${submissionId}`);
     
     const submissionRef = doc(
       this.firestore!,
-      'course_enrollments',
+      COLLECTIONS.COURSE_ENROLLMENTS,
       enrollmentId,
       'exerciseSubmissions',
       submissionId
@@ -14422,7 +15733,7 @@ async getCoursesPaginated(options: {
    */
   async getCourseCurriculum(slug: string): Promise<CourseUnit[]> {
     try {
-      console.log(`📚 Fetching curriculum for: ${slug}`);
+      // console.log(`📚 Fetching curriculum for: ${slug}`);
       const curriculumRef = collection(this.firestore!, COLLECTIONS.COURSES, slug, 'curriculum');
       const q = query(curriculumRef, orderBy('unitOrder', 'asc'));
       const snapshot = await getDocs(q);
@@ -14443,7 +15754,7 @@ async getCoursesPaginated(options: {
         } as CourseUnit;
       });
       
-      console.log(`✅ Loaded ${units.length} units`);
+      // console.log(`✅ Loaded ${units.length} units`);
       return units;
     } catch (error) {
       console.error('Error fetching curriculum:', error);
@@ -14463,7 +15774,7 @@ async getCoursesPaginated(options: {
   async setVideoSignedCookies(): Promise<void> {
     // Skip if cookies are still valid (with 5 min buffer)
     if (this.cfCookiesExpiresAt > Math.floor(Date.now() / 1000) + 300) {
-      console.log('🍪 CloudFront cookies still valid');
+      // console.log('🍪 CloudFront cookies still valid');
       return;
     }
 
@@ -14471,7 +15782,7 @@ async getCoursesPaginated(options: {
       throw new Error('Firebase functions not initialized');
     }
 
-    console.log('🔐 Fetching CloudFront signed cookies...');
+    // console.log('🔐 Fetching CloudFront signed cookies...');
     const fn = httpsCallable(this.functions, 'getVideoSignedCookies');
     const result = await fn({});
     const data = result.data as any;
@@ -14490,7 +15801,7 @@ async getCoursesPaginated(options: {
     document.cookie = `CloudFront-Key-Pair-Id=${keyPairId}${cookieOptions}; expires=${expires}`;
 
     this.cfCookiesExpiresAt = expiresAt;
-    console.log('✅ CloudFront signed cookies set on .examiners.app, expires:', new Date(expiresAt * 1000).toISOString());
+    // console.log('✅ CloudFront signed cookies set on .examiners.app, expires:', new Date(expiresAt * 1000).toISOString());
   }
 
   /**
@@ -14500,16 +15811,16 @@ async getCoursesPaginated(options: {
    */
   async getLectureContent(slug: string, lectureId: number): Promise<LectureContent | null> {
     try {
-      console.log(`📝 Fetching lecture content: ${slug}/lectures/${lectureId}`);
+      // console.log(`📝 Fetching lecture content: ${slug}/lectures/${lectureId}`);
       const lectureRef = doc(this.firestore!, COLLECTIONS.COURSES, slug, 'lectures', String(lectureId));
       const lectureDoc = await getDoc(lectureRef);
       
       if (!lectureDoc.exists()) {
-        console.log(`ℹ️ No heavy content for lecture ${lectureId}`);
+        // console.log(`ℹ️ No heavy content for lecture ${lectureId}`);
         return null;
       }
       
-      console.log(`✅ Loaded lecture content for ${lectureId}`);
+      // console.log(`✅ Loaded lecture content for ${lectureId}`);
       return lectureDoc.data() as LectureContent;
     } catch (error) {
       console.error('Error fetching lecture content:', error);
@@ -14523,7 +15834,7 @@ async getCoursesPaginated(options: {
    */
   async getCourseFeedback(slug: string): Promise<CourseFeedback[]> {
     try {
-      console.log(`💬 Fetching feedback for: ${slug}`);
+      // console.log(`💬 Fetching feedback for: ${slug}`);
       const feedbackRef = collection(this.firestore!, COLLECTIONS.COURSES, slug, 'feedback');
       const q = query(feedbackRef, orderBy('createdAt', 'desc'));
       const snapshot = await getDocs(q);
@@ -14533,7 +15844,7 @@ async getCoursesPaginated(options: {
         ...doc.data()
       })) as CourseFeedback[];
       
-      console.log(`✅ Loaded ${feedback.length} feedback items`);
+      // console.log(`✅ Loaded ${feedback.length} feedback items`);
       return feedback;
     } catch (error) {
       console.error('Error fetching course feedback:', error);
@@ -14553,7 +15864,7 @@ async getCoursesPaginated(options: {
     comment: string;
   }): Promise<string | null> {
     try {
-      console.log(`💬 Adding feedback for: ${slug}`);
+      // console.log(`💬 Adding feedback for: ${slug}`);
       const feedbackRef = collection(this.firestore!, COLLECTIONS.COURSES, slug, 'feedback');
       
       const newFeedback = {
@@ -14563,7 +15874,7 @@ async getCoursesPaginated(options: {
       };
       
       const docRef = await addDoc(feedbackRef, newFeedback);
-      console.log(`✅ Feedback added with ID: ${docRef.id}`);
+      // console.log(`✅ Feedback added with ID: ${docRef.id}`);
       return docRef.id;
     } catch (error) {
       console.error('Error adding course feedback:', error);
@@ -14580,7 +15891,7 @@ async getCoursesPaginated(options: {
     comment: string;
   }): Promise<boolean> {
     try {
-      console.log(`📝 Updating feedback: ${slug}/feedback/${feedbackId}`);
+      // console.log(`📝 Updating feedback: ${slug}/feedback/${feedbackId}`);
       const feedbackRef = doc(this.firestore!, COLLECTIONS.COURSES, slug, 'feedback', feedbackId);
       
       await updateDoc(feedbackRef, {
@@ -14588,7 +15899,7 @@ async getCoursesPaginated(options: {
         updatedAt: serverTimestamp()
       });
       
-      console.log(`✅ Feedback updated`);
+      // console.log(`✅ Feedback updated`);
       return true;
     } catch (error) {
       console.error('Error updating course feedback:', error);
@@ -14602,10 +15913,10 @@ async getCoursesPaginated(options: {
    */
   async deleteCourseFeedback(slug: string, feedbackId: string): Promise<boolean> {
     try {
-      console.log(`🗑️ Deleting feedback: ${slug}/feedback/${feedbackId}`);
+      // console.log(`🗑️ Deleting feedback: ${slug}/feedback/${feedbackId}`);
       const feedbackRef = doc(this.firestore!, COLLECTIONS.COURSES, slug, 'feedback', feedbackId);
       await deleteDoc(feedbackRef);
-      console.log(`✅ Feedback deleted`);
+      // console.log(`✅ Feedback deleted`);
       return true;
     } catch (error) {
       console.error('Error deleting course feedback:', error);
@@ -14727,7 +16038,7 @@ async getCoursesPaginated(options: {
     let enrolledCount = 0;
 
     try {
-      console.log(`📚 Enrolling ${userIds.length} users to course: ${courseId}`);
+      // console.log(`📚 Enrolling ${userIds.length} users to course: ${courseId}`);
 
       // Use batched writes for efficiency
       const batchSize = 500; // Firestore limit
@@ -14745,7 +16056,7 @@ async getCoursesPaginated(options: {
           }
 
           // Create enrollment document
-          const enrollmentRef = doc(collection(this.firestore!, 'course_enrollments'));
+          const enrollmentRef = doc(collection(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS));
           const enrollmentData = {
             enrollmentId: enrollmentRef.id,
             courseId,
@@ -14804,10 +16115,16 @@ async getCoursesPaginated(options: {
           enrollmentCount: increment(enrolledCount),
           updatedAt: serverTimestamp(),
         });
+
+        // Increment totalEnrollments on college doc
+        const collegeRef = doc(this.firestore!, COLLECTIONS.COLLEGES, collegeId);
+        await updateDoc(collegeRef, {
+          totalEnrollments: increment(enrolledCount),
+        });
         
         // Update or create college_courses document
         const collegeCourseId = `${collegeId}_${courseSlug}`;
-        const collegeCourseRef = doc(this.firestore!, 'college_courses', collegeCourseId);
+        const collegeCourseRef = doc(this.firestore!, COLLECTIONS.COLLEGE_COURSES, collegeCourseId);
         const collegeCourseDoc = await getDoc(collegeCourseRef);
         
         if (collegeCourseDoc.exists()) {
@@ -14830,7 +16147,7 @@ async getCoursesPaginated(options: {
         }
       }
 
-      console.log(`✅ Successfully enrolled ${enrolledCount} users to course ${courseId}`);
+      // console.log(`✅ Successfully enrolled ${enrolledCount} users to course ${courseId}`);
 
       return {
         success: errors.length === 0,
@@ -14853,8 +16170,8 @@ async getCoursesPaginated(options: {
    */
   async getEnrollment(courseId: string | number, userId: string): Promise<any | null> {
     try {
-      console.log(`🔍 Getting enrollment for courseId: ${courseId}, userId: ${userId}`);
-      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      // console.log(`🔍 Getting enrollment for courseId: ${courseId}, userId: ${userId}`);
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS);
       
       const q = query(
         enrollmentsRef,
@@ -14865,11 +16182,11 @@ async getCoursesPaginated(options: {
       const snapshot = await getDocs(q);
       
       if (snapshot.empty) {
-        console.log(`❌ No enrollment found`);
+        // console.log(`❌ No enrollment found`);
         return null;
       }
       
-      console.log(`✅ Enrollment found: ${snapshot.docs[0].id}`);
+      // console.log(`✅ Enrollment found: ${snapshot.docs[0].id}`);
       return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
     } catch (error) {
       console.error('Error fetching enrollment:', error);
@@ -14883,21 +16200,21 @@ async getCoursesPaginated(options: {
    */
   async getCourseEnrollmentCountByCollege(courseId: string, collegeId: string, courseSlug?: string): Promise<number> {
     try {
-      console.log(`📊 Getting enrollment count for course: ${courseId}, college: ${collegeId}`);
+      // console.log(`📊 Getting enrollment count for course: ${courseId}, college: ${collegeId}`);
       
       // Try to get from college_courses collection
       const slug = courseSlug || courseId;
       const collegeCourseId = `${collegeId}_${slug}`;
-      const collegeCourseRef = doc(this.firestore!, 'college_courses', collegeCourseId);
+      const collegeCourseRef = doc(this.firestore!, COLLECTIONS.COLLEGE_COURSES, collegeCourseId);
       const collegeCourseDoc = await getDoc(collegeCourseRef);
       
       if (collegeCourseDoc.exists()) {
         const count = collegeCourseDoc.data().enrollmentCount || 0;
-        console.log(`✅ Enrollment count from college_courses: ${count}`);
+        // console.log(`✅ Enrollment count from college_courses: ${count}`);
         return count;
       }
       
-      console.log(`✅ No college_courses document found, returning 0`);
+      // console.log(`✅ No college_courses document found, returning 0`);
       return 0;
     } catch (error) {
       console.error('Error getting course enrollment count:', error);
@@ -14911,8 +16228,8 @@ async getCoursesPaginated(options: {
    */
   async getCoursesForCollege(collegeId: string): Promise<CollegeCourse[]> {
     try {
-      console.log(`📚 Getting courses for college: ${collegeId}`);
-      const collegeCoursesRef = collection(this.firestore!, 'college_courses');
+      // console.log(`📚 Getting courses for college: ${collegeId}`);
+      const collegeCoursesRef = collection(this.firestore!, COLLECTIONS.COLLEGE_COURSES);
       const q = query(
         collegeCoursesRef,
         where('collegeId', '==', collegeId)
@@ -14924,7 +16241,7 @@ async getCoursesPaginated(options: {
         ...doc.data()
       })) as unknown as CollegeCourse[];
       
-      console.log(`✅ Found ${collegeCourses.length} courses for college ${collegeId}`);
+      // console.log(`✅ Found ${collegeCourses.length} courses for college ${collegeId}`);
       return collegeCourses;
     } catch (error) {
       console.error('Error getting courses for college:', error);
@@ -14939,7 +16256,7 @@ async getCoursesPaginated(options: {
     try {
       if (courseIds.length === 0) return [];
       
-      console.log(`📚 Getting ${courseIds.length} courses by courseId`, courseIds);
+      // console.log(`📚 Getting ${courseIds.length} courses by courseId`, courseIds);
       const courses: CourseListing[] = [];
       
       // Firestore 'in' query supports max 30 items
@@ -14958,7 +16275,7 @@ async getCoursesPaginated(options: {
         });
       }
       
-      console.log(`✅ Retrieved ${courses.length} courses`);
+      // console.log(`✅ Retrieved ${courses.length} courses`);
       return courses;
     } catch (error) {
       console.error('Error getting courses by courseId:', error);
@@ -14977,12 +16294,12 @@ async getCoursesPaginated(options: {
     lastDocument: DocumentSnapshot | null = null
   ): Promise<{ enrollments: any[]; lastDoc: DocumentSnapshot | null; hasMore: boolean; total: number }> {
     try {
-      console.log(`📚 Fetching paginated enrollments for course: ${courseId}, college: ${collegeId}`);
+      // console.log(`📚 Fetching paginated enrollments for course: ${courseId}, college: ${collegeId}`);
       
       // Get total count first
       const total = await this.getCourseEnrollmentCountByCollege(courseId, collegeId);
       
-      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS);
       
       // Build query with all filters for proper index usage
       let q;
@@ -15012,7 +16329,7 @@ async getCoursesPaginated(options: {
       const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
       const hasMore = snapshot.docs.length === pageSize;
       
-      console.log(`✅ Found ${enrollments.length} enrollments (page), total: ${total}`);
+      // console.log(`✅ Found ${enrollments.length} enrollments (page), total: ${total}`);
       
       return {
         enrollments,
@@ -15031,7 +16348,7 @@ async getCoursesPaginated(options: {
    */
   async getUserCourseEnrollments(userId: string): Promise<any[]> {
     try {
-      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS);
       const q = query(
         enrollmentsRef,
         where('userId', '==', userId),
@@ -15079,9 +16396,9 @@ async getCoursesPaginated(options: {
         searchQuery,
       } = options;
 
-      console.log('📚 Fetching paginated course enrollments for user:', userId);
+      // console.log('📚 Fetching paginated course enrollments for user:', userId);
 
-      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS);
 
       // If searching, fetch all and filter client-side
       if (searchQuery && searchQuery.trim().length > 0) {
@@ -15190,7 +16507,7 @@ async getCoursesPaginated(options: {
 
       const lastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
 
-      console.log('✅ Found', enrollments.length, 'enrollments, total:', totalCount);
+      // console.log('✅ Found', enrollments.length, 'enrollments, total:', totalCount);
 
       return {
         enrollments,
@@ -15216,7 +16533,7 @@ async getCoursesPaginated(options: {
     }
   ): Promise<boolean> {
     try {
-      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      const enrollmentRef = doc(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS, enrollmentId);
       
       const updateData: any = {
         'progress.lastAccessedAt': serverTimestamp(),
@@ -15263,8 +16580,8 @@ async getCoursesPaginated(options: {
     totalLectures?: number          // total lectures in course for % calculation
   ): Promise<boolean> {
     try {
-      console.log('💾 updateLectureProgress:', { enrollmentId, lectureId, status: lectureData.status, timeSpent: lectureData.timeSpent });
-      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      // console.log('💾 updateLectureProgress:', { enrollmentId, lectureId, status: lectureData.status, timeSpent: lectureData.timeSpent });
+      const enrollmentRef = doc(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS, enrollmentId);
 
       const updateData: any = {
         'progress.lastAccessedAt': serverTimestamp(),
@@ -15312,18 +16629,53 @@ async getCoursesPaginated(options: {
       }
 
       await updateDoc(enrollmentRef, updateData);
-      console.log('✅ Progress saved to Firestore for lecture:', lectureId);
+      // console.log('✅ Progress saved to Firestore for lecture:', lectureId);
 
       // If totalLectures provided and marking completed, recalculate overall percentage
       if (lectureData.status === 'completed' && totalLectures && totalLectures > 0) {
         try {
           const enrollmentDoc = await getDoc(enrollmentRef);
           if (enrollmentDoc.exists()) {
-            const completedLectures = enrollmentDoc.data()?.progress?.completedLectures || [];
+            const enrollmentData = enrollmentDoc.data();
+            const completedLectures = enrollmentData?.progress?.completedLectures || [];
             const percentage = Math.round((completedLectures.length / totalLectures) * 100);
             await updateDoc(enrollmentRef, {
               'progress.percentage': percentage,
             });
+
+            // Issue certificate when all lectures are completed (100%)
+            if (percentage >= 100 && !enrollmentData?.certificateIssued) {
+              try {
+                const userId = enrollmentData?.userId || '';
+                const courseId = enrollmentData?.courseId || '';
+                const collegeId = enrollmentData?.collegeId || '';
+                const courseSlug = enrollmentData?.courseSlug || String(courseId);
+                const courseName = enrollmentData?.courseName || '';
+                const certId = this.generateCertificateId(collegeId, courseId, userId, enrollmentId);
+                await updateDoc(enrollmentRef, {
+                  certificateIssued: true,
+                  certificateId: certId,
+                  completedAt: serverTimestamp(),
+                  status: 'completed',
+                });
+                // console.log('🎓 Certificate issued:', certId, 'for enrollment:', enrollmentId);
+
+                // Update studentLearningDetail
+                this.markCourseCompletedInLearningDetail(userId, collegeId, courseSlug, courseName);
+
+                // Increment college-level stats
+                if (collegeId) {
+                  try {
+                    const collegeRef = doc(this.firestore!, COLLECTIONS.COLLEGES, collegeId);
+                    await updateDoc(collegeRef, {
+                      'learningStats.totalCoursesCompleted': increment(1),
+                    });
+                  } catch (_e) { /* non-blocking */ }
+                }
+              } catch (certErr) {
+                console.error('Error issuing certificate:', certErr);
+              }
+            }
           }
         } catch (percentErr) {
           console.error('Error updating percentage:', percentErr);
@@ -15338,25 +16690,116 @@ async getCoursesPaginated(options: {
   }
 
   /**
+   * Generate a unique certificate ID: {collegeId}-{courseId}-{last4 of userId}-{last4 of enrollmentId}
+   * A student can only have one enrollment per course, so this combination is guaranteed unique
+   */
+  private generateCertificateId(collegeId: string, courseId: string | number, userId: string, enrollmentId: string): string {
+    const userSuffix = userId.slice(-4);
+    const enrollSuffix = enrollmentId.slice(-4);
+    return `${collegeId}-${courseId}-${userSuffix}-${enrollSuffix}`.toUpperCase();
+  }
+
+  /**
+   * Verify a certificate by its ID
+   * Returns enrollment + student + course details if valid, null if not found
+   */
+  async verifyCertificate(certificateId: string): Promise<any | null> {
+    try {
+      const q = query(
+        collection(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS),
+        where('certificateId', '==', certificateId.toUpperCase()),
+        where('certificateIssued', '==', true)
+      );
+      const snap = await getDocs(q);
+      if (snap.empty) return null;
+
+      const enrollmentDoc = snap.docs[0];
+      const enrollment = { id: enrollmentDoc.id, ...enrollmentDoc.data() };
+
+      // Fetch student name
+      let studentName = '';
+      let studentRoll = '';
+      try {
+        const userQ = query(
+          collection(this.firestore!, COLLECTIONS.USERS),
+          where('userId', '==', (enrollment as any).userId)
+        );
+        const userSnap = await getDocs(userQ);
+        if (!userSnap.empty) {
+          const userData = userSnap.docs[0].data();
+          studentName = userData.fullName || userData.displayName || userData.email?.split('@')[0] || '';
+          studentRoll = userData.studentRoll || '';
+        }
+      } catch (e) {
+        // console.warn('Could not fetch student data for verification:', e);
+      }
+
+      // Fetch college name and logo
+      let collegeName = '';
+      let instituteLogo = '';
+      try {
+        const collegeId = (enrollment as any).collegeId;
+        if (collegeId) {
+          const rawCollege = await this.getCollegeRawData(collegeId);
+          collegeName = rawCollege?.name || rawCollege?.collegeName || '';
+          instituteLogo = rawCollege?.instituteLogo || '';
+        }
+      } catch (e) {
+        // console.warn('Could not fetch college data for verification:', e);
+      }
+
+      // Fetch course name and author
+      let courseName = '';
+      let courseAuthor = '';
+      try {
+        const courseId = (enrollment as any).courseId;
+        if (courseId) {
+          const courses = await this.getCoursesByCourseId([Number(courseId)]);
+          if (courses.length > 0) {
+            const found = courses[0];
+            courseName = (found as any).courseName || (found as any).name || '';
+            courseAuthor = (found as any).courseAuthor || '';
+          }
+        }
+      } catch (e) {
+        // console.warn('Could not fetch course data for verification:', e);
+      }
+
+      return {
+        ...enrollment,
+        studentName,
+        studentRoll,
+        collegeName,
+        instituteLogo,
+        courseName,
+        courseAuthor,
+      };
+    } catch (error) {
+      console.error('Error verifying certificate:', error);
+      return null;
+    }
+  }
+
+  /**
    * Get enrollment progress data (includes per-lecture progress)
    */
   async getEnrollmentProgress(enrollmentId: string): Promise<any | null> {
     try {
-      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      const enrollmentRef = doc(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS, enrollmentId);
       const enrollmentDoc = await getDoc(enrollmentRef);
 
       if (!enrollmentDoc.exists()) {
-        console.log('⚠️ getEnrollmentProgress: enrollment not found:', enrollmentId);
+        // console.log('⚠️ getEnrollmentProgress: enrollment not found:', enrollmentId);
         return null;
       }
 
       const progress = enrollmentDoc.data()?.progress || null;
-      console.log('📊 getEnrollmentProgress:', {
-        enrollmentId,
-        completedLectures: progress?.completedLectures?.length || 0,
-        lecturesTracked: progress?.lectures ? Object.keys(progress.lectures) : [],
-        percentage: progress?.percentage,
-      });
+      // console.log('📊 getEnrollmentProgress:', {
+                // enrollmentId,
+                // completedLectures: progress?.completedLectures?.length || 0,
+                // lecturesTracked: progress?.lectures ? Object.keys(progress.lectures) : [],
+                // percentage: progress?.percentage,
+            // });
       return progress;
     } catch (error) {
       console.error('🔴 Error fetching enrollment progress:', error);
@@ -15380,7 +16823,7 @@ async getCoursesPaginated(options: {
     }
   ): Promise<boolean> {
     try {
-      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      const enrollmentRef = doc(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS, enrollmentId);
       
       const quizResult = {
         ...quizData,
@@ -15409,7 +16852,7 @@ async getCoursesPaginated(options: {
     lectureId: string
   ): Promise<any | null> {
     try {
-      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      const enrollmentRef = doc(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS, enrollmentId);
       const enrollmentDoc = await getDoc(enrollmentRef);
       
       if (!enrollmentDoc.exists()) return null;
@@ -15435,14 +16878,14 @@ async getCoursesPaginated(options: {
     expiryDate: Date | null
   ): Promise<boolean> {
     try {
-      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      const enrollmentRef = doc(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS, enrollmentId);
       
       await updateDoc(enrollmentRef, {
         expiryDate: expiryDate ? Timestamp.fromDate(expiryDate) : null,
         updatedAt: serverTimestamp(),
       });
       
-      console.log(`✅ Updated expiry date for enrollment ${enrollmentId}`);
+      // console.log(`✅ Updated expiry date for enrollment ${enrollmentId}`);
       return true;
     } catch (error) {
       console.error('Error updating enrollment expiry:', error);
@@ -15458,7 +16901,7 @@ async getCoursesPaginated(options: {
       const enrollment = await this.getEnrollment(courseId, userId);
       if (!enrollment) return false;
 
-      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollment.id);
+      const enrollmentRef = doc(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS, enrollment.id);
       await updateDoc(enrollmentRef, {
         status: 'suspended',
         updatedAt: serverTimestamp(),
@@ -15471,11 +16914,21 @@ async getCoursesPaginated(options: {
         enrollmentCount: increment(-1),
         updatedAt: serverTimestamp(),
       });
+
+      // Decrement totalEnrollments on college doc
+      if (enrollment.collegeId) {
+        try {
+          const collegeRef = doc(this.firestore!, COLLECTIONS.COLLEGES, enrollment.collegeId);
+          await updateDoc(collegeRef, {
+            totalEnrollments: increment(-1),
+          });
+        } catch (_e) { /* non-blocking */ }
+      }
       
       // Decrement college_courses enrollment count
       if (enrollment.collegeId && courseSlug) {
         const collegeCourseId = `${enrollment.collegeId}_${courseSlug}`;
-        const collegeCourseRef = doc(this.firestore!, 'college_courses', collegeCourseId);
+        const collegeCourseRef = doc(this.firestore!, COLLECTIONS.COLLEGE_COURSES, collegeCourseId);
         const collegeCourseDoc = await getDoc(collegeCourseRef);
         
         if (collegeCourseDoc.exists()) {
@@ -15486,7 +16939,7 @@ async getCoursesPaginated(options: {
         }
       }
 
-      console.log(`✅ Successfully unenrolled user ${userId} from course ${courseId}`);
+      // console.log(`✅ Successfully unenrolled user ${userId} from course ${courseId}`);
       return true;
     } catch (error) {
       console.error('Error unenrolling user from course:', error);
@@ -15499,7 +16952,7 @@ async getCoursesPaginated(options: {
    */
   async markCourseCompleted(enrollmentId: string): Promise<boolean> {
     try {
-      const enrollmentRef = doc(this.firestore!, 'course_enrollments', enrollmentId);
+      const enrollmentRef = doc(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS, enrollmentId);
       await updateDoc(enrollmentRef, {
         status: 'completed',
         'progress.percentage': 100,
@@ -15519,7 +16972,7 @@ async getCoursesPaginated(options: {
   async checkExpiredEnrollments(): Promise<number> {
     try {
       const now = Timestamp.now();
-      const enrollmentsRef = collection(this.firestore!, 'course_enrollments');
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS);
       const q = query(
         enrollmentsRef,
         where('status', '==', 'active'),
@@ -15541,7 +16994,7 @@ async getCoursesPaginated(options: {
 
       if (expiredCount > 0) {
         await batch.commit();
-        console.log(`✅ Marked ${expiredCount} enrollments as expired`);
+        // console.log(`✅ Marked ${expiredCount} enrollments as expired`);
       }
 
       return expiredCount;
@@ -15573,7 +17026,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       
-      const attemptRef = doc(this.firestore, 'problemsAttempt', `${userId}_${problemSlug}`);
+      const attemptRef = doc(this.firestore, COLLECTIONS.PROBLEMS_ATTEMPT, `${userId}_${problemSlug}`);
       const existingDoc = await getDoc(attemptRef);
       
       const now = serverTimestamp();
@@ -15585,7 +17038,7 @@ async getCoursesPaginated(options: {
         // 2. Or updating attempt count
         if (existingData.status === 'completed' && status === 'attempted') {
           // Don't downgrade from completed to attempted
-          console.log('🔒 Problem already completed, not downgrading to attempted');
+          // console.log('🔒 Problem already completed, not downgrading to attempted');
           return true;
         }
         
@@ -15616,7 +17069,7 @@ async getCoursesPaginated(options: {
         });
       }
       
-      console.log(`✅ Recorded problem attempt: ${userId} - ${problemSlug} - ${status}`);
+      // console.log(`✅ Recorded problem attempt: ${userId} - ${problemSlug} - ${status}`);
       return true;
     } catch (error) {
       console.error('Error recording problem attempt:', error);
@@ -15633,7 +17086,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       
-      const attemptsRef = collection(this.firestore, 'problemsAttempt');
+      const attemptsRef = collection(this.firestore, COLLECTIONS.PROBLEMS_ATTEMPT);
       const q = query(attemptsRef, where('userId', '==', userId));
       const snapshot = await getDocs(q);
       
@@ -15647,7 +17100,7 @@ async getCoursesPaginated(options: {
         });
       });
       
-      console.log(`✅ Fetched ${attemptsMap.size} problem attempts for user ${userId}`);
+      // console.log(`✅ Fetched ${attemptsMap.size} problem attempts for user ${userId}`);
       return attemptsMap;
     } catch (error) {
       console.error('Error fetching user problem attempts:', error);
@@ -15663,7 +17116,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       
-      const attemptsRef = collection(this.firestore, 'problemsAttempt');
+      const attemptsRef = collection(this.firestore, COLLECTIONS.PROBLEMS_ATTEMPT);
       const q = query(attemptsRef, where('userId', '==', userId));
       const snapshot = await getDocs(q);
       
@@ -15679,7 +17132,7 @@ async getCoursesPaginated(options: {
         }
       });
       
-      console.log(`✅ User ${userId} stats: ${solved} solved, ${attempted} attempted`);
+      // console.log(`✅ User ${userId} stats: ${solved} solved, ${attempted} attempted`);
       return { solved, attempted };
     } catch (error) {
       console.error('Error fetching user problem stats:', error);
@@ -15697,7 +17150,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       const docId = `${userId}_${collegeId}`;
-      const docRef = doc(this.firestore, 'studentLearningDetail', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
       const docSnap = await getDoc(docRef);
       if (!docSnap.exists()) return null;
       return { id: docSnap.id, ...docSnap.data() };
@@ -15710,15 +17163,71 @@ async getCoursesPaginated(options: {
   /**
    * Initialize student learning detail (called on enrollment creation)
    */
+  /**
+   * Recalculate and update compositeScore on a studentLearningDetail doc.
+   * Called after any metric update (non-blocking).
+   */
+  private async recalculateCompositeScore(userId: string, collegeId: string): Promise<void> {
+    try {
+      if (!this.firestore) return;
+      const docId = `${userId}_${collegeId}`;
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
+      const snap = await getDoc(docRef);
+      if (!snap.exists()) return;
+
+      const data = snap.data();
+      const timeHours = (data.totalTimeSpent || 0) / 3600;
+      const lectures = data.totalLecturesCompleted || 0;
+      const quizzes = data.totalQuizzesCompleted || 0;
+      const exercises = data.totalExercisesCompleted || 0;
+      const quizMax = data.totalQuizMaxMarks || 0;
+      const exerciseMax = data.totalExerciseMaxMarks || 0;
+      const quizPct = quizMax > 0 ? ((data.totalQuizMarksObtained || 0) / quizMax) * 100 : 0;
+      const exercisePct = exerciseMax > 0 ? ((data.totalExerciseMarksObtained || 0) / exerciseMax) * 100 : 0;
+
+      const compositeScore = Math.round(
+        ((timeHours * 2) + (lectures * 3) + (quizPct * 0.5) + (exercisePct * 0.5) + (quizzes * 2) + (exercises * 2)) * 10
+      ) / 10;
+
+      await updateDoc(docRef, { compositeScore });
+    } catch (err) {
+      // console.warn('⚠️ Failed to recalculate compositeScore:', err);
+    }
+  }
+
+  /**
+   * Helper: Calculate compositeScore from raw values (used in sync/recalc)
+   */
+  static calculateCompositeScore(data: {
+    totalTimeSpent?: number;
+    totalLecturesCompleted?: number;
+    totalQuizzesCompleted?: number;
+    totalExercisesCompleted?: number;
+    totalQuizMarksObtained?: number;
+    totalQuizMaxMarks?: number;
+    totalExerciseMarksObtained?: number;
+    totalExerciseMaxMarks?: number;
+  }): number {
+    const timeHours = (data.totalTimeSpent || 0) / 3600;
+    const lectures = data.totalLecturesCompleted || 0;
+    const quizzes = data.totalQuizzesCompleted || 0;
+    const exercises = data.totalExercisesCompleted || 0;
+    const quizMax = data.totalQuizMaxMarks || 0;
+    const exerciseMax = data.totalExerciseMaxMarks || 0;
+    const quizPct = quizMax > 0 ? ((data.totalQuizMarksObtained || 0) / quizMax) * 100 : 0;
+    const exercisePct = exerciseMax > 0 ? ((data.totalExerciseMarksObtained || 0) / exerciseMax) * 100 : 0;
+    return Math.round(((timeHours * 2) + (lectures * 3) + (quizPct * 0.5) + (exercisePct * 0.5) + (quizzes * 2) + (exercises * 2)) * 10) / 10;
+  }
+
   async initStudentLearningDetail(
     userId: string,
     collegeId: string,
-    userData: { userName: string; userEmail: string }
+    userData: { userName: string; userEmail: string; studentClass?: string; userType?: string }
   ): Promise<boolean> {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       const docId = `${userId}_${collegeId}`;
-      const docRef = doc(this.firestore, 'studentLearningDetail', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
       const existing = await getDoc(docRef);
 
       if (!existing.exists()) {
@@ -15727,19 +17236,27 @@ async getCoursesPaginated(options: {
           collegeId,
           userName: userData.userName,
           userEmail: userData.userEmail,
+          studentClass: userData.studentClass || '',
+          userType: userData.userType || 'student',
+          compositeScore: 0,
           totalCoursesEnrolled: 0,
           totalCoursesCompleted: 0,
           totalTimeSpent: 0,
           totalAssessmentsCompleted: 0,
           totalQuizzesCompleted: 0,
           totalLecturesCompleted: 0,
+          totalQuizMarksObtained: 0,
+          totalQuizMaxMarks: 0,
+          totalExercisesCompleted: 0,
+          totalExerciseMarksObtained: 0,
+          totalExerciseMaxMarks: 0,
           courses: {},
           recentActivity: [],
           lastActiveAt: serverTimestamp(),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        console.log('✅ Created studentLearningDetail:', docId);
+        // console.log('✅ Created studentLearningDetail:', docId);
       }
       return true;
     } catch (error) {
@@ -15764,7 +17281,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       const docId = `${userId}_${collegeId}`;
-      const docRef = doc(this.firestore, 'studentLearningDetail', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
 
       await updateDoc(docRef, {
         [`courses.${courseData.courseSlug}`]: {
@@ -15792,7 +17309,8 @@ async getCoursesPaginated(options: {
         detail: `Enrolled in ${courseData.courseName}`,
       });
 
-      console.log('✅ Added course to learning detail:', courseData.courseSlug);
+      // console.log('✅ Added course to learning detail:', courseData.courseSlug);
+
       return true;
     } catch (error) {
       console.error('Error adding course to learning detail:', error);
@@ -15818,9 +17336,11 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       const docId = `${userId}_${collegeId}`;
-      const docRef = doc(this.firestore, 'studentLearningDetail', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
 
       const updateData: any = {
+        userId,
+        collegeId,
         [`courses.${courseSlug}.lastAccessedAt`]: serverTimestamp(),
         lastActiveAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -15840,7 +17360,8 @@ async getCoursesPaginated(options: {
         updateData[`courses.${courseSlug}.lastChapterName`] = data.lastChapterName;
       }
 
-      await updateDoc(docRef, updateData);
+      // Use setDoc merge so it works even if doc doesn't exist yet
+      await setDoc(docRef, updateData, { merge: true });
 
       // Update daily learning log
       if (data.timeSpent && data.timeSpent > 0) {
@@ -15849,7 +17370,7 @@ async getCoursesPaginated(options: {
 
       return true;
     } catch (error) {
-      console.warn('⚠️ Failed to update learning detail progress:', error);
+      // console.warn('⚠️ Failed to update learning detail progress:', error);
       return false;
     }
   }
@@ -15871,7 +17392,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       const docId = `${userId}_${collegeId}`;
-      const docRef = doc(this.firestore, 'studentLearningDetail', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
 
       await updateDoc(docRef, {
         [`courses.${courseSlug}.lecturesCompleted`]: increment(1),
@@ -15890,15 +17411,29 @@ async getCoursesPaginated(options: {
       // Update daily learning log
       this.updateDailyLearningLog(userId, collegeId, { lecturesCompleted: 1, courseSlug });
 
+      // Recalculate composite score (non-blocking)
+      this.recalculateCompositeScore(userId, collegeId);
+
+      // Increment college-level stats
+      if (collegeId) {
+        try {
+          const collegeRef = doc(this.firestore, COLLECTIONS.COLLEGES, collegeId);
+          await updateDoc(collegeRef, {
+            'learningStats.totalLecturesCompleted': increment(1),
+          });
+        } catch (_e) { /* non-blocking */ }
+      }
+
       return true;
     } catch (error) {
-      console.warn('⚠️ Failed to mark lecture completed in learning detail:', error);
+      // console.warn('⚠️ Failed to mark lecture completed in learning detail:', error);
       return false;
     }
   }
 
   /**
    * Mark quiz completed in student learning detail
+   * Tracks quiz count (first attempt only) and marks (updated on retake with score difference)
    */
   async markQuizCompletedInLearningDetail(
     userId: string,
@@ -15907,32 +17442,62 @@ async getCoursesPaginated(options: {
     data: {
       courseName: string;
       quizTitle: string;
-      score: number;
+      score: number;              // percentage for activity log
+      marksObtained: number;      // correct answers count
+      maxMarks: number;           // total questions count
+      isRetake?: boolean;
+      previousMarksObtained?: number;  // previous correct answers (for retake score diff)
     }
   ): Promise<boolean> {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       const docId = `${userId}_${collegeId}`;
-      const docRef = doc(this.firestore, 'studentLearningDetail', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
 
-      await updateDoc(docRef, {
-        totalQuizzesCompleted: increment(1),
-        updatedAt: serverTimestamp(),
-      });
+      if (data.isRetake) {
+        // Retake: only update marks difference, don't increment count
+        const marksDiff = data.marksObtained - (data.previousMarksObtained ?? 0);
+        if (marksDiff !== 0) {
+          await updateDoc(docRef, {
+            totalQuizMarksObtained: increment(marksDiff),
+            [`courses.${courseSlug}.quizMarksObtained`]: increment(marksDiff),
+            updatedAt: serverTimestamp(),
+          });
+        }
+      } else {
+        // First attempt: increment count + add marks (global + course-level)
+        await updateDoc(docRef, {
+          totalQuizzesCompleted: increment(1),
+          totalQuizMarksObtained: increment(data.marksObtained),
+          totalQuizMaxMarks: increment(data.maxMarks),
+          [`courses.${courseSlug}.quizzesCompleted`]: increment(1),
+          [`courses.${courseSlug}.quizMarksObtained`]: increment(data.marksObtained),
+          [`courses.${courseSlug}.quizMaxMarks`]: increment(data.maxMarks),
+          updatedAt: serverTimestamp(),
+        });
+
+        // Update daily learning log only on first attempt
+        this.updateDailyLearningLog(userId, collegeId, {
+          quizzesCompleted: 1,
+          quizMarksObtained: data.marksObtained,
+          quizMaxMarks: data.maxMarks,
+          courseSlug,
+        });
+      }
 
       await this.pushLearningActivity(userId, collegeId, {
         type: 'quiz_completed',
         courseSlug,
         courseName: data.courseName,
-        detail: `Completed Quiz: ${data.quizTitle} (${data.score}%)`,
+        detail: `${data.isRetake ? 'Retook' : 'Completed'} Quiz: ${data.quizTitle} (${data.score}%)`,
       });
 
-      // Update daily learning log
-      this.updateDailyLearningLog(userId, collegeId, { quizzesCompleted: 1, courseSlug });
+      // Recalculate composite score (non-blocking)
+      this.recalculateCompositeScore(userId, collegeId);
 
       return true;
     } catch (error) {
-      console.warn('⚠️ Failed to mark quiz completed in learning detail:', error);
+      // console.warn('⚠️ Failed to mark quiz completed in learning detail:', error);
       return false;
     }
   }
@@ -15953,7 +17518,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       const docId = `${userId}_${collegeId}`;
-      const docRef = doc(this.firestore, 'studentLearningDetail', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
 
       await updateDoc(docRef, {
         totalAssessmentsCompleted: increment(1),
@@ -15972,7 +17537,79 @@ async getCoursesPaginated(options: {
 
       return true;
     } catch (error) {
-      console.warn('⚠️ Failed to mark assessment completed in learning detail:', error);
+      // console.warn('⚠️ Failed to mark assessment completed in learning detail:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Mark exercise completed in student learning detail
+   * Tracks exercise count (first attempt only) and marks (updated on retake with score difference)
+   * Called from exerciseEvaluationWorker cloud function after AI evaluation
+   */
+  async markExerciseCompletedInLearningDetail(
+    userId: string,
+    collegeId: string,
+    courseSlug: string,
+    data: {
+      courseName: string;
+      exerciseTitle: string;
+      marksObtained: number;      // AI score
+      maxMarks: number;           // max possible (100 for AI-scored exercises)
+      isRetake: boolean;
+      previousMarksObtained?: number;  // previous AI score (for retake score diff)
+    }
+  ): Promise<boolean> {
+    try {
+      if (!this.firestore) throw new Error('Firestore not initialized');
+      const docId = `${userId}_${collegeId}`;
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
+
+      const percentage = data.maxMarks > 0 ? Math.round((data.marksObtained / data.maxMarks) * 100) : 0;
+
+      if (data.isRetake) {
+        // Retake: only update marks difference, don't increment count
+        const marksDiff = data.marksObtained - (data.previousMarksObtained ?? 0);
+        if (marksDiff !== 0) {
+          await updateDoc(docRef, {
+            totalExerciseMarksObtained: increment(marksDiff),
+            [`courses.${courseSlug}.exerciseMarksObtained`]: increment(marksDiff),
+            updatedAt: serverTimestamp(),
+          });
+        }
+      } else {
+        // First attempt: increment count + add marks (global + course-level)
+        await updateDoc(docRef, {
+          totalExercisesCompleted: increment(1),
+          totalExerciseMarksObtained: increment(data.marksObtained),
+          totalExerciseMaxMarks: increment(data.maxMarks),
+          [`courses.${courseSlug}.exercisesCompleted`]: increment(1),
+          [`courses.${courseSlug}.exerciseMarksObtained`]: increment(data.marksObtained),
+          [`courses.${courseSlug}.exerciseMaxMarks`]: increment(data.maxMarks),
+          updatedAt: serverTimestamp(),
+        });
+
+        // Update daily learning log only on first attempt
+        this.updateDailyLearningLog(userId, collegeId, {
+          exerciseMarksObtained: data.marksObtained,
+          exerciseMaxMarks: data.maxMarks,
+          courseSlug,
+        });
+      }
+
+      await this.pushLearningActivity(userId, collegeId, {
+        type: 'exercise_completed',
+        courseSlug,
+        courseName: data.courseName,
+        detail: `${data.isRetake ? 'Retook' : 'Completed'} Exercise: ${data.exerciseTitle} (${percentage}%)`,
+      });
+
+      // Recalculate composite score (non-blocking)
+      this.recalculateCompositeScore(userId, collegeId);
+
+      return true;
+    } catch (error) {
+      // console.warn('⚠️ Failed to mark exercise completed in learning detail:', error);
       return false;
     }
   }
@@ -15989,7 +17626,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       const docId = `${userId}_${collegeId}`;
-      const docRef = doc(this.firestore, 'studentLearningDetail', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
 
       await updateDoc(docRef, {
         [`courses.${courseSlug}.status`]: 'completed',
@@ -16007,7 +17644,7 @@ async getCoursesPaginated(options: {
 
       return true;
     } catch (error) {
-      console.warn('⚠️ Failed to mark course completed in learning detail:', error);
+      // console.warn('⚠️ Failed to mark course completed in learning detail:', error);
       return false;
     }
   }
@@ -16019,7 +17656,7 @@ async getCoursesPaginated(options: {
     userId: string,
     collegeId: string,
     activity: {
-      type: 'course_started' | 'lecture_completed' | 'quiz_completed' | 'assessment_completed' | 'course_completed';
+      type: 'course_started' | 'lecture_completed' | 'quiz_completed' | 'exercise_completed' | 'assessment_completed' | 'course_completed';
       courseSlug: string;
       courseName: string;
       detail: string;
@@ -16028,7 +17665,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) return;
       const docId = `${userId}_${collegeId}`;
-      const docRef = doc(this.firestore, 'studentLearningDetail', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
 
       const docSnap = await getDoc(docRef);
       if (!docSnap.exists()) return;
@@ -16042,7 +17679,7 @@ async getCoursesPaginated(options: {
 
       await updateDoc(docRef, { recentActivity: updated });
     } catch (error) {
-      console.warn('⚠️ Failed to push learning activity:', error);
+      // console.warn('⚠️ Failed to push learning activity:', error);
     }
   }
 
@@ -16053,7 +17690,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
       const q = query(
-        collection(this.firestore, 'studentLearningDetail'),
+        collection(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL),
         where('collegeId', '==', collegeId),
         orderBy('lastActiveAt', 'desc')
       );
@@ -16072,7 +17709,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
 
-      const enrollmentsRef = collection(this.firestore, 'course_enrollments');
+      const enrollmentsRef = collection(this.firestore, COLLECTIONS.COURSE_ENROLLMENTS);
       const q = query(
         enrollmentsRef,
         where('userId', '==', userId),
@@ -16119,33 +17756,471 @@ async getCoursesPaginated(options: {
       });
 
       const docId = `${userId}_${collegeId}`;
-      const docRef = doc(this.firestore, 'studentLearningDetail', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL, docId);
       const existingDoc = await getDoc(docRef);
       const existingData = existingDoc.exists() ? existingDoc.data() : {};
+
+      const totalQuizMarksObtained = existingData?.totalQuizMarksObtained || 0;
+      const totalQuizMaxMarks = existingData?.totalQuizMaxMarks || 0;
+      const totalExerciseMarksObtained = existingData?.totalExerciseMarksObtained || 0;
+      const totalExerciseMaxMarks = existingData?.totalExerciseMaxMarks || 0;
+      const totalExercisesCompleted = existingData?.totalExercisesCompleted || 0;
+
+      const compositeScore = FirebaseService.calculateCompositeScore({
+        totalTimeSpent,
+        totalLecturesCompleted,
+        totalQuizzesCompleted,
+        totalExercisesCompleted,
+        totalQuizMarksObtained,
+        totalQuizMaxMarks,
+        totalExerciseMarksObtained,
+        totalExerciseMaxMarks,
+      });
 
       await setDoc(docRef, {
         userId,
         collegeId,
         userName: existingData?.userName || '',
         userEmail: existingData?.userEmail || '',
+        studentClass: existingData?.studentClass || '',
+        userType: existingData?.userType || '',
+        compositeScore,
         totalCoursesEnrolled,
         totalCoursesCompleted,
         totalTimeSpent,
         totalLecturesCompleted,
         totalQuizzesCompleted,
         totalAssessmentsCompleted: existingData?.totalAssessmentsCompleted || 0,
+        totalQuizMarksObtained,
+        totalQuizMaxMarks,
+        totalExerciseMarksObtained,
+        totalExerciseMaxMarks,
+        totalExercisesCompleted,
         courses,
         recentActivity: existingData?.recentActivity || [],
         lastActiveAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
-      console.log('✅ Recalculated student learning detail:', docId);
+      // console.log('✅ Recalculated student learning detail:', docId);
       return true;
     } catch (error) {
       console.error('Error recalculating student learning detail:', error);
       return false;
     }
+  }
+
+  /**
+   * Get top learners for a college, ranked by a composite learning score.
+   * Reads from studentLearningDetail collection.
+   * Score = totalTimeSpent (hours) + totalLecturesCompleted + (quizMarks% * quizzes) + (exerciseMarks% * exercises)
+   */
+  async getTopLearners(collegeId: string, options: {
+    limit?: number;
+    page?: number;
+    classFilter?: string;    // 'all' or specific class name
+    courseFilter?: string;   // 'all' or specific courseId
+  } = {}): Promise<{ learners: any[]; totalCount: number; classes: string[]; courses: { id: string; name: string }[] }> {
+    try {
+      if (!this.firestore) throw new Error('Firestore not initialized');
+      const { limit: pageSize = 10, page = 1, classFilter = 'all', courseFilter = 'all' } = options;
+
+      // Build filter options & dropdown data on first call (no course filter active)
+      // For the filter dropdowns, we need a lightweight query
+      let availableClasses: string[] = [];
+      let availableCourses: { id: string; name: string }[] = [];
+
+      // On page 1, we'll build dropdown data from the main query results (avoids double fetch)
+      // For subsequent pages, dropdowns are already populated in the UI
+
+      // Query all docs for this college, then filter/sort in memory
+      const baseConstraints: any[] = [where('collegeId', '==', collegeId)];
+      if (classFilter !== 'all') {
+        baseConstraints.push(where('studentClass', '==', classFilter));
+      }
+
+      const mainQuery = query(collection(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL), ...baseConstraints);
+      const snapshot = await getDocs(mainQuery);
+
+      // For docs missing userType, batch-fetch from users collection to determine type
+      const docsNeedingLookup = snapshot.docs.filter(d => !d.data().userType);
+      const userTypeMap = new Map<string, string>();
+      if (docsNeedingLookup.length > 0) {
+        const userIds = docsNeedingLookup.map(d => d.data().userId).filter(Boolean);
+        for (let i = 0; i < userIds.length; i += 30) {
+          const batch = userIds.slice(i, i + 30);
+          const usersQuery = query(
+            collection(this.firestore, COLLECTIONS.USERS),
+            where('__name__', 'in', batch)
+          );
+          const usersSnap = await getDocs(usersQuery);
+          usersSnap.docs.forEach(uDoc => {
+            userTypeMap.set(uDoc.id, uDoc.data().userType || '');
+          });
+        }
+        // Backfill userType on these docs (non-blocking) so future calls skip lookup
+        docsNeedingLookup.forEach(d => {
+          const data = d.data();
+          const resolvedType = userTypeMap.get(data.userId) || '';
+          if (resolvedType) {
+            updateDoc(d.ref, { userType: resolvedType }).catch(() => {});
+          }
+        });
+      }
+
+      // Build dropdown data from the same snapshot (page 1 only, no class filter applied for dropdowns)
+      if (page === 1) {
+        const classSet = new Set<string>();
+        const coursesMap = new Map<string, string>();
+        // For dropdowns, we need unfiltered data. If classFilter is active, 
+        // we still want all classes in dropdown. But we only have filtered snapshot.
+        // So we query once without classFilter for dropdowns if needed.
+        let dropdownDocs = snapshot.docs;
+        if (classFilter !== 'all') {
+          const allQuery = query(
+            collection(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL),
+            where('collegeId', '==', collegeId)
+          );
+          const allSnap = await getDocs(allQuery);
+          dropdownDocs = allSnap.docs;
+        }
+        dropdownDocs.forEach(d => {
+          const data = d.data();
+          const resolvedUserType = data.userType || userTypeMap.get(data.userId) || '';
+          if (resolvedUserType && resolvedUserType !== 'student') return;
+          if (data.studentClass) classSet.add(data.studentClass);
+          const courses = data.courses || {};
+          Object.entries(courses).forEach(([cId, cData]: [string, any]) => {
+            if (cData.courseName && !coursesMap.has(cId)) {
+              coursesMap.set(cId, cData.courseName);
+            }
+          });
+        });
+        availableClasses = Array.from(classSet).sort();
+        availableCourses = Array.from(coursesMap.entries()).map(([id, name]) => ({ id, name }));
+        availableCourses.sort((a, b) => a.name.localeCompare(b.name));
+      }
+
+      // Filter and map
+      const allLearners = snapshot.docs
+        .filter(d => {
+          const data = d.data();
+          const resolvedUserType = data.userType || userTypeMap.get(data.userId) || '';
+          // Only include students
+          if (resolvedUserType && resolvedUserType !== 'student') return false;
+          // If course filter, only include students enrolled in that course
+          if (courseFilter !== 'all') {
+            const courses = data.courses || {};
+            return !!courses[courseFilter];
+          }
+          return true;
+        })
+        .map(d => {
+          const data = d.data();
+
+          let timeHours: number, lectures: number, quizzes: number, exercises: number;
+          let quizMarks: number, quizMax: number, exerciseMarks: number, exerciseMax: number;
+
+          if (courseFilter !== 'all') {
+            const c = (data.courses || {})[courseFilter] || {};
+            timeHours = (c.timeSpent || 0) / 3600;
+            lectures = c.lecturesCompleted || 0;
+            quizzes = c.quizzesCompleted || 0;
+            exercises = c.exercisesCompleted || 0;
+            quizMarks = c.quizMarksObtained || 0;
+            quizMax = c.quizMaxMarks || 0;
+            exerciseMarks = c.exerciseMarksObtained || 0;
+            exerciseMax = c.exerciseMaxMarks || 0;
+          } else {
+            timeHours = (data.totalTimeSpent || 0) / 3600;
+            lectures = data.totalLecturesCompleted || 0;
+            quizzes = data.totalQuizzesCompleted || 0;
+            exercises = data.totalExercisesCompleted || 0;
+            quizMarks = data.totalQuizMarksObtained || 0;
+            quizMax = data.totalQuizMaxMarks || 0;
+            exerciseMarks = data.totalExerciseMarksObtained || 0;
+            exerciseMax = data.totalExerciseMaxMarks || 0;
+          }
+
+          const quizPct = quizMax > 0 ? (quizMarks / quizMax) * 100 : 0;
+          const exercisePct = exerciseMax > 0 ? (exerciseMarks / exerciseMax) * 100 : 0;
+          // Use stored compositeScore if available (fast path), else calculate
+          const compositeScore = (courseFilter === 'all' && data.compositeScore != null)
+            ? data.compositeScore
+            : Math.round(((timeHours * 2) + (lectures * 3) + (quizPct * 0.5) + (exercisePct * 0.5) + (quizzes * 2) + (exercises * 2)) * 10) / 10;
+
+          return {
+            userId: data.userId,
+            userName: data.userName || 'Unknown',
+            userEmail: data.userEmail || '',
+            studentClass: data.studentClass || '',
+            timeHours: Math.round(timeHours * 10) / 10,
+            totalLecturesCompleted: lectures,
+            totalQuizzesCompleted: quizzes,
+            totalExercisesCompleted: exercises,
+            compositeScore,
+            totalCoursesEnrolled: data.totalCoursesEnrolled || 0,
+            rank: 0,
+          };
+        });
+
+      // Sort by compositeScore descending and assign ranks
+      allLearners.sort((a, b) => b.compositeScore - a.compositeScore);
+      allLearners.forEach((l, i) => { l.rank = i + 1; });
+
+      const totalCount = allLearners.length;
+      const start = (page - 1) * pageSize;
+      const paginated = pageSize > 0 ? allLearners.slice(start, start + pageSize) : allLearners;
+
+      return { learners: paginated, totalCount, classes: availableClasses, courses: availableCourses };
+    } catch (error) {
+      console.error('Error fetching top learners:', error);
+      return { learners: [], totalCount: 0, classes: [], courses: [] };
+    }
+  }
+
+  /**
+   * Export ALL leaderboard data (no pagination) for Excel export.
+   * Supports class and course filters.
+   */
+  async exportLeaderboardData(collegeId: string, options: {
+    classFilter?: string;
+    courseFilter?: string;
+  } = {}): Promise<any[]> {
+    try {
+      if (!this.firestore) throw new Error('Firestore not initialized');
+      const { classFilter = 'all', courseFilter = 'all' } = options;
+
+      const constraints: any[] = [where('collegeId', '==', collegeId)];
+      if (classFilter !== 'all') {
+        constraints.push(where('studentClass', '==', classFilter));
+      }
+
+      const q = query(collection(this.firestore, COLLECTIONS.STUDENT_LEARNING_DETAIL), ...constraints);
+      const snapshot = await getDocs(q);
+
+      // For docs missing userType, batch-fetch from users collection
+      const docsNeedingLookup = snapshot.docs.filter(d => !d.data().userType);
+      const userTypeMap = new Map<string, string>();
+      if (docsNeedingLookup.length > 0) {
+        const userIds = docsNeedingLookup.map(d => d.data().userId).filter(Boolean);
+        for (let i = 0; i < userIds.length; i += 30) {
+          const batch = userIds.slice(i, i + 30);
+          const usersQuery = query(
+            collection(this.firestore, COLLECTIONS.USERS),
+            where('__name__', 'in', batch)
+          );
+          const usersSnap = await getDocs(usersQuery);
+          usersSnap.docs.forEach(uDoc => {
+            userTypeMap.set(uDoc.id, uDoc.data().userType || '');
+          });
+        }
+      }
+
+      const learners = snapshot.docs
+        .filter(d => {
+          const data = d.data();
+          const resolvedUserType = data.userType || userTypeMap.get(data.userId) || '';
+          if (resolvedUserType && resolvedUserType !== 'student') return false;
+          if (courseFilter !== 'all') {
+            return !!(data.courses || {})[courseFilter];
+          }
+          return true;
+        })
+        .map(d => {
+          const data = d.data();
+          let timeHours: number, lectures: number, quizzes: number, exercises: number;
+          let quizMarks: number, quizMax: number, exerciseMarks: number, exerciseMax: number;
+
+          if (courseFilter !== 'all') {
+            const c = (data.courses || {})[courseFilter] || {};
+            timeHours = (c.timeSpent || 0) / 3600;
+            lectures = c.lecturesCompleted || 0;
+            quizzes = c.quizzesCompleted || 0;
+            exercises = c.exercisesCompleted || 0;
+            quizMarks = c.quizMarksObtained || 0;
+            quizMax = c.quizMaxMarks || 0;
+            exerciseMarks = c.exerciseMarksObtained || 0;
+            exerciseMax = c.exerciseMaxMarks || 0;
+          } else {
+            timeHours = (data.totalTimeSpent || 0) / 3600;
+            lectures = data.totalLecturesCompleted || 0;
+            quizzes = data.totalQuizzesCompleted || 0;
+            exercises = data.totalExercisesCompleted || 0;
+            quizMarks = data.totalQuizMarksObtained || 0;
+            quizMax = data.totalQuizMaxMarks || 0;
+            exerciseMarks = data.totalExerciseMarksObtained || 0;
+            exerciseMax = data.totalExerciseMaxMarks || 0;
+          }
+
+          const quizPct = quizMax > 0 ? (quizMarks / quizMax) * 100 : 0;
+          const exercisePct = exerciseMax > 0 ? (exerciseMarks / exerciseMax) * 100 : 0;
+          const compositeScore = (courseFilter === 'all' && data.compositeScore != null)
+            ? data.compositeScore
+            : Math.round(((timeHours * 2) + (lectures * 3) + (quizPct * 0.5) + (exercisePct * 0.5) + (quizzes * 2) + (exercises * 2)) * 10) / 10;
+
+          return {
+            rank: 0,
+            userName: data.userName || 'Unknown',
+            userEmail: data.userEmail || '',
+            studentClass: data.studentClass || '',
+            timeHours: Math.round(timeHours * 10) / 10,
+            totalLecturesCompleted: lectures,
+            totalQuizzesCompleted: quizzes,
+            totalExercisesCompleted: exercises,
+            totalCoursesEnrolled: data.totalCoursesEnrolled || 0,
+            quizMarksObtained: quizMarks,
+            quizMaxMarks: quizMax,
+            exerciseMarksObtained: exerciseMarks,
+            exerciseMaxMarks: exerciseMax,
+            compositeScore,
+          };
+        });
+
+      learners.sort((a, b) => b.compositeScore - a.compositeScore);
+      learners.forEach((l, i) => { l.rank = i + 1; });
+      return learners;
+    } catch (error) {
+      console.error('Error exporting leaderboard data:', error);
+      return [];
+    }
+  }
+
+  // ==================== Student Badges ====================
+
+  /**
+   * Calculate badges for a student based on their learning data.
+   * Pure logic — no DB calls. Takes already-fetched data.
+   */
+  getStudentBadges(
+    detail: any,
+    dailyLogs: any[],
+    leaderboardRank?: number
+  ): { id: string; name: string; icon: string; description: string; earned: boolean; progress: number; target: number }[] {
+    const lectures = detail?.totalLecturesCompleted || 0;
+    const quizzes = detail?.totalQuizzesCompleted || 0;
+    const exercises = detail?.totalExercisesCompleted || 0;
+    const timeHours = (detail?.totalTimeSpent || 0) / 3600;
+    const coursesCompleted = detail?.totalCoursesCompleted || 0;
+
+    // Calculate streak from daily logs
+    const logDates = new Set(dailyLogs.map(l => l.date).filter(Boolean));
+    let streak = 0;
+    const today = new Date();
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (logDates.has(ds)) {
+        streak++;
+      } else if (i > 0) {
+        break; // allow today to be missing (hasn't started yet)
+      }
+    }
+
+    // Check for perfect quiz score
+    let hasPerfectQuiz = false;
+    const courses = detail?.courses || {};
+    Object.values(courses).forEach((c: any) => {
+      if (c.quizMaxMarks > 0 && c.quizMarksObtained >= c.quizMaxMarks) {
+        hasPerfectQuiz = true;
+      }
+    });
+
+    const rank = leaderboardRank || 0;
+
+    return [
+      {
+        id: 'first_step',
+        name: 'First Step',
+        icon: '👣',
+        description: 'Complete your first lecture',
+        earned: lectures >= 1,
+        progress: Math.min(lectures, 1),
+        target: 1,
+      },
+      {
+        id: 'bookworm',
+        name: 'Bookworm',
+        icon: '📚',
+        description: 'Complete 50 lectures',
+        earned: lectures >= 50,
+        progress: Math.min(lectures, 50),
+        target: 50,
+      },
+      {
+        id: 'on_fire',
+        name: 'On Fire',
+        icon: '🔥',
+        description: '7-day learning streak',
+        earned: streak >= 7,
+        progress: Math.min(streak, 7),
+        target: 7,
+      },
+      {
+        id: 'dedicated',
+        name: 'Dedicated',
+        icon: '💪',
+        description: '30-day learning streak',
+        earned: streak >= 30,
+        progress: Math.min(streak, 30),
+        target: 30,
+      },
+      {
+        id: 'quiz_master',
+        name: 'Quiz Master',
+        icon: '🧠',
+        description: 'Complete 10 quizzes',
+        earned: quizzes >= 10,
+        progress: Math.min(quizzes, 10),
+        target: 10,
+      },
+      {
+        id: 'perfect_score',
+        name: 'Perfect Score',
+        icon: '💯',
+        description: 'Score 100% on any quiz',
+        earned: hasPerfectQuiz,
+        progress: hasPerfectQuiz ? 1 : 0,
+        target: 1,
+      },
+      {
+        id: 'code_warrior',
+        name: 'Code Warrior',
+        icon: '⚔️',
+        description: 'Complete 25 exercises',
+        earned: exercises >= 25,
+        progress: Math.min(exercises, 25),
+        target: 25,
+      },
+      {
+        id: 'time_lord',
+        name: 'Time Lord',
+        icon: '⏳',
+        description: 'Spend 50 hours learning',
+        earned: timeHours >= 50,
+        progress: Math.min(Math.round(timeHours), 50),
+        target: 50,
+      },
+      {
+        id: 'finisher',
+        name: 'Finisher',
+        icon: '🎓',
+        description: 'Complete your first course',
+        earned: coursesCompleted >= 1,
+        progress: Math.min(coursesCompleted, 1),
+        target: 1,
+      },
+      {
+        id: 'champion',
+        name: 'Champion',
+        icon: '🏆',
+        description: 'Reach #1 on leaderboard',
+        earned: rank === 1,
+        progress: rank === 1 ? 1 : 0,
+        target: 1,
+      },
+    ];
   }
 
   // ==================== Daily Learning Log ====================
@@ -16171,6 +18246,10 @@ async getCoursesPaginated(options: {
       quizzesCompleted?: number;
       exercisesCompleted?: number;
       assessmentsCompleted?: number;
+      quizMarksObtained?: number;
+      quizMaxMarks?: number;
+      exerciseMarksObtained?: number;
+      exerciseMaxMarks?: number;
       courseSlug?: string;
     }
   ): Promise<void> {
@@ -16178,7 +18257,7 @@ async getCoursesPaginated(options: {
       if (!this.firestore || !userId || !collegeId) return;
       const date = this.getTodayDateString();
       const docId = `${userId}_${date}`;
-      const docRef = doc(this.firestore, 'dailyLearningLog', docId);
+      const docRef = doc(this.firestore, COLLECTIONS.DAILY_LEARNING_LOG, docId);
 
       const updateData: any = {
         userId,
@@ -16202,24 +18281,27 @@ async getCoursesPaginated(options: {
       if (data.assessmentsCompleted && data.assessmentsCompleted > 0) {
         updateData.assessmentsCompleted = increment(data.assessmentsCompleted);
       }
+      if (data.quizMarksObtained && data.quizMarksObtained > 0) {
+        updateData.quizMarksObtained = increment(data.quizMarksObtained);
+      }
+      if (data.quizMaxMarks && data.quizMaxMarks > 0) {
+        updateData.quizMaxMarks = increment(data.quizMaxMarks);
+      }
+      if (data.exerciseMarksObtained && data.exerciseMarksObtained > 0) {
+        updateData.exerciseMarksObtained = increment(data.exerciseMarksObtained);
+      }
+      if (data.exerciseMaxMarks && data.exerciseMaxMarks > 0) {
+        updateData.exerciseMaxMarks = increment(data.exerciseMaxMarks);
+      }
+
+      if (data.courseSlug) {
+        updateData.coursesAccessed = arrayUnion(data.courseSlug);
+      }
 
       // Use setDoc with merge to create or update
       await setDoc(docRef, updateData, { merge: true });
-
-      // Add courseSlug to coursesAccessed array if provided
-      if (data.courseSlug) {
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const existing = docSnap.data()?.coursesAccessed || [];
-          if (!existing.includes(data.courseSlug)) {
-            await updateDoc(docRef, {
-              coursesAccessed: [...existing, data.courseSlug],
-            });
-          }
-        }
-      }
     } catch (error) {
-      console.warn('⚠️ Failed to update daily learning log:', error);
+      // console.warn('⚠️ Failed to update daily learning log:', error);
     }
   }
 
@@ -16239,7 +18321,7 @@ async getCoursesPaginated(options: {
       const startDateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
 
       const q = query(
-        collection(this.firestore, 'dailyLearningLog'),
+        collection(this.firestore, COLLECTIONS.DAILY_LEARNING_LOG),
         where('userId', '==', userId),
         where('date', '>=', startDateStr),
         orderBy('date', 'asc')
@@ -16249,6 +18331,79 @@ async getCoursesPaginated(options: {
       return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     } catch (error) {
       console.error('Error fetching daily learning log:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get college daily learning hours for dashboard chart
+   * @param collegeId - College ID
+   * @param days - Number of days (default 30)
+   */
+  async getCollegeDailyLearningStats(collegeId: string, days: number = 30): Promise<{ date: string; hours: number; activeStudents: number }[]> {
+    try {
+      if (!this.firestore) throw new Error('Firestore not initialized');
+
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - (days - 1));
+      const startDateStr = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+      const todayStr = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+
+      // Read pre-computed college daily logs
+      const q = query(
+        collection(this.firestore, 'collegeDailyLearningLog'),
+        where('collegeId', '==', collegeId),
+        where('date', '>=', startDateStr),
+        orderBy('date', 'asc')
+      );
+
+      const snapshot = await getDocs(q);
+      const dateMap = new Map<string, any>();
+      snapshot.docs.forEach(d => {
+        const data = d.data();
+        dateMap.set(data.date, data);
+      });
+
+      // If today has no data in collegeDailyLearningLog, aggregate from dailyLearningLog (real-time)
+      if (!dateMap.has(todayStr) || (dateMap.get(todayStr)?.timeSpent || 0) === 0) {
+        try {
+          const todayLogsQ = query(
+            collection(this.firestore, COLLECTIONS.DAILY_LEARNING_LOG),
+            where('collegeId', '==', collegeId),
+            where('date', '==', todayStr)
+          );
+          const todaySnap = await getDocs(todayLogsQ);
+          let todayTime = 0;
+          const todayStudents = new Set<string>();
+          todaySnap.docs.forEach(d => {
+            const data = d.data();
+            todayTime += data.timeSpent || 0;
+            if (data.userId) todayStudents.add(data.userId);
+          });
+          if (todayTime > 0) {
+            dateMap.set(todayStr, { timeSpent: todayTime, activeStudentIds: Array.from(todayStudents) });
+          }
+        } catch (_e) { /* fallback failed, show 0 */ }
+      }
+
+      // Fill missing dates with zeros
+      const result: { date: string; hours: number; activeStudents: number }[] = [];
+      const current = new Date(startDate);
+      const today = new Date();
+      while (current <= today) {
+        const dateStr = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`;
+        const entry = dateMap.get(dateStr);
+        result.push({
+          date: dateStr,
+          hours: Math.round((entry?.timeSpent || 0) / 3600 * 10) / 10,
+          activeStudents: entry?.activeStudentIds?.length || 0,
+        });
+        current.setDate(current.getDate() + 1);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Error fetching college daily learning stats:', error);
       return [];
     }
   }
@@ -16286,13 +18441,12 @@ async getCoursesPaginated(options: {
         if (isRemote) constraints.push(where('isRemote', '==', true));
         constraints.push(orderBy(orderField, orderDir));
 
-        const q = query(collection(this.firestore!, 'jobs'), ...constraints);
+        const q = query(collection(this.firestore!, COLLECTIONS.JOBS), ...constraints);
         const snapshot = await getDocs(q);
 
         // Split search into words, remove stop words for better matching
         const stopWords = new Set(['in', 'at', 'for', 'the', 'a', 'an', 'of', 'and', 'or', 'to', 'is', 'on', 'with', 'by', 'from', 'near', 'jobs', 'job']);
         const searchWords = searchLower.split(/\s+/).filter((w: string) => w.length > 1 && !stopWords.has(w));
-        // If all words were stop words, fall back to original terms (minus single chars)
         const finalWords = searchWords.length > 0 ? searchWords : searchLower.split(/\s+/).filter((w: string) => w.length > 1);
 
         const allJobs = snapshot.docs
@@ -16315,7 +18469,7 @@ async getCoursesPaginated(options: {
       if (category) countConstraints.push(where('category', '==', category));
       if (isRemote) countConstraints.push(where('isRemote', '==', true));
 
-      const countQ = query(collection(this.firestore!, 'jobs'), ...countConstraints);
+      const countQ = query(collection(this.firestore!, COLLECTIONS.JOBS), ...countConstraints);
       const countSnapshot = await getCountFromServer(countQ);
       const totalCount = countSnapshot.data().count;
 
@@ -16327,7 +18481,7 @@ async getCoursesPaginated(options: {
       if (startAfterDoc) constraints.push(startAfter(startAfterDoc));
       constraints.push(limit(limitCount));
 
-      const q = query(collection(this.firestore!, 'jobs'), ...constraints);
+      const q = query(collection(this.firestore!, COLLECTIONS.JOBS), ...constraints);
       const snapshot = await getDocs(q);
 
       const jobs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -16342,7 +18496,7 @@ async getCoursesPaginated(options: {
 
   async getSavedJobIds(userId: string): Promise<Set<string>> {
     try {
-      const savedRef = collection(this.firestore!, 'users', userId, 'savedJobs');
+      const savedRef = collection(this.firestore!, 'users', userId, COLLECTIONS.SAVED_JOBS);
       const snapshot = await getDocs(savedRef);
       const ids = new Set<string>();
       snapshot.docs.forEach(d => ids.add(d.id));
@@ -16355,7 +18509,7 @@ async getCoursesPaginated(options: {
 
   async toggleSavedJob(userId: string, jobId: string, isSaved: boolean): Promise<boolean> {
     try {
-      const savedRef = doc(this.firestore!, 'users', userId, 'savedJobs', jobId);
+      const savedRef = doc(this.firestore!, 'users', userId, COLLECTIONS.SAVED_JOBS, jobId);
       if (isSaved) {
         await deleteDoc(savedRef);
         return false;
@@ -16380,7 +18534,7 @@ async getCoursesPaginated(options: {
       }
       for (const chunk of chunks) {
         const q = query(
-          collection(this.firestore!, 'jobs'),
+          collection(this.firestore!, COLLECTIONS.JOBS),
           where('__name__', 'in', chunk)
         );
         const snapshot = await getDocs(q);
@@ -16418,9 +18572,9 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
 
-      console.log('🎤 Fetching course enrollments for AI Interview:', userId);
+      // console.log('🎤 Fetching course enrollments for AI Interview:', userId);
 
-      const enrollmentsRef = collection(this.firestore, 'course_enrollments');
+      const enrollmentsRef = collection(this.firestore, COLLECTIONS.COURSE_ENROLLMENTS);
       const q = query(
         enrollmentsRef,
         where('userId', '==', userId),
@@ -16467,7 +18621,7 @@ async getCoursesPaginated(options: {
         });
       }
 
-      console.log('✅ Found', enrollments.length, 'enrollments for AI Interview');
+      // console.log('✅ Found', enrollments.length, 'enrollments for AI Interview');
       return enrollments;
     } catch (error) {
       console.error('❌ Error fetching enrollments for AI Interview:', error);
@@ -16490,7 +18644,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
 
-      const interviewRef = doc(collection(this.firestore, 'ai_interviews'));
+      const interviewRef = doc(collection(this.firestore, COLLECTIONS.AI_INTERVIEWS));
       const interviewData = {
         interviewId: interviewRef.id,
         userId: data.userId,
@@ -16522,7 +18676,7 @@ async getCoursesPaginated(options: {
       };
 
       await setDoc(interviewRef, interviewData);
-      console.log('✅ Created AI Interview:', interviewRef.id);
+      // console.log('✅ Created AI Interview:', interviewRef.id);
       return interviewRef.id;
     } catch (error) {
       console.error('❌ Error creating AI Interview:', error);
@@ -16540,7 +18694,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
 
-      const interviewRef = doc(this.firestore, 'ai_interviews', interviewId);
+      const interviewRef = doc(this.firestore, COLLECTIONS.AI_INTERVIEWS, interviewId);
       await updateDoc(interviewRef, {
         ...updateData,
         updatedAt: serverTimestamp(),
@@ -16559,7 +18713,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
 
-      const docRef = doc(this.firestore, 'ai_interviews', interviewId);
+      const docRef = doc(this.firestore, COLLECTIONS.AI_INTERVIEWS, interviewId);
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         return { id: docSnap.id, ...docSnap.data() };
@@ -16578,7 +18732,7 @@ async getCoursesPaginated(options: {
     try {
       if (!this.firestore) throw new Error('Firestore not initialized');
 
-      const interviewsRef = collection(this.firestore, 'ai_interviews');
+      const interviewsRef = collection(this.firestore, COLLECTIONS.AI_INTERVIEWS);
       let q;
 
       if (courseId) {
@@ -16616,7 +18770,7 @@ async getCoursesPaginated(options: {
       if (!this.firestore) throw new Error('Firestore not initialized');
 
       const { userId, limitCount = 5, startAfterDoc } = options;
-      const interviewsRef = collection(this.firestore, 'ai_interviews');
+      const interviewsRef = collection(this.firestore, COLLECTIONS.AI_INTERVIEWS);
 
       // Count query
       const countQ = query(
@@ -16715,7 +18869,53 @@ async getCoursesPaginated(options: {
       return { totalInterviews: 0, avgScore: 0, thisMonthCount: 0, courseStats: {}, recentInterviews: [] };
     }
   }
-}
+
+  // ==================== LIKERT / PERSONALITY ASSESSMENT ====================
+
+  async saveLikertResponses(
+    attemptId: string,
+    responses: Record<string, number>
+  ): Promise<void> {
+    try {
+      if (!this.firestore) throw new Error('Firestore not initialized');
+      const attemptRef = doc(this.firestore!, COLLECTIONS.EXAM_ATTEMPTS, attemptId);
+      await updateDoc(attemptRef, {
+        likertResponses: responses,
+        likertCompletedAt: new Date(),
+      });
+      // console.log('✅ Likert responses saved to attempt:', attemptId);
+    } catch (error) {
+      console.error('❌ Error saving likert responses:', error);
+      throw error;
+    }
+  }
+
+  // ============================================================
+  // Personality Trait Aggregation - calls Cloud Function
+  // ============================================================
+  async getPersonalityTraitAggregation(examId: string): Promise<{
+    success: boolean;
+    totalStudents: number;
+    studentCount: number;
+    traits: Record<string, {
+      average: number;
+      min: number;
+      max: number;
+      stdDeviation: number;
+      count: number;
+      levels: Record<string, number>;
+    }>;
+  }> {
+    try {
+      const callable = httpsCallable(this.functions!, 'getPersonalityTraitAggregation');
+      const result = await callable({ examId });
+      return result.data as any;
+    } catch (error) {
+      console.error('❌ Error fetching personality trait aggregation:', error);
+      return { success: false, totalStudents: 0, studentCount: 0, traits: {} };
+    }
+  }
+} 
 
 
 // Export singleton instance

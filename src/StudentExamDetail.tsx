@@ -61,7 +61,10 @@ import {
   faPrint,
   faFloppyDisk,
   faTriangleExclamation,
-  faPlay
+  faPlay,
+  faChartBar,
+  faFingerprint,
+  faStar
 } from '@fortawesome/sharp-light-svg-icons';
 import { firebaseService } from './services/firebase_service';
 import { 
@@ -187,6 +190,9 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [isChapterAnalysisExpanded, setIsChapterAnalysisExpanded] = useState(false);
   const [showGradeModal, setShowGradeModal] = useState(false);
+  const [showPersonalityModal, setShowPersonalityModal] = useState(false);
+  const [showPersonalityHelp, setShowPersonalityHelp] = useState(false);
+  const personalityReportRef = useRef<HTMLDivElement>(null);
   const [evidenceModal, setEvidenceModal] = useState<{ url: string; type: 'video' | 'image' } | null>(null);
   const hasLoggedView = useRef(false); // Track if we've logged this view
   
@@ -356,8 +362,8 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
       });
     }
     
-    // If no questions at all, set empty array
-    if (allQuestions.length === 0) {
+    // If no questions and no responses, set empty array
+    if (allQuestions.length === 0 && responsesArray.length === 0) {
       setMergedQuestions([]);
       return;
     }
@@ -374,10 +380,17 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
       }
     });
 
+    const consumedResponseIds = new Set<string>();
+
     const merged: MergedQuestion[] = allQuestions.map((question: any, idx: number) => {
       let response = responsesById[question.id] || responsesById[question.questionId];
       if (!response && question.questionNo !== undefined) {
         response = responsesByNo[question.questionNo];
+      }
+      
+      // Track which response was consumed
+      if (response?.questionId) {
+        consumedResponseIds.add(response.questionId);
       }
       
       const questionType = (response?.questionType || question.type || question.questionType || '').toLowerCase();
@@ -392,6 +405,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
           complexity: question.complexity || question.difficulty,
           chapter: question.chapter || '',
           correctAnswer: question.correctAnswers || question.correctAnswer,
+          correctAnswers: question.correctAnswers || question.correctAnswer,
           options: question.options,
           hint: question.hint,
           testCases: question.testCases,
@@ -437,7 +451,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
         case QUESTION_TYPES.MCQ:
           typeSpecific = {
             options: response.options || question.options || [],
-            correctAnswers: response.correctAnswers || question.correctAnswers,
+            correctAnswers: response.correctAnswers || question.correctAnswers || question.correctAnswer,
             correctAnswer: response.correctAnswers || question.correctAnswers || question.correctAnswer,
             hint: question.hint
           };
@@ -480,7 +494,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
           typeSpecific = {
             codeSubmitted: response.codeSubmitted || response.code || response.studentAnswer,
             code: response.code || response.codeSubmitted,
-            language: response.language || question.programmingLanguage || question.programming_language,
+            language: response.programmingLanguage || response.language || question.programmingLanguage || question.programming_language,
             testCases: question.testCases || [],
             hint: question.hint,
             testCaseResults: testCaseResults,
@@ -513,8 +527,124 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
       return { ...baseData, ...typeSpecific } as MergedQuestion;
     });
 
+    // Second pass: add orphaned responses (responses that didn't match any question in allQuestions)
+    responsesArray.forEach((response: any) => {
+      if (response.questionType === 'likert') return; // Likert handled separately
+      const rId = response.questionId;
+      if (!rId || consumedResponseIds.has(rId)) return; // Already merged
+      
+      const questionType = (response.questionType || '').toLowerCase();
+      
+      const orphanBase: any = {
+        questionNo: response.questionNo || merged.length + 1,
+        questionId: rId,
+        questionText: response.questionText || '',
+        questionType: response.questionType || 'text',
+        maxMarks: response.maxMarks || 0,
+        complexity: response.complexity,
+        chapter: response.chapter || '',
+        pool: response.pool || false,
+        isAnswered: !!(response.studentAnswer !== undefined && response.studentAnswer !== null && response.studentAnswer !== '' && !(Array.isArray(response.studentAnswer) && response.studentAnswer.length === 0)),
+        studentAnswer: response.studentAnswer,
+        scoredMarks: response.marksAwarded || response.scoredMarks || 0,
+        marksAwarded: response.marksAwarded || 0,
+        timeSpent: response.timeSpent || 0,
+        attemptCount: response.attemptCount || 0,
+        revisitCount: response.revisitCount || 0,
+        violations: response.violations || [],
+        evaluationStatus: response.evaluationStatus || EVALUATION_STATUS.PENDING,
+        markedForReview: response.markedForReview || false,
+        responseId: response.responseId,
+        evaluationRetries: response.evaluationRetries || 0,
+        lastEvaluationAttempt: response.lastEvaluationAttempt
+      };
+
+      // Lookup pool question for correctAnswers fallback
+      const poolQ = exam?.questionPool?.find((q: any) => q.id === response.questionId || q.questionId === response.questionId);
+      
+      // Add type-specific fields from response data
+      if (questionType === QUESTION_TYPES.MCQ) {
+        orphanBase.options = response.options || poolQ?.options || [];
+        orphanBase.correctAnswers = response.correctAnswers || response.correctAnswer || poolQ?.correctAnswers || poolQ?.correctAnswer;
+        orphanBase.correctAnswer = response.correctAnswers || response.correctAnswer || poolQ?.correctAnswers || poolQ?.correctAnswer;
+      } else if (questionType === QUESTION_TYPES.FITB) {
+        orphanBase.correctAnswers = response.correctAnswers || poolQ?.correctAnswers;
+        orphanBase.correctAnswer = response.correctAnswers || poolQ?.correctAnswers;
+      } else if (questionType === QUESTION_TYPES.JUMBLED) {
+        orphanBase.options = response.options || poolQ?.options || [];
+        orphanBase.correctAnswers = response.correctAnswers || poolQ?.correctAnswers;
+        orphanBase.correctAnswer = response.correctAnswers || poolQ?.correctAnswers;
+      } else if (questionType === QUESTION_TYPES.CODE || questionType === 'sql') {
+        orphanBase.codeSubmitted = response.studentAnswer;
+        orphanBase.correctAnswers = response.correctAnswers;
+        orphanBase.correctAnswer = response.correctAnswers;
+        orphanBase.programmingLanguage = response.programmingLanguage;
+        orphanBase.codeAIFeedback = response.codeAIFeedback;
+        orphanBase.testResults = response.testResults || [];
+        orphanBase.passedTests = response.passedTests ?? 0;
+        orphanBase.totalTests = response.totalTests ?? 0;
+        if (questionType === 'sql') {
+          orphanBase.sqlSchema = response.sqlSchema || [];
+          orphanBase.sqlTestResults = response.testResults || [];
+          orphanBase.sqlPassedTests = response.passedTests ?? 0;
+          orphanBase.sqlTotalTests = response.totalTests ?? 0;
+        }
+      } else if (questionType === QUESTION_TYPES.DESCRIPTIVE) {
+        orphanBase.aiFeedback = response.aiFeedback;
+      }
+
+      merged.push(orphanBase as MergedQuestion);
+      consumedResponseIds.add(rId);
+    });
+
+    // Deduplicate by questionNo — if both a questionsList entry (no response) and an orphan response
+    // exist for the same questionNo, merge them (question metadata from questionsList + response data from orphan)
+    const seenQuestionNos = new Map<number, number>(); // questionNo -> index in deduped
+    const deduped: MergedQuestion[] = [];
     merged.sort((a, b) => a.questionNo - b.questionNo);
-    setMergedQuestions(merged);
+    for (const q of merged) {
+      const existingIdx = seenQuestionNos.get(q.questionNo);
+      if (existingIdx !== undefined) {
+        const existing = deduped[existingIdx];
+        // Merge: prefer the entry with response data, but fill in missing fields from the other
+        if (q.isAnswered && !existing.isAnswered) {
+          // q has response data, existing has question metadata — merge q over existing
+          deduped[existingIdx] = {
+            ...existing,
+            ...q,
+            // Keep question-source fields if orphan doesn't have them
+            questionText: q.questionText || existing.questionText,
+            correctAnswers: q.correctAnswers || existing.correctAnswers,
+            correctAnswer: q.correctAnswer || existing.correctAnswer,
+            options: (q.options && q.options.length > 0) ? q.options : existing.options,
+            hint: q.hint || existing.hint,
+            maxMarks: q.maxMarks || existing.maxMarks,
+            complexity: q.complexity || existing.complexity,
+            chapter: q.chapter || existing.chapter,
+          } as MergedQuestion;
+        } else if (!q.isAnswered && existing.isAnswered) {
+          // existing has response data, q has question metadata — fill in missing fields
+          deduped[existingIdx] = {
+            ...q,
+            ...existing,
+            questionText: existing.questionText || q.questionText,
+            correctAnswers: existing.correctAnswers || q.correctAnswers,
+            correctAnswer: existing.correctAnswer || q.correctAnswer,
+            options: (existing.options && existing.options.length > 0) ? existing.options : q.options,
+            hint: existing.hint || q.hint,
+            maxMarks: existing.maxMarks || q.maxMarks,
+            complexity: existing.complexity || q.complexity,
+            chapter: existing.chapter || q.chapter,
+          } as MergedQuestion;
+        }
+        // If both answered or both not answered, keep existing
+      } else {
+        seenQuestionNos.set(q.questionNo, deduped.length);
+        deduped.push(q);
+      }
+    }
+
+    setMergedQuestions(deduped);
   };
 
   const formatTime = (seconds: number) => {
@@ -622,12 +752,12 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
       }
       // Handle string formats
       else if (typeof timestamp === 'string') {
-        // ✅ FIXED: Handle "YYYY-MM-DD HH:MM:SS IST" format from violations
-        if (timestamp.includes('IST') || timestamp.includes('UTC') || timestamp.includes('GMT')) {
-          // Remove timezone suffix and parse
-          const cleanTimestamp = timestamp.replace(/\s+(IST|UTC|GMT)$/i, '').trim();
-          date = new Date(cleanTimestamp);
-        } else {
+        // Handle "YYYY-MM-DD HH:MM:SS IST" format from old violations
+        if (timestamp.includes(' IST')) {
+          date = new Date(timestamp.replace(' IST', '+05:30').replace(' ', 'T'));
+        }
+        // ISO and other standard formats
+        else {
           date = new Date(timestamp);
         }
       }
@@ -761,22 +891,47 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
   const getStats = () => {
     const attempt = fullAttempt || attemptData;
     
-    // ✅ All stats derived from mergedQuestions — single source of truth
+    // ✅ totalQuestions from exam metadata
     const totalQuestions = exam?.totalQuestions || exam?.numberOfQuestions || mergedQuestions.length || 0;
     
+    // ✅ attemptedQuestions: from mergedQuestions isAnswered — same source as question card display
     const attemptedQuestions = mergedQuestions.filter(q => q.isAnswered).length;
     
     const obtainedMarks = mergedQuestions.reduce((total, q) => {
       return total + (q.marksAwarded || q.scoredMarks || 0);
     }, 0);
     
-    const actualViolationCount = mergedQuestions.reduce((total, q) => {
-      return total + (q.violations?.length || 0);
-    }, 0);
+    // ✅ Use global violationCount (most complete — includes violations on unanswered questions)
+    const responsesArray: any[] = attempt?.responses
+      ? (Array.isArray(attempt.responses) ? attempt.responses : Object.values(attempt.responses))
+      : [];
+    const actualViolationCount: number = (() => {
+      if (typeof (attempt as any)?.violationCount === 'number') return (attempt as any).violationCount;
+      if ((attempt as any)?.violationSummary?.total) return (attempt as any).violationSummary.total;
+      if ((attempt as any)?.violations?.length) return (attempt as any).violations.length;
+      // Fallback: sum from all responses
+      return responsesArray.reduce((t: number, r: any) => t + (r.violations?.length || 0), 0);
+    })();
+
+    // ✅ Add Likert contributions — read directly from responses[] (single source of truth)
+    const likertQuestions = exam?.personalityAssessment && exam?.likertQuestions?.length > 0 ? exam.likertQuestions : [];
+    const likertResponsesFromArray: Record<string, any> = {};
+    responsesArray.forEach((r: any) => {
+      if (r.questionType === 'likert' && r.questionId) {
+        likertResponsesFromArray[r.questionId] = r;
+      }
+    });
+    const likertAttempted = likertQuestions.filter((q: any) => {
+      const qId = q.id || q.questionId;
+      const r = likertResponsesFromArray[qId];
+      return r && r.studentAnswer !== undefined && r.studentAnswer !== null && r.studentAnswer !== '';
+    }).length;
+
+    // Likert violations already included in global violationCount
+    const likertViolationCount = 0;
     
     // ✅ Duration: Use startTime → submitTime (most accurate), fallback to attempt.timeSpent, then summed responses
     let totalTimeSpent = 0;
-    const examDurationSeconds = (parseInt(exam?.duration || '0') || 0) * 60;
     
     if (attempt?.startTime && attempt?.submitTime) {
       // Handle Firestore Timestamp (.toDate()), Date objects, or date strings
@@ -803,18 +958,15 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
       totalTimeSpent = mergedQuestions.reduce((total, q) => total + (q.timeSpent || 0), 0);
     }
     
-    // Cap to exam duration
-    if (examDurationSeconds > 0) {
-      totalTimeSpent = Math.min(totalTimeSpent, examDurationSeconds);
-    }
+    // No cap — show actual elapsed time to match Result cards
     
     return {
-      totalQuestions,
-      attemptedQuestions,
+      totalQuestions: totalQuestions, // already includes likert (exam.totalQuestions counts all question types)
+      attemptedQuestions: attemptedQuestions + likertAttempted,
       totalMarks: parseInt(exam?.maxMarks || '0') || 0,
       obtainedMarks,
       totalTimeSpent,
-      violationCount: actualViolationCount
+      violationCount: actualViolationCount + likertViolationCount
     };
   };
 
@@ -924,7 +1076,8 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
       });
     }
 
-    const chapters = Object.entries(chapterMap) as [string, ChapterPerformance][];
+    const chapters = (Object.entries(chapterMap) as [string, ChapterPerformance][])
+      .filter(([, perf]) => perf.maxScore > 0);
     
     if (chapters.length === 0) {
       return null;
@@ -1227,7 +1380,6 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
           </div>
         </div>
 
-        {/* Grade Criteria Modal - Slide from Right */}
         <div className={`fixed inset-0 z-[9999] flex items-start justify-end p-2 transition-opacity duration-300 ${
           showGradeModal ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}>
@@ -1572,15 +1724,13 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold text-gray-900">{student?.studentName || 'Student'}</h2>
-              <p className="text-sm text-gray-600">Roll No: {student?.rollNumber || 'N/A'}</p>
+              <div className="flex items-center gap-3 mt-0.5">
+                <p className="text-sm text-gray-600">Roll No: {student?.rollNumber || 'N/A'}</p>
+              </div>
             </div>
-            {currentUserType !== 'student' ? (
+            {currentUserType !== 'student' && (
               <button onClick={onBack} className="p-3 hover:bg-gray-100 rounded-lg transition-colors" title="Back to Dashboard">
                 <FontAwesomeIcon icon={faChartLine} className="text-gray-600 text-2xl" />
-              </button>
-            ) : (
-              <button onClick={onBack} className="p-3 hover:bg-gray-100 rounded-lg transition-colors" title="Back to Results">
-                <FontAwesomeIcon icon={faChevronLeft} className="text-gray-600 text-2xl" />
               </button>
             )}
           </div>
@@ -1680,7 +1830,9 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">{student.studentName}</h2>
-            <p className="text-sm text-gray-600">Roll No: {student.rollNumber}</p>
+            <div className="flex items-center gap-3 mt-0.5">
+              <p className="text-sm text-gray-600">Roll No: {student.rollNumber}</p>
+            </div>
           </div>
           <div className="flex items-center space-x-2">
             {/* Only show Re-evaluate button for teachers and admins */}
@@ -1689,14 +1841,9 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                 <FontAwesomeIcon icon={faArrowRotateRight} className={`text-2xl ${reEvaluating ? 'animate-spin' : ''}`} />
               </button>
             )}
-            {/* Only show Dashboard icon for teachers and admins */}
-            {currentUserType !== 'student' ? (
+            {currentUserType !== 'student' && (
               <button onClick={onBack} className="p-3 hover:bg-gray-100 rounded-lg transition-colors" title="Back to Dashboard">
                 <FontAwesomeIcon icon={faChartLine} className="text-gray-600 text-2xl" />
-              </button>
-            ) : (
-              <button onClick={onBack} className="p-3 hover:bg-gray-100 rounded-lg transition-colors" title="Back to Results">
-                <FontAwesomeIcon icon={faChevronLeft} className="text-gray-600 text-2xl" />
               </button>
             )}
           </div>
@@ -1734,7 +1881,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                   Attempted
                 </span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">{stats.attemptedQuestions}/{stats.totalQuestions}</p>
+              <p className="text-lg font-bold text-gray-900">{stats.attemptedQuestions}/{stats.totalQuestions}</p>
               <div className="flex items-center gap-2 mt-2">
                 <p className="text-xs text-gray-500">Questions</p>
                 {(() => {
@@ -1763,31 +1910,60 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
               </div>
             </div>
             
-            {/* Score Card */}
-            <div className="bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md hover:-translate-y-0.5" style={{ border: '2px solid #a7f3d0' }}>
-              <div className="flex items-center justify-between mb-2">
-                <div 
-                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ 
-                    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                    border: '2px solid #a7f3d0'
-                  }}
-                >
-                  <FontAwesomeIcon icon={faAward} className="text-base" style={{ color: '#10b981' }} />
+            {/* Score Card - OR Response Style for personality-only exams */}
+            {(() => {
+              const isPersonalityOnly = exam?.personalityAssessment && (!exam?.questionsList || exam.questionsList.length === 0);
+              const attempt = fullAttempt || attemptData;
+              if (isPersonalityOnly && attempt?.responseStyle) {
+                const rsColors: Record<string, { border: string; bg: string; color: string }> = {
+                  'Genuine':             { border: '#a7f3d0', bg: 'rgba(16, 185, 129, 0.15)', color: '#10b981' },
+                  'Central Tendency':    { border: '#fde68a', bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' },
+                  'Acquiescence':        { border: '#fecaca', bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' },
+                  'Extreme Responding':  { border: '#fecaca', bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' },
+                  'Careless Responding': { border: '#fecaca', bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' },
+                };
+                const rs = attempt.responseStyle;
+                const c = rsColors[rs] || rsColors['Genuine'];
+                return (
+                  <div className="bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md hover:-translate-y-0.5" style={{ border: `2px solid ${c.border}` }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: c.bg, border: `2px solid ${c.border}` }}>
+                        <FontAwesomeIcon icon={faFingerprint} className="text-base" style={{ color: c.color }} />
+                      </div>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: c.color, backgroundColor: c.bg }}>{rs}</span>
+                    </div>
+                    <p className="text-lg font-bold text-gray-900 leading-tight">Response</p>
+                    <p className="text-xs text-gray-500 mt-1">Style</p>
+                  </div>
+                );
+              }
+              return (
+                <div className="bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md hover:-translate-y-0.5" style={{ border: '2px solid #a7f3d0' }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div 
+                      className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ 
+                        backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                        border: '2px solid #a7f3d0'
+                      }}
+                    >
+                      <FontAwesomeIcon icon={faAward} className="text-base" style={{ color: '#10b981' }} />
+                    </div>
+                    <span 
+                      className="text-xs font-medium px-2 py-0.5 rounded-full"
+                      style={{ 
+                        color: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.15)'
+                      }}
+                    >
+                      Score
+                    </span>
+                  </div>
+                  <p className="text-lg font-bold text-gray-900">{stats.obtainedMarks.toFixed(2)}/{stats.totalMarks.toFixed(2)}</p>
+                  <p className="text-xs text-gray-500 mt-1">Marks</p>
                 </div>
-                <span 
-                  className="text-xs font-medium px-2 py-0.5 rounded-full"
-                  style={{ 
-                    color: '#10b981',
-                    backgroundColor: 'rgba(16, 185, 129, 0.15)'
-                  }}
-                >
-                  Score
-                </span>
-              </div>
-              <p className="text-2xl font-bold text-gray-900">{stats.obtainedMarks.toFixed(2)}/{stats.totalMarks.toFixed(2)}</p>
-              <p className="text-xs text-gray-500 mt-1">Marks</p>
-            </div>
+              );
+            })()}
             
             {/* Time Spent Card */}
             <div className="bg-white rounded-xl p-4 transition-all duration-300 hover:shadow-md hover:-translate-y-0.5" style={{ border: '2px solid #e9d5ff' }}>
@@ -1811,54 +1987,386 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                   Time
                 </span>
               </div>
-              <p className="text-2xl font-bold text-gray-900">{formatTime(stats.totalTimeSpent)}</p>
+              <p className="text-lg font-bold text-gray-900">{formatTime(stats.totalTimeSpent)}</p>
               <p className="text-xs text-gray-500 mt-1">Duration</p>
             </div>
             
-            {/* Violations Card */}
-            <button 
-              onClick={handleShowAllViolations}
-              disabled={stats.violationCount === 0}
-              className={`bg-white rounded-xl p-4 text-left transition-all duration-300 ${
-                stats.violationCount > 0 ? 'hover:shadow-md hover:-translate-y-0.5 cursor-pointer' : 'cursor-default'
-              }`}
-              style={{ border: '2px solid #fecaca' }}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div 
-                  className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ 
-                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                    border: '2px solid #fecaca'
-                  }}
+            {/* Violations Card - OR Personality Type for personality-only exams */}
+            {(() => {
+              const isPersonalityOnly = exam?.personalityAssessment && (!exam?.questionsList || exam.questionsList.length === 0);
+              const attempt = fullAttempt || attemptData;
+              if (isPersonalityOnly && attempt?.personalityType?.title) {
+                return (
+                  <div 
+                    className="bg-white rounded-xl p-4 text-left transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+                    style={{ border: '2px solid #c7d2fe' }}
+                    onClick={() => setShowPersonalityModal(true)}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'rgba(99, 102, 241, 0.15)', border: '2px solid #c7d2fe' }}>
+                        <FontAwesomeIcon icon={faStar} className="text-base" style={{ color: '#6366f1' }} />
+                      </div>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.15)' }}>Type</span>
+                    </div>
+                    <p className="text-sm font-bold text-gray-900 leading-tight" title={attempt.personalityType.title}>
+                      {attempt.personalityType.title.length > 22 ? attempt.personalityType.title.substring(0, 20) + '…' : attempt.personalityType.title}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">Personality</p>
+                  </div>
+                );
+              }
+              return (
+                <button 
+                  onClick={handleShowAllViolations}
+                  disabled={stats.violationCount === 0}
+                  className={`bg-white rounded-xl p-4 text-left transition-all duration-300 ${
+                    stats.violationCount > 0 ? 'hover:shadow-md hover:-translate-y-0.5 cursor-pointer' : 'cursor-default'
+                  }`}
+                  style={{ border: '2px solid #fecaca' }}
                 >
-                  <FontAwesomeIcon icon={faExclamationTriangle} className="text-base" style={{ color: '#ef4444' }} />
-                </div>
-                <span 
-                  className="text-xs font-medium px-2 py-0.5 rounded-full"
-                  style={{ 
-                    color: '#ef4444',
-                    backgroundColor: 'rgba(239, 68, 68, 0.15)'
-                  }}
-                >
-                  Violations
-                </span>
-              </div>
-              <p className="text-2xl font-bold text-gray-900">{stats.violationCount}</p>
-              <p className="text-xs text-gray-500 mt-1">Detected</p>
-            </button>
+                  <div className="flex items-center justify-between mb-2">
+                    <div 
+                      className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
+                      style={{ 
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                        border: '2px solid #fecaca'
+                      }}
+                    >
+                      <FontAwesomeIcon icon={faExclamationTriangle} className="text-base" style={{ color: '#ef4444' }} />
+                    </div>
+                    <span 
+                      className="text-xs font-medium px-2 py-0.5 rounded-full"
+                      style={{ 
+                        color: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.15)'
+                      }}
+                    >
+                      Violations
+                    </span>
+                  </div>
+                  <p className="text-lg font-bold text-gray-900">{stats.violationCount}</p>
+                  <p className="text-xs text-gray-500 mt-1">Detected</p>
+                </button>
+              );
+            })()}
           </div>
         </div>
 
-        {/* Chapter-wise Performance Analysis - NEW SECTION */}
-        {renderChapterAnalysis()}
+        {/* Chapter-wise Performance Analysis - hidden for personality-only exams */}
+        {!(exam?.personalityAssessment && (!exam?.questionsList || exam.questionsList.length === 0)) && renderChapterAnalysis()}
 
-        
-        
-        {mergedQuestions && mergedQuestions.length > 0 && stats.attemptedQuestions > 0 ? (
+        {/* ── Likert / Personality Assessment Section ── */}
+        {(() => {
+          const likertQuestions = exam?.likertQuestions;
+          if (!exam?.personalityAssessment || !likertQuestions || likertQuestions.length === 0) return null;
+
+          const attempt = fullAttempt || attemptData;
+
+          // Build a lookup of full response data by questionId from responses array
+          const responsesArray: any[] = attempt?.responses
+            ? (Array.isArray(attempt.responses) ? attempt.responses : Object.values(attempt.responses))
+            : [];
+          const likertResponseDetail: Record<string, any> = {};
+          responsesArray.forEach((r: any) => {
+            if (r.questionType === 'likert' && r.questionId) {
+              likertResponseDetail[r.questionId] = r;
+            }
+          });
+
+          // ✅ Read directly from responses[] — single source of truth
+
+          // Section label — only when 2+ sections exist
+          const _hq = (exam?.questionsList?.length || 0) > 0;
+          const _hp = !!(exam?.questionPool?.length > 0 && exam?.pickRandomCount > 0);
+          const sectionLabel = (_hq || _hp) ? 'Section A — ' : '';
+
+          return (
+            <div className="bg-white p-2 mb-4 px-6">
+              {/* Header — identical to App.tsx */}
+              <div
+                className="cursor-pointer select-none"
+                onClick={() => {
+                  const el = document.getElementById('student-likert-collapse');
+                  if (el) el.classList.toggle('hidden');
+                  const icon = document.getElementById('student-likert-chevron');
+                  if (icon) icon.classList.toggle('rotate-180');
+                }}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-2xl font-semibold text-gray-900 flex items-center space-x-2">
+                    <FontAwesomeIcon icon={faChartBar} className="text-purple-600" />
+                    <span>{sectionLabel}Personality Assessment</span>
+                  </h3>
+                  <div className="flex items-center space-x-3">
+                    {attempt?.likertCompletedAt && (
+                      <span className="text-xs font-medium text-green-600 bg-green-50 px-3 py-1 rounded-full">✓ Completed</span>
+                    )}
+                    <FontAwesomeIcon
+                      id="student-likert-chevron"
+                      icon={faChevronDown}
+                      className="text-gray-400 text-sm transition-transform duration-200"
+                    />
+                  </div>
+                </div>
+                <div className="text-xs font-medium text-gray-500">
+                  Total Questions: {likertQuestions.length} • Big-8 personality traits
+                  {(fullAttempt || attemptData)?.personalityProfile && (
+                    <>
+                      {' • '}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setShowPersonalityModal(true); }}
+                        className="inline-flex items-center space-x-1 text-indigo-600 hover:text-indigo-800 font-semibold"
+                      >
+                        <FontAwesomeIcon icon={faChartBar} className="text-[10px]" />
+                        <span>Personality Profile</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Question cards — identical structure to App.tsx */}
+              <div id="student-likert-collapse" className="">
+                <div className="space-y-4 mt-3">
+                  {likertQuestions.map((q: any, idx: number) => {
+                    const questionId = q.id || q.questionId;
+                    const likertResp = likertResponseDetail[questionId];
+                    const studentScore = likertResp?.studentAnswer !== undefined && likertResp?.studentAnswer !== null && likertResp?.studentAnswer !== ''
+                      ? parseInt(likertResp.studentAnswer)
+                      : undefined;
+                    const hasAnswer = studentScore !== undefined && !isNaN(studentScore);
+                    const optionLabels = likertResp?.options?.length ? likertResp.options : (q.options?.length ? q.options : ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree']);
+
+                    return (
+                      <div
+                        key={questionId || idx}
+                        className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-lg transition-all duration-200"
+                        onMouseEnter={(e: any) => { e.currentTarget.style.borderColor = brandTheme.colors.primary; }}
+                        onMouseLeave={(e: any) => { e.currentTarget.style.borderColor = '#e5e7eb'; }}
+                      >
+                        {/* Question header */}
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center space-x-3">
+                            <div
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-lg"
+                              style={{ background: brandTheme.gradients.primary }}
+                            >
+                              {idx + 1}
+                            </div>
+                            <div>
+                              <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-purple-100 text-purple-700 mr-2">LIKERT</span>
+                              {q.complexity && (
+                                <span className={`text-xs font-semibold px-2.5 py-1 rounded-md ${
+                                  q.complexity === 'easy' ? 'bg-pink-100 text-pink-700' :
+                                  q.complexity === 'medium' ? 'bg-green-100 text-green-700' :
+                                  'bg-cyan-100 text-cyan-700'
+                                }`}>{q.complexity.toUpperCase()}</span>
+                              )}
+                            </div>
+                          </div>
+                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-md ${hasAnswer ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {hasAnswer ? '✓ Answered' : 'Not Answered'}
+                          </span>
+                        </div>
+
+                        {/* Question text */}
+                        <div className="text-sm text-gray-800 mb-3 leading-relaxed">
+                          {q.questionText || q.question_text}
+                        </div>
+
+                        {/* Student's answer — highlighted on the scale */}
+                        <div className="mt-3">
+                          <div className="grid grid-cols-5 gap-2">
+                            {optionLabels.map((label: string, optIdx: number) => {
+                              const scaleValue = optIdx + 1;
+                              const isSelected = hasAnswer && studentScore === scaleValue;
+                              return (
+                                <div
+                                  key={optIdx}
+                                  className={`rounded-xl p-2.5 text-center border-2 ${
+                                    isSelected ? 'border-purple-400 bg-purple-50' : 'border-gray-200 bg-gray-50'
+                                  }`}
+                                >
+                                  <div className={`text-xl font-bold mb-0.5 ${isSelected ? 'text-purple-700' : 'text-gray-400'}`}>
+                                    {scaleValue}
+                                  </div>
+                                  <div className="text-[9px] font-medium text-gray-600 leading-tight">{label}</div>
+                                  {isSelected && <div className="text-[9px] font-bold text-purple-500 mt-0.5">▲ Selected</div>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          {!hasAnswer && (
+                            <p className="text-xs text-gray-400 mt-2 italic">Student did not respond to this question</p>
+                          )}
+                        </div>
+
+                        {/* Trait footer */}
+                        {(q.likertTrait || q.chapter) && (
+                          <div className="flex items-center pt-3 mt-2 border-t border-gray-100">
+                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mr-2">Trait</span>
+                            <span className="px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-semibold">{q.likertTrait || q.chapter}</span>
+                          </div>
+                        )}
+
+                        {/* Stats footer — Time, Violations, Activity, View Details */}
+                        {(() => {
+                          const detail = likertResponseDetail[questionId] || {};
+                          const qKey = `likert-detail-${questionId || idx}`;
+                          const isExpanded = expandedQuestionId === qKey;
+                          return (
+                            <div className="mt-4 pt-4 border-t border-gray-100">
+                              <div className="grid grid-cols-[1fr_1fr_1fr_1.5fr_auto] gap-6 items-center">
+                                {/* Time */}
+                                <div className="text-center">
+                                  <p className="text-xs text-gray-500 mb-2">Time</p>
+                                  <p className="text-lg font-bold text-gray-900">
+                                    {detail.timeSpent ? formatTime(detail.timeSpent) : 'N/A'}
+                                  </p>
+                                </div>
+                                {/* Violations */}
+                                <div className="text-center">
+                                  <p className="text-xs text-gray-500 mb-2">Violations</p>
+                                  {detail.violations && detail.violations.length > 0 ? (
+                                    <button
+                                      onClick={() => handleShowViolations(detail.violations, idx + 1)}
+                                      className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-lg transition-colors border border-red-200"
+                                    >
+                                      {detail.violations.length}
+                                    </button>
+                                  ) : (
+                                    <p className="text-lg font-bold text-gray-900">0</p>
+                                  )}
+                                </div>
+                                {/* Activity */}
+                                <div className="text-center">
+                                  <p className="text-xs text-gray-500 mb-2">Activity</p>
+                                  <div className="flex flex-col gap-1">
+                                    {(detail.attemptCount ?? 0) > 0 && (
+                                      <p className="text-sm text-gray-700 font-medium">Attempts: {detail.attemptCount}</p>
+                                    )}
+                                    {(detail.revisitCount ?? 0) > 0 && (
+                                      <p className="text-sm text-gray-700 font-medium">Revisits: {detail.revisitCount}</p>
+                                    )}
+                                    {!(detail.attemptCount ?? 0) && !(detail.revisitCount ?? 0) && (
+                                      <p className="text-sm text-gray-400">—</p>
+                                    )}
+                                  </div>
+                                </div>
+                                {/* Empty col to match grid */}
+                                <div />
+                                {/* View Details */}
+                                <div className="flex items-center justify-center">
+                                  <button
+                                    onClick={() => setExpandedQuestionId(isExpanded ? null : qKey)}
+                                    className="text-xs font-medium px-3 py-1.5 rounded-md transition-colors whitespace-nowrap"
+                                    style={{ color: brandTheme.colors.primary }}
+                                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = `${brandTheme.colors.primary}10`; }}
+                                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                                  >
+                                    {isExpanded ? 'Hide Details' : 'View Details'}
+                                  </button>
+                                </div>
+                              </div>
+                              {/* Expanded detail — likert scale scores */}
+                              {isExpanded && (
+                                <div className="mt-4 space-y-4">
+                                  {q.likertDirection && (
+                                    <div className="flex items-center space-x-2">
+                                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Direction</span>
+                                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                        q.likertDirection === 'positive' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                                      }`}>
+                                        {q.likertDirection === 'positive' ? '↑ Positive' : '↓ Reverse'}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {q.correctAnswers && (
+                                    <div>
+                                      <h4 className="text-xs font-semibold text-gray-700 mb-2">Score Mapping</h4>
+                                      <div className="grid grid-cols-5 gap-2">
+                                        {(q.options || ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree']).map((option: string, optIdx: number) => {
+                                          const score = q.correctAnswers?.[optIdx];
+                                          const isHighest = score && Number(score) === 5;
+                                          const isLowest = score && Number(score) === 1;
+                                          return (
+                                            <div key={optIdx} className={`rounded-xl p-2.5 text-center border-2 ${
+                                              isHighest ? 'border-green-300 bg-green-50' :
+                                              isLowest ? 'border-red-200 bg-red-50' :
+                                              'border-gray-200 bg-gray-50'
+                                            }`}>
+                                              <div className={`text-xl font-bold mb-0.5 ${isHighest ? 'text-green-600' : isLowest ? 'text-red-500' : 'text-gray-500'}`}>
+                                                {score ?? (optIdx + 1)}
+                                              </div>
+                                              <div className="text-[9px] font-medium text-gray-600 leading-tight">{option}</div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                      <p className="text-[10px] text-gray-400 mt-1.5 text-center">Score mapping: {q.correctAnswers.join(' → ')}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {(mergedQuestions && mergedQuestions.length > 0 && stats.attemptedQuestions > 0) || (exam?.personalityAssessment && (exam?.likertQuestions?.length || 0) > 0) ? (
           <div className="px-6 space-y-4 pb-6">
-            {mergedQuestions.map((question: MergedQuestion, index: number) => (
-              <div key={question.responseId || `question-${index}`} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            {/* Split questions into Questions List and Question Pool groups */}
+            {(() => {
+              const _hl = !!(exam?.personalityAssessment && exam?.likertQuestions?.length > 0);
+              const _hq = (exam?.questionsList?.length || 0) > 0;
+              const _hp = !!(exam?.questionPool?.length > 0 && exam?.pickRandomCount > 0);
+              const totalSections = [_hl, _hq, _hp].filter(Boolean).length;
+
+              // Split mergedQuestions into list vs pool
+              const listQuestions = mergedQuestions.filter(q => !isQuestionFromPool(q.questionId));
+              const poolQuestions = mergedQuestions.filter(q => isQuestionFromPool(q.questionId));
+
+              // Section label logic — matches App.tsx exactly
+              const questionsListLabel = (() => {
+                if (totalSections < 2) return '';
+                return _hl ? 'Section B — ' : 'Section A — ';
+              })();
+              const questionPoolLabel = (() => {
+                if (totalSections < 2) return '';
+                if (_hl && _hq) return 'Section C — ';
+                if (_hl || _hq) return 'Section B — ';
+                return 'Section A — ';
+              })();
+
+              // Question type counts for subtitle
+              const getTypeCounts = (questions: MergedQuestion[]) => {
+                const mcq = questions.filter(q => isQuestionType(q.questionType, QUESTION_TYPES.MCQ)).length;
+                const fitb = questions.filter(q => isQuestionType(q.questionType, QUESTION_TYPES.FITB)).length;
+                const desc = questions.filter(q => isQuestionType(q.questionType, QUESTION_TYPES.DESCRIPTIVE)).length;
+                const jumbled = questions.filter(q => isQuestionType(q.questionType, QUESTION_TYPES.JUMBLED)).length;
+                const code = questions.filter(q => isQuestionType(q.questionType, QUESTION_TYPES.CODE)).length;
+                const sql = questions.filter(q => isQuestionType(q.questionType, 'sql')).length;
+                const parts: string[] = [];
+                parts.push(`Total: ${questions.length}`);
+                if (mcq > 0) parts.push(`MCQ: ${mcq}`);
+                if (fitb > 0) parts.push(`FITB: ${fitb}`);
+                if (desc > 0) parts.push(`Descriptive: ${desc}`);
+                if (jumbled > 0) parts.push(`Jumbled: ${jumbled}`);
+                if (code > 0) parts.push(`Code: ${code}`);
+                if (sql > 0) parts.push(`SQL: ${sql}`);
+                return parts.join(' • ');
+              };
+
+              // Render a question card — extracted to avoid duplication
+              const renderQuestionCard = (question: MergedQuestion, _index: number, globalIndex: number) => (
+                <div key={question.responseId || `question-${globalIndex}`} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
                 <div className="p-6">
                   {/* Header with badges and marks */}
                   <div className="flex items-start justify-between mb-4">
@@ -1868,7 +2376,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                         className="w-9 h-9 rounded-lg flex items-center justify-center text-white text-base font-bold"
                         style={{ background: brandTheme.gradients.primary }}
                       >
-                        {index + 1}
+                        {globalIndex + 1}
                       </div>
                       
                       {/* Type badge */}
@@ -1936,98 +2444,110 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                     <div>
                       <p className="text-sm font-semibold text-gray-700 mb-2">Options:</p>
                       <div className="space-y-2">
-                        {question.options.map((option: any, optIndex: number) => {
+                        {(() => {
+                          const mcqExpanded = expandedQuestionId === (question.responseId || `question-${globalIndex}`);
+                          return question.options.map((option: any, optIndex: number) => {
                           const optionText = typeof option === 'string' ? option : option.text || option.option;
                           
-                          // Check if this question is expanded
-                          const isExpanded = expandedQuestionId === (question.responseId || `question-${index}`);
-                          
-                          // Only calculate correctness and student selection when expanded
-                          let isCorrect = false;
+                          // Compute correct/student only when expanded
+                          let showGreen = false;
+                          let showRed = false;
                           let isStudentAnswer = false;
+                          let isCorrect = false;
+
+                          if (mcqExpanded) {
+                          const correctArr = Array.isArray(question.correctAnswers)
+                            ? question.correctAnswers
+                            : question.correctAnswers !== undefined && question.correctAnswers !== null
+                            ? [question.correctAnswers]
+                            : (Array.isArray(question.correctAnswer)
+                              ? question.correctAnswer
+                              : question.correctAnswer !== undefined && question.correctAnswer !== null
+                              ? [question.correctAnswer]
+                              : []);
                           
-                          if (isExpanded) {
-                            // Normalize correctAnswers to array
-                            const correctAnswersArray = Array.isArray(question.correctAnswers) 
-                              ? question.correctAnswers 
-                              : question.correctAnswers !== undefined && question.correctAnswers !== null
-                              ? [question.correctAnswers]
-                              : [];
-                            
-                            // Check if this option is correct
-                            isCorrect = correctAnswersArray.some((ans: any) => {
+                          const hasNoCorrectData = correctArr.length === 0;
+                          const studentGotMarks = (question as any).isCorrect === true || ((question.marksAwarded || 0) > 0 && (question.marksAwarded || 0) >= (question.maxMarks || 0));
+                          
+                          if (correctArr.length > 0) {
+                            isCorrect = correctArr.some((ans: any) => {
                               if (typeof ans === 'number') return ans === optIndex;
-                              if (typeof ans === 'string') return ans.trim().toLowerCase() === optionText.trim().toLowerCase();
+                              if (typeof ans === 'string') {
+                                if (ans.trim().toLowerCase() === optionText.trim().toLowerCase()) return true;
+                                const parsed = parseInt(ans, 10);
+                                if (!isNaN(parsed) && String(parsed) === ans.trim() && parsed >= 0 && parsed < (question.options?.length || 0)) {
+                                  return parsed === optIndex;
+                                }
+                              }
                               return false;
                             });
-                            
-                            // Normalize studentAnswer to array
-                            const studentAnswersArray = question.isAnswered 
-                              ? (Array.isArray(question.studentAnswer) 
-                                ? question.studentAnswer 
-                                : question.studentAnswer !== undefined && question.studentAnswer !== null
-                                ? [question.studentAnswer]
-                                : [])
-                              : [];
-                            
-                            // Check if student selected this option
-                            isStudentAnswer = studentAnswersArray.some((ans: any) => {
-                              if (typeof ans === 'number') return ans === optIndex;
-                              if (typeof ans === 'string') return ans.trim().toLowerCase() === optionText.trim().toLowerCase();
-                              return false;
-                            });
+                          }
+                          
+                          const studentArr = Array.isArray(question.studentAnswer)
+                            ? question.studentAnswer
+                            : question.studentAnswer !== undefined && question.studentAnswer !== null && question.studentAnswer !== ''
+                            ? [question.studentAnswer]
+                            : [];
+                          
+                          isStudentAnswer = studentArr.some((ans: any) => {
+                            if (typeof ans === 'number') return ans === optIndex;
+                            if (typeof ans === 'string') {
+                              if (ans.trim().toLowerCase() === optionText.trim().toLowerCase()) return true;
+                              const parsed = parseInt(ans, 10);
+                              if (!isNaN(parsed) && String(parsed) === ans.trim() && parsed >= 0 && parsed < (question.options?.length || 0)) {
+                                return parsed === optIndex;
+                              }
+                            }
+                            return false;
+                          });
+
+                          const isInferredCorrect = isStudentAnswer && hasNoCorrectData && studentGotMarks;
+                          showGreen = isCorrect || isInferredCorrect;
+                          showRed = isStudentAnswer && !showGreen;
                           }
 
                           return (
                             <div
                               key={optIndex}
                               className={`flex items-center space-x-2 p-2.5 rounded-lg border ${
-                                isExpanded
-                                  ? (isStudentAnswer && isCorrect
-                                    ? 'bg-green-50 border-green-300'
-                                    : isStudentAnswer && !isCorrect
-                                    ? 'bg-red-50 border-red-300'
-                                    : isCorrect
-                                    ? 'bg-green-50 border-green-200'
-                                    : 'bg-gray-50 border-gray-200')
+                                showGreen
+                                  ? 'bg-green-50 border-green-300'
+                                  : showRed
+                                  ? 'bg-red-50 border-red-300'
                                   : 'bg-gray-50 border-gray-200'
                               }`}
                             >
                               <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
-                                isExpanded
-                                  ? (isStudentAnswer && isCorrect
-                                    ? 'bg-green-500 text-white'
-                                    : isStudentAnswer && !isCorrect
-                                    ? 'bg-red-500 text-white'
-                                    : isCorrect
-                                    ? 'bg-green-500 text-white'
-                                    : 'bg-gray-300 text-gray-700')
+                                showGreen
+                                  ? 'bg-green-500 text-white'
+                                  : showRed
+                                  ? 'bg-red-500 text-white'
                                   : 'bg-gray-300 text-gray-700'
                               }`}>
                                 {String.fromCharCode(65 + optIndex)}
                               </div>
                               <span className={`text-sm flex-1 ${
-                                isExpanded
-                                  ? (isStudentAnswer && isCorrect
-                                    ? 'text-green-900 font-medium'
-                                    : isStudentAnswer && !isCorrect
-                                    ? 'text-red-900 font-medium'
-                                    : isCorrect
-                                    ? 'text-green-900 font-medium'
-                                    : 'text-gray-700')
+                                showGreen
+                                  ? 'text-green-900 font-medium'
+                                  : showRed
+                                  ? 'text-red-900 font-medium'
                                   : 'text-gray-700'
                               }`}>
                                 {optionText}
                               </span>
-                              {isExpanded && isStudentAnswer && (
-                                <span className="text-xs font-semibold text-blue-600">← Student's Answer</span>
+                              {mcqExpanded && isStudentAnswer && showGreen && (
+                                <span className="text-xs font-semibold text-green-600 flex items-center gap-1">✔ Student's Answer</span>
                               )}
-                              {isExpanded && isCorrect && (
-                                <span className="text-xs font-semibold text-green-600">✓ Correct</span>
+                              {mcqExpanded && isCorrect && !isStudentAnswer && (
+                                <span className="text-xs font-semibold text-green-600 flex items-center gap-1">✔ Correct Answer</span>
+                              )}
+                              {mcqExpanded && showRed && (
+                                <span className="text-xs font-semibold text-red-500 flex items-center gap-1">✘ Student's Answer</span>
                               )}
                             </div>
                           );
-                        })}
+                        });
+                        })()}
                       </div>
                     </div>
                   )}
@@ -2065,7 +2585,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                   )}
 
                   {/* Expandable Answer Details */}
-                  {expandedQuestionId === (question.responseId || `question-${index}`) && (
+                  {expandedQuestionId === (question.responseId || `question-${globalIndex}`) && (
                     <>
                   {isQuestionType(question.questionType, QUESTION_TYPES.FITB) && question.correctAnswers && (
                     <div>
@@ -2252,7 +2772,15 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                             {question.language && (
                               <p className="text-xs text-gray-500 mb-2">
                                 <FontAwesomeIcon icon={faCode} className="mr-1" />
-                                Language: {question.language}
+                                Language: {(() => {
+                                  const langMap: Record<string, string> = {
+                                    'cpp': 'C++', 'c': 'C', 'csharp': 'C#', 'javascript': 'JavaScript',
+                                    'typescript': 'TypeScript', 'python': 'Python', 'java': 'Java',
+                                    'go': 'Go', 'rust': 'Rust', 'ruby': 'Ruby', 'kotlin': 'Kotlin',
+                                    'swift': 'Swift', 'php': 'PHP', 'sql': 'SQL'
+                                  };
+                                  return langMap[question.language?.toLowerCase()] || question.language;
+                                })()}
                               </p>
                             )}
                             <div className="relative rounded-lg overflow-hidden isolate">
@@ -3353,7 +3881,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                         <p className="text-xs text-gray-500 mb-2">Violations</p>
                         {question.violations && question.violations.length > 0 ? (
                           <button 
-                            onClick={() => handleShowViolations(question.violations || [], index + 1)} 
+                            onClick={() => handleShowViolations(question.violations || [], globalIndex + 1)} 
                             className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 font-bold text-lg transition-colors border border-red-200"
                           >
                             {question.violations.length}
@@ -3383,7 +3911,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                       <div className="flex items-center justify-center">
                         <button
                           onClick={() => {
-                            const questionKey = question.responseId || `question-${index}`;
+                            const questionKey = question.responseId || `question-${globalIndex}`;
                             setExpandedQuestionId(expandedQuestionId === questionKey ? null : questionKey);
                           }}
                           className="text-xs font-medium px-3 py-1.5 rounded-md transition-colors whitespace-nowrap"
@@ -3395,7 +3923,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                             e.currentTarget.style.backgroundColor = 'transparent';
                           }}
                         >
-                          {expandedQuestionId === (question.responseId || `question-${index}`) ? 'Hide Details' : 'View Details'}
+                          {expandedQuestionId === (question.responseId || `question-${globalIndex}`) ? 'Hide Details' : 'View Details'}
                         </button>
                       </div>
                     </div>
@@ -3403,7 +3931,95 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
                   </div>
                 </div>
               </div>
-            ))}
+              );
+
+              return (
+                <>
+                  {/* ── Questions List Section ── */}
+                  {listQuestions.length > 0 && (
+                    <>
+                      {totalSections >= 2 && (
+                        <div
+                          className="cursor-pointer select-none"
+                          onClick={() => {
+                            const el = document.getElementById('student-qlist-collapse');
+                            if (el) el.classList.toggle('hidden');
+                            const icon = document.getElementById('student-qlist-chevron');
+                            if (icon) icon.classList.toggle('rotate-180');
+                          }}
+                        >
+                          <div className="flex items-center justify-between pt-2 pb-1">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: brandTheme.gradients.primary }}>
+                                <FontAwesomeIcon icon={faClipboardList} className="text-white" />
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-bold text-gray-900">{questionsListLabel}Questions List</h3>
+                                <p className="text-xs text-gray-500">{getTypeCounts(listQuestions)}</p>
+                              </div>
+                            </div>
+                            <FontAwesomeIcon
+                              id="student-qlist-chevron"
+                              icon={faChevronDown}
+                              className="text-gray-400 text-sm transition-transform duration-200"
+                            />
+                          </div>
+                        </div>
+                      )}
+                      <div id="student-qlist-collapse" className="space-y-4">
+                        {listQuestions.map((question, index) => {
+                          const globalIndex = mergedQuestions.indexOf(question);
+                          return renderQuestionCard(question, index, globalIndex);
+                        })}
+                      </div>
+                    </>
+                  )}
+
+                  {/* ── Question Pool Section ── */}
+                  {poolQuestions.length > 0 && (
+                    <>
+                      <div
+                        className="cursor-pointer select-none"
+                        onClick={() => {
+                          const el = document.getElementById('student-pool-collapse');
+                          if (el) el.classList.toggle('hidden');
+                          const icon = document.getElementById('student-pool-chevron');
+                          if (icon) icon.classList.toggle('rotate-180');
+                        }}
+                      >
+                        <div className="flex items-center justify-between pt-4 pb-1">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-500 flex items-center justify-center shadow-md">
+                              <FontAwesomeIcon icon={faLayerGroup} className="text-white text-lg" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-bold text-gray-900">{questionPoolLabel}Question Pool</h3>
+                              <p className="text-xs text-gray-500">{getTypeCounts(poolQuestions)} • Randomly assigned from pool of {exam?.questionPool?.length || '?'}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-3">
+                            <div className="px-3 py-1.5 bg-purple-100 text-purple-700 rounded-lg text-xs font-bold">
+                              Random Selection
+                            </div>
+                            <FontAwesomeIcon
+                              id="student-pool-chevron"
+                              icon={faChevronDown}
+                              className="text-gray-400 text-sm transition-transform duration-200"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div id="student-pool-collapse" className="space-y-4">
+                        {poolQuestions.map((question, index) => {
+                          const globalIndex = mergedQuestions.indexOf(question);
+                          return renderQuestionCard(question, index, globalIndex);
+                        })}
+                      </div>
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-20 px-4">
@@ -3444,6 +4060,621 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
           </div>
         )}
       </div>
+
+        {/* Personality Profile Modal - Slide from Right */}
+        {(() => {
+          const attempt = fullAttempt || attemptData;
+          const profile: Record<string, { score: number; maxScore: number; average: number; percentage: number; level: string }> = attempt?.personalityProfile || {};
+          const traits = Object.entries(profile).sort((a, b) => b[1].percentage - a[1].percentage);
+
+          const TRAIT_COLORS: Record<string, string> = {
+            'Openness': '#3B82F6',
+            'Conscientiousness': '#10B981',
+            'Extraversion': '#F59E0B',
+            'Agreeableness': '#EF4444',
+            'Emotional Stability': '#8B5CF6',
+            'Leadership': '#F97316',
+            'Problem Solving': '#06B6D4',
+            'Communication': '#EC4899',
+          };
+          const getColor = (trait: string) => TRAIT_COLORS[trait] || '#6366F1';
+
+          const TRAIT_DESCRIPTIONS: Record<string, string> = {
+            'Openness': 'Curious and receptive to new ideas, enjoys exploring unconventional approaches',
+            'Conscientiousness': 'Organized, goal-oriented, and reliable in following through on commitments',
+            'Extraversion': 'Energized by social interactions, expressive and outgoing in group settings',
+            'Agreeableness': 'Cooperative and empathetic, values harmony and others\' feelings',
+            'Emotional Stability': 'Maintains composure under pressure, resilient to stress and setbacks',
+            'Leadership': 'Naturally takes charge, inspires teams, and accepts responsibility for outcomes',
+            'Problem Solving': 'Excels at breaking down complex challenges and finding logical solutions',
+            'Communication': 'Effectively expresses ideas clearly and adapts style for different audiences',
+          };
+
+          const getLevelStyle = (level: string) => {
+            if (level === 'Very High' || level === 'High') return { bg: '#DCFCE7', color: '#166534' };
+            if (level === 'Moderate') return { bg: '#FEF9C3', color: '#854D0E' };
+            return { bg: '#FEE2E2', color: '#991B1B' };
+          };
+
+          // Use saved personalityType and responseStyle from Firestore (computed by index.ts)
+          const savedType = attempt?.personalityType || {};
+          const pType = {
+            title: savedType.title || 'The Well-Rounded Individual',
+            desc: savedType.desc || 'You demonstrate a balanced personality profile with strengths across multiple dimensions.',
+            careers: (savedType.careers || []) as string[],
+          };
+          const responseStyle: string = attempt?.responseStyle || 'Genuine';
+          const responseStyleConfig: Record<string, { bg: string; color: string; desc: string }> = {
+            'Genuine':             { bg: '#DCFCE7', color: '#166534', desc: 'Responses were varied and consistent, indicating honest and thoughtful self-evaluation.' },
+            'Central Tendency':    { bg: '#FEF9C3', color: '#854D0E', desc: 'Student avoided taking strong positions. Results may not fully reflect true personality.' },
+            'Acquiescence':        { bg: '#FEE2E2', color: '#991B1B', desc: 'Student agreed with most statements. Results may be unreliable.' },
+            'Extreme Responding':  { bg: '#FEE2E2', color: '#991B1B', desc: 'Student only picked extremes. Results are questionable.' },
+            'Careless Responding': { bg: '#FEE2E2', color: '#991B1B', desc: 'Student did not engage meaningfully. Recommend re-test.' },
+          };
+          const rsConfig = responseStyleConfig[responseStyle] || responseStyleConfig['Genuine'];
+
+          const top3 = traits.slice(0, 3);
+          const bottom3 = traits.slice(-3).reverse();
+
+          return (
+            <div className={`fixed inset-0 z-[9999] flex items-start justify-end p-2 transition-opacity duration-300 ${
+              showPersonalityModal ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+            }`}>
+              <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0" onClick={() => setShowPersonalityModal(false)} />
+              <div className={`relative bg-white shadow-2xl w-[calc(100%-8px)] max-w-[42rem] h-[calc(100%-4px)] flex flex-col overflow-hidden z-10 transform transition-all duration-500 ease-in-out rounded-2xl ${
+                showPersonalityModal ? 'translate-x-0' : 'translate-x-[calc(100%+1rem)]'
+              }`} onClick={e => e.stopPropagation()}>
+
+                {/* Header */}
+                <div className="px-5 py-4 flex items-center justify-between border-b flex-shrink-0 rounded-t-2xl"
+                  style={{ background: 'linear-gradient(135deg, #1A1A2E 0%, #2D1B69 50%, #4F46E5 100%)' }}>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.2)' }}>
+                      <FontAwesomeIcon icon={faChartBar} className="text-white" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-bold text-white">Personality Profile</h2>
+                      <p className="text-xs text-white/70">OCEAN + Custom Traits · Big 8 Framework</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const content = personalityReportRef.current;
+                        if (!content) return;
+
+                        // Remove any previous print container
+                        const prev = document.getElementById('personality-print-clone');
+                        if (prev) prev.remove();
+
+                        // Build wrapper
+                        const wrapper = document.createElement('div');
+                        wrapper.id = 'personality-print-clone';
+                        wrapper.style.cssText = 'position:absolute; left:-9999px; top:0; width:100%; background:#F8F7F4;';
+
+                        // Clone gradient header
+                        const modalInner = content.parentElement;
+                        if (modalInner) {
+                          const headerEl = modalInner.querySelector('.rounded-t-2xl') as HTMLElement | null;
+                          if (headerEl) {
+                            const headerClone = headerEl.cloneNode(true) as HTMLElement;
+                            headerClone.style.cssText = 'background:linear-gradient(135deg,#1A1A2E 0%,#2D1B69 50%,#4F46E5 100%);padding:16px 20px;display:flex;align-items:center;justify-content:space-between;';
+                            headerClone.querySelectorAll('button').forEach((b: HTMLElement) => b.style.display = 'none');
+                            wrapper.appendChild(headerClone);
+                          }
+                        }
+
+                        // Clone content — strip overflow/height constraints
+                        const contentClone = content.cloneNode(true) as HTMLElement;
+                        contentClone.style.cssText = 'overflow:visible;height:auto;max-height:none;background:#F8F7F4;padding:20px;';
+                        contentClone.querySelectorAll('*').forEach((el: Element) => {
+                          const e = el as HTMLElement;
+                          const cs = window.getComputedStyle(e);
+                          if (cs.overflow === 'auto' || cs.overflow === 'hidden' || cs.overflowY === 'auto' || cs.overflowY === 'hidden') {
+                            e.style.overflow = 'visible';
+                            e.style.height = 'auto';
+                            e.style.maxHeight = 'none';
+                          }
+                        });
+                        wrapper.appendChild(contentClone);
+                        document.body.appendChild(wrapper);
+
+                        // Inject print styles
+                        const styleId = 'personality-print-style';
+                        let style = document.getElementById(styleId) as HTMLStyleElement | null;
+                        if (!style) {
+                          style = document.createElement('style');
+                          style.id = styleId;
+                          document.head.appendChild(style);
+                        }
+                        style.innerHTML = `
+                          @media print {
+                            @page { margin: 10mm; size: A4 portrait; }
+                            body > *:not(#personality-print-clone) { display: none !important; }
+                            #personality-print-clone {
+                              display: block !important;
+                              position: static !important;
+                              left: 0 !important;
+                              width: 100% !important;
+                              overflow: visible !important;
+                              height: auto !important;
+                              max-height: none !important;
+                              background: #F8F7F4 !important;
+                            }
+                            #personality-print-clone * {
+                              -webkit-print-color-adjust: exact !important;
+                              print-color-adjust: exact !important;
+                              overflow: visible !important;
+                              height: auto !important;
+                              max-height: none !important;
+                            }
+                            #personality-traits-section {
+                              page-break-after: always;
+                              break-after: page;
+                            }
+                          }
+                        `;
+
+                        window.print();
+
+                        // Cleanup after print dialog closes
+                        setTimeout(() => {
+                          wrapper.remove();
+                          if (style) style.innerHTML = '';
+                        }, 2000);
+                      }}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 transition-all"
+                      title="Print Report"
+                    >
+                      <FontAwesomeIcon icon={faPrint} className="text-white/80 text-sm" />
+                    </button>
+                    <button onClick={() => setShowPersonalityHelp(true)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 transition-all" title="How is this calculated?">
+                      <FontAwesomeIcon icon={faQuestionCircle} className="text-white/80 text-sm" />
+                    </button>
+                    <button onClick={() => setShowPersonalityModal(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 transition-all">
+                      <FontAwesomeIcon icon={faTimes} className="text-white" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Scrollable Content */}
+                <div id="personality-print-area" ref={personalityReportRef} className="flex-1 overflow-y-auto bg-[#F8F7F4]">
+                  {traits.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+                      <FontAwesomeIcon icon={faChartBar} className="text-4xl mb-3 opacity-30" />
+                      <p className="text-sm">Personality profile not yet evaluated</p>
+                    </div>
+                  ) : (
+                    <div className="p-5 space-y-4">
+
+                      {/* Student Info Bar */}
+                      <div className="bg-white rounded-2xl p-4 border border-gray-100 space-y-3">
+                        {/* Assessment name - full row */}
+                        <div className="flex flex-col">
+                          <span className="text-[10px] uppercase tracking-widest text-gray-400 font-semibold">Assessment</span>
+                          <span className="text-sm font-semibold text-gray-800">{exam?.title || '—'}</span>
+                        </div>
+                        <div className="border-t border-gray-100" />
+                        {/* Student details row */}
+                        <div className="flex flex-wrap gap-4">
+                          {[
+                            { label: 'Student', value: student?.studentName || attempt?.studentName || '—' },
+                            { label: 'Roll No', value: student?.rollNumber || attempt?.rollNumber || '—' },
+                            { label: 'Class', value: attempt?.class || '—' },
+                            { label: 'Date', value: (() => {
+                              const raw = attempt?.submitTime || attempt?.startTime || attempt?.likertCompletedAt;
+                              if (!raw) return '—';
+                              try {
+                                const d = raw?.toDate ? raw.toDate() : new Date(raw);
+                                return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                              } catch { return '—'; }
+                            })() },
+                          ].map(({ label, value }) => (
+                            <div key={label} className="flex flex-col">
+                              <span className="text-[10px] uppercase tracking-widest text-gray-400 font-semibold">{label}</span>
+                              <span className="text-sm font-semibold text-gray-800">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Response Style */}
+                      <div className="bg-white rounded-2xl p-4 border border-gray-100 flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-bold text-gray-800 mb-0.5">Response Style</div>
+                          <div className="text-xs text-gray-500">{rsConfig.desc}</div>
+                        </div>
+                        <span className="ml-4 flex-shrink-0 text-xs font-bold px-3 py-1.5 rounded-full" style={{ background: rsConfig.bg, color: rsConfig.color }}>
+                          {responseStyle}
+                        </span>
+                      </div>
+
+                      {/* Personality Type Card */}
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100 flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0"
+                          style={{ background: 'linear-gradient(135deg, #4F46E5, #7C3AED)' }}>
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold text-indigo-600 mb-0.5">Personality Type</div>
+                          <div className="text-lg font-bold text-gray-900">{pType.title}</div>
+                          <div className="text-xs text-gray-500 leading-relaxed mt-1">{pType.desc}</div>
+                        </div>
+                      </div>
+
+                      {/* All Traits Bars */}
+                      <div id="personality-traits-section" className="bg-white rounded-2xl p-5 border border-gray-100">
+                        <div className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">All {traits.length} Traits</div>
+                        <div className="space-y-3">
+                          {traits.map(([trait, data]) => {
+                            const color = getColor(trait);
+                            const lvl = getLevelStyle(data.level);
+                            return (
+                              <div key={trait}>
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+                                    {trait}
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: lvl.bg, color: lvl.color }}>{data.level}</span>
+                                    <span className="text-sm font-bold" style={{ color }}>{data.percentage}%</span>
+                                  </div>
+                                </div>
+                                <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+                                  <div className="h-full rounded-full transition-all duration-1000" style={{ width: `${data.percentage}%`, background: color }} />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Radar Chart - Big 5 only */}
+                      {(() => {
+                        const BIG5 = ['Openness','Conscientiousness','Extraversion','Agreeableness','Emotional Stability'];
+                        const big5Traits = BIG5.map(t => ({ name: t, pct: profile[t]?.percentage || 0, color: getColor(t) }));
+                        const cx = 150, cy = 150, r = 110;
+                        const angles = big5Traits.map((_, i) => (Math.PI * 2 * i) / 5 - Math.PI / 2);
+                        const pt = (pct: number, i: number) => {
+                          const d = (pct / 100) * r;
+                          return { x: cx + d * Math.cos(angles[i]), y: cy + d * Math.sin(angles[i]) };
+                        };
+                        const dataPoints = big5Traits.map((t, i) => pt(t.pct, i));
+                        const polyPoints = dataPoints.map(p => `${p.x},${p.y}`).join(' ');
+                        const rings = [20, 40, 60, 80, 100];
+                        const labelOffset = (i: number) => {
+                          const a = angles[i];
+                          return { x: cx + (r + 45) * Math.cos(a), y: cy + (r + 45) * Math.sin(a) };
+                        };
+                        return (
+                          <div className="bg-white rounded-2xl p-5 border border-gray-100">
+                            <div className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">Trait Overview · Big 5</div>
+                            <div className="flex justify-center">
+                              <svg width="100%" height="100%" viewBox="-70 -30 440 360">
+                                {/* Background rings */}
+                                {rings.map(pct => {
+                                  const rpts = angles.map((_, i) => { const p = pt(pct, i); return `${p.x},${p.y}`; }).join(' ');
+                                  return <polygon key={pct} points={rpts} fill="none" stroke="#E5E7EB" strokeWidth="0.8" opacity="0.7" />;
+                                })}
+                                {/* Axis lines */}
+                                {angles.map((_, i) => {
+                                  const end = pt(100, i);
+                                  return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y} stroke="#E5E7EB" strokeWidth="0.8" />;
+                                })}
+                                {/* Data polygon */}
+                                <polygon points={polyPoints} fill="rgba(79,70,229,0.15)" stroke="#4F46E5" strokeWidth="2.5" strokeLinejoin="round" />
+                                {/* Data dots */}
+                                {dataPoints.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="5" fill="#4F46E5" />)}
+                                {/* Labels */}
+                                {big5Traits.map((t, i) => {
+                                  const lp = labelOffset(i);
+                                  return (
+                                    <g key={t.name}>
+                                      <text x={lp.x} y={lp.y - 5} textAnchor="middle" fontSize="10" fontWeight="600" fill="#1A1A2E">{t.name}</text>
+                                      <text x={lp.x} y={lp.y + 8} textAnchor="middle" fontSize="10" fontWeight="700" fill={t.color}>{t.pct}%</text>
+                                    </g>
+                                  );
+                                })}
+                              </svg>
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Top 3 highlight cards */}
+                      {top3.length > 0 && (
+                        <div className="grid grid-cols-3 gap-3">
+                          {top3.map(([trait, data], _i) => (
+                            <div key={trait} className="bg-white rounded-2xl p-4 border border-gray-100 text-center relative overflow-hidden">
+                              <div className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl" style={{ background: getColor(trait) }} />
+                              <div className="text-2xl font-bold mt-1" style={{ color: getColor(trait) }}>{data.percentage}%</div>
+                              <div className="text-[11px] font-semibold text-gray-500 mt-0.5">{trait}</div>
+                              <div className="text-[10px] text-gray-400 mt-1 leading-tight">{TRAIT_DESCRIPTIONS[trait]?.split('.')[0] || ''}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Strengths & Growth */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-white rounded-2xl p-4 border-l-4 border border-emerald-400">
+                          <div className="flex items-center gap-2 font-bold text-gray-800 mb-3 text-sm">
+                            <span>⭐</span> Key Strengths
+                          </div>
+                          {top3.map(([trait, _data]) => (
+                            <div key={trait} className="flex gap-2 mb-2 text-xs text-gray-600 leading-relaxed">
+                              <span className="flex-shrink-0">🔹</span>
+                              <span><strong>{trait}</strong> — {TRAIT_DESCRIPTIONS[trait] || ''}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="bg-white rounded-2xl p-4 border-l-4 border border-amber-400">
+                          <div className="flex items-center gap-2 font-bold text-gray-800 mb-3 text-sm">
+                            <span>📈</span> Areas for Growth
+                          </div>
+                          {bottom3.map(([trait, data]) => (
+                            <div key={trait} className="flex gap-2 mb-2 text-xs text-gray-600 leading-relaxed">
+                              <span className="flex-shrink-0">🔸</span>
+                              <span><strong>{trait}</strong> at {data.percentage}% — consider focused development in this area</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Career Suggestions */}
+                      {(() => {
+                        const CAREER_MAP: Record<string, { label: string; bg: string; color: string }[]> = {
+                          'Problem Solving':    [{ label:'Software Architect', bg:'#EEF2FF', color:'#4338CA' }, { label:'Data Scientist', bg:'#F0FDFA', color:'#0F766E' }, { label:'Systems Analyst', bg:'#FEF9C3', color:'#A16207' }],
+                          'Openness':           [{ label:'R&D Engineer', bg:'#F5F3FF', color:'#7C3AED' }, { label:'UX Designer', bg:'#FDF2F8', color:'#DB2777' }, { label:'Product Strategist', bg:'#ECFDF5', color:'#059669' }],
+                          'Leadership':         [{ label:'Technical Lead', bg:'#FFF7ED', color:'#EA580C' }, { label:'Product Manager', bg:'#ECFDF5', color:'#059669' }, { label:'Project Director', bg:'#EEF2FF', color:'#4338CA' }],
+                          'Conscientiousness':  [{ label:'Quality Assurance', bg:'#F0FDFA', color:'#0F766E' }, { label:'DevOps Engineer', bg:'#EEF2FF', color:'#4338CA' }, { label:'Compliance Analyst', bg:'#FEF9C3', color:'#A16207' }],
+                          'Extraversion':       [{ label:'Sales Engineer', bg:'#FFF7ED', color:'#EA580C' }, { label:'Developer Advocate', bg:'#F5F3FF', color:'#7C3AED' }, { label:'Team Lead', bg:'#ECFDF5', color:'#059669' }],
+                          'Communication':      [{ label:'Technical Writer', bg:'#FDF2F8', color:'#DB2777' }, { label:'Scrum Master', bg:'#F0FDFA', color:'#0F766E' }, { label:'Business Analyst', bg:'#FEF9C3', color:'#A16207' }],
+                          'Agreeableness':      [{ label:'HR Specialist', bg:'#ECFDF5', color:'#059669' }, { label:'UX Researcher', bg:'#F5F3FF', color:'#7C3AED' }, { label:'Support Engineer', bg:'#EEF2FF', color:'#4338CA' }],
+                          'Emotional Stability':[{ label:'Crisis Manager', bg:'#FFF7ED', color:'#EA580C' }, { label:'SRE Engineer', bg:'#F0FDFA', color:'#0F766E' }, { label:'Security Analyst', bg:'#EEF2FF', color:'#4338CA' }],
+                        };
+                        // Collect top 6 unique careers based on top traits
+                        const seen = new Set<string>();
+                        const careers: { label: string; bg: string; color: string }[] = [];
+                        for (const [trait] of traits) {
+                          for (const c of (CAREER_MAP[trait] || [])) {
+                            if (!seen.has(c.label)) { seen.add(c.label); careers.push(c); }
+                            if (careers.length >= 6) break;
+                          }
+                          if (careers.length >= 6) break;
+                        }
+                        return (
+                          <div className="bg-white rounded-2xl p-5 border border-gray-100">
+                            <div className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">Suggested Career Paths</div>
+                            <div className="flex flex-wrap gap-2">
+                              {careers.map(c => (
+                                <span key={c.label} className="px-4 py-2 rounded-full text-xs font-bold" style={{ background: c.bg, color: c.color }}>{c.label}</span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Footer */}
+                      <div className="text-center text-xs text-gray-400 pb-2">
+                        <div className="font-bold text-indigo-600 mb-1">EXAMINERS</div>
+                        <div>Auto-generated from self-reported responses. Results are indicative, not definitive.</div>
+                      </div>
+
+                    </div>
+                  )}
+                </div>
+
+                {/* Help Overlay - overlaps personality modal */}
+                {showPersonalityHelp && (
+                  <div className="absolute inset-0 z-20 flex flex-col bg-white rounded-2xl overflow-hidden">
+                    {/* Help Header */}
+                    <div className="px-5 py-4 flex items-center justify-between flex-shrink-0 border-b"
+                      style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 100%)' }}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.15)' }}>
+                          <FontAwesomeIcon icon={faQuestionCircle} className="text-white text-sm" />
+                        </div>
+                        <div>
+                          <h3 className="text-base font-bold text-white">How We Calculate Your Profile</h3>
+                          <p className="text-xs text-white/60">Scoring methodology explained</p>
+                        </div>
+                      </div>
+                      <button onClick={() => setShowPersonalityHelp(false)} className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/20 transition-all">
+                        <FontAwesomeIcon icon={faTimes} className="text-white" />
+                      </button>
+                    </div>
+
+                    {/* Help Content */}
+                    <div className="flex-1 overflow-y-auto p-5 bg-[#F8F7F4] space-y-4">
+
+                      {/* Step 1 */}
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">1</div>
+                          <h4 className="font-bold text-gray-800">You Answer on a 1–5 Scale</h4>
+                        </div>
+                        <p className="text-sm text-gray-500 leading-relaxed mb-3">Each question asks you to rate how much you agree with a statement:</p>
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {([['1','Strongly\nDisagree','#EF4444'],['2','Disagree','#F97316'],['3','Neutral','#6B7280'],['4','Agree','#10B981'],['5','Strongly\nAgree','#3B82F6']] as [string,string,string][]).map(([n, label, color]) => (
+                            <div key={n} className="text-center rounded-xl p-2.5 border-2" style={{ borderColor: color + '40', background: color + '10' }}>
+                              <div className="text-xl font-bold" style={{ color }}>{n}</div>
+                              <div className="text-[10px] text-gray-500 mt-0.5 whitespace-pre-line leading-tight">{label}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Step 2 */}
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">2</div>
+                          <h4 className="font-bold text-gray-800">Normal vs. Reverse Scoring</h4>
+                        </div>
+                        <p className="text-sm text-gray-500 leading-relaxed mb-3">Some questions are phrased negatively — agreeing actually means a <em>lower</em> trait score. These are <strong>reverse-scored</strong>.</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-xl p-3.5 border-2 border-emerald-200 bg-emerald-50">
+                            <div className="text-xs font-bold text-emerald-700 mb-1.5">✅ Normal Question</div>
+                            <div className="text-xs text-gray-600 italic mb-2">"I enjoy exploring new ideas"</div>
+                            <div className="text-xs text-gray-500">Answer <strong>5</strong> → score = <strong className="text-emerald-600">5</strong></div>
+                          </div>
+                          <div className="rounded-xl p-3.5 border-2 border-orange-200 bg-orange-50">
+                            <div className="text-xs font-bold text-orange-700 mb-1.5">🔄 Reverse Question</div>
+                            <div className="text-xs text-gray-600 italic mb-2">"I prefer others to take the lead"</div>
+                            <div className="text-xs text-gray-500">Answer <strong>2</strong> → score = 6−2 = <strong className="text-orange-600">4</strong></div>
+                          </div>
+                        </div>
+                        <div className="mt-3 rounded-xl p-3 bg-indigo-50 border border-indigo-100">
+                          <p className="text-xs text-indigo-700 font-medium">Formula: &nbsp;<code className="bg-indigo-100 px-1.5 py-0.5 rounded text-indigo-800">Normal → use answer &nbsp;|&nbsp; Reverse → 6 − answer</code></p>
+                        </div>
+                      </div>
+
+                      {/* Step 3 */}
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">3</div>
+                          <h4 className="font-bold text-gray-800">Scores Aggregated Per Trait</h4>
+                        </div>
+                        <p className="text-sm text-gray-500 leading-relaxed mb-3">All question scores for each trait are summed. Each question contributes a max of 5 points.</p>
+                        <div className="rounded-xl bg-gray-50 border border-gray-200 p-3.5 font-mono text-xs text-gray-700 space-y-1">
+                          <div>Trait Total = sum of all trait scores</div>
+                          <div>Trait Max &nbsp;= number of questions × 5</div>
+                          <div className="pt-1 border-t border-gray-200 text-indigo-700 font-semibold">Percentage = (Total ÷ Max) × 100</div>
+                        </div>
+                        <div className="mt-3 bg-blue-50 rounded-xl p-3.5 border border-blue-100 text-xs text-blue-800">
+                          <strong>Example — Openness (5 questions):</strong><br/>
+                          Scores: 4, 5, 3, 5, 4 → Total = 21 out of 25 max<br/>
+                          Percentage = <strong>84%</strong>
+                        </div>
+                      </div>
+
+                      {/* Step 4 */}
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">4</div>
+                          <h4 className="font-bold text-gray-800">Level Classification</h4>
+                        </div>
+                        <p className="text-sm text-gray-500 leading-relaxed mb-3">The percentage maps to a descriptive level:</p>
+                        <div className="space-y-2">
+                          {([
+                            ['Very High','81–100%','#DCFCE7','#166534','Outstanding expression of this trait'],
+                            ['High','61–80%','#DCFCE7','#166534','Strong expression of this trait'],
+                            ['Moderate','41–60%','#FEF9C3','#854D0E','Balanced, average expression'],
+                            ['Low','21–40%','#FEE2E2','#991B1B','Below average, room to develop'],
+                            ['Very Low','0–20%','#FEE2E2','#991B1B','Minimal expression of this trait'],
+                          ] as [string,string,string,string,string][]).map(([level,range,bg,color,desc]) => (
+                            <div key={level} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: bg + '80' }}>
+                              <span className="text-xs font-bold px-2.5 py-1 rounded-full min-w-[80px] text-center" style={{ background: bg, color }}>{level}</span>
+                              <span className="text-xs font-semibold text-gray-600 w-20">{range}</span>
+                              <span className="text-xs text-gray-500">{desc}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Step 5 */}
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">5</div>
+                          <h4 className="font-bold text-gray-800">The 8 Personality Traits</h4>
+                        </div>
+                        <div className="space-y-2">
+                          {([
+                            ['Openness','#3B82F6','Curiosity, creativity, and willingness to explore new experiences and ideas'],
+                            ['Conscientiousness','#10B981','Organization, discipline, and reliability in completing tasks and commitments'],
+                            ['Extraversion','#F59E0B','Social energy, assertiveness, and preference for group interactions'],
+                            ['Agreeableness','#EF4444','Cooperation, empathy, and tendency to prioritize harmony with others'],
+                            ['Emotional Stability','#8B5CF6','Calm and composure under pressure, resilience to stress and setbacks'],
+                            ['Leadership','#F97316','Initiative, decision-making, and ability to guide and inspire others'],
+                            ['Problem Solving','#06B6D4','Analytical thinking, logical reasoning, and systematic approach to challenges'],
+                            ['Communication','#EC4899','Clarity of expression, active listening, and adaptability in conveying ideas'],
+                          ] as [string,string,string][]).map(([trait,color,desc]) => (
+                            <div key={trait} className="flex items-start gap-3 py-2 border-b border-gray-50 last:border-0">
+                              <span className="w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0" style={{ background: color }} />
+                              <div>
+                                <div className="text-xs font-bold text-gray-800">{trait}</div>
+                                <div className="text-xs text-gray-400 leading-relaxed">{desc}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Step 6 - Genuine Detection */}
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">6</div>
+                          <h4 className="font-bold text-gray-800">How We Detect Genuine Responses</h4>
+                        </div>
+                        <p className="text-sm text-gray-500 leading-relaxed mb-3">We check if your responses are honest and thoughtful using two signals:</p>
+                        <div className="space-y-3">
+                          <div className="rounded-xl p-3.5 border border-gray-100 bg-gray-50">
+                            <div className="text-xs font-bold text-gray-700 mb-1">🔀 Variation Check</div>
+                            <div className="text-xs text-gray-500 leading-relaxed">If all or most answers are identical (e.g. all 5s or all 1s), it suggests the student did not engage thoughtfully. Genuine responses show natural variation across questions.</div>
+                          </div>
+                          <div className="rounded-xl p-3.5 border border-gray-100 bg-gray-50">
+                            <div className="text-xs font-bold text-gray-700 mb-1">🔄 Reverse Consistency Check</div>
+                            <div className="text-xs text-gray-500 leading-relaxed">Reverse-scored questions are intentionally phrased opposite to their trait. If a student scores very high on a trait but answers reverse questions in a contradictory way, it may indicate random or insincere responses.</div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 mt-1">
+                            <div className="rounded-xl p-3 bg-emerald-50 border border-emerald-100 text-center">
+                              <div className="text-sm font-bold text-emerald-700">✅ Genuine</div>
+                              <div className="text-[11px] text-emerald-600 mt-1">Varied answers, consistent with reverse questions</div>
+                            </div>
+                            <div className="rounded-xl p-3 bg-red-50 border border-red-100 text-center">
+                              <div className="text-sm font-bold text-red-600">⚠️ Suspicious</div>
+                              <div className="text-[11px] text-red-500 mt-1">All same value, or contradicts reverse questions</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 7 - Career Path Logic */}
+                      <div className="bg-white rounded-2xl p-5 border border-gray-100">
+                        <div className="flex items-center gap-3 mb-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">7</div>
+                          <h4 className="font-bold text-gray-800">How Career Paths Are Suggested</h4>
+                        </div>
+                        <p className="text-sm text-gray-500 leading-relaxed mb-3">Career paths are derived directly from your <strong>top-ranked personality traits</strong>. Each trait maps to roles that benefit most from that strength:</p>
+                        <div className="space-y-2">
+                          {([
+                            ['Problem Solving','#06B6D4','Software Architect, Data Scientist, Systems Analyst'],
+                            ['Openness','#3B82F6','R&D Engineer, UX Designer, Product Strategist'],
+                            ['Leadership','#F97316','Technical Lead, Product Manager, Project Director'],
+                            ['Conscientiousness','#10B981','QA Engineer, DevOps, Compliance Analyst'],
+                            ['Extraversion','#F59E0B','Sales Engineer, Developer Advocate, Team Lead'],
+                            ['Communication','#EC4899','Technical Writer, Scrum Master, Business Analyst'],
+                            ['Agreeableness','#EF4444','HR Specialist, UX Researcher, Support Engineer'],
+                            ['Emotional Stability','#8B5CF6','Crisis Manager, SRE Engineer, Security Analyst'],
+                          ] as [string,string,string][]).map(([trait, color, careers]) => (
+                            <div key={trait} className="flex items-start gap-3 py-2 border-b border-gray-50 last:border-0">
+                              <span className="w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0" style={{ background: color }} />
+                              <div>
+                                <div className="text-xs font-bold text-gray-800">{trait}</div>
+                                <div className="text-xs text-gray-400">{careers}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-xs text-indigo-700">
+                          The top 6 unique careers are shown, prioritised by your highest-scoring traits in order.
+                        </div>
+                      </div>
+
+                      {/* Disclaimer */}
+                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-800 leading-relaxed">
+                        <strong>📌 Note:</strong> This assessment is based on self-reported responses. Results reflect your answers at the time and should be treated as indicative tendencies, not definitive personality classifications.
+                      </div>
+
+                    </div>
+                  </div>
+                )}
+
+              </div>
+            </div>
+          );
+        })()}
 
       {/* Violations Modal - Slide from Right */}
       <div className={`fixed inset-0 z-[9999] flex items-start justify-end p-2 transition-opacity duration-300 ${

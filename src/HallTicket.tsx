@@ -174,36 +174,27 @@ const HallTicket: React.FC<HallTicketProps> = ({
       });
       
       // Fetch hall ticket groups from Firebase
-      const filters = {
+      const filters: any = {
         academicYear: selectedYear,
       };
+      
+      // Students only fetch their own hall tickets
+      if (currentUser?.userType === 'student' && currentUser?.userId) {
+        filters.studentId = currentUser.userId;
+      }
       
       const data = await getHallTicketGroups(activeCollegeId, filters);
       
       console.log('✅ Raw hall ticket groups from Firebase:', data.length, 'groups');
       
-      // Run diagnostics if no groups found
-      if (data.length === 0) {
+      // Run diagnostics if no groups found (skip for students - they may just have no hall tickets)
+      if (data.length === 0 && currentUser?.userType !== 'student') {
         console.warn('⚠️ No hall ticket groups found. Running diagnostics...');
         await diagnoseHallTicketGroups();
       }
       
-      // Filter groups for students - only show exams they're appearing in
+      // Filter already applied server-side for students via studentId query param
       let filteredData = data;
-      if (currentUser?.userType === 'student' && currentUser?.userId) {
-        console.log('👨‍🎓 Filtering hall ticket groups for student:', currentUser.userId);
-        filteredData = data.filter((group: any) => {
-          // Check if student is in the students array
-          const isParticipating = group.students?.some((student: any) => 
-            student.studentId === currentUser.userId
-          );
-          if (isParticipating) {
-            console.log('✅ Student is appearing in exam:', group.examName);
-          }
-          return isParticipating;
-        });
-        console.log(`🎯 Filtered to ${filteredData.length} exams where student is appearing`);
-      }
       
       // Map Firebase data to component format and determine status
       const mappedGroups = filteredData.map((group: any) => {

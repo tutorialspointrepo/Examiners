@@ -6,6 +6,7 @@ import { firebaseService } from './firebase_service';
 interface QueuedAnswer {
   id: string;
   attemptId: string;
+  questionId: string;  // 🔥 Primary key — unique question ID
   questionNo: number;
   answer: string | string[];
   question: any;
@@ -152,6 +153,7 @@ class OfflineQueueService {
    */
   public async queueAnswer(
     attemptId: string,
+    questionId: string,
     questionNo: number,
     answer: string | string[],
     question: any,
@@ -159,15 +161,16 @@ class OfflineQueueService {
     timeSpent?: number,
     markedForReview: boolean = false,
     imageUrl?: string,
-    violations?: any[]  // ✅ ADD: Accept violations parameter
+    violations?: any[]
   ): Promise<{ success: boolean; message: string; queued: boolean }> {
     
-    // ALWAYS save to local backup first (for instant recovery)
-    this.saveAnswerToLocalBackup(attemptId, questionNo, answer);
+    // ALWAYS save to local backup first using questionId (for instant recovery)
+    this.saveAnswerToLocalBackup(attemptId, questionId, answer);
     
     const queueItem: QueuedAnswer = {
-      id: `${attemptId}_${questionNo}_${Date.now()}`,
+      id: `${attemptId}_${questionId}_${Date.now()}`,
       attemptId,
+      questionId,
       questionNo,
       answer,
       question,
@@ -175,7 +178,7 @@ class OfflineQueueService {
       timeSpent,
       markedForReview,
       imageUrl,
-      violations,  // ✅ ADD: Include violations in queue
+      violations,
       timestamp: Date.now(),
       retryCount: 0,
       status: 'pending',
@@ -186,6 +189,7 @@ class OfflineQueueService {
       try {
         const result = await firebaseService.submitAnswer(
           attemptId,
+          questionId,
           questionNo,
           answer,
           question,
@@ -193,21 +197,19 @@ class OfflineQueueService {
           timeSpent,
           markedForReview,
           imageUrl,
-          violations  // ✅ ADD: Pass violations to Firebase
+          violations
         );
 
         if (result.success) {
-          console.log(`✅ Answer submitted immediately for Q${questionNo}`);
-          // ✅ CLEAR BACKUP: Remove from backup after successful immediate submit
-          this.clearAnswerFromBackup(attemptId, questionNo);
+          console.log(`✅ Answer submitted immediately for Q${questionNo} (ID: ${questionId})`);
+          this.clearAnswerFromBackup(attemptId, questionId);
           return {
             success: true,
             message: 'Answer submitted successfully',
             queued: false,
           };
         } else {
-          // Submit failed, add to queue
-          console.warn(`⚠️ Submit failed, queueing answer for Q${questionNo}`);
+          console.warn(`⚠️ Submit failed, queueing answer for Q${questionNo} (ID: ${questionId})`);
           this.queue.push(queueItem);
           this.saveQueueToStorage();
           this.notifyListeners();
@@ -219,9 +221,8 @@ class OfflineQueueService {
           };
         }
       } catch (error: any) {
-        console.error(`❌ Error submitting answer for Q${questionNo}:`, error);
+        console.error(`❌ Error submitting answer for Q${questionNo} (ID: ${questionId}):`, error);
         
-        // Add to queue on error
         this.queue.push(queueItem);
         this.saveQueueToStorage();
         this.notifyListeners();
@@ -233,8 +234,7 @@ class OfflineQueueService {
         };
       }
     } else {
-      // Offline - add to queue immediately
-      console.log(`🔴 Offline - queueing answer for Q${questionNo}`);
+      console.log(`🔴 Offline - queueing answer for Q${questionNo} (ID: ${questionId})`);
       this.queue.push(queueItem);
       this.saveQueueToStorage();
       this.notifyListeners();
@@ -253,18 +253,18 @@ class OfflineQueueService {
    */
   private saveAnswerToLocalBackup(
     attemptId: string,
-    questionNo: number,
+    questionId: string,
     answer: string | string[]
   ): void {
     try {
       const backupKey = `exam_backup_${attemptId}`;
       const backup = JSON.parse(localStorage.getItem(backupKey) || '{}');
-      backup[questionNo] = {
+      backup[questionId] = {
         answer,
         timestamp: Date.now(),
       };
       localStorage.setItem(backupKey, JSON.stringify(backup));
-      console.log(`💾 Saved backup for Q${questionNo}`);
+      console.log(`💾 Saved backup for questionId: ${questionId}`);
     } catch (error) {
       console.error('❌ Error saving to local backup:', error);
     }
@@ -273,7 +273,7 @@ class OfflineQueueService {
   /**
    * Load answers from local backup
    */
-  public loadAnswersFromBackup(attemptId: string): Record<number, any> {
+  public loadAnswersFromBackup(attemptId: string): Record<string, any> {
     try {
       const backupKey = `exam_backup_${attemptId}`;
       const backup = localStorage.getItem(backupKey);
@@ -292,21 +292,20 @@ class OfflineQueueService {
   /**
    * Clear specific answer from backup (after successful sync)
    */
-  private clearAnswerFromBackup(attemptId: string, questionNo: number): void {
+  private clearAnswerFromBackup(attemptId: string, questionId: string): void {
     try {
       const backupKey = `exam_backup_${attemptId}`;
       const backup = JSON.parse(localStorage.getItem(backupKey) || '{}');
       
-      if (backup[questionNo]) {
-        delete backup[questionNo];
+      if (backup[questionId]) {
+        delete backup[questionId];
         
-        // If backup is now empty, remove the entire key
         if (Object.keys(backup).length === 0) {
           localStorage.removeItem(backupKey);
           console.log(`🗑️ Backup empty - removed for attempt ${attemptId}`);
         } else {
           localStorage.setItem(backupKey, JSON.stringify(backup));
-          console.log(`🧹 Cleared Q${questionNo} from backup (${Object.keys(backup).length} remaining)`);
+          console.log(`🧹 Cleared ${questionId} from backup (${Object.keys(backup).length} remaining)`);
         }
       }
     } catch (error) {
@@ -365,6 +364,7 @@ class OfflineQueueService {
       try {
         const result = await firebaseService.submitAnswer(
           item.attemptId,
+          item.questionId,
           item.questionNo,
           item.answer,
           item.question,
@@ -372,27 +372,26 @@ class OfflineQueueService {
           item.timeSpent,
           item.markedForReview,
           item.imageUrl,
-          item.violations  // ✅ Pass violations to Firebase
+          item.violations
         );
 
         if (result.success) {
           item.status = 'synced';
           successCount++;
-          console.log(`✅ Synced answer for Q${item.questionNo}`);
+          console.log(`✅ Synced answer for Q${item.questionNo} (ID: ${item.questionId})`);
           
-          // ✅ CLEAR BACKUP: Remove this answer from backup after successful sync
-          this.clearAnswerFromBackup(item.attemptId, item.questionNo);
+          this.clearAnswerFromBackup(item.attemptId, item.questionId);
         } else {
           item.status = 'failed';
           item.retryCount++;
           failCount++;
-          console.error(`❌ Failed to sync answer for Q${item.questionNo}:`, result.message);
+          console.error(`❌ Failed to sync answer for Q${item.questionNo} (ID: ${item.questionId}):`, result.message);
         }
       } catch (error: any) {
         item.status = 'failed';
         item.retryCount++;
         failCount++;
-        console.error(`❌ Error syncing answer for Q${item.questionNo}:`, error);
+        console.error(`❌ Error syncing answer for Q${item.questionNo} (ID: ${item.questionId}):`, error);
       }
     }
 

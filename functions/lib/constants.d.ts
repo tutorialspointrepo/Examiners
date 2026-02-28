@@ -27,8 +27,14 @@ export declare const QUESTION_TYPES: {
     readonly DESCRIPTIVE: "descriptive";
     readonly CODE: "code";
     readonly SQL: "sql";
+    readonly LIKERT: "likert";
 };
 export type QuestionType = typeof QUESTION_TYPES[keyof typeof QUESTION_TYPES];
+/**
+ * Likert personality traits (Big 5 OCEAN + 3 Custom)
+ */
+export declare const LIKERT_TRAITS: readonly ["Openness", "Conscientiousness", "Extraversion", "Agreeableness", "Emotional Stability", "Leadership", "Problem Solving", "Communication"];
+export type LikertTrait = typeof LIKERT_TRAITS[number];
 /**
  * UI labels for question types
  */
@@ -39,6 +45,7 @@ export declare const QUESTION_TYPE_LABELS: {
     readonly descriptive: "Descriptive";
     readonly code: "Code";
     readonly sql: "SQL";
+    readonly likert: "Likert";
 };
 /**
  * User role types
@@ -310,9 +317,11 @@ export declare const COLLECTIONS: {
     readonly QUESTION_BANK: "questionBank";
     readonly EXAMS: "exams";
     readonly EXAM_ATTEMPTS: "examAttempts";
+    readonly EXAM_ENROLLMENTS: "exam_enrollments";
     readonly STUDENT_RESPONSES: "studentResponses";
     readonly NOTIFICATIONS: "notifications";
     readonly ACTIVITIES: "activities";
+    readonly ACTIVITY_LOGS: "activityLogs";
     readonly VIOLATIONS: "violations";
     readonly INTERNET_STATUS: "internetStatus";
     readonly CHAT_MESSAGES: "chatMessages";
@@ -325,20 +334,32 @@ export declare const COLLECTIONS: {
     readonly PASSWORD_RESET_REQUESTS: "passwordResetRequests";
     readonly CODING_LANGUAGES: "CodingLanguages";
     readonly COURSES: "courses";
+    readonly COLLEGE_COURSES: "college_courses";
+    readonly COURSE_ENROLLMENTS: "course_enrollments";
     readonly LEARNING_PATHS: "learningPaths";
+    readonly PATH_ENROLLMENTS: "path_enrollments";
+    readonly PROBLEMS: "problems";
+    readonly PROBLEM_LIKES: "problem_likes";
+    readonly PROBLEM_VIEWS: "problem_views";
+    readonly PROBLEMS_ATTEMPT: "problemsAttempt";
+    readonly AI_INTERVIEWS: "ai_interviews";
+    readonly JOBS: "jobs";
+    readonly SAVED_JOBS: "savedJobs";
+    readonly DAILY_LEARNING_LOG: "dailyLearningLog";
+    readonly STUDENT_LEARNING_DETAIL: "studentLearningDetail";
 };
 /**
  * Special college/organization identifiers
  */
 export declare const SPECIAL_IDS: {
-    readonly TUTORIALS_POINT: "tutorialspoint";
+    readonly TUTORIALSPOINT: "TPX";
     readonly SYSTEM: "system";
     readonly COMMON: "common";
 };
 /**
  * Default college ID for common questions (shared across all colleges)
  */
-export declare const DEFAULT_COLLEGE_ID: "tutorialspoint";
+export declare const DEFAULT_COLLEGE_ID: "TPX";
 /**
  * Permission/access levels
  */
@@ -862,6 +883,7 @@ export declare const APP_CONSTANTS: {
         readonly DESCRIPTIVE: "descriptive";
         readonly CODE: "code";
         readonly SQL: "sql";
+        readonly LIKERT: "likert";
     };
     readonly QUESTION_TYPE_LABELS: {
         readonly mcq: "MCQ";
@@ -870,6 +892,7 @@ export declare const APP_CONSTANTS: {
         readonly descriptive: "Descriptive";
         readonly code: "Code";
         readonly sql: "SQL";
+        readonly likert: "Likert";
     };
     readonly USER_TYPES: {
         readonly SYSTEM_ADMIN: "system_admin";
@@ -1050,9 +1073,11 @@ export declare const APP_CONSTANTS: {
         readonly QUESTION_BANK: "questionBank";
         readonly EXAMS: "exams";
         readonly EXAM_ATTEMPTS: "examAttempts";
+        readonly EXAM_ENROLLMENTS: "exam_enrollments";
         readonly STUDENT_RESPONSES: "studentResponses";
         readonly NOTIFICATIONS: "notifications";
         readonly ACTIVITIES: "activities";
+        readonly ACTIVITY_LOGS: "activityLogs";
         readonly VIOLATIONS: "violations";
         readonly INTERNET_STATUS: "internetStatus";
         readonly CHAT_MESSAGES: "chatMessages";
@@ -1065,14 +1090,26 @@ export declare const APP_CONSTANTS: {
         readonly PASSWORD_RESET_REQUESTS: "passwordResetRequests";
         readonly CODING_LANGUAGES: "CodingLanguages";
         readonly COURSES: "courses";
+        readonly COLLEGE_COURSES: "college_courses";
+        readonly COURSE_ENROLLMENTS: "course_enrollments";
         readonly LEARNING_PATHS: "learningPaths";
+        readonly PATH_ENROLLMENTS: "path_enrollments";
+        readonly PROBLEMS: "problems";
+        readonly PROBLEM_LIKES: "problem_likes";
+        readonly PROBLEM_VIEWS: "problem_views";
+        readonly PROBLEMS_ATTEMPT: "problemsAttempt";
+        readonly AI_INTERVIEWS: "ai_interviews";
+        readonly JOBS: "jobs";
+        readonly SAVED_JOBS: "savedJobs";
+        readonly DAILY_LEARNING_LOG: "dailyLearningLog";
+        readonly STUDENT_LEARNING_DETAIL: "studentLearningDetail";
     };
     readonly SPECIAL_IDS: {
-        readonly TUTORIALS_POINT: "tutorialspoint";
+        readonly TUTORIALSPOINT: "TPX";
         readonly SYSTEM: "system";
         readonly COMMON: "common";
     };
-    readonly DEFAULT_COLLEGE_ID: "tutorialspoint";
+    readonly DEFAULT_COLLEGE_ID: "TPX";
     readonly PERMISSION_LEVELS: {
         readonly SYSTEM: "system";
         readonly COLLEGE: "college";

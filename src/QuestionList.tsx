@@ -79,6 +79,7 @@ export default function QuestionList({
   const [boards, setBoards] = useState<string[]>([FILTER_VALUES.ALL]);
   const [expandedQuestionId, setExpandedQuestionId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [selectedStarterLang, setSelectedStarterLang] = useState<Record<string, string>>({});
   const [imageCarouselOpen, setImageCarouselOpen] = useState(false);
   const [carouselImages, setCarouselImages] = useState<string[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -944,7 +945,15 @@ export default function QuestionList({
                         {/* Tags Display */}
                         {question.tags && Array.isArray(question.tags) && question.tags.length > 0 && (
                           <>
-                            {question.tags.map((tag: string, tagIdx: number) => (
+                            {question.tags.filter((tag: string) => {
+                              if (question.type === QUESTION_TYPES.LIKERT) {
+                                const tagLower = tag.toLowerCase();
+                                const chapterSlug = (question.chapter || '').toLowerCase().replace(/\s+/g, '-');
+                                const chapterLower = (question.chapter || '').toLowerCase();
+                                if (tagLower === 'likert' || tagLower === 'personality' || tagLower === chapterSlug || tagLower === chapterLower) return false;
+                              }
+                              return true;
+                            }).map((tag: string, tagIdx: number) => (
                               <span
                                 key={tagIdx}
                                 onClick={(e) => {
@@ -1459,8 +1468,71 @@ export default function QuestionList({
                   </div>
                 )}
 
+                {/* Likert Question Details */}
+                {expandedQuestionId === question.id && question.type === QUESTION_TYPES.LIKERT && (
+                  <div className="mt-4 space-y-4">
+                    {/* Trait & Direction */}
+                    <div className="flex items-center space-x-4">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Trait</span>
+                        <span className="px-3 py-1 rounded-full bg-purple-100 text-purple-700 text-sm font-semibold">
+                          {question.likertTrait || question.chapter || '—'}
+                        </span>
+                      </div>
+                      {question.likertDirection && (
+                        <div className="flex items-center space-x-2">
+                          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Direction</span>
+                          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                            question.likertDirection === 'positive' 
+                              ? 'bg-green-100 text-green-700' 
+                              : 'bg-amber-100 text-amber-700'
+                          }`}>
+                            {question.likertDirection === 'positive' ? '↑ Positive' : '↓ Reverse'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Likert Scale Options with Scoring */}
+                    <div>
+                      <h2 className="text-lg font-bold text-gray-900 mb-3">Likert Scale</h2>
+                      <div className="grid grid-cols-5 gap-2">
+                        {(question.options || ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree']).map((option: string, idx: number) => {
+                          const score = question.correctAnswers?.[idx];
+                          const isHighest = score && Number(score) === 5;
+                          const isLowest = score && Number(score) === 1;
+                          return (
+                            <div 
+                              key={idx}
+                              className={`rounded-xl p-3 text-center border-2 transition-all ${
+                                isHighest ? 'border-green-300 bg-green-50' :
+                                isLowest ? 'border-red-200 bg-red-50' :
+                                'border-gray-200 bg-gray-50'
+                              }`}
+                            >
+                              <div className={`text-2xl font-bold mb-1 ${
+                                isHighest ? 'text-green-600' :
+                                isLowest ? 'text-red-500' :
+                                'text-gray-500'
+                              }`}>
+                                {score ?? (idx + 1)}
+                              </div>
+                              <div className="text-[10px] font-medium text-gray-600 leading-tight">{option}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {question.correctAnswers && (
+                        <p className="text-xs text-gray-400 mt-2 mb-4 text-center">
+                          Score mapping: {question.correctAnswers.join(' → ')}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Chapter Section - Outside Question Details (NON-CODE QUESTIONS) */}
-                {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.type !== QUESTION_TYPES.SQL && question.chapter && (
+                {expandedQuestionId === question.id && question.type !== QUESTION_TYPES.CODE && question.type !== QUESTION_TYPES.SQL && question.type !== QUESTION_TYPES.LIKERT && question.chapter && (
                   <div className="mt-3">
                     <h2 className="text-lg font-bold text-gray-900 mb-2">Chapter</h2>
                     <p className="text-sm text-gray-900">{question.chapter}</p>
@@ -1880,16 +1952,41 @@ export default function QuestionList({
                 )}
 
                 {/* Starter Code Template Section - Outside, Only for Code Questions */}
-                {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && question.testStub && (() => {
-                  console.log('🔍 Starter Code Section Check:', {
-                    questionId: question.id,
-                    hasTestStub: !!question.testStub,
-                    testStubLength: question.testStub?.length || 0
-                  });
-                  return true;
-                })() && (
+                {expandedQuestionId === question.id && question.type === QUESTION_TYPES.CODE && (question.starterCodes?.length > 0 || question.testStub) && (() => {
+                  const starterCodes = question.starterCodes?.length > 0 
+                    ? question.starterCodes 
+                    : question.testStub 
+                      ? [{ language: question.programmingLanguage || 'java', code: question.testStub }]
+                      : [];
+                  if (starterCodes.length === 0) return false;
+                  const activeLang = selectedStarterLang[question.id] || starterCodes[0].language;
+                  const activeCode = starterCodes.find((sc: any) => sc.language === activeLang)?.code || starterCodes[0].code;
+                  return (
                   <div className="mt-3">
-                    <h2 className="text-lg font-bold text-gray-900 mb-2">Starter Code Template</h2>
+                    <h2 className="text-lg font-bold text-gray-900 mb-2">
+                      Starter Code Template
+                      <span className="text-sm font-normal text-gray-500 ml-2">({starterCodes.length} language{starterCodes.length !== 1 ? 's' : ''})</span>
+                    </h2>
+                    
+                    {/* Language tabs */}
+                    {starterCodes.length > 1 && (
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        {starterCodes.map((sc: any) => (
+                          <button
+                            key={sc.language}
+                            onClick={() => setSelectedStarterLang(prev => ({ ...prev, [question.id]: sc.language }))}
+                            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                              activeLang === sc.language
+                                ? 'bg-gray-800 text-white shadow-sm'
+                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                            }`}
+                          >
+                            {sc.language === 'cpp' ? 'C++' : sc.language === 'javascript' ? 'JS' : sc.language.charAt(0).toUpperCase() + sc.language.slice(1)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    
                     <div className="relative rounded-lg overflow-hidden">
                       {/* Terminal-style header with dots and copy button */}
                       <div className="absolute top-0 left-0 right-0 h-10 bg-gray-800/95 backdrop-blur-sm z-10 flex items-center justify-between px-3 rounded-t-lg">
@@ -1902,11 +1999,11 @@ export default function QuestionList({
                         
                         {/* Copy button */}
                         <button
-                          onClick={() => copyToClipboard(question.testStub, `stub-${question.id}`)}
+                          onClick={() => copyToClipboard(activeCode, `stub-${question.id}-${activeLang}`)}
                           className="p-1.5 rounded-md hover:bg-gray-700 text-gray-300 hover:text-white transition-all"
                           title="Copy to clipboard"
                         >
-                          {copiedCode === `stub-${question.id}` ? (
+                          {copiedCode === `stub-${question.id}-${activeLang}` ? (
                             <FontAwesomeIcon icon={faCheck} className="text-sm" />
                           ) : (
                             <FontAwesomeIcon icon={faCopy} className="text-sm" />
@@ -1917,7 +2014,7 @@ export default function QuestionList({
                       {/* Code content with top padding for header */}
                       <div className="pt-10">
                         <SyntaxHighlighter
-                          language={question.programmingLanguage?.toLowerCase() || 'python'}
+                          language={activeLang === 'cpp' ? 'cpp' : activeLang === 'c' ? 'c' : activeLang?.toLowerCase() || 'python'}
                           style={vscDarkPlus}
                           customStyle={{
                             margin: 0,
@@ -1930,12 +2027,13 @@ export default function QuestionList({
                           }}
                           showLineNumbers={false}
                         >
-                          {question.testStub}
+                          {activeCode}
                         </SyntaxHighlighter>
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
 
                 {/* SQL Schema & Test Cases - Only for SQL Questions */}
@@ -2083,7 +2181,7 @@ export default function QuestionList({
                   <div className="flex items-center space-x-4 text-xs text-gray-500">
                     <div className="flex items-center space-x-1">
                       <FontAwesomeIcon icon={faUser} />
-                      <span>{question.createdByName ? question.createdByName.charAt(0).toUpperCase() + question.createdByName.slice(1) : ''}</span>
+                      <span>Created by: {question.createdByName ? question.createdByName.split(' ').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ') : ''}</span>
                     </div>
                     <div className="flex items-center space-x-1">
                       <FontAwesomeIcon icon={faCalendar} />
