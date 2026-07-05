@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 
 export interface BrandColors {
   primary: string;      // Main brand color (e.g., '#4F46E5' for indigo)
@@ -137,13 +137,6 @@ interface BrandProviderProps {
 }
 
 export const BrandProvider = ({ children, theme }: BrandProviderProps) => {
-  useEffect(() => {
-    console.log('🎨 [BrandProvider] Theme updated:', {
-      primary: theme.colors.primary,
-      collegeName: theme.collegeName,
-      collegeId: theme.collegeId
-    });
-  }, [theme]);
   
   return (
     <BrandContext.Provider value={theme}>

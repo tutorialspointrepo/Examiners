@@ -355,17 +355,17 @@ const [isSubmitting, setIsSubmitting] = useState(false);
       }
     }
     
-    if (formData.userType === 'teacher' || formData.userType === 'principal' || formData.userType === 'dean') {
+    if (formData.userType === 'teacher') {
       if (formData.teacherClasses.length === 0) {
-        setError(`Please select classes taught by ${formData.userType}`);
+        setError('Please select classes taught by teacher');
         return false;
       }
       if (formData.teacherSubjects.length === 0) {
-        setError(`Please select subjects taught by ${formData.userType}`);
+        setError('Please select subjects taught by teacher');
         return false;
       }
       if (!formData.board) {
-        setError(`Please select board for the ${formData.userType}`);
+        setError('Please select board for the teacher');
         return false;
       }
     }

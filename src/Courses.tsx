@@ -528,6 +528,28 @@ const Courses: React.FC<CoursesProps> = ({
         if (onCoursesLoaded) {
           onCoursesLoaded(transformedCourses);
         }
+        
+        // Fetch accurate college-specific enrollment counts for displayed courses
+        if (collegeIdForCounts && transformedCourses.length > 0 && !isStudent) {
+          try {
+            const countPromises = transformedCourses.map(course =>
+              firebaseService.getCourseEnrollmentCountByCollege(
+                String(course.courseId), collegeIdForCounts!, course.id
+              ).catch(() => 0)
+            );
+            const counts = await Promise.all(countPromises);
+            const updatedCourses = transformedCourses.map((course, idx) => ({
+              ...course,
+              enrollmentCount: counts[idx],
+            }));
+            setCourses(updatedCourses);
+            if (onCoursesLoaded) {
+              onCoursesLoaded(updatedCourses);
+            }
+          } catch (err) {
+            console.warn('Failed to fetch accurate enrollment counts:', err);
+          }
+        }
 
       } catch (err) {
         console.error('Error fetching courses:', err);

@@ -424,16 +424,9 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
       setCollegeEnrollmentCount(0);
       return;
     }
-    
-    // If enrollmentCount already available, use it
-    if (selectedCourse.enrollmentCount && selectedCourse.enrollmentCount > 0) {
-      setCollegeEnrollmentCount(selectedCourse.enrollmentCount);
-      return;
-    }
 
-    // Otherwise fetch from college_courses or course_enrollments
+    // Always fetch college-specific count for non-students
     const fetchCount = async () => {
-      // Only fetch administrative enrollment counts if the user is NOT a student
       if (currentUser?.userType === 'student') return;
       
       try {
@@ -445,9 +438,16 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
             String(selectedCourse.courseId), collegeId, selectedCourse.id
           );
           setCollegeEnrollmentCount(count);
+        } else if (selectedCourse.enrollmentCount && selectedCourse.enrollmentCount > 0) {
+          // Fallback to global count only if no college context
+          setCollegeEnrollmentCount(selectedCourse.enrollmentCount);
         }
       } catch (err) {
         console.error('Error fetching enrollment count:', err);
+        // Fallback to enrollmentCount from course on error
+        if (selectedCourse.enrollmentCount && selectedCourse.enrollmentCount > 0) {
+          setCollegeEnrollmentCount(selectedCourse.enrollmentCount);
+        }
       }
     };
     fetchCount();
@@ -498,15 +498,601 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
   const studentEnrollPerPage = 5;
   const studentEnrollScrollRef = React.useRef<HTMLDivElement>(null);
 
-  // Enrolled Students Data
-  const enrolledStudentsList = [
-    { id: '1', name: 'Rahul Sharma', className: 'Class 10-A', email: 'rahul.s@email.com', enrolled: '10 Jan 2026', progress: 85, status: 'In Progress', score: null, avatar: 'RS', totalMarks: 3100, maxMarks: 3649, exerciseMarks: 1950, maxExerciseMarks: 2290, quizMarks: 280, maxQuizMarks: 329, lectures: 70, maxLectures: 82, assessments: 740, maxAssessments: 870, completedDate: null, certificateId: null, feedback: null, totalCourseDuration: '12h 55m', learningTime: '10h 58m', avgDailyLearningTime: '45m' },
-    { id: '2', name: 'Priya Patel', className: 'Class 10-B', email: 'priya.p@email.com', enrolled: '08 Jan 2026', progress: 100, status: 'Completed', score: 92, avatar: 'PP', totalMarks: 3357, maxMarks: 3649, exerciseMarks: 2107, maxExerciseMarks: 2290, quizMarks: 302, maxQuizMarks: 329, lectures: 82, maxLectures: 82, assessments: 800, maxAssessments: 870, completedDate: '26/08/2025', certificateId: 'TP-KHYXCQNR', feedback: { rating: 5, comment: 'Excellent course! The content was well-structured and the exercises were very helpful. Highly recommend for beginners.', date: '27/08/2025' }, totalCourseDuration: '12h 55m', learningTime: '12h 55m', avgDailyLearningTime: '52m' },
-    { id: '3', name: 'Amit Kumar', className: 'Class 9-A', email: 'amit.k@email.com', enrolled: '12 Jan 2026', progress: 45, status: 'In Progress', score: null, avatar: 'AK', totalMarks: 1642, maxMarks: 3649, exerciseMarks: 1030, maxExerciseMarks: 2290, quizMarks: 148, maxQuizMarks: 329, lectures: 37, maxLectures: 82, assessments: 391, maxAssessments: 870, completedDate: null, certificateId: null, feedback: null, totalCourseDuration: '12h 55m', learningTime: '5h 49m', avgDailyLearningTime: '35m' },
-    { id: '4', name: 'Sneha Gupta', className: 'Class 10-A', email: 'sneha.g@email.com', enrolled: '05 Jan 2026', progress: 100, status: 'Completed', score: 88, avatar: 'SG', totalMarks: 3211, maxMarks: 3649, exerciseMarks: 2015, maxExerciseMarks: 2290, quizMarks: 289, maxQuizMarks: 329, lectures: 82, maxLectures: 82, assessments: 765, maxAssessments: 870, completedDate: '15/09/2025', certificateId: 'TP-ABCD1234', feedback: null, totalCourseDuration: '12h 55m', learningTime: '12h 55m', avgDailyLearningTime: '48m' },
-    { id: '5', name: 'Vikram Singh', className: 'Class 9-B', email: 'vikram.s@email.com', enrolled: '15 Jan 2026', progress: 20, status: 'In Progress', score: null, avatar: 'VS', totalMarks: 729, maxMarks: 3649, exerciseMarks: 458, maxExerciseMarks: 2290, quizMarks: 65, maxQuizMarks: 329, lectures: 16, maxLectures: 82, assessments: 174, maxAssessments: 870, completedDate: null, certificateId: null, feedback: null, totalCourseDuration: '12h 55m', learningTime: '2h 35m', avgDailyLearningTime: '26m' },
-    { id: '6', name: 'Ananya Reddy', className: 'Class 10-A', email: 'ananya.r@email.com', enrolled: '03 Jan 2026', progress: 100, status: 'Completed', score: 95, avatar: 'AR', totalMarks: 3466, maxMarks: 3649, exerciseMarks: 2175, maxExerciseMarks: 2290, quizMarks: 312, maxQuizMarks: 329, lectures: 82, maxLectures: 82, assessments: 826, maxAssessments: 870, completedDate: '20/08/2025', certificateId: 'TP-WXYZ5678', feedback: { rating: 4, comment: 'Great course overall. Would love more advanced topics in future updates.', date: '22/08/2025' }, totalCourseDuration: '12h 55m', learningTime: '12h 55m', avgDailyLearningTime: '58m' },
-  ];
+  // Enrolled Students Data - fetched from course_enrollments + studentLearningDetail
+  const [enrolledStudentsList, setEnrolledStudentsList] = useState<any[]>([]);
+  const [isLoadingEnrolledStudents, setIsLoadingEnrolledStudents] = useState(false);
+  const [enrolledStudentsPage, setEnrolledStudentsPage] = useState(1);
+  const [, setEnrolledStudentsLastDoc] = useState<any>(null);
+  const [enrolledStudentsHasMore, setEnrolledStudentsHasMore] = useState(false);
+  const enrolledStudentsPerPage = 10;
+  const [enrolledStudentsPageCache, setEnrolledStudentsPageCache] = useState<Map<number, { students: any[], lastDoc: any }>>(new Map());
+
+  // Fetch enrolled students when selectedCourse changes
+  React.useEffect(() => {
+    if (!selectedCourse || currentUser?.userType === 'student') {
+      setEnrolledStudentsList([]);
+      setEnrolledStudentsPage(1);
+      setEnrolledStudentsPageCache(new Map());
+      return;
+    }
+
+    const fetchEnrolledStudents = async () => {
+      setIsLoadingEnrolledStudents(true);
+      try {
+        const collegeId = currentUser?.userType === 'system_admin'
+          ? (selectedCollege?.id || '')
+          : (currentUser?.collegeId || '');
+
+        if (!collegeId || !selectedCourse.courseId) {
+          setEnrolledStudentsList([]);
+          setIsLoadingEnrolledStudents(false);
+          return;
+        }
+
+        const courseIdStr = String(selectedCourse.courseId);
+
+        // Get cached page or fetch fresh (skip cache for page 1 to ensure fresh data on course change)
+        if (enrolledStudentsPage > 1) {
+          const cached = enrolledStudentsPageCache.get(enrolledStudentsPage);
+          if (cached) {
+            setEnrolledStudentsList(cached.students);
+            setEnrolledStudentsLastDoc(cached.lastDoc);
+            setIsLoadingEnrolledStudents(false);
+            return;
+          }
+        }
+
+        // Get cursor from previous page cache
+        const prevCache = enrolledStudentsPage > 1 ? enrolledStudentsPageCache.get(enrolledStudentsPage - 1) : null;
+        const startAfterDoc = prevCache?.lastDoc || null;
+
+        // Fetch enrollments page
+        const result = await firebaseService.getCourseEnrollmentsPaginated(
+          courseIdStr, collegeId, enrolledStudentsPerPage, startAfterDoc
+        );
+
+        if (result.enrollments.length === 0) {
+          setEnrolledStudentsList([]);
+          setEnrolledStudentsHasMore(false);
+          setIsLoadingEnrolledStudents(false);
+          return;
+        }
+
+        // Fetch studentLearningDetail for each enrolled user in parallel
+        const studentPromises = result.enrollments.map(async (enrollment: any) => {
+          const userId = enrollment.userId;
+          let learningDetail: any = null;
+          try {
+            learningDetail = await firebaseService.getStudentLearningDetail(userId, collegeId);
+          } catch (e) {
+            console.warn('Failed to fetch learning detail for', userId);
+          }
+
+          const courseProgress = learningDetail?.courses?.[String(enrollment.courseId)] || {};
+          const percentage = courseProgress.percentage || 0;
+          const hasCompletedAt = enrollment.completedAt != null && enrollment.completedAt !== false;
+          const isCompleted = percentage === 100 || (hasCompletedAt && percentage > 0);
+
+          // Resolve userName: try learningDetail first, then fetch from users collection
+          let userName = learningDetail?.userName || '';
+          let userEmail = learningDetail?.userEmail || '';
+          let studentClass = learningDetail?.studentClass || '';
+          let userType = learningDetail?.userType || 'student';
+          if (!userName) {
+            try {
+              const userProfile = await firebaseService.getUserDetails(userId);
+              if (userProfile) {
+                userName = userProfile.fullName || '';
+                userEmail = userEmail || userProfile.email || '';
+              }
+            } catch (e) {
+              console.warn('Failed to fetch user profile for', userId);
+            }
+          }
+          if (!userName) userName = 'Unknown';
+
+          // Format enrolled date
+          let enrolledDate = '';
+          if (enrollment.enrolledAt?.toDate) {
+            enrolledDate = enrollment.enrolledAt.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+          } else if (enrollment.enrolledAt?.seconds) {
+            enrolledDate = new Date(enrollment.enrolledAt.seconds * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+          }
+
+          // Format completed date
+          let completedDate: string | null = null;
+          if (enrollment.completedAt?.toDate) {
+            completedDate = enrollment.completedAt.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+          } else if (enrollment.completedAt?.seconds) {
+            completedDate = new Date(enrollment.completedAt.seconds * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+          }
+
+          const totalLectures = courseProgress.totalLectures || selectedCourse.lectures || 0;
+          const lecturesCompleted = courseProgress.lecturesCompleted || 0;
+          const exerciseMarksObtained = courseProgress.exerciseMarksObtained || 0;
+          const exerciseMaxMarks = courseProgress.exerciseMaxMarks || 0;
+          const quizMarksObtained = courseProgress.quizMarksObtained || 0;
+          const quizMaxMarks = courseProgress.quizMaxMarks || 0;
+          const totalUnits = courseProgress.totalUnits || 0;
+          const timeSpent = courseProgress.timeSpent || 0;
+
+          // Calculate total marks
+          const totalMarksObtained = exerciseMarksObtained + quizMarksObtained;
+          const totalMaxMarks = exerciseMaxMarks + quizMaxMarks;
+
+          // Calculate score percentage for completed students
+          let score: number | null = null;
+          if (isCompleted && totalMaxMarks > 0) {
+            score = Math.round((totalMarksObtained / totalMaxMarks) * 100);
+          }
+
+          // Format time
+          const hours = Math.floor(timeSpent / 3600);
+          const minutes = Math.floor((timeSpent % 3600) / 60);
+          const learningTime = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+          const avatar = userName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
+
+          return {
+            id: enrollment.id,
+            userId,
+            name: userName,
+            className: userType !== 'student' ? userType.charAt(0).toUpperCase() + userType.slice(1) : studentClass,
+            email: userEmail,
+            userType,
+            role: userType.charAt(0).toUpperCase() + userType.slice(1),
+            enrolled: enrolledDate,
+            enrolledDate,
+            progress: percentage,
+            status: isCompleted ? 'Completed' : 'In Progress',
+            score,
+            avatar,
+            totalMarks: totalMarksObtained,
+            maxMarks: totalMaxMarks,
+            exerciseMarks: exerciseMarksObtained,
+            maxExerciseMarks: exerciseMaxMarks,
+            exerciseMarksObtained,
+            exerciseMaxMarks,
+            quizMarks: quizMarksObtained,
+            maxQuizMarks: quizMaxMarks,
+            quizMarksObtained,
+            quizMaxMarks,
+            lectures: lecturesCompleted,
+            lecturesCompleted,
+            maxLectures: totalLectures,
+            totalLectures,
+            exercisesCompleted: courseProgress.exercisesCompleted || 0,
+            totalExercises: courseProgress.totalExercises || 0,
+            quizzesCompleted: courseProgress.quizzesCompleted || 0,
+            totalQuizzes: courseProgress.totalQuizzes || 0,
+            assessments: 0,
+            maxAssessments: totalUnits,
+            completedDate,
+            certificateId: enrollment.certificateId || null,
+            feedback: null,
+            totalCourseDuration: selectedCourse.duration || '0m',
+            learningTime,
+            avgDailyLearningTime: '',
+            enrollmentId: enrollment.enrollmentId || enrollment.id,
+          };
+        });
+
+        const students = await Promise.all(studentPromises);
+        // Sort: non-students (admin, teacher, dean, principal) first, then students
+        students.sort((a, b) => {
+          const aIsStudent = a.userType === 'student' ? 1 : 0;
+          const bIsStudent = b.userType === 'student' ? 1 : 0;
+          return aIsStudent - bIsStudent;
+        });
+        setEnrolledStudentsList(students);
+        setEnrolledStudentsLastDoc(result.lastDoc);
+        setEnrolledStudentsHasMore(result.hasMore);
+
+        // Cache this page
+        setEnrolledStudentsPageCache(prev => new Map(prev).set(enrolledStudentsPage, {
+          students,
+          lastDoc: result.lastDoc
+        }));
+      } catch (error) {
+        console.error('Error fetching enrolled students:', error);
+        setEnrolledStudentsList([]);
+      } finally {
+        setIsLoadingEnrolledStudents(false);
+      }
+    };
+
+    fetchEnrolledStudents();
+  }, [selectedCourse?.id, enrolledStudentsPage]);
+
+  // Reset enrolled students pagination when course changes
+  React.useEffect(() => {
+    setEnrolledStudentsPage(1);
+    setEnrolledStudentsPageCache(new Map());
+    setEnrolledStudentsLastDoc(null);
+    setEnrolledStudentsList([]);
+  }, [selectedCourse?.id]);
+
+  // Export Enrolled Students Report
+  const [isExportingReport, setIsExportingReport] = useState(false);
+  const exportEnrolledStudentsReport = async () => {
+    if (!selectedCourse || isExportingReport) return;
+    setIsExportingReport(true);
+
+    try {
+      const collegeId = currentUser?.userType === 'system_admin'
+        ? (selectedCollege?.id || '')
+        : (currentUser?.collegeId || '');
+      const courseIdStr = String(selectedCourse.courseId);
+
+      // Fetch ALL enrollments (paginate through all)
+      let allEnrollments: any[] = [];
+      let lastDoc = null;
+      let hasMore = true;
+      while (hasMore) {
+        const result = await firebaseService.getCourseEnrollmentsPaginated(
+          courseIdStr, collegeId, 100, lastDoc
+        );
+        allEnrollments = [...allEnrollments, ...result.enrollments];
+        lastDoc = result.lastDoc;
+        hasMore = result.hasMore;
+      }
+
+      // Fetch learning details for all users
+      const allStudents = await Promise.all(
+        allEnrollments.map(async (enrollment: any) => {
+          let learningDetail: any = null;
+          try {
+            learningDetail = await firebaseService.getStudentLearningDetail(enrollment.userId, collegeId);
+          } catch (e) { /* skip */ }
+
+          const courseProgress = learningDetail?.courses?.[String(enrollment.courseId)] || {};
+          const percentage = courseProgress.percentage || 0;
+          const hasCompletedAt = enrollment.completedAt != null && enrollment.completedAt !== false;
+          const isCompleted = percentage === 100 || (hasCompletedAt && percentage > 0);
+
+          let userName = learningDetail?.userName || '';
+          let userEmail = learningDetail?.userEmail || '';
+          let studentClass = learningDetail?.studentClass || '';
+          let userType = learningDetail?.userType || 'student';
+          if (!userName) {
+            try {
+              const userProfile = await firebaseService.getUserDetails(enrollment.userId);
+              if (userProfile) {
+                userName = userProfile.fullName || '';
+                userEmail = userEmail || userProfile.email || '';
+              }
+            } catch (e) { /* skip */ }
+          }
+          if (!userName) userName = 'Unknown';
+
+          let enrolledDate = '';
+          if (enrollment.enrolledAt?.toDate) {
+            enrolledDate = enrollment.enrolledAt.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+          } else if (enrollment.enrolledAt?.seconds) {
+            enrolledDate = new Date(enrollment.enrolledAt.seconds * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+          }
+
+          let completedDate = '';
+          if (enrollment.completedAt?.toDate) {
+            completedDate = enrollment.completedAt.toDate().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+          } else if (enrollment.completedAt?.seconds) {
+            completedDate = new Date(enrollment.completedAt.seconds * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+          }
+
+          const timeSpent = courseProgress.timeSpent || 0;
+          const hours = Math.floor(timeSpent / 3600);
+          const minutes = Math.floor((timeSpent % 3600) / 60);
+          const learningTime = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+          return {
+            name: userName,
+            role: userType.charAt(0).toUpperCase() + userType.slice(1),
+            className: userType !== 'student' ? userType.charAt(0).toUpperCase() + userType.slice(1) : (studentClass || '-'),
+            email: userEmail,
+            enrolledDate: enrolledDate,
+            progress: percentage,
+            status: isCompleted ? 'Completed' : 'In Progress',
+            lecturesCompleted: courseProgress.lecturesCompleted || 0,
+            totalLectures: courseProgress.totalLectures || 0,
+            exercisesCompleted: courseProgress.exercisesCompleted || 0,
+            totalExercises: courseProgress.totalExercises || 0,
+            quizzesCompleted: courseProgress.quizzesCompleted || 0,
+            totalQuizzes: courseProgress.totalQuizzes || 0,
+            exerciseMarksObtained: courseProgress.exerciseMarksObtained || 0,
+            exerciseMaxMarks: courseProgress.exerciseMaxMarks || 0,
+            quizMarksObtained: courseProgress.quizMarksObtained || 0,
+            quizMaxMarks: courseProgress.quizMaxMarks || 0,
+            learningTime,
+            completedDate: completedDate || '-',
+            certificateId: enrollment.certificateId || '-',
+          };
+        })
+      );
+
+      // Sort: non-students first
+      allStudents.sort((a, b) => {
+        const aIsStudent = a.role === 'Student' ? 1 : 0;
+        const bIsStudent = b.role === 'Student' ? 1 : 0;
+        return aIsStudent - bIsStudent;
+      });
+
+      const completedCount = allStudents.filter(s => s.status === 'Completed').length;
+      const inProgressCount = allStudents.filter(s => s.status === 'In Progress').length;
+      const avgProgress = allStudents.length > 0 ? Math.round(allStudents.reduce((sum, s) => sum + s.progress, 0) / allStudents.length) : 0;
+      const collegeName = selectedCollege?.name || brandTheme.collegeName || '';
+
+      // Dynamic import ExcelJS (same pattern as exportStyledDashboard)
+      let ExcelJS: any;
+      try {
+        ExcelJS = (await import('exceljs')).default;
+      } catch (err) {
+        console.error('Failed to load ExcelJS:', err);
+        alert('Excel export failed to load. Please refresh and try again.');
+        return;
+      }
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'EXAMINERS';
+      wb.created = new Date();
+
+      // ===== DASHBOARD SHEET =====
+      const dash = wb.addWorksheet('Dashboard', { 
+        properties: { tabColor: { argb: 'FF4F46E5' } },
+        views: [{ showGridLines: false }]
+      });
+
+      dash.columns = [
+        { width: 3 }, { width: 28 }, { width: 22 }, { width: 22 }, { width: 22 }, { width: 22 }, { width: 3 }
+      ];
+
+      const thinBorder = (color: string) => ({ style: 'thin' as const, color: { argb: color } });
+
+      // Row 1-2: spacer
+      dash.addRow([]);
+      dash.addRow([]);
+
+      // Row 3: Title bar
+      const titleRow = dash.addRow(['', 'COURSE ENROLLMENT REPORT']);
+      dash.mergeCells('B3:F3');
+      const titleCell = dash.getCell('B3');
+      titleCell.font = { name: 'Segoe UI', size: 18, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E1B4B' } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      ['C3', 'D3', 'E3', 'F3'].forEach(c => {
+        dash.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E1B4B' } };
+      });
+      titleRow.height = 50;
+
+      // Row 4: Subtitle
+      const subRow = dash.addRow(['', collegeName]);
+      dash.mergeCells('B4:F4');
+      dash.getCell('B4').font = { name: 'Segoe UI', size: 11, color: { argb: 'FFC7D2FE' } };
+      dash.getCell('B4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E1B4B' } };
+      dash.getCell('B4').alignment = { horizontal: 'center', vertical: 'middle' };
+      ['C4', 'D4', 'E4', 'F4'].forEach(c => {
+        dash.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E1B4B' } };
+      });
+      subRow.height = 30;
+
+      // Row 5: spacer
+      dash.addRow([]);
+
+      // Row 6: Course info header
+      const infoHeaderRow = dash.addRow(['', 'COURSE INFORMATION']);
+      dash.mergeCells('B6:F6');
+      dash.getCell('B6').font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF4F46E5' } };
+      dash.getCell('B6').border = { bottom: { style: 'medium', color: { argb: 'FF4F46E5' } } };
+      infoHeaderRow.height = 30;
+
+      // Row 7-10: Course details
+      const courseDetails = [
+        ['', 'Course Name', selectedCourse.name || '', '', '', ''],
+        ['', 'Instructor', selectedCourse.instructor || '-', 'Level', selectedCourse.level || '-', ''],
+        ['', 'Total Lectures', selectedCourse.lectures || 0, 'Duration', selectedCourse.duration || '-', ''],
+        ['', 'Category', selectedCourse.category || '-', 'Language', selectedCourse.language || 'English', ''],
+      ];
+      courseDetails.forEach((row, i) => {
+        const r = dash.addRow(row);
+        r.height = 26;
+        ['B', 'D'].forEach(col => {
+          const cell = dash.getCell(`${col}${7 + i}`);
+          cell.font = { name: 'Segoe UI', size: 10, color: { argb: 'FF6B7280' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F3FF' } };
+          cell.border = { left: thinBorder('FFC7D2FE'), right: thinBorder('FFC7D2FE'), top: thinBorder('FFC7D2FE'), bottom: thinBorder('FFC7D2FE') };
+        });
+        ['C', 'E'].forEach(col => {
+          const cell = dash.getCell(`${col}${7 + i}`);
+          cell.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FF111827' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
+          cell.border = { left: thinBorder('FFC7D2FE'), right: thinBorder('FFC7D2FE'), top: thinBorder('FFC7D2FE'), bottom: thinBorder('FFC7D2FE') };
+        });
+      });
+      // Merge course name value across C7:E7 for long names
+      dash.mergeCells('C7:E7');
+      dash.getCell('C7').alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+      dash.getRow(7).height = 30;
+
+      // Row 11: spacer
+      dash.addRow([]);
+
+      // Row 12: KPI header
+      const kpiHeaderRow = dash.addRow(['', 'KEY METRICS']);
+      dash.mergeCells('B12:F12');
+      dash.getCell('B12').font = { name: 'Segoe UI', size: 12, bold: true, color: { argb: 'FF4F46E5' } };
+      dash.getCell('B12').border = { bottom: { style: 'medium', color: { argb: 'FF4F46E5' } } };
+      kpiHeaderRow.height = 30;
+
+      // Row 13: KPI labels
+      const kpiLabelRow = dash.addRow(['', 'Total Enrolled', 'Completed', 'In Progress', 'Avg Progress']);
+      kpiLabelRow.height = 22;
+      ['B', 'C', 'D', 'E'].forEach(col => {
+        const cell = dash.getCell(`${col}13`);
+        cell.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF6B7280' } };
+        cell.alignment = { horizontal: 'center' };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F3FF' } };
+        cell.border = { left: thinBorder('FFC7D2FE'), right: thinBorder('FFC7D2FE'), top: thinBorder('FFC7D2FE'), bottom: thinBorder('FFC7D2FE') };
+      });
+
+      // Row 14: KPI values
+      const kpiValueRow = dash.addRow(['', allStudents.length, completedCount, inProgressCount, `${avgProgress}%`]);
+      kpiValueRow.height = 44;
+      const kpiColors = ['FF4F46E5', 'FF059669', 'FFD97706', 'FF4F46E5'];
+      ['B', 'C', 'D', 'E'].forEach((col, i) => {
+        const cell = dash.getCell(`${col}14`);
+        cell.font = { name: 'Segoe UI', size: 24, bold: true, color: { argb: kpiColors[i] } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
+        cell.border = { left: thinBorder('FFC7D2FE'), right: thinBorder('FFC7D2FE'), top: thinBorder('FFC7D2FE'), bottom: { style: 'medium', color: { argb: kpiColors[i] } } };
+      });
+
+      // Row 15-16: spacer
+      dash.addRow([]);
+      dash.addRow([]);
+
+      // Row 17: Footer
+      dash.addRow(['', `Report generated on ${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}  •  Powered by EXAMINERS`]);
+      dash.mergeCells('B17:F17');
+      dash.getCell('B17').font = { name: 'Segoe UI', size: 9, italic: true, color: { argb: 'FF9CA3AF' } };
+      dash.getCell('B17').alignment = { horizontal: 'center' };
+
+      // ===== ENROLLED STUDENTS SHEET =====
+      const ws = wb.addWorksheet('Enrolled Students', {
+        properties: { tabColor: { argb: 'FF059669' } },
+        views: [{ showGridLines: false }]
+      });
+
+      ws.columns = [
+        { width: 4 }, { width: 5 }, { width: 28 }, { width: 12 }, { width: 14 },
+        { width: 32 }, { width: 16 }, { width: 13 }, { width: 14 }, { width: 20 },
+        { width: 20 }, { width: 20 }, { width: 18 }, { width: 16 }, { width: 15 },
+        { width: 16 }, { width: 20 }, { width: 4 },
+      ];
+
+      // Row 1: spacer
+      ws.addRow([]);
+
+      // Row 2: Title bar
+      const stRow = ws.addRow(['', '', `${selectedCourse.name} — Enrolled Students`]);
+      ws.mergeCells('C2:Q2');
+      ws.getCell('C2').font = { name: 'Segoe UI', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+      ws.getCell('C2').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E1B4B' } };
+      ws.getCell('C2').alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+      stRow.height = 42;
+      ['D','E','F','G','H','I','J','K','L','M','N','O','P','Q'].forEach(c => {
+        ws.getCell(`${c}2`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E1B4B' } };
+      });
+
+      // Row 3: Sub info
+      const siRow = ws.addRow(['', '', `${collegeName}  •  ${allStudents.length} enrolled  •  ${completedCount} completed  •  ${avgProgress}% avg progress`]);
+      ws.mergeCells('C3:Q3');
+      ws.getCell('C3').font = { name: 'Segoe UI', size: 10, color: { argb: 'FFC7D2FE' } };
+      ws.getCell('C3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E1B4B' } };
+      ws.getCell('C3').alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+      siRow.height = 28;
+      ['D','E','F','G','H','I','J','K','L','M','N','O','P','Q'].forEach(c => {
+        ws.getCell(`${c}3`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E1B4B' } };
+      });
+
+      // Row 4: spacer
+      ws.addRow([]);
+
+      // Row 5: Table headers
+      const headers = ['', '#', 'Name', 'Role', 'Class', 'Email', 'Enrolled Date', 'Progress', 'Status',
+        'Lectures', 'Exercises', 'Quizzes', 'Exercise Marks', 'Quiz Marks', 'Learning Time', 'Completed', 'Certificate ID'];
+      const headerRow = ws.addRow(headers);
+      headerRow.height = 32;
+      const hCols = ['B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q'];
+      hCols.forEach(col => {
+        const cell = ws.getCell(`${col}5`);
+        cell.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        cell.border = { left: { style: 'thin', color: { argb: 'FF4F46E5' } }, right: { style: 'thin', color: { argb: 'FF4F46E5' } } };
+      });
+
+      // Data rows
+      allStudents.forEach((student, idx) => {
+        const rowData = [
+          '', idx + 1, student.name, student.role, student.className, student.email,
+          student.enrolledDate, `${student.progress}%`, student.status,
+          `${student.lecturesCompleted} / ${student.totalLectures}`,
+          `${student.exercisesCompleted} / ${student.totalExercises}`,
+          `${student.quizzesCompleted} / ${student.totalQuizzes}`,
+          `${student.exerciseMarksObtained} / ${student.exerciseMaxMarks}`,
+          `${student.quizMarksObtained} / ${student.quizMaxMarks}`,
+          student.learningTime, student.completedDate || '-', student.certificateId || '-',
+        ];
+        const dataRow = ws.addRow(rowData);
+        dataRow.height = 28;
+        const rowBg = idx % 2 === 0 ? 'FFFFFFFF' : 'FFF8F9FA';
+
+        hCols.forEach(col => {
+          const cell = ws.getCell(`${col}${6 + idx}`);
+          cell.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF374151' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.border = { top: thinBorder('FFD1D5DB'), bottom: thinBorder('FFD1D5DB'), left: thinBorder('FFD1D5DB'), right: thinBorder('FFD1D5DB') };
+        });
+
+        // Name: left-aligned bold
+        const nameCell = ws.getCell(`C${6 + idx}`);
+        nameCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        nameCell.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF111827' } };
+
+        // Email: left-aligned
+        ws.getCell(`F${6 + idx}`).alignment = { horizontal: 'left', vertical: 'middle' };
+
+        // Status color
+        const statusCell = ws.getCell(`I${6 + idx}`);
+        if (student.status === 'Completed') {
+          statusCell.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF166534' } };
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
+        } else {
+          statusCell.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF4F46E5' } };
+          statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEF2FF' } };
+        }
+
+        // Role styling for non-students
+        if (student.role !== 'Student') {
+          const roleCell = ws.getCell(`D${6 + idx}`);
+          roleCell.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FFB45309' } };
+          roleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFBEB' } };
+        }
+      });
+
+      // Bottom border on last data row
+      if (allStudents.length > 0) {
+        const lastRow = 5 + allStudents.length;
+        hCols.forEach(col => {
+          const cell = ws.getCell(`${col}${lastRow}`);
+          cell.border = { ...cell.border, bottom: { style: 'medium', color: { argb: 'FF333333' } } };
+        });
+      }
+
+      // Footer
+      const footerRowNum = 7 + allStudents.length;
+      ws.mergeCells(`C${footerRowNum}:Q${footerRowNum}`);
+      const fCell = ws.getCell(`C${footerRowNum}`);
+      fCell.value = `Total: ${allStudents.length} enrolled  •  Report generated by EXAMINERS`;
+      fCell.font = { name: 'Segoe UI', size: 9, italic: true, color: { argb: 'FF9CA3AF' } };
+      fCell.alignment = { horizontal: 'center' };
+
+      // Generate and download
+      const fileName = `${selectedCourse.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Course'}_Enrollment_Report.xlsx`;
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting report:', error);
+    } finally {
+      setIsExportingReport(false);
+    }
+  };
 
   // Navigate to previous student
   const goToPreviousStudent = () => {
@@ -2141,10 +2727,12 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                     <p className="text-sm text-gray-500">{collegeEnrollmentCount} students enrolled in this course</p>
                   </div>
                   <button 
-                    className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                     style={{ backgroundColor: `${brandTheme.colors.primary}10`, color: brandTheme.colors.primary }}
+                    onClick={exportEnrolledStudentsReport}
+                    disabled={isExportingReport || enrolledStudentsList.length === 0}
                   >
-                    Export Report
+                    {isExportingReport ? 'Exporting...' : 'Export Report'}
                   </button>
                 </div>
                 
@@ -2161,8 +2749,23 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {/* Enrolled students data */}
-                      {enrolledStudentsList.map((student, idx) => (
+                      {isLoadingEnrolledStudents ? (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-12 text-center">
+                            <div className="flex flex-col items-center gap-2">
+                              <div className="w-8 h-8 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" style={{ borderTopColor: brandTheme.colors.primary }} />
+                              <span className="text-sm text-gray-500">Loading enrolled students...</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : enrolledStudentsList.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-6 py-12 text-center text-sm text-gray-500">
+                            No students enrolled in this course yet.
+                          </td>
+                        </tr>
+                      ) : (
+                      enrolledStudentsList.map((student, idx) => (
                         <tr 
                           key={idx} 
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
@@ -2221,41 +2824,61 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                             )}
                           </td>
                         </tr>
-                      ))}
+                      ))
+                      )}
                     </tbody>
                   </table>
                 </div>
                 
                 {/* Pagination */}
+                {collegeEnrollmentCount > 0 && (
                 <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between bg-gray-50">
                   <div className="text-sm text-gray-500">
-                    Showing 1-{Math.min(6, collegeEnrollmentCount)} of {collegeEnrollmentCount} students
+                    Showing {((enrolledStudentsPage - 1) * enrolledStudentsPerPage) + 1}-{Math.min(enrolledStudentsPage * enrolledStudentsPerPage, collegeEnrollmentCount)} of {collegeEnrollmentCount} students
                   </div>
                   <div className="flex items-center gap-2">
-                    <button className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <button 
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={enrolledStudentsPage === 1}
+                      onClick={() => setEnrolledStudentsPage(p => Math.max(1, p - 1))}
+                    >
                       Previous
                     </button>
+                    {Array.from({ length: Math.min(5, Math.ceil(collegeEnrollmentCount / enrolledStudentsPerPage)) }, (_, i) => i + 1).map(page => (
+                      <button
+                        key={page}
+                        className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
+                          page === enrolledStudentsPage
+                            ? 'text-white'
+                            : 'border border-gray-200 hover:bg-gray-50 text-gray-600'
+                        }`}
+                        style={page === enrolledStudentsPage ? { background: brandTheme.gradients.primary } : {}}
+                        onClick={() => setEnrolledStudentsPage(page)}
+                      >
+                        {page}
+                      </button>
+                    ))}
+                    {Math.ceil(collegeEnrollmentCount / enrolledStudentsPerPage) > 5 && (
+                      <>
+                        <span className="text-gray-400">...</span>
+                        <button
+                          className="w-8 h-8 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all"
+                          onClick={() => setEnrolledStudentsPage(Math.ceil(collegeEnrollmentCount / enrolledStudentsPerPage))}
+                        >
+                          {Math.ceil(collegeEnrollmentCount / enrolledStudentsPerPage)}
+                        </button>
+                      </>
+                    )}
                     <button 
-                      className="w-8 h-8 rounded-lg text-sm font-medium text-white transition-all"
-                      style={{ background: brandTheme.gradients.primary }}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={!enrolledStudentsHasMore}
+                      onClick={() => setEnrolledStudentsPage(p => p + 1)}
                     >
-                      1
-                    </button>
-                    <button className="w-8 h-8 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
-                      2
-                    </button>
-                    <button className="w-8 h-8 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
-                      3
-                    </button>
-                    <span className="text-gray-400">...</span>
-                    <button className="w-8 h-8 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
-                      76
-                    </button>
-                    <button className="px-3 py-1.5 rounded-lg text-sm font-medium border border-gray-200 hover:bg-gray-50 text-gray-600 transition-all">
                       Next
                     </button>
                   </div>
                 </div>
+                )}
               </div>
             )}
           </div>
@@ -2401,22 +3024,22 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 </div>
               </div>
 
-              {/* Stats Row */}
-              <div className="grid grid-cols-4 divide-x divide-gray-100">
-                <div className="px-4 py-4 text-center">
-                  <div className="text-lg font-bold text-gray-900">{selectedJob.salary || 'N/A'}</div>
-                  <div className="text-xs text-gray-500">Salary</div>
+              {/* Stats 2x2 Grid */}
+              <div className="grid grid-cols-2 border-t border-gray-100">
+                <div className="px-4 py-3 text-center border-r border-b border-gray-100 overflow-hidden">
+                  <div className="text-xs font-semibold text-gray-900 leading-snug truncate" title={selectedJob.salary || 'N/A'}>{selectedJob.salary || 'N/A'}</div>
+                  <div className="text-[11px] text-gray-400 mt-1">Salary</div>
                 </div>
-                <div className="px-4 py-4 text-center">
-                  <div className="text-lg font-bold text-gray-900">{selectedJob.scheduleType || 'N/A'}</div>
-                  <div className="text-xs text-gray-500">Type</div>
+                <div className="px-4 py-3 text-center border-b border-gray-100 overflow-hidden">
+                  <div className="text-xs font-semibold text-gray-900 leading-snug truncate">{selectedJob.scheduleType || 'N/A'}</div>
+                  <div className="text-[11px] text-gray-400 mt-1">Type</div>
                 </div>
-                <div className="px-4 py-4 text-center">
-                  <div className="text-lg font-bold text-gray-900">{selectedJob.via?.replace('via ', '') || 'Direct'}</div>
-                  <div className="text-xs text-gray-500">Source</div>
+                <div className="px-4 py-3 text-center border-r border-gray-100 overflow-hidden">
+                  <div className="text-xs font-semibold text-gray-900 leading-snug truncate" title={selectedJob.via?.replace('via ', '') || 'Direct'}>{selectedJob.via?.replace('via ', '') || 'Direct'}</div>
+                  <div className="text-[11px] text-gray-400 mt-1">Source</div>
                 </div>
-                <div className="px-4 py-4 text-center">
-                  <div className="text-lg font-bold text-gray-900">{(() => {
+                <div className="px-4 py-3 text-center">
+                  <div className="text-xs font-semibold text-gray-900 leading-snug line-clamp-1">{(() => {
                     const ts = selectedJob.postedTimestamp || selectedJob.firstSeen;
                     if (!ts) return selectedJob.postedAt || 'Recent';
                     try {
@@ -2432,7 +3055,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                       return `${Math.floor(days / 30)} mo ago`;
                     } catch { return selectedJob.postedAt || 'Recent'; }
                   })()}</div>
-                  <div className="text-xs text-gray-500">Posted</div>
+                  <div className="text-[11px] text-gray-400 mt-1">Posted</div>
                 </div>
               </div>
             </div>
@@ -2446,6 +3069,36 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
               <div className="text-sm text-gray-700 leading-relaxed">
                 {(() => {
                   const desc = selectedJob.description || 'No description available.';
+                  
+                  // Check if description contains HTML tags (Gemini cleaned)
+                  const hasHtml = /<(h[1-6]|p|ul|ol|li|strong|em|br|div|span)\b/i.test(desc);
+                  
+                  if (hasHtml) {
+                    // Render as formatted HTML
+                    return (
+                      <div 
+                        className="job-description-html prose prose-sm max-w-none
+                          [&>h2]:text-base [&>h2]:font-bold [&>h2]:tracking-wide [&>h2]:mt-6 [&>h2]:mb-2
+                          [&>h3]:text-[15px] [&>h3]:font-semibold [&>h3]:mt-5 [&>h3]:mb-2
+                          [&>p]:text-gray-600 [&>p]:mb-2 [&>p]:leading-relaxed
+                          [&>ul]:space-y-1 [&>ul]:my-3 [&>ul]:ml-4 [&>ul]:list-disc
+                          [&>ol]:space-y-1 [&>ol]:my-3 [&>ol]:ml-4 [&>ol]:list-decimal
+                          [&_li]:text-gray-600 [&_li]:leading-relaxed
+                          [&_strong]:text-gray-800 [&_strong]:font-semibold
+                          [&_em]:italic [&_em]:text-gray-500"
+                        style={{ '--tw-prose-headings': brandTheme.colors.primary } as any}
+                        dangerouslySetInnerHTML={{ __html: desc.replace(/<h([2-6])([^>]*)>(.*?)<\/h\1>/gi, (_m: string, tag: string, attrs: string, inner: string) => {
+                          // Convert ALL CAPS headings to Title Case
+                          const converted = inner.toUpperCase() === inner
+                            ? inner.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+                            : inner;
+                          return `<h${tag}${attrs}>${converted}</h${tag}>`;
+                        }) }}
+                      />
+                    );
+                  }
+                  
+                  // Fallback: plain text processing (for non-Gemini cleaned descriptions)
                   // Split by newlines and process
                   const lines = desc.split('\n');
                   const elements: React.ReactNode[] = [];
@@ -2491,7 +3144,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                     
                     if (isHeading) {
                       elements.push(
-                        <h3 key={`heading-${idx}`} className="font-semibold text-gray-900 mt-5 mb-2 text-[13px] uppercase tracking-wide" style={{ color: brandTheme.colors.primary }}>
+                        <h3 key={`heading-${idx}`} className="font-bold text-gray-900 mt-6 mb-2 text-base tracking-wide" style={{ color: brandTheme.colors.primary }}>
                           {trimmed}
                         </h3>
                       );
@@ -2548,7 +3201,7 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                       flushBullets();
                       const isHeading = (trimmed.endsWith(':') && trimmed.length < 80) || (trimmed.length < 60 && !trimmed.includes('.') && idx > 0 && !lines[idx - 1]?.trim());
                       if (isHeading) {
-                        elements.push(<h3 key={`qh-${idx}`} className="font-semibold text-gray-900 mt-5 mb-2 text-[13px] uppercase tracking-wide" style={{ color: brandTheme.colors.primary }}>{trimmed}</h3>);
+                        elements.push(<h3 key={`qh-${idx}`} className="font-bold text-gray-900 mt-6 mb-2 text-base tracking-wide" style={{ color: brandTheme.colors.primary }}>{trimmed}</h3>);
                       } else {
                         elements.push(<p key={`qp-${idx}`} className="text-gray-600 mb-2 leading-relaxed">{trimmed}</p>);
                       }
@@ -2569,15 +3222,24 @@ const Learning: React.FC<LearningProps> = ({ brandTheme, currentUser, selectedCo
                 </h2>
                 {selectedJob.highlights.map((highlight: any, idx: number) => (
                   <div key={idx} className="mb-4">
-                    {highlight.title && (
-                      <h3 className="text-sm font-semibold text-gray-800 mb-2">{highlight.title}</h3>
-                    )}
-                    {highlight.items && (
-                      <ul className="list-disc list-inside space-y-1">
-                        {highlight.items.map((item: string, i: number) => (
-                          <li key={i} className="text-sm text-gray-600">{item}</li>
-                        ))}
-                      </ul>
+                    {typeof highlight === 'string' ? (
+                      <div className="flex items-start gap-2">
+                        <span className="mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: brandTheme.colors.primary }}></span>
+                        <span className="text-sm text-gray-600">{highlight}</span>
+                      </div>
+                    ) : (
+                      <>
+                        {highlight.title && (
+                          <h3 className="text-sm font-semibold text-gray-800 mb-2">{highlight.title}</h3>
+                        )}
+                        {highlight.items && (
+                          <ul className="list-disc list-inside space-y-1">
+                            {highlight.items.map((item: string, i: number) => (
+                              <li key={i} className="text-sm text-gray-600">{item}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
                     )}
                   </div>
                 ))}

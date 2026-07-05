@@ -39,6 +39,7 @@ import {
   orderBy, 
   limit,
   startAfter,
+  documentId,
   serverTimestamp,
   increment,
   arrayUnion,
@@ -243,6 +244,12 @@ export interface LeaderboardStudent {
   lowestScore: number;
   rank: number;
   lastExamDate?: Date;
+  docId?: string;
+  subjectStats?: Record<string, {
+    totalExams: number;
+    totalMarks: number;
+    totalMaxMarks: number;
+  }>;
 }
 
 
@@ -409,29 +416,6 @@ export interface ExamAttendanceData {
   }>;
 }
 
-interface ExamPerformanceMetrics {
-  totalSubmissions: number;
-  averageScore: number;
-  highestScore: number;
-  lowestScore: number;
-  passRate: number;
-  passCount: number;
-  failCount: number;
-  distribution: {
-    excellent: number;
-    good: number;
-    average: number;
-    poor: number;
-  };
-}
-
-interface ExamViolationStats {
-  totalViolations: number;
-  studentsWithViolations: number;
-  cleanExams: number;
-  averageViolationsPerStudent: number;
-} 
-
 interface AIEvaluationFeedback {
   // Core evaluation
   suggestedMarks: number;
@@ -525,7 +509,7 @@ export interface StudentExamAttempt {
   manualReviewRequired: boolean;
   evaluationStatus: EvaluationStatus;
   pendingEvaluations: number;
-  responses: StudentQuestionResponse[];
+  responses?: StudentQuestionResponse[];
   violations?: any[];
   violationCount?: number;  // ✅ ADDED: Total count of violations
   activities?: any[];
@@ -1000,14 +984,12 @@ export interface ExamModel {
   totalStudents?: number;
   questionPaperImages?: string[];
   questionsList?: Question[];
-  completionPolicy?: 'strict' | 'flexible'; 
+  completionPolicy?: 'strict' | 'flexible' | 'window';
+  attemptWindowDays?: number; 
   // Question Pool for random selection
   questionPool?: Question[]; // Array of questions for random selection
   pickRandomCount?: number; // Number of questions to randomly pick per student
   poolQuestionMarks?: number; // Marks per question in the pool
-  // Storage reference for large question lists
-  questionsStoragePath?: string; // Path to questions JSON in Storage
-  questionsStorageUrl?: string; // Download URL for questions JSON
   collegeId: string;
   collegeName: string;
   createdAt: Date;
@@ -1424,6 +1406,29 @@ class FirebaseService {
     }
   }
 /**
+ * ✅ HELPER: Read responses from sub-collection (with fallback to main doc for backward compat)
+ */
+async getAttemptResponses(attemptId: string): Promise<any[]> {
+  if (!this.isInitialized() || !this.firestore) return [];
+  try {
+    const responsesDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAM_ATTEMPTS, attemptId, 'attemptResponses', 'main'));
+    return responsesDoc.exists() ? (responsesDoc.data()?.responses || []) : [];
+  } catch (error) {
+    console.error('❌ Error reading attempt responses:', error);
+    return [];
+  }
+}
+
+/**
+ * ✅ HELPER: Write responses to sub-collection
+ */
+async saveAttemptResponses(attemptId: string, responses: any[]): Promise<void> {
+  if (!this.isInitialized() || !this.firestore) return;
+  const responsesRef = doc(this.firestore, COLLECTIONS.EXAM_ATTEMPTS, attemptId, 'attemptResponses', 'main');
+  await setDoc(responsesRef, { responses }, { merge: true });
+}
+
+/**
  * Start a new exam attempt for a student
  * 🔥 RACE CONDITION FIX: Uses in-memory lock to prevent duplicate creation
  */
@@ -1620,9 +1625,6 @@ private async _createAttemptInternal(
     
     pendingEvaluations: 0,
     
-    // Responses
-    responses: [],
-    
     // Proctoring
     activities: [], // Start empty - activities will be logged explicitly
     deviceInfo,
@@ -1633,6 +1635,8 @@ private async _createAttemptInternal(
   };
 
   await setDoc(doc(this.firestore, COLLECTIONS.EXAM_ATTEMPTS, attemptId), attempt);
+  // ✅ Initialize responses sub-collection
+  await this.saveAttemptResponses(attemptId, []);
   
   // console.log('✅ Exam attempt started:', attemptId);
   return attempt;
@@ -1736,7 +1740,10 @@ async getActiveAttempt(examId: string, studentId: string): Promise<StudentExamAt
   const snapshot = await getDocs(q);
   if (snapshot.empty) return null;
 
-  return snapshot.docs[0].data() as StudentExamAttempt;
+  const attempt = snapshot.docs[0].data() as StudentExamAttempt;
+  // ✅ FIX: Load responses from sub-collection (same as getAnyAttempt)
+  attempt.responses = await this.getAttemptResponses(snapshot.docs[0].id);
+  return attempt;
 }
 
 /**
@@ -1757,7 +1764,10 @@ async getAnyAttempt(examId: string, studentId: string): Promise<StudentExamAttem
   const snapshot = await getDocs(q);
   if (snapshot.empty) return null;
 
-  return snapshot.docs[0].data() as StudentExamAttempt;
+  const attempt = snapshot.docs[0].data() as StudentExamAttempt;
+  // ✅ Load responses from sub-collection
+  attempt.responses = await this.getAttemptResponses(snapshot.docs[0].id);
+  return attempt;
 }
 
 /**
@@ -2517,6 +2527,8 @@ async submitAnswer(
     }
 
     const attempt = attemptDoc.data() as StudentExamAttempt;
+    // ✅ Load responses from sub-collection
+    attempt.responses = await this.getAttemptResponses(attemptId);
     
     // 🔥 CRITICAL: Find existing response by questionId (unique), NOT questionNo
     const existingIndex = attempt.responses.findIndex((r: any) => r.questionId === questionId);
@@ -2698,11 +2710,12 @@ async submitAnswer(
       if (!answerChanged) {
         // Still update Firebase with revisitCount and timeSpent
         const updateData = deepCleanObject({
-          responses: attempt.responses,
           updatedAt: now
         });
         
         await updateDoc(attemptRef, updateData);
+        // ✅ Save responses to sub-collection
+        await this.saveAttemptResponses(attemptId, attempt.responses);
         
         // console.log(`⏭️ Q${questionNo} answer unchanged but visit counted (revisitCount: ${(response as any).revisitCount})`);
         return { 
@@ -2788,13 +2801,24 @@ async submitAnswer(
     // Update attempt document - use deep cleaning utility
     attempt.updatedAt = now;
     
-    // ✅ FIX: Include violations and violationSummary in update (NEW CODE)
-     const updateData = deepCleanObject({
-      responses: attempt.responses,
-      updatedAt: now
+    // ✅ Compute answeredCount for live progress tracking (stored on main doc)
+    const answeredCount = attempt.responses.filter((r: any) => {
+      if (r.isAnswered === true) return true;
+      if (r.studentAnswer) {
+        if (typeof r.studentAnswer === 'string' && r.studentAnswer.trim().length > 0) return true;
+        if (Array.isArray(r.studentAnswer) && r.studentAnswer.length > 0) return true;
+      }
+      return false;
+    }).length;
+
+    const updateData = deepCleanObject({
+      updatedAt: now,
+      answeredCount,
     });
     
     await updateDoc(attemptRef, updateData);
+    // ✅ Save responses to sub-collection
+    await this.saveAttemptResponses(attemptId, attempt.responses);
 
     // ✅ Evaluation happens server-side when exam is submitted via Cloud Function
     // console.log(`✅ Answer saved for Q${questionNo} - will be graded server-side on exam submission`);
@@ -2833,6 +2857,8 @@ private async updateResponseStatus(
   if (!attemptDoc.exists()) return;
 
   const attempt = attemptDoc.data() as StudentExamAttempt;
+  // ✅ Load responses from sub-collection
+  attempt.responses = await this.getAttemptResponses(attemptId);
   // Try questionId first, fallback to questionNo for backward compatibility
   const responseIndex = attempt.responses.findIndex((r: any) => r.questionNo === questionNo);
   
@@ -2844,11 +2870,12 @@ private async updateResponseStatus(
   }
 
   const updateData = deepCleanObject({
-    responses: attempt.responses,
     updatedAt: new Date()
   });
 
   await updateDoc(attemptRef, updateData);
+  // ✅ Save responses to sub-collection
+  await this.saveAttemptResponses(attemptId, attempt.responses);
 }
 
 /**
@@ -2869,6 +2896,8 @@ private async updateResponseRetryStatus(
   if (!attemptDoc.exists()) return;
 
   const attempt = attemptDoc.data() as StudentExamAttempt;
+  // ✅ Load responses from sub-collection
+  attempt.responses = await this.getAttemptResponses(attemptId);
   const responseIndex = attempt.responses.findIndex(r => r.questionNo === questionNo);
   
   if (responseIndex === -1) return;
@@ -2879,11 +2908,12 @@ private async updateResponseRetryStatus(
   attempt.responses[responseIndex].evaluationStatus = EVALUATION_STATUS.PENDING;
 
   const updateData = deepCleanObject({
-    responses: attempt.responses,
     updatedAt: new Date()
   });
 
   await updateDoc(attemptRef, updateData);
+  // ✅ Save responses to sub-collection
+  await this.saveAttemptResponses(attemptId, attempt.responses);
   // console.log(`✅ Updated retry status for Q${questionNo}: retry ${retries}, next attempt scheduled`);
 }
 
@@ -2910,6 +2940,8 @@ private async updateResponseWithEvaluation(
   if (!attemptDoc.exists()) return;
 
   const attempt = attemptDoc.data() as StudentExamAttempt;
+  // ✅ Load responses from sub-collection
+  attempt.responses = await this.getAttemptResponses(attemptId);
   const responseIndex = attempt.responses.findIndex(r => r.questionNo === questionNo);
   
   if (responseIndex === -1) return;
@@ -2933,11 +2965,12 @@ private async updateResponseWithEvaluation(
   }
 
   const updateData = deepCleanObject({
-    responses: attempt.responses,
     updatedAt: new Date()
   });
 
   await updateDoc(attemptRef, updateData);
+  // ✅ Save responses to sub-collection
+  await this.saveAttemptResponses(attemptId, attempt.responses);
 }
 
 // ==================== QUESTION TYPE EVALUATORS ====================
@@ -2970,6 +3003,8 @@ async submitExam(
     }
 
     const attempt = attemptDoc.data() as StudentExamAttempt;
+    // ✅ Load responses from sub-collection
+    attempt.responses = await this.getAttemptResponses(attemptId);
     const now = new Date();
 
     const startTime = attempt.startTime instanceof Date 
@@ -3078,6 +3113,8 @@ async addViolation(
   if (!attemptDoc.exists()) return;
 
   const attempt = attemptDoc.data() as StudentExamAttempt;
+  // ✅ Load responses from sub-collection
+  attempt.responses = await this.getAttemptResponses(attemptId);
   
   // 🔥 Safety net: Check total violation count before adding more
   const totalExistingViolations = attempt.responses.reduce(
@@ -3178,11 +3215,16 @@ async addViolation(
   // ✅ Violations are stored at question level only
   // console.log(`✅ Violation stored at question level for Q${violation.questionNo}`);
 
-  // Update Firebase with responses only
+  // Update Firebase - metadata + violationCount on main doc for live monitoring
+  const totalViolations = attempt.responses.reduce(
+    (sum: number, r: any) => sum + (r.violations?.length || 0), 0
+  );
   await updateDoc(attemptRef, {
-    responses: attempt.responses,  // ✅ Updated responses (includes violation at question level)
     updatedAt: new Date(),
+    violationCount: totalViolations,
   });
+  // ✅ Save responses to sub-collection
+  await this.saveAttemptResponses(attemptId, attempt.responses);
   
   
   // console.log('✅ Violation synced to Firebase:', violation.type, `(Q${violation.questionNo})`);
@@ -3218,6 +3260,8 @@ async createPlaceholderResponse(
     }
 
     const attempt = attemptDoc.data() as StudentExamAttempt;
+    // ✅ Load responses from sub-collection
+    attempt.responses = await this.getAttemptResponses(attemptId);
     
     // Check if response already exists — find by questionId (unique)
     const existingResponse = attempt.responses.find((r: any) => r.questionId === questionId);
@@ -3291,9 +3335,10 @@ async createPlaceholderResponse(
 
     // Update Firebase
     await updateDoc(attemptRef, {
-      responses: attempt.responses,
       updatedAt: now
     });
+    // ✅ Save responses to sub-collection
+    await this.saveAttemptResponses(attemptId, attempt.responses);
 
     // console.log(`✅ Placeholder created for Q${questionNo} (viewed but not answered)`);
     
@@ -3327,6 +3372,8 @@ async overrideMarks(
     }
 
     const attempt = attemptDoc.data() as StudentExamAttempt;
+    // ✅ Load responses from sub-collection
+    attempt.responses = await this.getAttemptResponses(attemptId);
     const responseIndex = attempt.responses.findIndex(r => r.questionNo === questionNo);
     
     if (responseIndex === -1) {
@@ -3356,7 +3403,6 @@ async overrideMarks(
 
     // Update response
     const updateData = deepCleanObject({
-      responses: attempt.responses,
       updatedAt: new Date(),
     });
 
@@ -3372,6 +3418,8 @@ async overrideMarks(
       maxMarks,
       percentage
     });
+    // ✅ Save responses to sub-collection
+    await this.saveAttemptResponses(attemptId, attempt.responses);
 
     // console.log(`✅ Marks overridden by ${teacherName} for Q${questionNo}: ${newMarks}/${response.maxMarks}`);
     // console.log(`✅ Total score recalculated: ${totalMarks}/${maxMarks} (${percentage}%)`);
@@ -3408,6 +3456,8 @@ async retriggerEvaluation(
     }
 
     const attempt = attemptDoc.data() as StudentExamAttempt;
+    // ✅ Load responses from sub-collection
+    attempt.responses = await this.getAttemptResponses(attemptId);
     const response = attempt.responses.find(r => r.questionNo === questionNo);
     
     if (!response) {
@@ -3431,11 +3481,12 @@ async retriggerEvaluation(
     response.lastEvaluationAttempt = new Date();
 
     const updateData = deepCleanObject({
-      responses: attempt.responses,
       updatedAt: new Date()
     });
 
     await updateDoc(attemptRef, updateData);
+    // ✅ Save responses to sub-collection
+    await this.saveAttemptResponses(attemptId, attempt.responses);
 
     // ✅ Individual question re-evaluation removed - call Cloud Function to re-grade entire attempt
     // console.log(`🔄 Triggering server-side re-evaluation for entire attempt ${attemptId}...`);
@@ -3544,7 +3595,10 @@ async getStudentAttempt(attemptId: string): Promise<StudentExamAttempt | null> {
   
   if (!attemptDoc.exists()) return null;
   
-  return attemptDoc.data() as StudentExamAttempt;
+  const attempt = attemptDoc.data() as StudentExamAttempt;
+  // ✅ Load responses from sub-collection
+  attempt.responses = await this.getAttemptResponses(attemptId);
+  return attempt;
 }
 
 /**
@@ -3563,7 +3617,7 @@ async getExamAttempts(examId: string): Promise<StudentExamAttempt[]> {
   return snapshot.docs.map(doc => {
     const data = doc.data();
     
-    // ✅ violationCount — global (most complete, includes violations on unanswered questions)
+    // ✅ violationCount — from top-level fields (set by gradeAttempt and addViolation)
     let violationCount = 0;
     if (typeof data.violationCount === 'number') {
       violationCount = data.violationCount;
@@ -3571,10 +3625,6 @@ async getExamAttempts(examId: string): Promise<StudentExamAttempt[]> {
       violationCount = data.violationSummary.total;
     } else if (data.violations && Array.isArray(data.violations)) {
       violationCount = data.violations.length;
-    } else if (data.responses && Array.isArray(data.responses)) {
-      violationCount = data.responses.reduce((total: number, response: any) => {
-        return total + (response.violations?.length || 0);
-      }, 0);
     }
 
     // ✅ timeSpent — from startTime → submitTime (matches StudentExamDetail)
@@ -3620,10 +3670,6 @@ async getExamAttemptById(attemptId: string): Promise<any | null> {
       violationCount = data.violationSummary.total;
     } else if (data.violations && Array.isArray(data.violations)) {
       violationCount = data.violations.length;
-    } else if (data.responses && Array.isArray(data.responses)) {
-      violationCount = data.responses.reduce((total: number, response: any) => {
-        return total + (response.violations?.length || 0);
-      }, 0);
     }
     
     // Calculate timeSpent
@@ -3640,7 +3686,7 @@ async getExamAttemptById(attemptId: string): Promise<any | null> {
       if (start > 0 && end > start) timeSpent = Math.floor((end - start) / 1000);
     }
     
-    return { ...data, attemptId: attemptDoc.id, violationCount, timeSpent };
+    return { ...data, attemptId: attemptDoc.id, violationCount, timeSpent, responses: await this.getAttemptResponses(attemptId) };
   } catch (error) {
     console.error('❌ Error fetching attempt by ID:', error);
     return null;
@@ -4068,6 +4114,64 @@ async getLeaderboard(
 }
 
 /**
+ * Get ALL leaderboard data directly from Firestore (no Cloud Function)
+ * Fast for up to 10K students — single query, no pagination needed
+ * Client-side filtering/sorting after fetch
+ */
+async getLeaderboardDirect(
+  collegeId: string,
+  filterClass?: string,
+): Promise<{
+  students: LeaderboardStudent[];
+  totalCount: number;
+}> {
+  try {
+    let q = query(
+      collection(this.firestore!, 'leaderboardStats'),
+      where('collegeId', '==', collegeId),
+    );
+
+    if (filterClass && filterClass !== 'all') {
+      q = query(q, where('class', '==', filterClass));
+    }
+
+    q = query(q, orderBy('averagePercentage', 'desc'));
+
+    const snapshot = await getDocs(q);
+
+    const students: LeaderboardStudent[] = snapshot.docs.map((docSnap, index) => {
+      const d = docSnap.data();
+      return {
+        userId: d.studentId,
+        userName: d.userName,
+        rollNumber: d.rollNumber,
+        collegeId: d.collegeId,
+        class: d.class,
+        board: d.board,
+        academicYear: d.academicYear,
+        totalExams: d.totalExams,
+        totalMarks: d.totalMarks,
+        totalMaxMarks: d.totalMaxMarks,
+        averagePercentage: d.averagePercentage,
+        highestScore: d.highestScore || 0,
+        lowestScore: d.lowestScore || 0,
+        rank: index + 1,
+        docId: docSnap.id,
+        subjectStats: d.subjectStats || {},
+      };
+    });
+
+    return {
+      students,
+      totalCount: students.length,
+    };
+  } catch (error) {
+    console.error('Error fetching leaderboard direct:', error);
+    return { students: [], totalCount: 0 };
+  }
+}
+
+/**
  * Get paginated leaderboard using Cloud Function
  * Reads from pre-computed leaderboardStats collection
  */
@@ -4293,17 +4397,14 @@ async generateClassAnalytics(examId: string, classId: string): Promise<ExamClass
 
   // Violations summary - calculate from question-level data
   let totalViolations = 0;
-  let criticalViolations = 0;
   let studentsWithViolations = 0;
 
   for (const attempt of classAttempts) {
-    // ✅ Calculate violations from responses (question-level)
-    const attemptViolations = attempt.responses?.flatMap(r => r.violations || []) || [];
-    totalViolations += attemptViolations.length;
-    criticalViolations += attemptViolations.filter(v => 
-      v.severity === 'critical' || v.severity === 'high'
-    ).length;
-    if (attemptViolations.length > 0) studentsWithViolations++;
+    // ✅ Use top-level violationCount (set by gradeAttempt and addViolation)
+    const attemptViolationCount = (attempt as any).violationCount || 0;
+    totalViolations += attemptViolationCount;
+    // Note: criticalViolations detail not available without sub-collection read, use estimate
+    if (attemptViolationCount > 0) studentsWithViolations++;
   }
 
   const analytics: ExamClassAnalytics = {
@@ -4465,7 +4566,7 @@ private calculateStatistics(numbers: number[]): {
       }
       
     } catch (error) {
-      console.error('❌ Error fetching GEO API key:', error);
+      // Silently fall back to free API - students may not have permission to read settings
       return null;
     }
   }
@@ -6903,129 +7004,6 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   /**
    * Upload exam questions to Firebase Storage
    * @param examId - Exam ID to use in storage path
-   * @param questions - Questions array to upload
-   * @returns Storage path and download URL
-   */
-  private async uploadQuestionsToStorage(
-    examId: string,
-    questions: Question[]
-  ): Promise<{ path: string; url: string } | null> {
-    try {
-      if (!this.storage) {
-        throw new Error('Firebase Storage not initialized');
-      }
-
-      // console.log(`📄 Starting upload for ${questions.length} questions...`);
-      
-      // Use same path pattern as mobile app: question_papers/{examId}/
-      const storagePath = `question_papers/${examId}/questions.json`;
-      const storageRef = ref(this.storage, storagePath);
-      
-      // console.log(`📍 Upload path: ${storagePath}`);
-
-      // Convert questions to JSON blob
-      const questionsJson = JSON.stringify(questions);
-      const blob = new Blob([questionsJson], { type: 'application/json' });
-      
-      // console.log(`📦 Data size: ${(blob.size / 1024).toFixed(2)} KB`);
-      // console.log(`📤 Uploading to Firebase Storage...`);
-
-      // Upload to Storage with metadata like mobile app
-      const metadata = {
-        contentType: 'application/json',
-        customMetadata: {
-          examId: examId,
-          questionCount: questions.length.toString(),
-          uploadedBy: this.getCurrentUser()?.uid || 'unknown',
-          uploadedAt: new Date().toISOString(),
-          type: 'questions'
-        }
-      };
-      
-      await uploadBytes(storageRef, blob, metadata);
-      // console.log(`✅ Upload complete`);
-
-      // Get download URL
-      const downloadUrl = await getDownloadURL(storageRef);
-      // console.log(`✅ Download URL obtained`);
-      // console.log(`✅ URL: ${downloadUrl}`);
-
-      return { path: storagePath, url: downloadUrl };
-    } catch (error) {
-      console.error('❌ Error uploading questions to Storage:', error);
-      console.error('❌ Error details:', JSON.stringify(error, null, 2));
-      return null;
-    }
-  }
-
-  /**
-   * Fetch exam questions from Firebase Storage
-   * @param url - Download URL of questions JSON
-   * @returns Questions array
-   */
-  // @ts-ignore - Unused method preserved for potential future use
-  private async fetchQuestionsFromStorage(url: string): Promise<Question[] | null> {
-    try {
-      // console.log(`📥 Fetching questions from Storage: ${url}`);
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch: ${response.statusText}`);
-      }
-
-      const questions = await response.json();
-      // console.log(`✅ Questions fetched successfully from Storage (${questions.length} questions)`);
-      return questions;
-    } catch (error) {
-      console.error('❌ Error fetching questions from Storage:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Check if exam data exceeds Firestore size limit
-   * @param data - Data to check
-   * @returns true if data is too large
-   */
-  /* private isDataTooLarge(data: any): boolean {
-    try {
-      // Check if questionsList exists and has items
-      if (!data.questionsList || !Array.isArray(data.questionsList) || data.questionsList.length === 0) {
-        return false;
-      }
-
-      // Serialize the data to JSON (similar to what Firestore does)
-      const jsonString = JSON.stringify(data);
-      const sizeInBytes = new Blob([jsonString]).size;
-      
-      // Use a very conservative threshold: 500KB instead of 900KB
-      // Firestore limit is 1MB (1048576 bytes), but we use 500KB to be safe
-      // because Firestore adds metadata and indexes
-      const threshold = 500 * 1024; // 500KB
-      
-      // console.log(`📏 Data size check: ${Math.round(sizeInBytes / 1024)}KB (threshold: ${Math.round(threshold / 1024)}KB)`);
-      
-      if (sizeInBytes > threshold) {
-        // console.warn(`⚠️ Data size (${Math.round(sizeInBytes / 1024)}KB) exceeds threshold (${Math.round(threshold / 1024)}KB)`);
-        // console.warn(`⚠️ Number of questions: ${data.questionsList.length}`);
-        return true;
-      }
-      
-      // Also check based on number of questions as a safety
-      // If more than 30 questions, automatically use Storage
-      if (data.questionsList.length > 30) {
-        // console.warn(`⚠️ Question count (${data.questionsList.length}) exceeds safe limit (30)`);
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      console.error('Error checking data size:', error);
-      // If we can't check the size, assume it's too large to be safe
-      return true;
-    }
-  } */
-  
   /**
    * Create exam
    */
@@ -7053,49 +7031,21 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         updatedAt: serverTimestamp()
       };
       
-      // CRITICAL: Check if questions list exists and force Storage
-      // We use VERY conservative thresholds to avoid ANY Firestore size errors
+      // ✅ SUB-COLLECTION: Extract questions to write to sub-collection
+      const questionsForSubCollection: any = {};
+      
       if (dataToSave.questionsList && Array.isArray(dataToSave.questionsList)) {
-        const questionCount = dataToSave.questionsList.length;
-        // console.log(`📊 Exam has ${questionCount} questions`);
-        
-        // Calculate actual size
-        const examSize = new Blob([JSON.stringify(dataToSave)]).size;
-        const examSizeKB = Math.round(examSize / 1024);
-        // console.log(`📏 Exam data size: ${examSizeKB}KB`);
-        
-        // ULTRA AGGRESSIVE: Force Storage for ANY of these conditions:
-        // 1. More than 20 questions (was 30)
-        // 2. Data size over 200KB (was 500KB)
-        // 3. ANY exam with questionsList array (safest option)
-        const shouldUseStorage = questionCount > 20 || examSizeKB > 200;
-        
-        if (shouldUseStorage) {
-          // console.log('📦 Questions list detected, moving to Storage for safety...');
-          // console.log(`   - Question count: ${questionCount} (threshold: 20)`);
-          // console.log(`   - Data size: ${examSizeKB}KB (threshold: 200KB)`);
-          // console.log(`   - Using Storage to avoid Firestore 1MB limit`);
-          
-          // Upload questions to Storage
-          const storageResult = await this.uploadQuestionsToStorage(
-            examId,
-            dataToSave.questionsList
-          );
-          
-          if (storageResult) {
-            // Store reference to Storage file instead of the actual questions
-            dataToSave.questionsStoragePath = storageResult.path;
-            dataToSave.questionsStorageUrl = storageResult.url;
-            // Remove questionsList from Firestore document
-            delete dataToSave.questionsList;
-            // console.log('✅ Questions moved to Storage, Firestore will store reference only');
-          } else {
-            console.error('❌ Failed to upload to Storage, will try Firestore');
-            // Don't throw error, let it try Firestore
-          }
-        } else {
-          // console.log(`   - Small exam (${questionCount} questions, ${examSizeKB}KB), using Firestore`);
-        }
+        questionsForSubCollection.questionsList = dataToSave.questionsList;
+        delete dataToSave.questionsList;
+      }
+      if (dataToSave.questionPool && Array.isArray(dataToSave.questionPool)) {
+        questionsForSubCollection.questionPool = dataToSave.questionPool;
+        delete dataToSave.questionPool;
+      }
+      if (dataToSave.likertQuestions && Array.isArray(dataToSave.likertQuestions)) {
+        dataToSave.likertQuestionCount = dataToSave.likertQuestions.length; // Keep count on parent doc
+        questionsForSubCollection.likertQuestions = dataToSave.likertQuestions;
+        delete dataToSave.likertQuestions;
       }
 
       // CRITICAL: Check if question paper images exist (OFFLINE EXAMS)
@@ -7165,41 +7115,16 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         }
       }
       
-      // Debug: Log data before cleaning
-      // console.log('📝 Data before cleaning:', {
-                // hasQuestionsList: !!dataToSave.questionsList,
-                // hasStorageRef: !!dataToSave.questionsStoragePath,
-                // totalQuestions: dataToSave.totalQuestions
-            // });
-      
       // Deep clean to remove all undefined and null values (including nested)
       const cleanedData = deepCleanObject(dataToSave);
       
-      // CRITICAL SAFETY CHECK: Verify questionsList was removed if using Storage
-      if (cleanedData.questionsStorageUrl && cleanedData.questionsList) {
-        console.error('❌ SAFETY ERROR: questionsList should have been removed!');
-        delete cleanedData.questionsList;
-        // console.log('✅ Removed questionsList as safety measure');
-      }
-      
-      // Final size check before writing to Firestore
-      const finalSize = new Blob([JSON.stringify(cleanedData)]).size;
-      // console.log(`📏 Final document size: ${Math.round(finalSize / 1024)}KB`);
-      
-      if (finalSize > 1000000) {
-        console.error(`❌ CRITICAL: Document size ${Math.round(finalSize / 1024)}KB exceeds 1MB limit!`);
-        throw new Error(`Document too large (${Math.round(finalSize / 1024)}KB). This should not happen.`);
-      }
-      
-      // Debug: Log data after cleaning
-      // console.log('✨ Data after cleaning:', {
-                // hasQuestionsList: !!cleanedData.questionsList,
-                // hasStorageRef: !!cleanedData.questionsStoragePath,
-                // totalQuestions: cleanedData.totalQuestions,
-                // sizeKB: Math.round(finalSize / 1024)
-            // });
-      
       await setDoc(examRef, cleanedData);
+      
+      // ✅ SUB-COLLECTION: Write questions to sub-collection
+      if (Object.keys(questionsForSubCollection).length > 0) {
+        const questionsRef = doc(this.firestore, COLLECTIONS.EXAMS, examId, 'examQuestions', 'main');
+        await setDoc(questionsRef, deepCleanObject(questionsForSubCollection));
+      }
       
       // console.log('✅ Exam created successfully:', examId);
       
@@ -7258,7 +7183,6 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         questionsCount: examData.questionsList?.length || 0,
         hasQuestionPool: !!examData.questionPool,
         questionsHidden: examData.questionsHidden || false,
-        questionsStorageUrl: !!examData.questionsStorageUrl,
       });
       
       if (examData.questionsList && examData.questionsList.length > 0) {
@@ -7358,9 +7282,8 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         constraints.push(where('year', '==', academicYear));
       }
       
-      // Add ordering and limit
+      // Add ordering — no limit needed, parent docs are lightweight (~1.5KB each)
       constraints.push(orderBy('createdAt', 'desc'));
-      constraints.push(limit(500));
       
       // console.log('🔍 [FIREBASE_SERVICE] Executing query with', constraints.length, 'constraints');
       const examsQuery = query(
@@ -7426,74 +7349,39 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         updatedAt: serverTimestamp()
       };
       
-      // CRITICAL: Check if questions list exists and force Storage
+      // ✅ SUB-COLLECTION: Extract questions to write to sub-collection
+      const questionsForSubCollection: any = {};
+      let hasQuestionUpdates = false;
+      
       if (dataToUpdate.questionsList && Array.isArray(dataToUpdate.questionsList)) {
-        const questionCount = dataToUpdate.questionsList.length;
-        // console.log(`📊 Update has ${questionCount} questions`);
-        
-        // Calculate actual size
-        const updateSize = new Blob([JSON.stringify(dataToUpdate)]).size;
-        const updateSizeKB = Math.round(updateSize / 1024);
-        // console.log(`📏 Update data size: ${updateSizeKB}KB`);
-        
-        // ULTRA AGGRESSIVE: Force Storage for ANY of these conditions:
-        const shouldUseStorage = questionCount > 20 || updateSizeKB > 200;
-        
-        if (shouldUseStorage) {
-          // console.log('📦 Questions list detected, moving to Storage...');
-          // console.log(`   - Question count: ${questionCount} (threshold: 20)`);
-          // console.log(`   - Data size: ${updateSizeKB}KB (threshold: 200KB)`);
-          
-          // Upload questions to Storage
-          const storageResult = await this.uploadQuestionsToStorage(
-            examId,
-            dataToUpdate.questionsList
-          );
-          
-          if (storageResult) {
-            // Store reference to Storage file instead of the actual questions
-            dataToUpdate.questionsStoragePath = storageResult.path;
-            dataToUpdate.questionsStorageUrl = storageResult.url;
-            // Remove questionsList from Firestore document
-            delete dataToUpdate.questionsList;
-            // console.log('✅ Questions moved to Storage, Firestore will store reference only');
-          } else {
-            console.error('❌ Failed to upload to Storage');
-          }
-        } else {
-          // console.log(`   - Small update (${questionCount} questions, ${updateSizeKB}KB), using Firestore`);
-        }
+        questionsForSubCollection.questionsList = dataToUpdate.questionsList;
+        delete dataToUpdate.questionsList;
+        hasQuestionUpdates = true;
+      }
+      if (dataToUpdate.questionPool && Array.isArray(dataToUpdate.questionPool)) {
+        questionsForSubCollection.questionPool = dataToUpdate.questionPool;
+        delete dataToUpdate.questionPool;
+        hasQuestionUpdates = true;
+      }
+      if (dataToUpdate.likertQuestions && Array.isArray(dataToUpdate.likertQuestions)) {
+        dataToUpdate.likertQuestionCount = dataToUpdate.likertQuestions.length;
+        questionsForSubCollection.likertQuestions = dataToUpdate.likertQuestions;
+        delete dataToUpdate.likertQuestions;
+        hasQuestionUpdates = true;
       }
       
       // Deep clean to remove all undefined/null values
       const cleanUpdates = deepCleanObject(dataToUpdate);
       
-      // CRITICAL SAFETY CHECK: Verify questionsList was removed if using Storage
-      if (cleanUpdates.questionsStorageUrl && cleanUpdates.questionsList) {
-        console.error('❌ SAFETY ERROR: questionsList should have been removed!');
-        delete cleanUpdates.questionsList;
-        // console.log('✅ Removed questionsList as safety measure');
-      }
-      
-      // Final size check
-      const finalSize = new Blob([JSON.stringify(cleanUpdates)]).size;
-      // console.log(`📏 Final update size: ${Math.round(finalSize / 1024)}KB`);
-      
-      if (finalSize > 1000000) {
-        console.error(`❌ CRITICAL: Update size ${Math.round(finalSize / 1024)}KB exceeds 1MB limit!`);
-        throw new Error(`Update too large (${Math.round(finalSize / 1024)}KB). This should not happen.`);
-      }
-      
-      // console.log('  - Clean updates keys:', Object.keys(cleanUpdates));
-      if (cleanUpdates.questionsList) {
-        // console.log('  - Cleaned questionsList length:', cleanUpdates.questionsList.length);
-      } else if (cleanUpdates.questionsStoragePath) {
-        // console.log('  - Questions stored in Storage:', cleanUpdates.questionsStoragePath);
-      }
-      
+      // Update parent exam doc (metadata only)
       await updateDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId), cleanUpdates);
       
-      // console.log('✅ FIREBASE: Exam updated successfully');
+      // ✅ SUB-COLLECTION: Write question updates to sub-collection
+      if (hasQuestionUpdates) {
+        const questionsRef = doc(this.firestore, COLLECTIONS.EXAMS, examId, 'examQuestions', 'main');
+        // Use setDoc with merge to only update provided fields
+        await setDoc(questionsRef, deepCleanObject(questionsForSubCollection), { merge: true });
+      }
       
       // Log activity (non-blocking - won't affect exam update)
       try {
@@ -7506,26 +7394,11 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
           details: JSON.stringify({
             title: cleanUpdates.title || updates.title,
             changedFields: Object.keys(cleanUpdates).filter(k => k !== 'updatedAt'),
-            hasQuestionsList: !!cleanUpdates.questionsList,
-            hasStorageRef: !!cleanUpdates.questionsStorageUrl
           })
         });
       } catch (logError) {
         // console.warn('⚠️ Failed to log exam update (non-critical):', logError);
       }
-      
-      // Verify the update by fetching the document
-      const verifyDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId));
-      if (verifyDoc.exists()) {
-        const verifyData = verifyDoc.data();
-        // console.log('  ✅ VERIFICATION: Document refetched after update');
-        // console.log('    • questionsList count:', verifyData?.questionsList?.length || 0);
-        // console.log('    • questionsStorageUrl exists:', !!verifyData?.questionsStorageUrl);
-        if (verifyData?.questionsList && verifyData.questionsList.length > 0) {
-          // console.log('    • First question title:', verifyData.questionsList[0].title || verifyData.questionsList[0].questionText);
-        }
-      }
-      // console.log('');
       
       return true;
       
@@ -7548,27 +7421,16 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
         return false;
       }
       
-      // First, check if exam has questions in Storage
+      // First, get exam data for audit trail
       const examDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId));
-      if (examDoc.exists()) {
-        const examData = examDoc.data();
-        
-        // If questions are stored in Storage, delete them
-        if (examData.questionsStoragePath) {
-          try {
-            // console.log('🗑️ Deleting questions from Storage:', examData.questionsStoragePath);
-            const storageRef = ref(this.storage!, examData.questionsStoragePath);
-            await deleteObject(storageRef);
-            // console.log('✅ Questions deleted from Storage');
-          } catch (storageError) {
-            // console.warn('⚠️ Failed to delete questions from Storage:', storageError);
-            // Continue with Firestore deletion even if Storage deletion fails
-          }
-        }
-      }
-      
-      // Get exam data before deletion for audit trail
       const examData = examDoc.exists() ? examDoc.data() : null;
+      
+      // ✅ SUB-COLLECTION: Delete questions sub-collection
+      try {
+        await deleteDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId, 'examQuestions', 'main'));
+      } catch (subColError) {
+        // console.warn('⚠️ Failed to delete questions sub-collection:', subColError);
+      }
       
       // ✅ Clean up exam_enrollments for this exam (non-blocking errors)
       try {
@@ -7878,13 +7740,20 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   }
 
   /**
-   * Get count of students enrolled in an exam
+   * Get exam students — client-side Firestore query (no cloud function).
+   * Query 1: Fast paginated list from examAttempts, ordered by percentage desc.
+   * Supports cursor pagination, search, and present/absent tab filtering.
    */
-  /**
-   * Get exam students with server-side pagination and search.
-   * Calls the getExamStudentsPaginated Cloud Function.
-   * Handles: browsing (paginated), search (name/roll/email), tabs (all/present/absent)
-   */
+
+  // Cache for cursor pagination: examId -> { lastDocs, allStudentsList for search }
+  private _studentListCache: Map<string, {
+    allStudents: any[];        // Full sorted list (fetched once per exam for search/filter)
+    totalPresent: number;
+    totalAbsent: number;
+    totalAll: number;
+    fetchedAt: number;
+  }> = new Map();
+
   async getExamStudentsPaginated(
     examId: string,
     options: {
@@ -7909,38 +7778,212 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       totalAbsent: number;
     };
   }> {
+    if (!this.firestore) throw new Error('Firestore not initialized');
+    const { page = 1, pageSize = 20, filter = 'all', searchQuery = '' } = options;
+    const search = (searchQuery || '').trim().toLowerCase();
+
     try {
-      const { page = 1, pageSize = 20, filter = 'all', searchQuery = '' } = options;
+      // Check cache (valid for 30 seconds)
+      let cached = this._studentListCache.get(examId);
+      const now = Date.now();
+      if (cached && (now - cached.fetchedAt) > 30000) {
+        cached = undefined;
+        this._studentListCache.delete(examId);
+      }
 
-      // console.log('📊 [FIREBASE_SERVICE] getExamStudentsPaginated:', { examId, page, pageSize, filter, searchQuery });
+      if (!cached) {
+        // ── Fetch all attempts (lightweight main docs, no responses) ──
+        const attemptsQuery = query(
+          collection(this.firestore, COLLECTIONS.EXAM_ATTEMPTS),
+          where('examId', '==', examId),
+          orderBy('percentage', 'desc')
+        );
+        const attemptsSnap = await getDocs(attemptsQuery);
 
-      const functions = getFunctions();
-      const fn = httpsCallable(functions, 'getExamStudentsPaginated');
-      const result = await fn({ examId, page, pageSize, filter, searchQuery });
-      const data = result.data as any;
+        // Deduplicate by studentId (keep latest by startTime)
+        const attemptsByStudent = new Map<string, any>();
+        const toMs = (t: any) => {
+          if (!t) return 0;
+          if (t.toDate) return t.toDate().getTime();
+          if (typeof t === 'number') return t;
+          return new Date(t).getTime();
+        };
 
-      // console.log('✅ [FIREBASE_SERVICE] getExamStudentsPaginated result:', {
-                // present: data?.present?.length || 0,
-                // absent: data?.absent?.length || 0,
-                // page: data?.pagination?.page,
-                // totalPages: data?.pagination?.totalPages,
-                // hasMore: data?.pagination?.hasMore,
-            // });
+        attemptsSnap.docs.forEach(d => {
+          const data = d.data();
+          const sid = data.studentId;
+          if (!sid) return;
+          const existing = attemptsByStudent.get(sid);
+          if (!existing || toMs(data.startTime) > toMs(existing.startTime)) {
+            attemptsByStudent.set(sid, { ...data, attemptId: d.id });
+          }
+        });
+
+        // ── Fetch enrollment count + attendance for absent list ──
+        const [enrollSnap, attendanceSnap] = await Promise.all([
+          getDocs(query(
+            collection(this.firestore, COLLECTIONS.EXAM_ENROLLMENTS),
+            where('examId', '==', examId),
+            where('status', '==', 'active')
+          )),
+          getDocs(query(
+            collection(this.firestore, COLLECTIONS.ATTENDANCE),
+            where('examId', '==', examId)
+          ))
+        ]);
+
+        // Build present student IDs from attendance + attempts
+        const presentStudentIds = new Set<string>();
+        attendanceSnap.docs.forEach(d => {
+          const rec = d.data();
+          const sid = rec.studentId || rec.userId;
+          if (sid && rec.status === 'present') presentStudentIds.add(sid);
+        });
+        attemptsByStudent.forEach((_v, sid) => presentStudentIds.add(sid));
+
+        // Build present students (sorted by percentage desc — already ordered from query)
+        const presentStudents: any[] = [];
+        const processedIds = new Set<string>();
+
+        // First: students with attempts (already sorted by percentage desc)
+        attemptsByStudent.forEach((attemptData, sid) => {
+          processedIds.add(sid);
+          const { responses, violations, ...lightData } = attemptData;
+
+          // Compute timeSpent from startTime→submitTime
+          let timeSpent = 0;
+          if (attemptData.startTime && attemptData.submitTime) {
+            const start = toMs(attemptData.startTime);
+            const end = toMs(attemptData.submitTime);
+            if (start > 0 && end > start) timeSpent = Math.floor((end - start) / 1000);
+          }
+          if (timeSpent === 0) timeSpent = attemptData.timeSpent || 0;
+
+          presentStudents.push({
+            studentId: sid,
+            studentName: attemptData.studentName || 'Unknown',
+            studentEmail: attemptData.studentEmail || '',
+            rollNumber: attemptData.rollNumber || '',
+            hasAttempt: true,
+            isPresent: true,
+            attemptData: {
+              ...lightData,
+              violationCount: attemptData.violationCount || attemptData.violationSummary?.total || 0,
+              timeSpent,
+            }
+          });
+        });
+
+        // Then: present in attendance but no attempt
+        attendanceSnap.docs.forEach(d => {
+          const rec = d.data();
+          const sid = rec.studentId || rec.userId;
+          if (sid && rec.status === 'present' && !processedIds.has(sid)) {
+            processedIds.add(sid);
+            presentStudents.push({
+              studentId: sid,
+              studentName: rec.studentName || 'Unknown',
+              studentEmail: rec.studentEmail || '',
+              rollNumber: rec.studentRollNumber || '',
+              hasAttempt: false,
+              isPresent: true,
+              attemptData: null
+            });
+          }
+        });
+
+        // Build absent students (enrolled but not present)
+        const absentStudents: any[] = [];
+        enrollSnap.docs.forEach(d => {
+          const data = d.data();
+          const sid = data.studentId;
+          if (sid && !processedIds.has(sid)) {
+            processedIds.add(sid);
+            absentStudents.push({
+              studentId: sid,
+              studentName: data.studentName || 'Unknown',
+              studentEmail: data.studentEmail || '',
+              rollNumber: data.studentRoll || data.rollNumber || '',
+              hasAttempt: false,
+              isPresent: false,
+              attemptData: null
+            });
+          }
+        });
+
+        // Merge: present first (with attempts sorted by % desc, then without), then absent
+        const allStudents = [...presentStudents, ...absentStudents];
+
+        cached = {
+          allStudents,
+          totalPresent: presentStudents.length,
+          totalAbsent: absentStudents.length,
+          totalAll: presentStudents.length + absentStudents.length,
+          fetchedAt: now,
+        };
+        this._studentListCache.set(examId, cached);
+      }
+
+      // ── Apply filter ──
+      let filtered = cached.allStudents;
+      if (filter === 'present') {
+        filtered = filtered.filter(s => s.isPresent);
+      } else if (filter === 'absent') {
+        filtered = filtered.filter(s => !s.isPresent);
+      }
+
+      // ── Apply search ──
+      if (search) {
+        filtered = filtered.filter(s => {
+          const name = (s.studentName || '').toLowerCase();
+          const roll = String(s.rollNumber || '').toLowerCase();
+          const email = (s.studentEmail || '').toLowerCase();
+          return name.includes(search) || roll.includes(search) || email.includes(search);
+        });
+      }
+
+      // ── Paginate ──
+      const totalFiltered = filtered.length;
+      const totalPages = Math.ceil(totalFiltered / pageSize);
+      const startIndex = (page - 1) * pageSize;
+      const pageStudents = filtered.slice(startIndex, startIndex + pageSize);
+
+      const presentOnPage = pageStudents.filter(s => s.isPresent).map(({ isPresent, ...rest }: any) => rest);
+      const absentOnPage = pageStudents.filter(s => !s.isPresent).map(({ isPresent, ...rest }: any) => rest);
 
       return {
-        present: data?.present || [],
-        absent: data?.absent || [],
-        pagination: data?.pagination || { page: 1, pageSize, totalFiltered: 0, totalPages: 0, hasMore: false },
-        counts: data?.counts || { totalAll: 0, totalPresent: 0, totalAbsent: 0 },
+        present: presentOnPage,
+        absent: absentOnPage,
+        pagination: {
+          page,
+          pageSize,
+          totalFiltered,
+          totalPages,
+          hasMore: page < totalPages,
+        },
+        counts: {
+          totalAll: cached.totalAll,
+          totalPresent: cached.totalPresent,
+          totalAbsent: cached.totalAbsent,
+        },
       };
     } catch (error) {
       console.error('❌ [FIREBASE_SERVICE] Error in getExamStudentsPaginated:', error);
       return {
         present: [],
         absent: [],
-        pagination: { page: 1, pageSize: 20, totalFiltered: 0, totalPages: 0, hasMore: false },
+        pagination: { page: 1, pageSize, totalFiltered: 0, totalPages: 0, hasMore: false },
         counts: { totalAll: 0, totalPresent: 0, totalAbsent: 0 },
       };
+    }
+  }
+
+  /** Clear student list cache (call when switching exams) */
+  clearStudentListCache(examId?: string) {
+    if (examId) {
+      this._studentListCache.delete(examId);
+    } else {
+      this._studentListCache.clear();
     }
   }
 
@@ -8170,12 +8213,30 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       return false;
     }
   }
+  // ── LiveStats client-side cache ──
+  private _liveStatsCache: {
+    examId: string;
+    attemptsMap: Map<string, any>;
+    attemptCountMap: Map<string, number>;
+    presentRecords: any[];
+    enrolledStudentIds: Set<string>;
+    connectivityMap: Map<string, { disconnections: number; duration: number }>;
+    totalEnrolled: number;
+    examData: any;
+    fetchedAt: number;
+  } | null = null;
+
+  /**
+   * Get live exam stats — client-side Firestore queries.
+   * Initial call fetches all data. Subsequent calls can be summary-only or page-only.
+   */
   async getLiveExamStats(
     examId: string,
-    collegeId: string,
+    _collegeId: string,
     page: number = 1,
     pageSize: number = 20,
-    filter: 'present' | 'absent' = 'present'
+    filter: 'present' | 'absent' = 'present',
+    options: { summaryOnly?: boolean; forceRefresh?: boolean; search?: string } = {}
   ): Promise<{
     summary: {
       presentCount: number;
@@ -8206,10 +8267,400 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
       hasMore: boolean;
     };
   }> {
-    const functions = getFunctions();
-    const fn = httpsCallable(functions, 'getLiveExamStats');
-    const result = await fn({ examId, collegeId, page, pageSize, filter });
-    return result.data as any;
+    if (!this.firestore) throw new Error('Firestore not initialized');
+
+    const { summaryOnly = false, forceRefresh = false, search = '' } = options;
+    const now = new Date();
+
+    // ── Check cache (valid for 10 seconds unless force refresh) ──
+    let cached = this._liveStatsCache;
+    if (cached && cached.examId === examId && !forceRefresh && (Date.now() - cached.fetchedAt) < 10000) {
+      // Use cached data — skip re-fetching
+    } else {
+      // ── Parallel fetch: exam, enrollments, attendance, attempts, connectivity ──
+      const [examDoc, enrollSnap, attendanceSnap, attemptsSnap, connectSnap] = await Promise.all([
+        getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId)),
+        getDocs(query(
+          collection(this.firestore, COLLECTIONS.EXAM_ENROLLMENTS),
+          where('examId', '==', examId),
+          where('status', '==', 'active')
+        )),
+        getDocs(query(
+          collection(this.firestore, COLLECTIONS.ATTENDANCE),
+          where('examId', '==', examId)
+        )),
+        getDocs(query(
+          collection(this.firestore, COLLECTIONS.EXAM_ATTEMPTS),
+          where('examId', '==', examId)
+        )),
+        getDocs(query(
+          collection(this.firestore, COLLECTIONS.INTERNET_STATUS),
+          where('examId', '==', examId)
+        )).catch(() => ({ docs: [] } as any))
+      ]);
+
+      if (!examDoc.exists()) throw new Error('Exam not found');
+      const examData = examDoc.data();
+
+      // Enrollments
+      const enrolledStudentIds = new Set<string>();
+      enrollSnap.docs.forEach((d: any) => enrolledStudentIds.add(d.data().studentId));
+
+      // Attendance
+      const presentRecords: any[] = [];
+      attendanceSnap.docs.forEach((d: any) => {
+        const rec = d.data();
+        const sid = rec.studentId || rec.userId;
+        if (rec.status === 'present' && (enrolledStudentIds.size === 0 || enrolledStudentIds.has(sid))) {
+          presentRecords.push(rec);
+        }
+      });
+
+      // Attempts — dedupe by studentId
+      const attemptsMap = new Map<string, any>();
+      const attemptCountMap = new Map<string, number>();
+      const toMs = (t: any) => {
+        if (!t) return 0;
+        if (t.toDate) return t.toDate().getTime();
+        if (typeof t === 'number') return t;
+        return new Date(t).getTime();
+      };
+
+      attemptsSnap.docs.forEach((d: any) => {
+        const attempt = { ...d.data(), attemptId: d.id };
+        const sid = attempt.studentId;
+        attemptCountMap.set(sid, (attemptCountMap.get(sid) || 0) + 1);
+        const existing = attemptsMap.get(sid);
+        if (!existing || toMs(attempt.startTime) > toMs(existing.startTime)) {
+          attemptsMap.set(sid, attempt);
+        }
+      });
+
+      // If no attendance but attempts exist, treat them as present
+      if (presentRecords.length === 0 && attemptsMap.size > 0) {
+        attemptsMap.forEach((attempt, sid) => {
+          if (enrolledStudentIds.size === 0 || enrolledStudentIds.has(sid)) {
+            presentRecords.push({
+              studentId: sid,
+              userId: sid,
+              status: 'present',
+              studentName: attempt.studentName || attempt.fullName || '',
+              studentRollNumber: attempt.rollNumber || attempt.studentRoll || '',
+              markedAt: attempt.startTime,
+            });
+          }
+        });
+      }
+
+      // Connectivity
+      const connectivityMap = new Map<string, { disconnections: number; duration: number }>();
+      connectSnap.docs.forEach((d: any) => {
+        const rec = d.data();
+        const uid = rec.userId;
+        const existing = connectivityMap.get(uid) || { disconnections: 0, duration: 0 };
+        existing.disconnections += 1;
+        existing.duration += (rec.internetUnavailableDuration || 0);
+        connectivityMap.set(uid, existing);
+      });
+
+      cached = {
+        examId,
+        attemptsMap,
+        attemptCountMap,
+        presentRecords,
+        enrolledStudentIds,
+        connectivityMap,
+        totalEnrolled: enrollSnap.size,
+        examData,
+        fetchedAt: Date.now(),
+      };
+      this._liveStatsCache = cached;
+    }
+
+    // ── Compute exam timing ──
+    const examData = cached.examData;
+    const totalQuestions = examData.totalQuestions || 0;
+    const durationMinutes = parseInt(examData.duration) || 0;
+
+    let examStartTime: Date | null = null;
+    let examEndTime: Date | null = null;
+    if (examData.examDate) {
+      const examDate = examData.examDate?.toDate ? examData.examDate.toDate() : new Date(examData.examDate);
+      examStartTime = new Date(examDate);
+      if (examData.examTime) {
+        const [hours, minutes] = examData.examTime.split(':').map(Number);
+        examStartTime.setHours(hours, minutes, 0, 0);
+      }
+      examEndTime = new Date(examStartTime.getTime() + durationMinutes * 60 * 1000);
+    }
+
+    let examStatus: 'not_started' | 'in_progress' | 'ended' = 'not_started';
+    if (examStartTime && examEndTime) {
+      if (now < examStartTime) examStatus = 'not_started';
+      else if (now > examEndTime) examStatus = 'ended';
+      else examStatus = 'in_progress';
+    }
+
+    let progressPercent = 0;
+    let elapsedMinutes = 0;
+    let remainingMinutes = durationMinutes;
+    if (examStartTime && examEndTime) {
+      const totalMs = examEndTime.getTime() - examStartTime.getTime();
+      const elapsedMs = Math.max(0, now.getTime() - examStartTime.getTime());
+      progressPercent = Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100));
+      elapsedMinutes = Math.floor(elapsedMs / 60000);
+      remainingMinutes = Math.max(0, Math.floor((totalMs - elapsedMs) / 60000));
+    }
+
+    // ── Compute summary stats ──
+    const presentCount = cached.presentRecords.length;
+    const absentCount = Math.max(0, cached.totalEnrolled - presentCount);
+    let submittedCount = 0;
+    let totalProgress = 0;
+    let totalViolations = 0;
+    const violationStudentIds = new Set<string>();
+
+    for (const rec of cached.presentRecords) {
+      const sid = rec.studentId || rec.userId;
+      const attempt = cached.attemptsMap.get(sid);
+      if (!attempt) continue;
+
+      if (attempt.status === 'submitted' || attempt.status === 'auto_submitted') {
+        submittedCount++;
+      }
+
+      const answered = attempt.answeredCount ?? attempt.attemptedQuestions ?? 0;
+      const pct = totalQuestions > 0 ? (answered / totalQuestions) * 100 : 0;
+      totalProgress += pct;
+
+      const vc = attempt.violationCount || 0;
+      if (vc > 0) {
+        totalViolations += vc;
+        violationStudentIds.add(sid);
+      }
+    }
+
+    const avgProgress = presentCount > 0 ? Math.round(totalProgress / presentCount) : 0;
+
+    let totalDisconnectionSeconds = 0;
+    let totalDisconnectionTimes = 0;
+    cached.connectivityMap.forEach(v => {
+      totalDisconnectionSeconds += v.duration;
+      totalDisconnectionTimes += v.disconnections;
+    });
+
+    const summary = {
+      presentCount,
+      absentCount,
+      totalEnrolled: cached.totalEnrolled,
+      attendancePercent: cached.totalEnrolled > 0 ? Math.round((presentCount / cached.totalEnrolled) * 100) : 0,
+      examStatus,
+      submittedCount,
+      avgProgress,
+      totalViolations,
+      violationStudentCount: violationStudentIds.size,
+      totalDisconnectionMinutes: Math.round(totalDisconnectionSeconds / 60),
+      totalDisconnectionTimes,
+      affectedUsersPercent: presentCount > 0 ? Math.round((cached.connectivityMap.size / presentCount) * 100) : 0,
+      progressPercent: Math.round(progressPercent),
+      elapsedMinutes,
+      remainingMinutes,
+      mode: examData.mode || 'online',
+      totalQuestions,
+      durationMinutes,
+    };
+
+    // ── Summary-only mode: return empty students ──
+    if (summaryOnly) {
+      return {
+        summary,
+        students: [],
+        pagination: { page, pageSize, totalStudents: presentCount, totalPages: Math.ceil(presentCount / pageSize), hasMore: false },
+      };
+    }
+
+    // ── Sort and paginate ──
+    const statusOrder: Record<string, number> = { 'submitted': 0, 'auto_submitted': 0, 'in_progress': 1, 'expired': 2 };
+    const sortedRecords = [...cached.presentRecords].sort((a, b) => {
+      const aAttempt = cached!.attemptsMap.get(a.studentId || a.userId);
+      const bAttempt = cached!.attemptsMap.get(b.studentId || b.userId);
+      const aOrder = statusOrder[aAttempt?.status] ?? 3;
+      const bOrder = statusOrder[bAttempt?.status] ?? 3;
+      return aOrder - bOrder;
+    });
+
+    let recordsToPage: any[];
+    let totalForFilter: number;
+
+    if (filter === 'absent') {
+      const presentStudentIds = new Set(cached.presentRecords.map((r: any) => r.studentId || r.userId));
+      const absentStudentIds: string[] = [];
+      cached.enrolledStudentIds.forEach(sid => {
+        if (!presentStudentIds.has(sid)) {
+          absentStudentIds.push(sid);
+        }
+      });
+
+      // Fetch user profiles for absent students
+      const userDocs = await Promise.all(
+        absentStudentIds.map(sid => getDoc(doc(this.firestore!, 'users', sid)))
+      );
+
+      recordsToPage = absentStudentIds.map((sid, i) => {
+        const userData = userDocs[i].exists() ? userDocs[i].data() : null;
+        return {
+          studentId: sid,
+          studentName: userData?.fullName || userData?.name || userData?.displayName || 'Unknown',
+          studentRollNumber: userData?.studentRoll || userData?.rollNumber || 'N/A',
+          email: userData?.email || '',
+        };
+      });
+      // Sort by name
+      recordsToPage.sort((a: any, b: any) => (a.studentName || '').localeCompare(b.studentName || ''));
+      totalForFilter = absentCount;
+    } else {
+      recordsToPage = sortedRecords;
+      totalForFilter = presentCount;
+    }
+
+    // ── Search filter across ALL records (not just current page) ──
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      recordsToPage = recordsToPage.filter((rec: any) => {
+        const sid = rec.studentId || rec.userId;
+        const attempt = cached!.attemptsMap.get(sid);
+        const name = (rec.studentName || rec.fullName || attempt?.studentName || attempt?.fullName || '').toLowerCase();
+        const roll = (rec.studentRollNumber || rec.studentRoll || rec.rollNumber || attempt?.rollNumber || attempt?.studentRoll || '').toLowerCase();
+        const email = (rec.email || '').toLowerCase();
+        return name.includes(q) || roll.includes(q) || email.includes(q);
+      });
+      totalForFilter = recordsToPage.length;
+    }
+
+    const startIndex = (page - 1) * pageSize;
+    const pageRecords = recordsToPage.slice(startIndex, startIndex + pageSize);
+    const totalPages = Math.ceil(totalForFilter / pageSize);
+
+    // ── Helper functions ──
+    const toDateSafe = (val: any): Date | null => {
+      if (!val) return null;
+      if (val.toDate) return val.toDate();
+      if (val.seconds) return new Date(val.seconds * 1000 + (val.nanoseconds || 0) / 1e6);
+      if (typeof val === 'number') return new Date(val > 1e12 ? val : val * 1000);
+      if (typeof val === 'string') return new Date(val);
+      return null;
+    };
+
+    const formatTime = (date: Date | null): string | null => {
+      if (!date || isNaN(date.getTime())) return null;
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
+    };
+
+    // ── Build student objects for this page ──
+    // Fetch violation details from sub-collection for this page only
+    const students = await Promise.all(pageRecords.map(async (rec: any) => {
+      const sid = rec.studentId || rec.userId;
+      const attempt = cached!.attemptsMap.get(sid);
+      const connectivity = cached!.connectivityMap.get(sid) || { disconnections: 0, duration: 0 };
+
+      const activities = attempt?.activities || [];
+      const entryActivities = activities.filter((a: any) => a.type === 'enter');
+      const entryActivity = entryActivities[0];
+      const exitActivity = [...activities].reverse().find((a: any) => a.type === 'exit');
+
+      const entryTime = toDateSafe(entryActivity?.timestamp);
+      const exitTime = toDateSafe(exitActivity?.timestamp);
+      const ipAddress = entryActivity?.ipAddress || '';
+      const uniqueIPs = new Set(entryActivities.map((a: any) => a.ipAddress).filter(Boolean));
+
+      const questionsAnswered = attempt?.answeredCount ?? attempt?.attemptedQuestions ?? 0;
+      const progressPct = totalQuestions > 0 ? Math.round((questionsAnswered / totalQuestions) * 100) : 0;
+
+      // Fetch violation details from sub-collection (only for this page of ~20 students)
+      const violations: any[] = [];
+      if (attempt?.attemptId) {
+        try {
+          const rDoc = await getDoc(doc(this.firestore!, COLLECTIONS.EXAM_ATTEMPTS, attempt.attemptId, 'attemptResponses', 'main'));
+          const studentResponses = rDoc.exists() ? (rDoc.data()?.responses || []) : [];
+          if (studentResponses.length > 0) {
+            studentResponses.forEach((r: any) => {
+              if (r.violations && Array.isArray(r.violations)) {
+                r.violations.forEach((v: any) => {
+                  let severity = v.severity || 'low';
+                  if (severity === 'moderate') severity = 'high';
+                  if (severity === 'minor') severity = 'low';
+                  violations.push({
+                    type: v.type || 'unknown',
+                    details: v.details || '',
+                    severity,
+                    timestamp: v.timestamp || null,
+                    questionNo: r.questionNo || 0,
+                  });
+                });
+              }
+            });
+          }
+        } catch { /* ignore */ }
+      }
+
+      // Status
+      let status = 'not_started';
+      if (!attempt) {
+        status = 'not_started';
+      } else if (attempt.status === 'submitted' || attempt.status === 'auto_submitted') {
+        status = 'submitted';
+      } else if (attempt.status === 'expired' || attempt.status === 'timeout') {
+        status = 'expired';
+      } else if (attempt.status === 'in_progress') {
+        status = examEndTime && now > examEndTime ? 'expired' : 'active';
+      }
+
+      // Duration
+      let duration = attempt?.timeSpent || 0;
+      if (duration === 0 && entryTime) {
+        const end = exitTime || now;
+        duration = Math.floor((end.getTime() - entryTime.getTime()) / 1000);
+      }
+
+      return {
+        userId: sid,
+        fullName: rec.studentName || rec.fullName || attempt?.studentName || attempt?.fullName || 'Unknown',
+        studentRoll: rec.studentRollNumber || rec.studentRoll || rec.rollNumber || attempt?.rollNumber || attempt?.studentRoll || 'N/A',
+        status,
+        attemptId: attempt?.attemptId || null,
+        attemptCount: cached!.attemptCountMap.get(sid) || 0,
+        questionsAnswered,
+        totalQuestions,
+        progressPercent: progressPct,
+        entryTime: formatTime(entryTime),
+        exitTime: formatTime(exitTime),
+        duration,
+        markedAt: formatTime(toDateSafe(rec.markedAt)),
+        ipAddress,
+        hasMultipleIPs: uniqueIPs.size > 1,
+        disconnections: connectivity.disconnections,
+        disconnectionDuration: connectivity.duration,
+        violations,
+        violationCount: violations.length || attempt?.violationCount || 0,
+      };
+    }));
+
+    return {
+      summary,
+      students,
+      pagination: {
+        page,
+        pageSize,
+        totalStudents: totalForFilter,
+        totalPages,
+        hasMore: page < totalPages,
+      },
+    };
+  }
+
+  /** Clear LiveStats cache (call on refresh or exam change) */
+  clearLiveStatsCache() {
+    this._liveStatsCache = null;
   }
 
   /**
@@ -10402,6 +10853,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       // Personality Assessment (Likert) fields
       personalityAssessment: data.personalityAssessment || false,
       likertQuestions: data.likertQuestions || [],
+      likertQuestionCount: data.likertQuestionCount || 0,
       likertDuration: data.likertDuration || 0,
       collegeId: data.collegeId,  // ✅ NO FALLBACK - must be present in Firestore
       collegeName: data.collegeName || '',
@@ -10502,13 +10954,15 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
       maxMarks: data.maxMarks || '0',
       totalStudents: data.totalStudents || 0,
       // Skip heavy data — will be loaded on demand via getExamFullById
+      // ✅ SUB-COLLECTION: Questions are in sub-collection, not parent doc
       questionPaperImages: [],
       questionsList: [],
       questionPool: [],
       pickRandomCount: data.pickRandomCount || 0,
       poolQuestionMarks: data.poolQuestionMarks || 0,
       personalityAssessment: data.personalityAssessment || false,
-      likertQuestions: data.likertQuestions || [],
+      likertQuestions: [],  // ✅ Now in sub-collection
+      likertQuestionCount: data.likertQuestionCount || 0,
       likertDuration: data.likertDuration || 0,
       collegeId: data.collegeId,
       collegeName: data.collegeName || '',
@@ -10523,22 +10977,28 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   }
 
   /**
-   * Fetch a single exam with FULL data (including questionsList, questionPool).
-   * Used when user selects an exam for viewing details or editing.
+   * Fetch ONLY questions from sub-collection — no parent doc read.
+   * Used when card already has metadata and we just need questions on click.
    */
-  async getExamFullById(examId: string): Promise<ExamModel | null> {
+  async getExamQuestionsOnly(examId: string): Promise<{
+    questionsList: any[];
+    questionPool: any[];
+    likertQuestions: any[];
+  }> {
+    const empty = { questionsList: [], questionPool: [], likertQuestions: [] };
     try {
-      if (!this.isInitialized() || !this.firestore) {
-        return null;
-      }
-      const examDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId));
-      if (!examDoc.exists()) {
-        return null;
-      }
-      return this.parseExamFromFirestore(examDoc);
+      if (!this.isInitialized() || !this.firestore) return empty;
+      const questionsDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId, 'examQuestions', 'main'));
+      if (!questionsDoc.exists()) return empty;
+      const data = questionsDoc.data();
+      return {
+        questionsList: data.questionsList || [],
+        questionPool: data.questionPool || [],
+        likertQuestions: data.likertQuestions || [],
+      };
     } catch (error) {
-      console.error('❌ Error fetching full exam:', error);
-      return null;
+      console.error('❌ Error fetching exam questions:', error);
+      return empty;
     }
   }
   
@@ -10608,73 +11068,23 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
    */
   async sendPasswordResetOTP(email: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (!this.isInitialized() || !this.firestore) {
-        // console.warn('⚠️ Firebase not initialized, skipping activity log');
-        return { success: false, error: 'Firebase not initialized' };// Return empty string instead of throwing error
+      // Runs fully server-side (Cloud Function, admin SDK): looks up the user,
+      // generates + stores the OTP, and emails it. No client Firestore access, so it
+      // works on the signed-out Forgot-Password screen (no permission-denied).
+      if (!this.app) {
+        return { success: false, error: 'Firebase not initialized' };
       }
-      
-      // console.log('🔍 Starting password reset for:', email);
-      
-      // Check if user exists
-      if (!this.firestore) throw new Error('Firestore not initialized');
-      const usersRef = collection(this.firestore, COLLECTIONS.USERS);
-      const q = query(usersRef, where('email', '==', email.toLowerCase()));
-      
-      // console.log('🔍 Checking if user exists...');
-      const querySnapshot = await getDocs(q);
-      
-      if (querySnapshot.empty) {
-        // console.log('❌ No user found with email:', email);
-        return {
-          success: false,
-          error: 'No account found with this email address'
-        };
-      }
-      
-      // console.log('✅ User found');
-      
-      // Generate OTP
-      const otp = this.generateOTP();
-      const expiryTime = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
-      
-      // Encode email for document ID
-      const encodedEmail = this.encodeEmailForDocId(email);
-      // console.log('🔍 Encoded email for doc ID:', encodedEmail);
-      
-      // Store OTP in Firestore
-      const otpRef = doc(this.firestore, COLLECTIONS.PASSWORD_RESET_OTPS, encodedEmail);
-      // console.log('🔍 Attempting to write to Firestore path: passwordResetOTPs/', encodedEmail);
-      
-      await setDoc(otpRef, {
-        otp: otp,
-        email: email.toLowerCase(),
-        expiresAt: expiryTime,
-        createdAt: new Date(),
-        used: false
-      });
-      
-      // console.log('✅ OTP stored successfully in Firestore');
-      
-      // Send email via API call
-      const emailSent = await this.sendOTPEmail(email, otp);
-      
-      if (!emailSent) {
-        return {
-          success: false,
-          error: 'Failed to send OTP email. Please try again.'
-        };
-      }
-      
-      // console.log('✅ OTP sent successfully');
-      return { success: true };
-      
+      const fns = getFunctions(this.app, 'us-central1');
+      const fn = httpsCallable(fns, 'sendPasswordResetOTP');
+      const res: any = await fn({ email: (email || '').toLowerCase() });
+      const out = res?.data || {};
+      if (out.success) return { success: true };
+      return { success: false, error: out.error || 'Failed to send OTP' };
     } catch (error: any) {
       console.error('❌ Send OTP error:', error);
-      console.error('Error code:', error.code);
-      console.error('Error message:', error.message);
       return {
         success: false,
-        error: error.message || 'Failed to send OTP'
+        error: error?.message || 'Failed to send OTP'
       };
     }
   }
@@ -11898,123 +12308,6 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   }
 
   /**
-   * Get exams with pagination support
-   * @param collegeId - College ID to filter exams
-   * @param academicYear - Academic year to filter
-   * @param pageSize - Number of exams to fetch per page (default: 25)
-   * @param lastDocument - Last document from previous page for pagination
-   * @returns Object containing exams array, last document, and hasMore flag
-   */
-  async getExamsPaginated(
-    collegeId?: string, 
-    academicYear?: string, 
-    pageSize: number = 25,
-    lastDocument?: DocumentSnapshot | null
-  ): Promise<{
-    exams: ExamModel[];
-    lastDoc: DocumentSnapshot | null;
-    hasMore: boolean;
-  }> {
-    // console.log('🔍 [FIREBASE_SERVICE] getExamsPaginated called with:', { 
-            // collegeId, 
-            // academicYear, 
-            // pageSize,
-            // hasLastDoc: !!lastDocument 
-        // });
-    
-    try {
-      if (!this.isInitialized() || !this.firestore) {
-        // console.warn('⚠️ Firebase not initialized');
-        return { exams: [], lastDoc: null, hasMore: false };
-      }
-      
-      // Build query constraints
-      const constraints: any[] = [];
-      
-      // Add filters first
-      if (collegeId) {
-        // console.log('🔍 [FIREBASE_SERVICE] Adding collegeId filter:', collegeId);
-        constraints.push(where('collegeId', '==', collegeId));
-      }
-      if (academicYear && academicYear !== 'all') {
-        // console.log('🔍 [FIREBASE_SERVICE] Adding academicYear filter:', academicYear);
-        constraints.push(where('year', '==', academicYear));
-      }
-      
-      // Add ordering
-      constraints.push(orderBy('createdAt', 'desc'));
-      
-      // Add pagination - start after last document if provided
-      if (lastDocument) {
-        // console.log('🔍 [FIREBASE_SERVICE] Adding startAfter pagination');
-        constraints.push(startAfter(lastDocument));
-      }
-      
-      // Add limit (fetch one extra to check if there are more)
-      constraints.push(limit(pageSize + 1));
-      
-      // console.log('🔍 [FIREBASE_SERVICE] Executing paginated query with', constraints.length, 'constraints');
-      const examsQuery = query(
-        collection(this.firestore, COLLECTIONS.EXAMS),
-        ...constraints
-      );
-      
-      // ✅ PERF: Use getDocs (leverages Firestore cache) instead of getDocsFromServer
-      const snapshot = await getDocs(examsQuery);
-      // console.log('🔍 [FIREBASE_SERVICE] Query returned', snapshot.docs.length, 'documents');
-      
-      // Check if there are more documents
-      const hasMore = snapshot.docs.length > pageSize;
-      
-      // Get the actual documents (excluding the extra one if present)
-      const docs = hasMore ? snapshot.docs.slice(0, pageSize) : snapshot.docs;
-      
-            // Parse exams — use LITE parser for list view (skip heavy questionsList parsing)
-      const parsedExams = docs.map((doc, _index) => {
-        // console.log(`🔍 [FIREBASE_SERVICE] Parsing exam ${index + 1}/${docs.length}: ${doc.id}`);
-        // ✅ PERF: Use lite parser — questions loaded on-demand via getExamFullById
-        return this.parseExamFromFirestoreLite(doc);
-      });
-      
-      // Get the last document for next pagination
-      const lastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
-      
-      // 🔥 CRITICAL DEBUG: Verify questionPool fields are in returned exams
-      // console.log('✅ [FIREBASE_SERVICE] getExamsPaginated completed:', {
-                // examsFetched: parsedExams.length,
-                // hasMore,
-                // lastDocId: lastDoc?.id
-            // });
-      
-      // Log first exam's questionPool data if available
-      if (parsedExams.length > 0) {
-        // const _firstExam = parsedExams[0];
-        // console.log('🔥🔥🔥 FIRST EXAM RETURNED BY getExamsPaginated:', {
-                    // examId: firstExam.id,
-                    // hasQuestionPool: 'questionPool' in firstExam,
-                    // questionPoolLength: Array.isArray(firstExam.questionPool) ? firstExam.questionPool.length : 'not array',
-                    // pickRandomCount: firstExam.pickRandomCount,
-                    // poolQuestionMarks: firstExam.poolQuestionMarks,
-                    // questionPoolValue: firstExam.questionPool
-                // });
-      }
-      
-      return {
-        exams: parsedExams,
-        lastDoc,
-        hasMore
-      };
-      
-    } catch (error) {
-      console.error('❌ [FIREBASE_SERVICE] Error fetching paginated exams:', error);
-      console.error('❌ [FIREBASE_SERVICE] Error details:', {
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      });
-      return { exams: [], lastDoc: null, hasMore: false };
-    }
-  }
-  /**
  * Advanced user search with filters
  * Searches users by multiple criteria
  */
@@ -13045,123 +13338,128 @@ private extractSessionData(attemptData: any): any {
 }
 
 async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
-
-  // console.log('🔥🔥🔥 getExamDashboardData CALLED with examId:', examId);
-
   if (!this.firestore) throw new Error('Firestore not initialized');
 
-  // 1. Get exam details
-  const examDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId));
-  if (!examDoc.exists()) {
-    throw new Error('Exam not found');
-  }
+  // ── Parallel fetch: exam config, all attempts, enrollment count, attendance ──
+  const [examDoc, attemptsSnap, enrollSnap, attendanceSnap] = await Promise.all([
+    getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId)),
+    getDocs(query(
+      collection(this.firestore, COLLECTIONS.EXAM_ATTEMPTS),
+      where('examId', '==', examId),
+      orderBy('percentage', 'desc')
+    )),
+    getDocs(query(
+      collection(this.firestore, COLLECTIONS.EXAM_ENROLLMENTS),
+      where('examId', '==', examId),
+      where('status', '==', 'active')
+    )),
+    getDocs(query(
+      collection(this.firestore, COLLECTIONS.ATTENDANCE),
+      where('examId', '==', examId)
+    ))
+  ]);
+
+  if (!examDoc.exists()) throw new Error('Exam not found');
   const examData = examDoc.data();
 
-  // 2. Get exam metadata
-  // const _collegeId = examData.collegeId;
-  // const _board = examData.board;
-  
-  // console.log('📚 Exam metadata:');
-  // console.log('  - College ID:', collegeId);
-  // console.log('  - Board:', board);
+  // ✅ SUB-COLLECTION: Read likertQuestions if needed
+  if (examData.personalityAssessment) {
+    try {
+      const questionsDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId, 'examQuestions', 'main'));
+      if (questionsDoc.exists()) {
+        examData.likertQuestions = questionsDoc.data()?.likertQuestions || [];
+      }
+    } catch (e) { /* Non-critical */ }
+  }
 
-  // 3. Get enrollment count for this exam
-  const totalEnrolled = await this.getExamEnrollmentCount(examId);
-  // console.log('✅ Total enrolled students:', totalEnrolled);
+  const totalEnrolled = enrollSnap.size;
 
-  // 3. Get attendance records from Attendance table  
-  const attendanceRecords = await this.getExamAttendance(examId);
+  // ── Deduplicate attempts by studentId (keep latest) ──
+  const toMs = (t: any) => {
+    if (!t) return 0;
+    if (t.toDate) return t.toDate().getTime();
+    if (typeof t === 'number') return t;
+    return new Date(t).getTime();
+  };
 
-  // console.log('✅ Found attendance records:', attendanceRecords.length);
-
-  // 4. Get all exam attempts
-  const attemptsQuery = query(
-    collection(this.firestore, COLLECTIONS.EXAM_ATTEMPTS),
-    where('examId', '==', examId),
-    orderBy('percentage', 'desc')
-  );
-
-  const attemptsSnapshot = await getDocs(attemptsQuery);
- const attempts = attemptsSnapshot.docs.map(doc => {
-    const data = doc.data() as StudentExamAttempt;
-    
-    // ✅ Always recalculate violationCount from per-response violations (matches Result.tsx display)
-    let violationCount = 0;
-    if (data.responses && Array.isArray(data.responses)) {
-      violationCount = data.responses.reduce((total: number, response: any) => {
-        return total + (Array.isArray(response.violations) ? response.violations.length : 0);
-      }, 0);
-    } else if (data.violations && Array.isArray(data.violations)) {
-      violationCount = data.violations.length;
-    }
-
-    // ✅ Calculate timeSpent from startTime → submitTime (most accurate, avoids double-counting)
-    let calculatedTimeSpent = 0;
-    if (data.startTime && data.submitTime) {
-      const start = (data.startTime as any).toDate ? (data.startTime as any).toDate().getTime() : new Date(data.startTime as any).getTime();
-      const end = (data.submitTime as any).toDate ? (data.submitTime as any).toDate().getTime() : new Date(data.submitTime as any).getTime();
-      if (end > start) calculatedTimeSpent = Math.floor((end - start) / 1000);
-    }
-    if (calculatedTimeSpent === 0) calculatedTimeSpent = data.timeSpent || 0;
-    
-    return {
-      ...data,
-      violationCount,  // ✅ Calculated from responses
-      timeSpent: calculatedTimeSpent  // ✅ Calculated from responses
-    };
-  });
-
-  // console.log('✅ Found attempts:', attempts.length);
-
-  // 5. Create a map of attempts by studentId, deduplicating by email/roll across different studentIds
-  const attemptsByStudent = new Map<string, StudentExamAttempt>();
+  const attemptsByStudent = new Map<string, any>();
   const emailToStudentId = new Map<string, string>();
   const rollToStudentId = new Map<string, string>();
 
-  attempts.forEach(attempt => {
-    const email = (attempt.studentEmail || '').trim().toLowerCase();
-    const roll = (attempt.rollNumber || '').trim().toLowerCase();
+  attemptsSnap.docs.forEach(d => {
+    const data = d.data();
+    const sid = data.studentId;
+    if (!sid) return;
 
-    // Check if we've already seen this email or roll under a different studentId
+    const email = (data.studentEmail || '').trim().toLowerCase();
+    const roll = (data.rollNumber || '').trim().toLowerCase();
+
     const existingId = (email && emailToStudentId.get(email)) || (roll && roll !== 'n/a' && rollToStudentId.get(roll));
-    
-    if (existingId && existingId !== attempt.studentId) {
-      // Keep the latest attempt (by startTime)
+
+    if (existingId && existingId !== sid) {
       const existing = attemptsByStudent.get(existingId);
-      const toMs = (t: any) => t?.toDate ? t.toDate().getTime() : new Date(t || 0).getTime();
-      if (existing && toMs(attempt.startTime) > toMs(existing.startTime)) {
+      if (existing && toMs(data.startTime) > toMs(existing.startTime)) {
         attemptsByStudent.delete(existingId);
-        attemptsByStudent.set(attempt.studentId, attempt);
-        if (email) emailToStudentId.set(email, attempt.studentId);
-        if (roll && roll !== 'n/a') rollToStudentId.set(roll, attempt.studentId);
+        attemptsByStudent.set(sid, { ...data, attemptId: d.id });
+        if (email) emailToStudentId.set(email, sid);
+        if (roll && roll !== 'n/a') rollToStudentId.set(roll, sid);
       }
-      // else keep existing, skip this one
     } else {
-      attemptsByStudent.set(attempt.studentId, attempt);
-      if (email) emailToStudentId.set(email, attempt.studentId);
-      if (roll && roll !== 'n/a') rollToStudentId.set(roll, attempt.studentId);
+      attemptsByStudent.set(sid, { ...data, attemptId: d.id });
+      if (email) emailToStudentId.set(email, sid);
+      if (roll && roll !== 'n/a') rollToStudentId.set(roll, sid);
     }
   });
 
-  // 6. Categorize students from ATTENDANCE + ATTEMPTS (no full student list needed for dashboard)
+  // ── Build present student IDs from attendance + attempts ──
+  const presentStudentIds = new Set<string>();
+  attendanceSnap.docs.forEach(d => {
+    const rec = d.data();
+    const sid = rec.studentId || rec.userId;
+    if (sid && rec.status === 'present') presentStudentIds.add(sid);
+  });
+  attemptsByStudent.forEach((_v, sid) => presentStudentIds.add(sid));
+
+  // ── Build present students list ──
   const presentStudents: DashboardStudent[] = [];
-  const absentStudents: DashboardStudent[] = [];
   const processedStudentIds = new Set<string>();
 
-  // Build present list from attendance records with status='present'
-  const presentAttendanceRecords = attendanceRecords.filter((r: any) => r.status === 'present');
+  // From attendance records
+  const presentAttendanceRecords = attendanceSnap.docs
+    .map(d => d.data())
+    .filter((r: any) => r.status === 'present');
+
   presentAttendanceRecords.forEach((record: any) => {
-    const attempt = attemptsByStudent.get(record.studentId);
-    processedStudentIds.add(record.studentId);
-    
+    const sid = record.studentId || record.userId;
+    if (!sid) return;
+    processedStudentIds.add(sid);
+    const attempt = attemptsByStudent.get(sid);
+
     if (attempt) {
       const sessionData = this.extractSessionData(attempt);
+
+      // Compute timeSpent from startTime→submitTime
+      let timeSpent = 0;
+      if (attempt.startTime && attempt.submitTime) {
+        const start = toMs(attempt.startTime);
+        const end = toMs(attempt.submitTime);
+        if (start > 0 && end > start) timeSpent = Math.floor((end - start) / 1000);
+      }
+      if (timeSpent === 0) timeSpent = attempt.timeSpent || 0;
+
+      let violationCount = 0;
+      if (typeof attempt.violationCount === 'number') {
+        violationCount = attempt.violationCount;
+      } else if (attempt.violationSummary?.total) {
+        violationCount = attempt.violationSummary.total;
+      }
+
       presentStudents.push({
-        studentId: record.studentId,
+        studentId: sid,
         studentName: record.studentName || attempt.studentName || 'Unknown',
         studentEmail: record.studentEmail || attempt.studentEmail || '',
         rollNumber: record.studentRollNumber || attempt.rollNumber || '',
-        studentPhone: (attempt as any).studentPhone || '',
+        studentPhone: attempt.studentPhone || '',
         class: attempt.class || '',
         hasAttempt: true,
         attemptData: {
@@ -13170,18 +13468,18 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
           obtainedMarks: attempt.obtainedMarks,
           maximumScore: attempt.maximumScore,
           totalScore: attempt.totalScore,
-          violationCount: (attempt as any).violationCount || 0,
-          violations: (attempt as any).violations || [],
+          violationCount,
+          violations: [],
           status: attempt.status,
           startTime: attempt.startTime,
           submitTime: attempt.submitTime,
-          timeSpent: attempt.timeSpent,
+          timeSpent,
           correctAnswers: attempt.correctAnswers,
           attemptedQuestions: attempt.attemptedQuestions,
           totalQuestions: attempt.totalQuestions,
-          studentClass: (attempt as any).studentClass || attempt.class || "",
-          studentPhone: (attempt as any).studentPhone || "",
-          studentEmail: attempt.studentEmail || "",
+          studentClass: attempt.studentClass || attempt.class || '',
+          studentPhone: attempt.studentPhone || '',
+          studentEmail: attempt.studentEmail || '',
           enterIPAddress: sessionData.enterIPAddress,
           exitIPAddress: sessionData.exitIPAddress,
           browser: sessionData.browser,
@@ -13191,17 +13489,17 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
           totalEntries: sessionData.totalEntries,
           enterCount: sessionData.enterCount,
           exitCount: sessionData.exitCount,
-          answers: (attempt as any).responses || [],
-          responses: (attempt as any).responses || [],
-          questionResponses: (attempt as any).responses || [],
-          personalityProfile: (attempt as any).personalityProfile || null,
-          personalityType: (attempt as any).personalityType || null,
-          responseStyle: (attempt as any).responseStyle || null
+          answers: [],
+          responses: [],
+          questionResponses: [],
+          personalityProfile: attempt.personalityProfile || null,
+          personalityType: attempt.personalityType || null,
+          responseStyle: attempt.responseStyle || null
         } as any
       });
     } else {
       presentStudents.push({
-        studentId: record.studentId,
+        studentId: sid,
         studentName: record.studentName || 'Unknown',
         studentEmail: record.studentEmail || '',
         rollNumber: record.studentRollNumber || '',
@@ -13211,96 +13509,93 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
     }
   });
 
-  // Add students who have attempts but aren't in attendance
-  attempts.forEach(attempt => {
-    if (!processedStudentIds.has(attempt.studentId)) {
-      processedStudentIds.add(attempt.studentId);
-      const sessionData = this.extractSessionData(attempt);
-      presentStudents.push({
-        studentId: attempt.studentId,
-        studentName: attempt.studentName || 'Unknown Student',
+  // Students with attempts but not in attendance
+  attemptsByStudent.forEach((attempt, sid) => {
+    if (processedStudentIds.has(sid)) return;
+    processedStudentIds.add(sid);
+    const sessionData = this.extractSessionData(attempt);
+
+    let timeSpent = 0;
+    if (attempt.startTime && attempt.submitTime) {
+      const start = toMs(attempt.startTime);
+      const end = toMs(attempt.submitTime);
+      if (start > 0 && end > start) timeSpent = Math.floor((end - start) / 1000);
+    }
+    if (timeSpent === 0) timeSpent = attempt.timeSpent || 0;
+
+    let violationCount = 0;
+    if (typeof attempt.violationCount === 'number') {
+      violationCount = attempt.violationCount;
+    } else if (attempt.violationSummary?.total) {
+      violationCount = attempt.violationSummary.total;
+    }
+
+    presentStudents.push({
+      studentId: sid,
+      studentName: attempt.studentName || 'Unknown Student',
+      studentEmail: attempt.studentEmail || '',
+      rollNumber: attempt.rollNumber || '',
+      studentPhone: attempt.studentPhone || '',
+      class: attempt.class || '',
+      hasAttempt: true,
+      attemptData: {
+        attemptId: attempt.attemptId,
+        percentage: attempt.percentage,
+        obtainedMarks: attempt.obtainedMarks,
+        maximumScore: attempt.maximumScore,
+        totalScore: attempt.totalScore,
+        violationCount,
+        violations: [],
+        status: attempt.status,
+        startTime: attempt.startTime,
+        submitTime: attempt.submitTime,
+        timeSpent,
+        correctAnswers: attempt.correctAnswers,
+        attemptedQuestions: attempt.attemptedQuestions,
+        totalQuestions: attempt.totalQuestions,
+        studentClass: attempt.studentClass || attempt.class || '',
+        studentPhone: attempt.studentPhone || '',
         studentEmail: attempt.studentEmail || '',
-        rollNumber: attempt.rollNumber || '',
-        studentPhone: (attempt as any).studentPhone || '',
-        class: attempt.class || '',
-        hasAttempt: true,
-        attemptData: {
-          attemptId: attempt.attemptId,
-          percentage: attempt.percentage,
-          obtainedMarks: attempt.obtainedMarks,
-          maximumScore: attempt.maximumScore,
-          totalScore: attempt.totalScore,
-          violationCount: (attempt as any).violationCount || 0,
-          violations: (attempt as any).violations || [],
-          status: attempt.status,
-          startTime: attempt.startTime,
-          submitTime: attempt.submitTime,
-          timeSpent: attempt.timeSpent,
-          correctAnswers: attempt.correctAnswers,
-          attemptedQuestions: attempt.attemptedQuestions,
-          totalQuestions: attempt.totalQuestions,
-          studentClass: (attempt as any).studentClass || attempt.class || "",
-          studentPhone: (attempt as any).studentPhone || "",
-          studentEmail: attempt.studentEmail || "",
-          enterIPAddress: sessionData.enterIPAddress,
-          exitIPAddress: sessionData.exitIPAddress,
-          browser: sessionData.browser,
-          operatingSystem: sessionData.operatingSystem,
-          deviceType: sessionData.deviceType,
-          tabSwitchCount: sessionData.tabSwitchCount,
-          totalEntries: sessionData.totalEntries,
-          enterCount: sessionData.enterCount,
-          exitCount: sessionData.exitCount,
-          answers: (attempt as any).responses || [],
-          responses: (attempt as any).responses || [],
-          questionResponses: (attempt as any).responses || [],
-          personalityProfile: (attempt as any).personalityProfile || null,
-          personalityType: (attempt as any).personalityType || null,
-          responseStyle: (attempt as any).responseStyle || null
-        } as any
+        enterIPAddress: sessionData.enterIPAddress,
+        exitIPAddress: sessionData.exitIPAddress,
+        browser: sessionData.browser,
+        operatingSystem: sessionData.operatingSystem,
+        deviceType: sessionData.deviceType,
+        tabSwitchCount: sessionData.tabSwitchCount,
+        totalEntries: sessionData.totalEntries,
+        enterCount: sessionData.enterCount,
+        exitCount: sessionData.exitCount,
+        answers: [],
+        responses: [],
+        questionResponses: [],
+        personalityProfile: attempt.personalityProfile || null,
+        personalityType: attempt.personalityType || null,
+        responseStyle: attempt.responseStyle || null
+      } as any
+    });
+  });
+
+  // ── Build absent list ──
+  const absentStudents: DashboardStudent[] = [];
+  enrollSnap.docs.forEach(d => {
+    const data = d.data();
+    const sid = data.studentId;
+    if (sid && !processedStudentIds.has(sid)) {
+      processedStudentIds.add(sid);
+      absentStudents.push({
+        studentId: sid,
+        studentName: data.studentName || 'Unknown',
+        studentEmail: data.studentEmail || '',
+        rollNumber: data.studentRoll || data.rollNumber || '',
+        class: data.class || '',
+        hasAttempt: false
       });
     }
   });
 
-  // Build absent list from enrollments NOT in present set (attendance or attempts)
-  // The Attendance table only has 'present' records — absence is implied by NOT being in it
-  try {
-    const enrollmentsRef = collection(this.firestore!, COLLECTIONS.EXAM_ENROLLMENTS);
-    const enrollmentsQuery = query(
-      enrollmentsRef,
-      where('examId', '==', examId),
-      where('status', '==', 'active')
-    );
-    const enrollmentsSnapshot = await getDocs(enrollmentsQuery);
-    
-    enrollmentsSnapshot.docs.forEach(enrollDoc => {
-      const enrollData = enrollDoc.data();
-      const studentId = enrollData.studentId;
-      if (!processedStudentIds.has(studentId)) {
-        processedStudentIds.add(studentId);
-        absentStudents.push({
-          studentId,
-          studentName: enrollData.studentName || 'Unknown',
-          studentEmail: enrollData.studentEmail || '',
-          rollNumber: enrollData.studentRoll || enrollData.rollNumber || '',
-          class: enrollData.class || '',
-          hasAttempt: false
-        });
-      }
-    });
-  } catch (enrollError) {
-    // console.warn('⚠️ Failed to fetch enrollments for absent list:', enrollError);
-  }
-  
-  // console.log(`✅ Final: ${totalEnrolled} enrolled, ${presentStudents.length} present (${presentStudents.filter(s => s.hasAttempt).length} with attempts), ${absentStudents.length} absent from attendance`);
-
-  // Calculate correct totalPresentCount and totalAbsentCount
-  // Present = attendance present + students with attempts not in attendance
   const totalPresentCount = presentStudents.length;
-  // Absent = totalEnrolled - present (matches paginated absent calculation)
   const totalAbsentCount = Math.max(0, totalEnrolled - totalPresentCount);
 
-  // 6. Return structured data
   return {
     exam: {
       examId: examData.examId,
@@ -13323,82 +13618,7 @@ async getExamDashboardData(examId: string): Promise<ExamDashboardData> {
     totalStudents: totalEnrolled,
     totalPresentCount,
     totalAbsentCount,
-    attempts
-  };
-}
-
-/**
- * Get exam performance metrics
- * Calculates all performance statistics
- */
-async getExamPerformanceMetrics(examId: string): Promise<ExamPerformanceMetrics> {
-  const dashboardData = await this.getExamDashboardData(examId);
-  const submittedStudents = dashboardData.presentStudents.filter(s => s.hasAttempt && s.attemptData);
-
-  if (submittedStudents.length === 0) {
-    return {
-      totalSubmissions: 0,
-      averageScore: 0,
-      highestScore: 0,
-      lowestScore: 0,
-      passRate: 0,
-      passCount: 0,
-      failCount: 0,
-      distribution: {
-        excellent: 0,
-        good: 0,
-        average: 0,
-        poor: 0
-      }
-    };
-  }
-
-  const scores = submittedStudents.map(s => s.attemptData!.percentage);
-  const passingPercentage = 40; // Can be customized
-
-  const passCount = scores.filter(s => s >= passingPercentage).length;
-  const failCount = scores.filter(s => s < passingPercentage).length;
-
-  return {
-    totalSubmissions: submittedStudents.length,
-    averageScore: scores.reduce((sum, score) => sum + score, 0) / scores.length,
-    highestScore: Math.max(...scores),
-    lowestScore: Math.min(...scores),
-    passRate: Math.round((passCount / submittedStudents.length) * 100),
-    passCount,
-    failCount,
-    distribution: {
-      excellent: scores.filter(s => s >= 90).length,
-      good: scores.filter(s => s >= 75 && s < 90).length,
-      average: scores.filter(s => s >= 60 && s < 75).length,
-      poor: scores.filter(s => s < 60).length
-    }
-  };
-}
-
-/**
- * Get violation statistics for an exam
- */
-async getExamViolationStats(examId: string): Promise<ExamViolationStats> {
-  const dashboardData = await this.getExamDashboardData(examId);
-  const submittedStudents = dashboardData.presentStudents.filter(s => s.hasAttempt && s.attemptData);
-
-  const totalViolations = submittedStudents.reduce(
-    (sum, s) => sum + (s.attemptData?.violationCount || 0), 
-    0
-  );
-  
-  const studentsWithViolations = submittedStudents.filter(
-    s => (s.attemptData?.violationCount || 0) > 0
-  ).length;
-
-  return {
-    totalViolations,
-    studentsWithViolations,
-    cleanExams: submittedStudents.length - studentsWithViolations,
-    averageViolationsPerStudent: submittedStudents.length > 0 
-      ? totalViolations / submittedStudents.length 
-      : 0
+    attempts: Array.from(attemptsByStudent.values())
   };
 }
 
@@ -13513,7 +13733,7 @@ async getDetailedExamAttemptsForExport(examId: string): Promise<any[]> {
     
     // console.log('🔍 Step 3: Processing', snapshot.docs.length, 'attempts...');
     
-    const detailedAttempts = snapshot.docs.map((doc, _index) => {
+    const detailedAttempts = await Promise.all(snapshot.docs.map(async (doc, _index) => {
       // console.log(`\n📄 Processing attempt ${index + 1}/${snapshot.docs.length}`);
       // console.log('   Document ID:', doc.id);
       
@@ -13592,8 +13812,8 @@ async getDetailedExamAttemptsForExport(examId: string): Promise<any[]> {
       // console.log('   ✅ Browser:', browser);
       // console.log('   ✅ OS:', os);
       
-      // ✅ CRITICAL: Get responses/answers
-      const responses = data.responses || data.answers || [];
+      // ✅ CRITICAL: Get responses from sub-collection
+      const responses = await this.getAttemptResponses(doc.id);
       // console.log('   ✅ Responses count:', responses.length);
       
       if (responses.length > 0) {
@@ -13677,7 +13897,7 @@ async getDetailedExamAttemptsForExport(examId: string): Promise<any[]> {
       // console.log('   ✅ Attempt processed successfully');
       
       return result;
-    });
+    }));
 
     // console.log('\n✅ ========== Processing Complete ==========');
     // console.log('📊 Total attempts processed:', detailedAttempts.length);
@@ -13731,11 +13951,12 @@ async getExamWithQuestionDetails(examId: string): Promise<any> {
     
     const exam = this.parseExamFromFirestore(examDoc);
 
-    // console.log('✅ Exam fetched:', {
-            // name: exam.title,
-            // totalQuestions: exam.totalQuestions || 0,
-            // hasQuestionsInStorage: !!exam.questionsStorageUrl
-        // });
+    // ✅ SUB-COLLECTION: Read questions from sub-collection
+    const questionsDoc = await getDoc(doc(this.firestore, COLLECTIONS.EXAMS, examId, 'examQuestions', 'main'));
+    const questionsData = questionsDoc.exists() ? questionsDoc.data() as any : {};
+    exam.questionsList = questionsData.questionsList || [];
+    (exam as any).questionPool = questionsData.questionPool || [];
+    exam.likertQuestions = questionsData.likertQuestions || [];
 
     // Format questions for export
     let questionsList: any[] = [];
@@ -16036,6 +16257,7 @@ async getCoursesPaginated(options: {
   ): Promise<{ success: boolean; enrolledCount: number; errors: string[] }> {
     const errors: string[] = [];
     let enrolledCount = 0;
+    const successfulEnrollments: { userId: string; enrollmentId: string }[] = [];
 
     try {
       // console.log(`📚 Enrolling ${userIds.length} users to course: ${courseId}`);
@@ -16082,6 +16304,7 @@ async getCoursesPaginated(options: {
           };
 
           currentBatch.set(enrollmentRef, enrollmentData);
+          successfulEnrollments.push({ userId, enrollmentId: enrollmentRef.id });
           operationCount++;
           enrolledCount++;
 
@@ -16147,6 +16370,57 @@ async getCoursesPaginated(options: {
         }
       }
 
+      // Initialize studentLearningDetail and add course for each enrolled user (non-blocking)
+      if (successfulEnrollments.length > 0 && courseSlug) {
+        // Fetch course info for learning detail
+        let courseName = '';
+        let totalLectures = 0;
+        try {
+          const courseDoc = await getDoc(doc(this.firestore!, COLLECTIONS.COURSES, courseSlug));
+          if (courseDoc.exists()) {
+            const cData = courseDoc.data();
+            courseName = cData.courseName || '';
+            totalLectures = cData.totalLectures || 0;
+          }
+        } catch (e) {
+          console.warn('Could not fetch course details for learning detail:', e);
+        }
+
+        // Process each enrolled user
+        for (const enrollment of successfulEnrollments) {
+          try {
+            // Fetch user profile for name/email
+            let userName = '';
+            let userEmail = '';
+            try {
+              const userDoc = await getDoc(doc(this.firestore!, COLLECTIONS.USERS, enrollment.userId));
+              if (userDoc.exists()) {
+                const uData = userDoc.data();
+                userName = uData.fullName || uData.userName || '';
+                userEmail = uData.email || '';
+              }
+            } catch (e) { /* skip */ }
+
+            // Init studentLearningDetail doc if not exists
+            await this.initStudentLearningDetail(enrollment.userId, collegeId, {
+              userName,
+              userEmail,
+              userType: 'student',
+            });
+
+            // Add course entry to learning detail
+            await this.addCourseToLearningDetail(enrollment.userId, collegeId, {
+              courseSlug,
+              courseName,
+              enrollmentId: enrollment.enrollmentId,
+              totalLectures,
+            });
+          } catch (e) {
+            console.warn(`Failed to init learning detail for ${enrollment.userId}:`, e);
+          }
+        }
+      }
+
       // console.log(`✅ Successfully enrolled ${enrolledCount} users to course ${courseId}`);
 
       return {
@@ -16200,24 +16474,46 @@ async getCoursesPaginated(options: {
    */
   async getCourseEnrollmentCountByCollege(courseId: string, collegeId: string, courseSlug?: string): Promise<number> {
     try {
-      // console.log(`📊 Getting enrollment count for course: ${courseId}, college: ${collegeId}`);
+      // Count actual active enrollments from course_enrollments collection
+      // courseId is stored as number in course_enrollments, so try numeric first
+      const enrollmentsRef = collection(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS);
+      const numericCourseId = parseInt(courseId, 10);
       
-      // Try to get from college_courses collection
-      const slug = courseSlug || courseId;
-      const collegeCourseId = `${collegeId}_${slug}`;
-      const collegeCourseRef = doc(this.firestore!, COLLECTIONS.COLLEGE_COURSES, collegeCourseId);
-      const collegeCourseDoc = await getDoc(collegeCourseRef);
-      
-      if (collegeCourseDoc.exists()) {
-        const count = collegeCourseDoc.data().enrollmentCount || 0;
-        // console.log(`✅ Enrollment count from college_courses: ${count}`);
-        return count;
+      if (!isNaN(numericCourseId)) {
+        const q = query(
+          enrollmentsRef,
+          where('courseId', '==', numericCourseId),
+          where('collegeId', '==', collegeId),
+          where('status', '==', 'active')
+        );
+        const countSnapshot = await getCountFromServer(q);
+        const count = countSnapshot.data().count;
+        if (count > 0) return count;
       }
       
-      // console.log(`✅ No college_courses document found, returning 0`);
-      return 0;
+      // Fallback: try with string courseId
+      const q2 = query(
+        enrollmentsRef,
+        where('courseId', '==', courseId),
+        where('collegeId', '==', collegeId),
+        where('status', '==', 'active')
+      );
+      const countSnapshot2 = await getCountFromServer(q2);
+      return countSnapshot2.data().count;
     } catch (error) {
       console.error('Error getting course enrollment count:', error);
+      // Fallback to college_courses document
+      try {
+        const slug = courseSlug || courseId;
+        const collegeCourseId = `${collegeId}_${slug}`;
+        const collegeCourseRef = doc(this.firestore!, COLLECTIONS.COLLEGE_COURSES, collegeCourseId);
+        const collegeCourseDoc = await getDoc(collegeCourseRef);
+        if (collegeCourseDoc.exists()) {
+          return collegeCourseDoc.data().enrollmentCount || 0;
+        }
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+      }
       return 0;
     }
   }
@@ -16294,19 +16590,21 @@ async getCoursesPaginated(options: {
     lastDocument: DocumentSnapshot | null = null
   ): Promise<{ enrollments: any[]; lastDoc: DocumentSnapshot | null; hasMore: boolean; total: number }> {
     try {
-      // console.log(`📚 Fetching paginated enrollments for course: ${courseId}, college: ${collegeId}`);
-      
       // Get total count first
       const total = await this.getCourseEnrollmentCountByCollege(courseId, collegeId);
       
       const enrollmentsRef = collection(this.firestore!, COLLECTIONS.COURSE_ENROLLMENTS);
+      
+      // courseId is stored as number in course_enrollments, try numeric first
+      const numericCourseId = parseInt(courseId, 10);
+      const courseIdValue = !isNaN(numericCourseId) ? numericCourseId : courseId;
       
       // Build query with all filters for proper index usage
       let q;
       if (lastDocument) {
         q = query(
           enrollmentsRef,
-          where('courseId', '==', courseId),
+          where('courseId', '==', courseIdValue),
           where('collegeId', '==', collegeId),
           where('status', '==', 'active'),
           orderBy('enrolledAt', 'desc'),
@@ -16316,7 +16614,7 @@ async getCoursesPaginated(options: {
       } else {
         q = query(
           enrollmentsRef,
-          where('courseId', '==', courseId),
+          where('courseId', '==', courseIdValue),
           where('collegeId', '==', collegeId),
           where('status', '==', 'active'),
           orderBy('enrolledAt', 'desc'),
@@ -16324,7 +16622,29 @@ async getCoursesPaginated(options: {
         );
       }
       
-      const snapshot = await getDocs(q);
+      let snapshot = await getDocs(q);
+      
+      // Fallback: if no results with numeric, try string
+      if (snapshot.empty && courseIdValue !== courseId) {
+        const fallbackQ = lastDocument ? query(
+          enrollmentsRef,
+          where('courseId', '==', courseId),
+          where('collegeId', '==', collegeId),
+          where('status', '==', 'active'),
+          orderBy('enrolledAt', 'desc'),
+          startAfter(lastDocument),
+          limit(pageSize)
+        ) : query(
+          enrollmentsRef,
+          where('courseId', '==', courseId),
+          where('collegeId', '==', collegeId),
+          where('status', '==', 'active'),
+          orderBy('enrolledAt', 'desc'),
+          limit(pageSize)
+        );
+        snapshot = await getDocs(fallbackQ);
+      }
+      
       const enrollments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       const newLastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
       const hasMore = snapshot.docs.length === pageSize;
@@ -18419,6 +18739,7 @@ async getCoursesPaginated(options: {
     orderBy?: 'postedTimestamp' | 'firstSeen' | 'title' | 'company';
     orderDirection?: 'asc' | 'desc';
     startAfterDoc?: any;
+    offset?: number;
     searchQuery?: string;
   } = {}): Promise<{ jobs: any[]; totalCount: number; lastDoc: any }> {
     try {
@@ -18429,6 +18750,7 @@ async getCoursesPaginated(options: {
         orderBy: orderField = 'postedTimestamp',
         orderDirection: orderDir = 'desc',
         startAfterDoc,
+        offset: offsetCount,
         searchQuery: searchQ,
       } = options;
 
@@ -18436,7 +18758,7 @@ async getCoursesPaginated(options: {
       if (searchQ && searchQ.trim().length > 0) {
         const searchLower = searchQ.toLowerCase().trim();
 
-        const constraints: any[] = [where('status', '==', 'active')];
+        const constraints: any[] = [where('status', '==', 'active'), where('aiProcessed', '==', true)];
         if (category) constraints.push(where('category', '==', category));
         if (isRemote) constraints.push(where('isRemote', '==', true));
         constraints.push(orderBy(orderField, orderDir));
@@ -18465,7 +18787,7 @@ async getCoursesPaginated(options: {
       }
 
       // Count query
-      const countConstraints: any[] = [where('status', '==', 'active')];
+      const countConstraints: any[] = [where('status', '==', 'active'), where('aiProcessed', '==', true)];
       if (category) countConstraints.push(where('category', '==', category));
       if (isRemote) countConstraints.push(where('isRemote', '==', true));
 
@@ -18474,11 +18796,30 @@ async getCoursesPaginated(options: {
       const totalCount = countSnapshot.data().count;
 
       // Paginated query
-      const constraints: any[] = [where('status', '==', 'active')];
+      const constraints: any[] = [where('status', '==', 'active'), where('aiProcessed', '==', true)];
       if (category) constraints.push(where('category', '==', category));
       if (isRemote) constraints.push(where('isRemote', '==', true));
       constraints.push(orderBy(orderField, orderDir));
-      if (startAfterDoc) constraints.push(startAfter(startAfterDoc));
+      constraints.push(orderBy(documentId(), orderDir)); // Secondary sort for deterministic pagination
+
+      // If no cursor but offset provided (non-sequential page jump), resolve cursor by skipping
+      let resolvedCursor = startAfterDoc;
+      if (!startAfterDoc && offsetCount && offsetCount > 0) {
+        const skipConstraints: any[] = [where('status', '==', 'active'), where('aiProcessed', '==', true)];
+        if (category) skipConstraints.push(where('category', '==', category));
+        if (isRemote) skipConstraints.push(where('isRemote', '==', true));
+        skipConstraints.push(orderBy(orderField, orderDir));
+        skipConstraints.push(orderBy(documentId(), orderDir));
+        skipConstraints.push(limit(offsetCount));
+
+        const skipQ = query(collection(this.firestore!, COLLECTIONS.JOBS), ...skipConstraints);
+        const skipSnapshot = await getDocs(skipQ);
+        if (skipSnapshot.docs.length > 0) {
+          resolvedCursor = skipSnapshot.docs[skipSnapshot.docs.length - 1];
+        }
+      }
+
+      if (resolvedCursor) constraints.push(startAfter(resolvedCursor));
       constraints.push(limit(limitCount));
 
       const q = query(collection(this.firestore!, COLLECTIONS.JOBS), ...constraints);
@@ -18913,6 +19254,24 @@ async getCoursesPaginated(options: {
     } catch (error) {
       console.error('❌ Error fetching personality trait aggregation:', error);
       return { success: false, totalStudents: 0, studentCount: 0, traits: {} };
+    }
+  }
+
+  // ============================================
+  // TRIGGER JOB SCRAPER - Manual trigger from admin UI
+  // ============================================
+  async triggerJobScraper(): Promise<any> {
+    try {
+      if (!this.functions) {
+        throw new Error('Firebase Functions not initialized. Please log in first.');
+      }
+      const fn = httpsCallable(this.functions, 'triggerJobScraper');
+      const result = await fn({});
+      console.log('✅ Job scraper triggered:', result.data);
+      return result.data;
+    } catch (error) {
+      console.error('❌ Error triggering job scraper:', error);
+      throw error;
     }
   }
 } 

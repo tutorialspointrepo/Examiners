@@ -51,8 +51,8 @@ export default function AttendanceListModal({
 
   const getCacheKey = (tab: string, pg: number) => `${tab}_${pg}`;
 
-  const fetchStudents = useCallback(async (tab: 'present' | 'absent', pageNum: number, forceRefresh = false) => {
-    const key = getCacheKey(tab, pageNum);
+  const fetchStudents = useCallback(async (tab: 'present' | 'absent', pageNum: number, searchStr: string = '', forceRefresh = false) => {
+    const key = getCacheKey(tab, pageNum) + `_${searchStr}`;
     const cached = cacheRef.current.get(key);
 
     if (cached && !forceRefresh) {
@@ -65,7 +65,7 @@ export default function AttendanceListModal({
 
     setLoading(true);
     try {
-      const result = await firebaseService.getLiveExamStats(examId, collegeId, pageNum, PAGE_SIZE, tab);
+      const result = await firebaseService.getLiveExamStats(examId, collegeId, pageNum, PAGE_SIZE, tab, { search: searchStr });
       const data = {
         students: result.students || [],
         totalPages: result.pagination.totalPages,
@@ -90,7 +90,7 @@ export default function AttendanceListModal({
       setActiveTab(filter);
       setPage(1);
       setSearchQuery('');
-      fetchStudents(filter, 1);
+      fetchStudents(filter, 1, '');
     }
   }, [isOpen, filter]);
 
@@ -98,22 +98,25 @@ export default function AttendanceListModal({
     setActiveTab(tab);
     setPage(1);
     setSearchQuery('');
-    fetchStudents(tab, 1);
+    fetchStudents(tab, 1, '');
   };
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
-      fetchStudents(activeTab, newPage);
+      fetchStudents(activeTab, newPage, searchQuery);
     }
   };
 
-  // Client-side search filter on current page
-  const filteredStudents = searchQuery.trim()
-    ? students.filter(s =>
-        s.fullName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.studentRoll?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : students;
+  // Debounced search — triggers fetch across all students
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setPage(1);
+      fetchStudents(activeTab, 1, value);
+    }, 300);
+  };
 
   const totalCount = activeTab === 'present' ? presentCount : absentCount;
 
@@ -223,7 +226,7 @@ export default function AttendanceListModal({
                 type="text"
                 placeholder="Search by name or roll..."
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => handleSearchChange(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-gray-200 focus:outline-none focus:border-gray-300 bg-gray-50"
               />
             </div>
@@ -235,13 +238,41 @@ export default function AttendanceListModal({
               <div className="flex items-center justify-center py-16">
                 <Loader size={24} className="animate-spin text-gray-400" />
               </div>
-            ) : filteredStudents.length === 0 ? (
-              <div className="text-center py-16 text-gray-400 text-sm">
-                {searchQuery ? 'No matching students' : 'No students found'}
+            ) : students.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20">
+                {searchQuery ? (
+                  <>
+                    <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center mb-4">
+                      <Search size={24} className="text-gray-300" />
+                    </div>
+                    <p className="text-sm font-medium text-gray-500">No matching students</p>
+                    <p className="text-xs text-gray-400 mt-1">Try a different name or roll number</p>
+                  </>
+                ) : activeTab === 'present' ? (
+                  <>
+                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-dashed border-blue-200 flex items-center justify-center mb-4">
+                      <UserCheck size={32} className="text-blue-300" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-600">No present students</p>
+                    <p className="text-xs text-gray-400 mt-1.5 text-center max-w-[240px]">
+                      No students have been marked present for this exam yet
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 border border-dashed border-green-200 flex items-center justify-center mb-4">
+                      <div className="text-3xl">🎉</div>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-600">Perfect attendance!</p>
+                    <p className="text-xs text-gray-400 mt-1.5 text-center max-w-[240px]">
+                      All enrolled students are present — no absentees
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="space-y-1.5">
-                {filteredStudents.map((student, idx) => (
+                {students.map((student, idx) => (
                   <div
                     key={student.userId}
                     className="flex items-center gap-3 p-3 rounded-xl border border-gray-100 hover:bg-gray-50 transition-colors"
@@ -298,6 +329,22 @@ export default function AttendanceListModal({
 
                   </div>
                 ))}
+
+                {/* End of list indicator */}
+                {page === totalPages && students.length > 0 && (
+                  <div className="flex flex-col items-center justify-center py-8">
+                    <div className="relative mb-3">
+                      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="text-2xl mb-1">📭</div>
+                          <div className="w-8 h-0.5 bg-gray-300 rounded"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-700">That's everyone!</p>
+                    <p className="text-xs text-gray-400 mt-1">No more students to show</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -306,15 +353,16 @@ export default function AttendanceListModal({
           {totalPages > 1 && (
             <div className="px-4 py-2.5 border-t border-gray-100 flex items-center justify-between flex-shrink-0 bg-white">
               <span className="text-xs text-gray-400">
-                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalStudents)} of {totalStudents}
+                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalStudents)} of {totalStudents}
               </span>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => handlePageChange(page - 1)}
                   disabled={page <= 1}
-                  className="w-7 h-7 rounded-md flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                 >
-                  <ChevronLeft size={14} />
+                  <ChevronLeft size={12} />
+                  Prev
                 </button>
                 {getPageNumbers().map(p => (
                   <button
@@ -322,8 +370,8 @@ export default function AttendanceListModal({
                     onClick={() => handlePageChange(p)}
                     className={`w-7 h-7 rounded-md text-xs font-medium flex items-center justify-center transition-colors ${
                       p === page
-                        ? 'text-white'
-                        : 'text-gray-600 hover:bg-gray-100'
+                        ? 'text-white shadow-sm'
+                        : 'text-gray-600 bg-white border border-gray-200 hover:bg-gray-50'
                     }`}
                     style={p === page ? { backgroundColor: brandTheme.colors.primary } : {}}
                   >
@@ -333,9 +381,10 @@ export default function AttendanceListModal({
                 <button
                   onClick={() => handlePageChange(page + 1)}
                   disabled={page >= totalPages}
-                  className="w-7 h-7 rounded-md flex items-center justify-center text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
                 >
-                  <ChevronRight size={14} />
+                  Next
+                  <ChevronRight size={12} />
                 </button>
               </div>
             </div>

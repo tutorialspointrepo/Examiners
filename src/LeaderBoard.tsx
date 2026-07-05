@@ -11,10 +11,11 @@ import {
   faStar,
   faChartLine,
   faCrown,
-  faRankingStar
+  faRankingStar,
+  faUsers
 } from '@fortawesome/sharp-light-svg-icons';
 import { firebaseService } from './services/firebase_service';
-import { USER_TYPES } from './constants';
+// import { USER_TYPES } from './constants';
 
 // ============================================
 // STAR RATING HELPERS
@@ -98,7 +99,7 @@ function LeaderBoard({
   activeCollegeId,
   selectedYear,
   brandTheme,
-  currentUser,
+  currentUser: _currentUser,
   allYears,
   allClasses,
   allSubjects
@@ -109,13 +110,12 @@ function LeaderBoard({
   const [filterSubject, setFilterSubject] = useState<string>('all');
   
   // Data state
-  const [students, setStudents] = useState<Student[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>([]); // Full dataset from Firestore
+  const [students, setStudents] = useState<Student[]>([]); // Filtered + paginated view
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const [lastDocId, setLastDocId] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
   const PAGE_SIZE = 20;
+  const [displayCount, setDisplayCount] = useState(PAGE_SIZE); // Client-side pagination
   
   // Dropdown states
   const [showYearDropdown, setShowYearDropdown] = useState(false);
@@ -128,7 +128,7 @@ function LeaderBoard({
   const subjectDropdownRef = useRef<HTMLDivElement>(null);
   
   // Check if user is student
-  const isStudent = currentUser?.userType === USER_TYPES.STUDENT;
+  // const isStudent = currentUser?.userType === USER_TYPES.STUDENT;
 
   // Click outside handler for dropdowns
   useEffect(() => {
@@ -159,25 +159,22 @@ function LeaderBoard({
     }
   }, [selectedYear]);
 
-  // Fetch and calculate leaderboard data
+  // Fetch ALL leaderboard data directly from Firestore (one fast query)
   useEffect(() => {
     const fetchLeaderBoard = async () => {
       if (!activeCollegeId) return;
       
       setIsLoading(true);
-      setStudents([]);
-      setLastDocId(null);
-      setHasMore(false);
+      setAllStudents([]);
+      setDisplayCount(PAGE_SIZE);
       try {
-        const result = await firebaseService.getLeaderboardPaginated(activeCollegeId, {
-          academicYear: filterYear !== 'all' ? filterYear : undefined,
-          class: filterClass !== 'all' ? filterClass : undefined,
-          subject: filterSubject !== 'all' ? filterSubject : undefined,
-          pageSize: PAGE_SIZE,
-          lastDocId: null,
-        });
+        // Direct Firestore query — no Cloud Function overhead
+        const result = await firebaseService.getLeaderboardDirect(
+          activeCollegeId,
+          filterClass !== 'all' ? filterClass : undefined,
+        );
 
-        const studentsArray: Student[] = result.students.map((student, index) => ({
+        const studentsArray: (Student & { subjectStats?: any })[] = result.students.map((student, index) => ({
           userId: student.userId,
           name: student.userName,
           rollNumber: student.rollNumber,
@@ -187,60 +184,63 @@ function LeaderBoard({
           totalMarks: student.totalMarks,
           totalExams: student.totalExams,
           averagePercentage: student.averagePercentage,
-          rank: index + 1
+          rank: index + 1,
+          subjectStats: student.subjectStats || {},
         }));
         
-        setStudents(studentsArray);
-        setHasMore(result.hasMore);
-        setLastDocId(result.lastDocId);
-        setTotalCount(result.totalCount);
+        setAllStudents(studentsArray);
       } catch (error) {
         console.error('Error fetching leaderboard:', error);
-        setStudents([]);
+        setAllStudents([]);
       } finally {
         setIsLoading(false);
       }
     };
     
     fetchLeaderBoard();
-  }, [activeCollegeId, filterYear, filterClass, filterSubject, currentUser, isStudent]);
+  }, [activeCollegeId, filterClass]);
 
-  // Load more handler
-  const loadMore = async () => {
-    if (!activeCollegeId || !hasMore || isLoadingMore) return;
-    
-    setIsLoadingMore(true);
-    try {
-      const result = await firebaseService.getLeaderboardPaginated(activeCollegeId, {
-        academicYear: filterYear !== 'all' ? filterYear : undefined,
-        class: filterClass !== 'all' ? filterClass : undefined,
-        subject: filterSubject !== 'all' ? filterSubject : undefined,
-        pageSize: PAGE_SIZE,
-        lastDocId,
-      });
+  // Reset pagination when filters change
+  useEffect(() => {
+    setDisplayCount(PAGE_SIZE);
+  }, [filterSubject]);
 
-      const currentCount = students.length;
-      const newStudents: Student[] = result.students.map((student, index) => ({
-        userId: student.userId,
-        name: student.userName,
-        rollNumber: student.rollNumber,
-        collegeId: student.collegeId,
-        class: student.class,
-        board: student.board,
-        totalMarks: student.totalMarks,
-        totalExams: student.totalExams,
-        averagePercentage: student.averagePercentage,
-        rank: currentCount + index + 1
-      }));
-      
-      setStudents(prev => [...prev, ...newStudents]);
-      setHasMore(result.hasMore);
-      setLastDocId(result.lastDocId);
-    } catch (error) {
-      console.error('Error loading more leaderboard data:', error);
-    } finally {
-      setIsLoadingMore(false);
+  // Client-side filtering (subject) and pagination
+  useEffect(() => {
+    let filtered = [...allStudents];
+
+    // Subject filter — client-side from subjectStats
+    if (filterSubject && filterSubject !== 'all') {
+      filtered = filtered.map(s => {
+        const subjectData = (s as any).subjectStats?.[filterSubject];
+        if (!subjectData || subjectData.totalExams === 0) return null;
+        return {
+          ...s,
+          totalExams: subjectData.totalExams,
+          totalMarks: subjectData.totalMarks,
+          averagePercentage: subjectData.totalMaxMarks > 0
+            ? Math.round((subjectData.totalMarks / subjectData.totalMaxMarks) * 100 * 100) / 100
+            : 0,
+        };
+      }).filter((s): s is Student => s !== null)
+        .sort((a, b) => b.averagePercentage - a.averagePercentage);
     }
+
+    // Reassign ranks after filtering
+    filtered = filtered.map((s, i) => ({ ...s, rank: i + 1 }));
+
+    setTotalCount(filtered.length);
+    setStudents(filtered.slice(0, displayCount));
+  }, [allStudents, filterSubject, displayCount]);
+
+  // Load more — just show more from already-fetched data (instant)
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadMore = () => {
+    setLoadingMore(true);
+    setTimeout(() => {
+      setDisplayCount(prev => prev + PAGE_SIZE);
+      setLoadingMore(false);
+    }, 300);
   };
 
   // Get top 3 students
@@ -537,28 +537,28 @@ function LeaderBoard({
                 </div>
                 
                 <div className="flex-1 overflow-y-auto">
-                  <table className="w-full">
+                  <table className="w-full table-fixed">
                     <thead className="bg-gray-50 sticky top-0 z-10">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        <th className="w-[10%] min-w-[70px] px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                           Rank
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        <th className="w-[30%] px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                           Student
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        <th className="w-[16%] px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                           Class
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        <th className="w-[11%] px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                           Exams
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        <th className="w-[13%] px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                           Total Marks
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        <th className="w-[13%] px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                           Average %
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        <th className="w-[14%] px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                           Rating
                         </th>
                       </tr>
@@ -576,30 +576,30 @@ function LeaderBoard({
                             <div className="flex items-center space-x-2">
                               {index < 3 ? (
                                 <div 
-                                  className={`w-10 h-10 rounded-full bg-gradient-to-br ${getMedalColor(index + 1)} flex items-center justify-center text-white font-bold shadow-md`}
+                                  className={`flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br ${getMedalColor(index + 1)} flex items-center justify-center text-white font-bold shadow-md`}
                                 >
                                   {index + 1}
                                 </div>
                               ) : (
-                                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-700 font-semibold">
+                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-700 font-semibold">
                                   {index + 1}
                                 </div>
                               )}
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex items-center">
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-bold text-sm">
+                          <td className="px-6 py-4 whitespace-nowrap overflow-hidden">
+                            <div className="flex items-center min-w-0">
+                              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-bold text-sm">
                                 {student.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
                               </div>
-                              <div className="ml-3">
-                                <div className="text-sm font-semibold text-gray-900">{student.name}</div>
-                                <div className="text-xs text-gray-500">{student.rollNumber ? `Roll: ${student.rollNumber}` : student.board}</div>
+                              <div className="ml-3 min-w-0">
+                                <div className="text-sm font-semibold text-gray-900 truncate">{student.name}</div>
+                                <div className="text-xs text-gray-500 truncate">{student.rollNumber ? `Roll: ${student.rollNumber}` : student.board}</div>
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className="text-sm font-medium text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap overflow-hidden">
+                            <span className="text-sm font-medium text-gray-900 truncate block">
                              {student.class}
                             </span>
                           </td>
@@ -626,17 +626,65 @@ function LeaderBoard({
                     </tbody>
                   </table>
                 </div>
-                {/* Load More */}
-                {hasMore && (
-                  <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 text-center">
-                    <button
-                      onClick={loadMore}
-                      disabled={isLoadingMore}
-                      className="text-sm font-semibold px-4 py-2 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
-                      style={{ color: brandTheme?.colors?.primary || '#6366f1' }}
-                    >
-                      {isLoadingMore ? 'Loading...' : `Load More (${totalCount - students.length} remaining)`}
-                    </button>
+                {/* Sticky Pagination Bar */}
+                {totalCount > 0 && (
+                  <div className="sticky bottom-0 z-20 px-5 py-3 bg-white/95 backdrop-blur-sm border-t border-gray-200 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                        <FontAwesomeIcon icon={faUsers} className="text-indigo-500 text-sm" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[11px] text-gray-400 font-medium leading-tight">Loaded</span>
+                        <span className="text-base font-bold text-gray-900 leading-tight">
+                          {students.length} <span className="text-gray-400 font-normal">/ {totalCount}</span>
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 ml-2">
+                        <div className="w-24 h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{ 
+                              width: `${Math.min((students.length / totalCount) * 100, 100)}%`,
+                              background: brandTheme?.gradients?.primary || 'linear-gradient(to right, #6366f1, #ec4899)'
+                            }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-gray-500">
+                          {Math.round((students.length / totalCount) * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                    {students.length < totalCount && (
+                      <button
+                        onClick={loadMore}
+                        disabled={loadingMore}
+                        className={`inline-flex items-center gap-2 px-5 py-2.5 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-70 ${loadingMore ? 'scale-95' : 'hover:scale-[1.02]'}`}
+                        style={{ background: brandTheme?.gradients?.primary || 'linear-gradient(to right, #6366f1, #ec4899)' }}
+                      >
+                        {loadingMore ? (
+                          <>
+                            <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                            </svg>
+                            Loading...
+                          </>
+                        ) : (
+                          <>
+                            Load More
+                            <span className="bg-white/25 px-2 py-0.5 rounded-md text-xs font-bold">
+                              +{totalCount - students.length}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                    {students.length >= totalCount && (
+                      <span className="inline-flex items-center gap-1.5 px-4 py-2 bg-green-50 text-green-600 rounded-xl text-sm font-semibold">
+                        <FontAwesomeIcon icon={faTrophy} className="text-xs" />
+                        All Loaded
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

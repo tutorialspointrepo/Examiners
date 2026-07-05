@@ -1837,7 +1837,7 @@ body.resizing {
   background: white;
   width: 210mm;
   min-height: 297mm;
-  padding: 15mm 20mm 20mm 20mm; /* top right bottom left */
+  padding: 0; /* Templates handle their own padding */
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
   position: relative;
   overflow: visible; /* Allow content to show */
@@ -1881,7 +1881,7 @@ body.resizing {
   background: white;
   width: 210mm;
   min-height: 297mm;
-  padding: 10mm 10mm 8mm 10mm; /* top right bottom left */
+  padding: 0; /* Templates handle their own padding */
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
   position: relative;
   overflow: visible;
@@ -1964,6 +1964,95 @@ body.resizing {
   margin: 0 !important;
   overflow: hidden;
 }
+/* Creative Template - Full bleed design */
+.a4-content:has(.creative-template),
+.a4-content:has(> .creative-template) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.a4-page:has(.creative-template),
+.a4-page:has(> .a4-content > .creative-template) {
+  padding: 0 !important;
+}
+
+/* Bold Template - Full bleed design */
+.a4-content:has(.bold-template),
+.a4-content:has(> .bold-template) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.a4-page:has(.bold-template),
+.a4-page:has(> .a4-content > .bold-template) {
+  padding: 0 !important;
+}
+
+/* Marketing Template - Full bleed design */
+.a4-content:has(.marketing-template),
+.a4-content:has(> .marketing-template) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.a4-page:has(.marketing-template),
+.a4-page:has(> .a4-content > .marketing-template) {
+  padding: 0 !important;
+}
+
+/* Nonprofit Template - Full bleed design */
+.a4-content:has(.nonprofit-template),
+.a4-content:has(> .nonprofit-template) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.a4-page:has(.nonprofit-template),
+.a4-page:has(> .a4-content > .nonprofit-template) {
+  padding: 0 !important;
+}
+
+/* Consulting Template - Full bleed design */
+.a4-content:has(.consulting-template),
+.a4-content:has(> .consulting-template) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.a4-page:has(.consulting-template),
+.a4-page:has(> .a4-content > .consulting-template) {
+  padding: 0 !important;
+}
+
+/* Startup Template - Full bleed design */
+.a4-content:has(.startup-template),
+.a4-content:has(> .startup-template) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.a4-page:has(.startup-template),
+.a4-page:has(> .a4-content > .startup-template) {
+  padding: 0 !important;
+}
+
+/* Finance Template - Full bleed design */
+.a4-content:has(.finance-template),
+.a4-content:has(> .finance-template) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.a4-page:has(.finance-template),
+.a4-page:has(> .a4-content > .finance-template) {
+  padding: 0 !important;
+}
+
+/* Data Template - Full bleed design */
+.a4-content:has(.data-template),
+.a4-content:has(> .data-template) {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.a4-page:has(.data-template),
+.a4-page:has(> .a4-content > .data-template) {
+  padding: 0 !important;
+}
+
+
 
 .professionalBlue-template {
   width: 100% !important;
@@ -2007,7 +2096,7 @@ body.resizing {
     border: none !important;
     width: 100% !important;
     min-height: auto !important;
-    padding: 10mm 10mm 8mm 10mm !important; /* top right bottom left */
+    padding: 0 !important; /* Templates handle their own padding */
     
     /* Ensure specific pages break correctly */
     page-break-after: always !important;
@@ -4046,9 +4135,9 @@ middle-panel-header {
 
 @media print {
 
-  /* 1. Define the physical page margin */
+  /* 1. Define the physical page margin — keep small to avoid double-spacing with template padding */
   @page {
-    margin: 15mm 15mm 15mm 15mm !important;
+    margin: 0 !important;
   }
 
   /* Tech Template - No margins in print */
@@ -4093,6 +4182,44 @@ middle-panel-header {
     padding: 0 !important;
     box-shadow: none !important;
     display: block !important;
+  }
+
+  /* Strip inline padding from ALL templates — a4-page handles margins in print */
+  .modern-template,
+  .executive-template,
+  .minimal-template,
+  .elegant-template,
+  .academic-template,
+  .medical-template,
+  .bold-template,
+  .startup-template,
+  .consulting-template,
+  .finance-template,
+  .marketing-template,
+  .data-template,
+  .nonprofit-template {
+    padding: 0 !important;
+  }
+
+  /* Padded templates (no full-bleed header): a4-page provides the page margin */
+  .a4-page:has(.modern-template),
+  .a4-page:has(.executive-template),
+  .a4-page:has(.minimal-template),
+  .a4-page:has(.elegant-template),
+  .a4-page:has(.academic-template),
+  .a4-page:has(.medical-template) {
+    padding: 15mm 18mm !important;
+  }
+
+  /* Full-bleed templates: no a4-page padding, template fills edge-to-edge */
+  .a4-page:has(.bold-template),
+  .a4-page:has(.startup-template),
+  .a4-page:has(.consulting-template),
+  .a4-page:has(.finance-template),
+  .a4-page:has(.marketing-template),
+  .a4-page:has(.data-template),
+  .a4-page:has(.nonprofit-template) {
+    padding: 0 !important;
   }
   /* 2. Specific page setting for the Professional Blue template */
   @page professional-page {

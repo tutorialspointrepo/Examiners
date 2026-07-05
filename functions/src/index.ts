@@ -1777,29 +1777,9 @@ export const getExamMetadata = functions
       let exam = examDoc.data() as any;
       exam.id = examDoc.id;
       
-      // 🔒 For students: strip ALL question content, keep only counts/types
-      if (userType === 'student') {
-        if (exam.questionsList && Array.isArray(exam.questionsList)) {
-          exam.totalQuestions = exam.questionsList.length;
-          exam.questionTypeSummary = exam.questionsList.reduce((acc: any, q: any) => {
-            const type = q.type || 'unknown';
-            acc[type] = (acc[type] || 0) + 1;
-            return acc;
-          }, {});
-          delete exam.questionsList;
-        }
-        
-        if (exam.questionPool && Array.isArray(exam.questionPool)) {
-          exam.hasQuestionPool = true;
-          exam.questionPoolSize = exam.questionPool.length;
-          delete exam.questionPool;
-        }
-        
-        if (exam.likertQuestions && Array.isArray(exam.likertQuestions)) {
-          exam.likertQuestionCount = exam.likertQuestions.length;
-          delete exam.likertQuestions;
-        }
-      }
+      // ✅ SUB-COLLECTION: Questions are now in exams/{id}/examQuestions/main
+      // Parent doc only has metadata — no stripping needed for students
+      // totalQuestions, personalityAssessment, likertDuration etc. are already in parent doc
       
       return { success: true, exam };
       
@@ -1865,33 +1845,39 @@ export const getExamQuestionsList = functions
       const exam = examDoc.data() as any;
       exam.id = examDoc.id;
       
-      // If questions are stored in Cloud Storage (large exams >20 questions), fetch them
-      if ((!exam.questionsList || exam.questionsList.length === 0) && exam.questionsStorageUrl) {
-        try {
-          const storageResponse = await fetch(exam.questionsStorageUrl);
-          if (storageResponse.ok) {
-            exam.questionsList = await storageResponse.json();
-          }
-        } catch (storageErr: any) {
-          console.error('Failed to fetch questions from Storage:', storageErr.message);
-        }
-      }
+      // ✅ SUB-COLLECTION: Read questions from sub-collection
+      const questionsDoc = await admin.firestore()
+        .collection(COLLECTIONS.EXAMS)
+        .doc(examId)
+        .collection('examQuestions')
+        .doc('main')
+        .get();
+      
+      const questionsData = questionsDoc.exists ? questionsDoc.data() as any : {};
+      const questionsList = questionsData.questionsList || [];
+      const questionPool = questionsData.questionPool || [];
+      const likertQuestions = questionsData.likertQuestions || [];
       
       // Sanitize for students (strip correctAnswers, solution but keep question text, options etc.)
       if (userType === 'student') {
-        if (exam.questionsList && Array.isArray(exam.questionsList)) {
-          exam.questionsList = exam.questionsList.map((q: any) => sanitizeQuestionForClient(q));
-        }
-        if (exam.questionPool && Array.isArray(exam.questionPool)) {
-          exam.questionPool = exam.questionPool.map((q: any) => sanitizeQuestionForClient(q));
-        }
+        return { 
+          success: true, 
+          questionsList: questionsList.map((q: any) => sanitizeQuestionForClient(q)),
+          questionPool: questionPool.map((q: any) => sanitizeQuestionForClient(q)),
+          likertQuestions,
+          enableQuestionPool: exam.enableQuestionPool || false,
+          pickRandomCount: exam.pickRandomCount || 0,
+          poolQuestionMarks: exam.poolQuestionMarks || 0,
+          personalityAssessment: exam.personalityAssessment || false,
+          likertDuration: exam.likertDuration || 0,
+        };
       }
       
       return { 
         success: true, 
-        questionsList: exam.questionsList || [],
-        questionPool: exam.questionPool || [],
-        likertQuestions: exam.likertQuestions || [],
+        questionsList,
+        questionPool,
+        likertQuestions,
         enableQuestionPool: exam.enableQuestionPool || false,
         pickRandomCount: exam.pickRandomCount || 0,
         poolQuestionMarks: exam.poolQuestionMarks || 0,
@@ -1943,17 +1929,18 @@ export const getExamForStudent = functions
       let exam = examDoc.data() as any;
       exam.id = examDoc.id;
       
-      // If questions are stored in Cloud Storage (large exams >20 questions), fetch them
-      if ((!exam.questionsList || exam.questionsList.length === 0) && exam.questionsStorageUrl) {
-        try {
-          const storageResponse = await fetch(exam.questionsStorageUrl);
-          if (storageResponse.ok) {
-            exam.questionsList = await storageResponse.json();
-          }
-        } catch (storageErr: any) {
-          console.error('Failed to fetch questions from Storage:', storageErr.message);
-        }
-      }
+      // ✅ SUB-COLLECTION: Read questions from sub-collection
+      const questionsDoc = await admin.firestore()
+        .collection(COLLECTIONS.EXAMS)
+        .doc(examId)
+        .collection('examQuestions')
+        .doc('main')
+        .get();
+      
+      const questionsData = questionsDoc.exists ? questionsDoc.data() as any : {};
+      exam.questionsList = questionsData.questionsList || [];
+      exam.questionPool = questionsData.questionPool || [];
+      exam.likertQuestions = questionsData.likertQuestions || [];
       
       // 🔧 ENRICH: If questions are missing correctAnswers, fetch from Question Bank
       // This handles exams where correctAnswers wasn't copied during exam creation
@@ -2262,6 +2249,19 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
   }
   
   const exam = examDoc.data() as any;
+  
+  // ✅ SUB-COLLECTION: Read questions from sub-collection for grading
+  const questionsDoc = await admin.firestore()
+    .collection(COLLECTIONS.EXAMS)
+    .doc(examId)
+    .collection('examQuestions')
+    .doc('main')
+    .get();
+  
+  const questionsData = questionsDoc.exists ? questionsDoc.data() as any : {};
+  exam.questionsList = questionsData.questionsList || [];
+  exam.questionPool = questionsData.questionPool || [];
+  exam.likertQuestions = questionsData.likertQuestions || [];
   
   // Fetch attempt document to get poolQuestionIds (the exact questions presented to this student)
   const attemptDoc = await admin.firestore()
@@ -3207,12 +3207,24 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
   // Clean responses to remove undefined values
   const cleanedResponses = gradedResponses.map(r => cleanObject(r));
 
-  // Update attempt document
+  // ✅ Compute violation summary at top level (avoids needing to read responses array later)
+  let totalViolationCount = 0;
+  const violationTypeCounts: Record<string, number> = {};
+  for (const r of cleanedResponses) {
+    if (r.violations && Array.isArray(r.violations)) {
+      totalViolationCount += r.violations.length;
+      for (const v of r.violations) {
+        const vType = v.type || v.violationType || 'UNKNOWN';
+        violationTypeCounts[vType] = (violationTypeCounts[vType] || 0) + 1;
+      }
+    }
+  }
+
+  // Update attempt document (summary only — no responses)
   await admin.firestore()
     .collection(COLLECTIONS.EXAM_ATTEMPTS)
     .doc(attemptId)
     .update({
-      responses: cleanedResponses,
       obtainedMarks: totalScore,
       totalScore: totalScore,
       maximumScore: maxMarks,
@@ -3221,6 +3233,8 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       attemptedQuestions: attemptedQuestions,
       correctAnswers: correctAnswers,
       timeSpent: timeSpent,
+      violationCount: totalViolationCount,
+      violationSummary: { total: totalViolationCount, byType: violationTypeCounts },
       performanceByType: byType,
       performanceByComplexity: byComplexity,
       performanceByChapter: byChapter,
@@ -3233,6 +3247,14 @@ async function gradeAttempt(examId: string, attemptId: string, responses: any[])
       ...(hasPersonalityData && { responseStyle }),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
+
+  // ✅ Write responses to sub-collection (keeps main doc lightweight)
+  await admin.firestore()
+    .collection(COLLECTIONS.EXAM_ATTEMPTS)
+    .doc(attemptId)
+    .collection('attemptResponses')
+    .doc('main')
+    .set({ responses: cleanedResponses }, { merge: true });
   
   return {
     success: true,
@@ -3271,6 +3293,15 @@ export const submitAndGradeExam = functions
       if (quickSubmit) {
         // console.log('⚡ Quick submit - saving answers without evaluation');
         
+        const pendingResponses = responses.map((r: any) => ({
+          ...r,  // ✅ Preserves all fields including violations, viewed, answered
+          evaluationStatus: r.answered === false ? 'not_attempted' : 'pending',
+          marksAwarded: 0,
+          maxMarks: r.maxMarks || 0,
+          autoEvaluated: false
+        }));
+        
+        // Update main doc (summary only)
         await admin.firestore()
           .collection(COLLECTIONS.EXAM_ATTEMPTS)
           .doc(attemptId)
@@ -3278,14 +3309,15 @@ export const submitAndGradeExam = functions
             status: 'submitted',
             submitTime: admin.firestore.FieldValue.serverTimestamp(),
             evaluationStatus: 'pending',
-            responses: responses.map((r: any) => ({
-              ...r,  // ✅ Preserves all fields including violations, viewed, answered
-              evaluationStatus: r.answered === false ? 'not_attempted' : 'pending',
-              marksAwarded: 0,
-              maxMarks: r.maxMarks || 0,
-              autoEvaluated: false
-            }))
           });
+        
+        // Write responses to sub-collection
+        await admin.firestore()
+          .collection(COLLECTIONS.EXAM_ATTEMPTS)
+          .doc(attemptId)
+          .collection('attemptResponses')
+          .doc('main')
+          .set({ responses: pendingResponses });
         
         return { 
           success: true, 
@@ -4195,6 +4227,101 @@ export const sendOTPEmail = functions
         'internal',
         `Failed to send OTP email: ${error.message}`
       );
+    }
+  });
+
+/**
+ * Send a password-reset OTP — fully server-side so it works from the signed-out
+ * Forgot-Password screen (no client Firestore access → no permission-denied).
+ * Looks up the user by email, generates + stores the OTP (same doc-id encoding as
+ * resetPasswordSecurely), and emails it. The OTP is never returned to the client.
+ */
+export const sendPasswordResetOTP = functions
+  .region('us-central1')
+  .https.onCall(async (data) => {
+    try {
+      const email = (data?.email || '').toString().trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email || !emailRegex.test(email)) {
+        throw new functions.https.HttpsError('invalid-argument', 'A valid email is required');
+      }
+
+      const db = admin.firestore();
+
+      // 1. User must exist (admin read bypasses security rules)
+      const userSnap = await db.collection(COLLECTIONS.USERS).where('email', '==', email).limit(1).get();
+      if (userSnap.empty) {
+        return { success: false, error: 'No account found with this email address' };
+      }
+
+      // 2. Generate + store the OTP (10 min). Doc-id encoding MUST match resetPasswordSecurely.
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      const encodedEmail = email.replace(/\./g, '_dot_').replace(/@/g, '_at_');
+      await db.collection(COLLECTIONS.PASSWORD_RESET_OTPS).doc(encodedEmail).set({
+        otp,
+        email,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+        createdAt: new Date(),
+        used: false,
+      });
+
+      // 3. Email the OTP (server-side; never returned to the client)
+      const emailCredsDoc = await db.doc(FIRESTORE_PATHS.EMAIL_CREDENTIALS).get();
+      const emailCreds = emailCredsDoc.data();
+      if (!emailCreds?.MAIL_HOST || !emailCreds?.MAIL_USERNAME || !emailCreds?.MAIL_PASSWORD || !emailCreds?.MAIL_PORT) {
+        throw new functions.https.HttpsError('failed-precondition', 'Email credentials not configured');
+      }
+      const transporter = nodemailer.createTransport({
+        host: emailCreds.MAIL_HOST,
+        port: parseInt(emailCreds.MAIL_PORT),
+        secure: false,
+        auth: { user: emailCreds.MAIL_USERNAME, pass: emailCreds.MAIL_PASSWORD },
+      });
+      const emailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 28px;">EXAMINERS</h1>
+            <p style="color: white; margin: 5px 0 0 0; opacity: 0.9;">AI-Powered Answer Sheet Evaluation</p>
+          </div>
+          <div style="background: #ffffff; padding: 40px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 10px 10px;">
+            <h2 style="color: #1f2937; margin: 0 0 20px 0;">Password Reset Request</h2>
+            <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin: 0 0 30px 0;">
+              You have requested to reset your password. Please use the following One-Time Password (OTP) to proceed:
+            </p>
+            <div style="background: #f3f4f6; border: 2px dashed #4F46E5; border-radius: 10px; padding: 25px; text-align: center; margin: 0 0 30px 0;">
+              <p style="color: #6b7280; font-size: 14px; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 1px;">Your OTP</p>
+              <div style="font-size: 36px; font-weight: bold; color: #4F46E5; letter-spacing: 8px; font-family: 'Courier New', monospace;">
+                ${otp}
+              </div>
+            </div>
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 0 0 30px 0; border-radius: 5px;">
+              <p style="color: #92400e; margin: 0; font-size: 14px;">
+                <strong>⚠️ Important:</strong> This OTP will expire in <strong>10 minutes</strong>. Do not share this OTP with anyone.
+              </p>
+            </div>
+            <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;">
+              If you did not request a password reset, please ignore this email and your password will remain unchanged.
+            </p>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">
+            <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 0;">
+              © ${new Date().getFullYear()} EXAMINERS. All rights reserved.<br>
+              EXAMINERS - AI-Powered Educational Technology Platform
+            </p>
+          </div>
+        </div>
+      `;
+      await transporter.sendMail({
+        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+        to: email,
+        subject: 'EXAMINERS - Password Reset OTP',
+        html: emailHtml,
+      });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('❌ [sendPasswordResetOTP] error:', error?.message || error);
+      if (error instanceof functions.https.HttpsError) throw error;
+      throw new functions.https.HttpsError('internal', error?.message || 'Failed to send OTP');
     }
   });
 
@@ -5323,10 +5450,9 @@ export const autoSubmitPendingAttempts = functions
             try {
               const attempt = attemptDoc.data();
               
-              // Get latest attempt data with responses
-              const currentAttempt = await attemptDoc.ref.get();
-              const attemptData = currentAttempt.data();
-              const responses = attemptData?.responses || [];
+              // ✅ Read responses from sub-collection
+              const responsesDoc = await attemptDoc.ref.collection('attemptResponses').doc('main').get();
+              const responses = responsesDoc.exists ? (responsesDoc.data()?.responses || []) : [];
               
               if (responses.length === 0) {
                 // console.log(`      ⚠️ No responses found for: ${attemptDoc.id}`);
@@ -5524,9 +5650,9 @@ export const manualAutoSubmitAndGrade = functions
             try {
               const attempt = attemptDoc.data();
               
-              const currentAttempt = await attemptDoc.ref.get();
-              const attemptData = currentAttempt.data();
-              const responses = attemptData?.responses || [];
+              // ✅ Read responses from sub-collection
+              const responsesDoc = await attemptDoc.ref.collection('attemptResponses').doc('main').get();
+              const responses = responsesDoc.exists ? (responsesDoc.data()?.responses || []) : [];
               
               if (responses.length === 0) {
                 // console.log(`      ⚠️ No responses for: ${attemptDoc.id}`);
@@ -5787,7 +5913,10 @@ export const completeExamWithGrading = functions
             
             for (const attemptDoc of pendingAttemptsSnapshot.docs) {
               const attempt = attemptDoc.data();
-              const responses = attempt.responses || [];
+              
+              // ✅ Check responses from sub-collection (with fallback)
+              const respDoc = await attemptDoc.ref.collection('attemptResponses').doc('main').get();
+              const responses = respDoc.exists ? (respDoc.data()?.responses || []) : [];
               
               if (responses.length === 0) {
                 // console.log(`      ⚠️ No responses for: ${attemptDoc.id}`);
@@ -5915,8 +6044,9 @@ export const gradeAttemptWorker = functions
         return;
       }
       
-      const attemptData = attemptDoc.data();
-      const responses = attemptData?.responses || [];
+      // ✅ Read responses from sub-collection
+      const responsesDoc = await db.collection(COLLECTIONS.EXAM_ATTEMPTS).doc(attemptId).collection('attemptResponses').doc('main').get();
+      const responses = responsesDoc.exists ? (responsesDoc.data()?.responses || []) : [];
       
       if (responses.length === 0) {
         // console.log(`⚠️ No responses for attempt ${attemptId}`);
@@ -6218,7 +6348,8 @@ export const createUser = functions
   .region('us-central1')
   .runWith({
     timeoutSeconds: 60,
-    memory: '256MB'
+    memory: '256MB',
+    maxInstances: 10
   })
   .https.onCall(async (data, context) => {
     // Verify caller is authenticated
@@ -6243,7 +6374,8 @@ export const createUser = functions
       teacherClasses,
       teacherSubjects,
       createdBy,
-      createdByRole
+      createdByRole,
+      recaptchaToken,
     } = data;
 
     // Validate required fields
@@ -6254,13 +6386,40 @@ export const createUser = functions
       );
     }
 
-    // Permission check - only these roles can create users
-    const allowedRoles = ['system_admin', 'admin', 'principal', 'dean', 'teacher'];
-    if (!allowedRoles.includes(createdByRole)) {
-      throw new functions.https.HttpsError(
-        'permission-denied',
-        'You do not have permission to create users'
-      );
+    // ── RESUME BUILDER: verify reCAPTCHA before anything else ──
+    if (collegeId === 'RES') {
+      if (!recaptchaToken) {
+        throw new functions.https.HttpsError('invalid-argument', 'reCAPTCHA token is required');
+      }
+      try {
+        const recaptchaDoc = await admin.firestore().doc('settings/recaptcha').get();
+        if (!recaptchaDoc.exists) throw new Error('reCAPTCHA credentials not configured');
+        const secretKey = recaptchaDoc.data()?.secret_key;
+        if (!secretKey) throw new Error('reCAPTCHA secret key not found');
+
+        const recaptchaRes = await fetch(
+          `https://www.google.com/recaptcha/api/siteverify?secret=${secretKey}&response=${recaptchaToken}`,
+          { method: 'POST' }
+        );
+        const recaptchaData: any = await recaptchaRes.json();
+
+        // score < 0.5 likely a bot (0.0 = bot, 1.0 = human)
+        if (!recaptchaData.success || recaptchaData.score < 0.5) {
+          throw new functions.https.HttpsError('permission-denied', 'reCAPTCHA verification failed. Please try again.');
+        }
+      } catch (err: any) {
+        if (err instanceof functions.https.HttpsError) throw err;
+        throw new functions.https.HttpsError('internal', `reCAPTCHA check failed: ${err.message}`);
+      }
+    } else {
+      // Permission check - only these roles can create users (non-RES)
+      const allowedRoles = ['system_admin', 'admin', 'principal', 'dean', 'teacher'];
+      if (!allowedRoles.includes(createdByRole)) {
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'You do not have permission to create users'
+        );
+      }
     }
 
     try {
@@ -6468,19 +6627,18 @@ export const createUser = functions
         // console.warn('⚠️ Failed to update college counts:', countError);
       }
 
-      // ✅ Send welcome email if auth account was created with email
+      // ✅ Send email after auth account created
+      // RES (Resume Builder) users → verification email
+      // All other users → EXAMINERS welcome email with credentials
       if (authAccountCreated && email && temporaryPassword) {
         try {
-          // console.log('📧 Sending welcome email to:', email);
-          
-          // Fetch email credentials from Firestore
+          // Fetch email credentials from Firestore (shared by both paths)
           const emailCredsDoc = await db.doc(FIRESTORE_PATHS.EMAIL_CREDENTIALS).get();
-          
+
           if (emailCredsDoc.exists) {
             const emailCreds = emailCredsDoc.data();
-            
+
             if (emailCreds?.MAIL_HOST && emailCreds?.MAIL_USERNAME && emailCreds?.MAIL_PASSWORD && emailCreds?.MAIL_PORT) {
-              // Create transporter
               const transporter = nodemailer.createTransport({
                 host: emailCreds.MAIL_HOST,
                 port: parseInt(emailCreds.MAIL_PORT),
@@ -6491,42 +6649,104 @@ export const createUser = functions
                 },
               });
 
-              // Get college name from database
-              let collegeName = '';
-              if (collegeId) {
-                const collegeDoc = await db.doc(`${COLLECTIONS.COLLEGES}/${collegeId}`).get();
-                if (collegeDoc.exists) {
-                  collegeName = collegeDoc.data()?.collegeName || '';
+              if (collegeId === 'RES') {
+                // ── RESUME BUILDER: send email verification link ──
+                const token = generateVerificationToken();
+                const now = admin.firestore.Timestamp.now();
+
+                // Store verification token in users collection
+                await db.collection(COLLECTIONS.USERS).doc(userId).update({
+                  emailVerified: false,
+                  verificationToken: token,
+                  verificationSentAt: now,
+                  updatedAt: now,
+                });
+
+                const verifyUrl = `https://www.tutorialspoint.com/online-resume-builder.htm?verify_token=${token}&uid=${userId}`;
+
+                const resumeVerifyHtml = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+  <div style="max-width:600px;margin:20px auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.1);">
+    <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:40px 30px;text-align:center;">
+      <h1 style="color:#fff;margin:0;font-size:26px;">Verify Your Email</h1>
+      <p style="color:#fff;opacity:.9;margin:8px 0 0;">Resume Builder by Tutorials Point</p>
+    </div>
+    <div style="padding:40px 30px;">
+      <h2 style="color:#667eea;margin-top:0;">Hello ${fullName}! 👋</h2>
+      <p style="color:#4b5563;font-size:16px;line-height:1.6;">
+        Thanks for signing up! Please verify your email address to activate your account and start saving your resumes.
+      </p>
+      <div style="text-align:center;margin:35px 0;">
+        <a href="${verifyUrl}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:15px 40px;text-decoration:none;border-radius:6px;font-weight:bold;font-size:16px;">
+          ✅ Verify My Email
+        </a>
+      </div>
+      <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:15px;border-radius:5px;margin:25px 0;">
+        <p style="color:#92400e;margin:0;font-size:14px;">
+          <strong>⚠️ This link expires in 24 hours.</strong> If you did not create an account, you can safely ignore this email.
+        </p>
+      </div>
+      <p style="color:#6b7280;font-size:13px;">
+        If the button doesn't work, copy and paste this link into your browser:<br>
+        <a href="${verifyUrl}" style="color:#667eea;word-break:break-all;">${verifyUrl}</a>
+      </p>
+    </div>
+    <div style="background:#f7fafc;padding:25px;text-align:center;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;">© ${new Date().getFullYear()} Tutorials Point India Pvt. Ltd. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+                await transporter.sendMail({
+                  from: `Tutorials Point <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+                  to: email.toLowerCase(),
+                  subject: 'Verify your email – Resume Builder',
+                  html: resumeVerifyHtml,
+                });
+
+                // console.log('✅ Resume verification email sent to:', email);
+
+              } else {
+                // ── EXAMINERS: send welcome email with credentials ──
+                let collegeName = '';
+                if (collegeId) {
+                  const collegeDoc = await db.doc(`${COLLECTIONS.COLLEGES}/${collegeId}`).get();
+                  if (collegeDoc.exists) {
+                    collegeName = collegeDoc.data()?.collegeName || '';
+                  }
                 }
+
+                const emailHtml = generateWelcomeEmailHTML({
+                  name: fullName,
+                  email: email.toLowerCase(),
+                  password: temporaryPassword,
+                  userType,
+                  collegeName,
+                  loginUrl: process.env.LOGIN_URL || 'https://www.examiners.app/login',
+                });
+
+                await transporter.sendMail({
+                  from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+                  to: email.toLowerCase(),
+                  subject: `Welcome to EXAMINERS - Your Account is Ready!`,
+                  html: emailHtml,
+                });
+
+                // console.log('✅ Welcome email sent successfully to:', email);
               }
-
-              // Generate and send email
-              const emailHtml = generateWelcomeEmailHTML({
-                name: fullName,
-                email: email.toLowerCase(),
-                password: temporaryPassword,
-                userType,
-                collegeName,
-                loginUrl: process.env.LOGIN_URL || 'https://www.examiners.app/login',
-              });
-
-              await transporter.sendMail({
-                from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
-                to: email.toLowerCase(),
-                subject: `Welcome to EXAMINERS - Your Account is Ready!`,
-                html: emailHtml,
-              });
-
-              // console.log('✅ Welcome email sent successfully to:', email);
             } else {
-              // console.warn('⚠️ Incomplete email credentials, skipping welcome email');
+              // console.warn('⚠️ Incomplete email credentials, skipping email');
             }
           } else {
-            // console.warn('⚠️ Email credentials not found, skipping welcome email');
+            // console.warn('⚠️ Email credentials not found, skipping email');
           }
         } catch (emailError: any) {
           // Don't fail user creation if email fails
-          console.error('⚠️ Failed to send welcome email:', emailError.message);
+          console.error('⚠️ Failed to send email after user creation:', emailError.message);
         }
       }
 
@@ -6898,7 +7118,7 @@ export const getVideoSignedCookies = functions
 
     const policy = JSON.stringify({
       Statement: [{
-        Resource: `${CF_CDN_URL}/video_tutorials/*`,
+        Resource: `${CF_CDN_URL}/*`,
         Condition: {
           DateLessThan: { 'AWS:EpochTime': expiresAt }
         }
@@ -7802,503 +8022,6 @@ Generate a detailed performance feedback report in the JSON format specified.`
     }
   });
 
-// ============================================
-// JOB SCRAPER - Google Jobs via SerpAPI
-// Fetches jobs posted today across all industries
-// Stores in Firestore with deduplication
-// ============================================
-
-const JOB_SCRAPER_QUERIES: { query: string; category: string }[] = [
-  // IT & Software
-  { query: 'software engineer', category: 'IT & Software' },
-  { query: 'developer', category: 'IT & Software' },
-  { query: 'IT support', category: 'IT & Software' },
-  { query: 'cloud computing', category: 'IT & Software' },
-  { query: 'cybersecurity', category: 'IT & Software' },
-  // Data Science & AI
-  { query: 'data engineer', category: 'Data Science & AI' },
-  { query: 'data scientist', category: 'Data Science & AI' },
-  { query: 'machine learning', category: 'Data Science & AI' },
-  { query: 'artificial intelligence', category: 'Data Science & AI' },
-  // Finance & Accounting
-  { query: 'accountant', category: 'Finance & Accounting' },
-  { query: 'finance', category: 'Finance & Accounting' },
-  { query: 'banking', category: 'Finance & Accounting' },
-  { query: 'auditor', category: 'Finance & Accounting' },
-  // Marketing & Sales
-  { query: 'marketing', category: 'Marketing & Sales' },
-  { query: 'sales executive', category: 'Marketing & Sales' },
-  { query: 'digital marketing', category: 'Marketing & Sales' },
-  // HR & Admin
-  { query: 'human resources', category: 'HR & Admin' },
-  { query: 'recruitment', category: 'HR & Admin' },
-  // Operations & Management
-  { query: 'operations manager', category: 'Operations & Management' },
-  { query: 'business analyst', category: 'Operations & Management' },
-  // Engineering
-  { query: 'civil engineer', category: 'Engineering' },
-  { query: 'mechanical engineer', category: 'Engineering' },
-  { query: 'electrical engineer', category: 'Engineering' },
-  // Management & Consulting
-  { query: 'manager', category: 'Management & Consulting' },
-  { query: 'analyst', category: 'Management & Consulting' },
-  { query: 'consultant', category: 'Management & Consulting' },
-  { query: 'executive', category: 'Management & Consulting' },
-  // Special Categories
-  { query: 'fresher jobs', category: 'Fresher Jobs' },
-  { query: 'work from home', category: 'Work From Home' },
-  { query: 'internship', category: 'Internship' },
-];
-
-const JOB_SCRAPER_CONFIG = {
-  maxPagesPerQuery: 5,
-  location: 'India',
-  delayBetweenRequests: 600,
-  delayBetweenQueries: 500,
-};
-
-// Helper: Fetch jobs from SerpAPI
-async function fetchJobsFromSerpAPI(
-  apiKey: string,
-  query: string,
-  nextPageToken: string | null = null
-): Promise<{jobs_results?: any[]; serpapi_pagination?: {next_page_token?: string}; error?: string}> {
-  const https = require('https') as typeof import('https');
-
-  const params = new URLSearchParams({
-    engine: 'google_jobs',
-    q: query,
-    api_key: apiKey,
-    chips: 'date_posted:today',
-    location: JOB_SCRAPER_CONFIG.location,
-  });
-  if (nextPageToken) params.set('next_page_token', nextPageToken);
-
-  const url = `https://serpapi.com/search.json?${params.toString()}`;
-
-  return new Promise((resolve, reject) => {
-    https.get(url, (res: any) => {
-      let data = '';
-      res.on('data', (chunk: string) => data += chunk);
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.error) reject(new Error(parsed.error));
-          else resolve(parsed);
-        } catch (e) {
-          reject(new Error('Failed to parse SerpAPI response'));
-        }
-      });
-    }).on('error', reject);
-  });
-}
-
-// Helper: Run the full scrape and return jobs array
-async function runJobScraper(apiKey: string): Promise<{
-  jobs: any[];
-  stats: { totalApiCalls: number; duplicatesSkipped: number; queriesRun: number };
-}> {
-  const allJobs: any[] = [];
-  const seenJobIds = new Set<string>();
-  let totalApiCalls = 0;
-  let totalDuplicates = 0;
-
-  for (const { query, category } of JOB_SCRAPER_QUERIES) {
-    let nextPageToken: string | null = null;
-
-    for (let page = 0; page < JOB_SCRAPER_CONFIG.maxPagesPerQuery; page++) {
-      totalApiCalls++;
-
-      try {
-        const result: {jobs_results?: any[]; serpapi_pagination?: {next_page_token?: string}} = await fetchJobsFromSerpAPI(apiKey, query, nextPageToken);
-        const jobs = result.jobs_results || [];
-
-        if (jobs.length === 0) break;
-
-        for (const job of jobs) {
-          if (job.job_id && seenJobIds.has(job.job_id)) {
-            totalDuplicates++;
-          } else {
-            if (job.job_id) seenJobIds.add(job.job_id);
-            // Attach category
-            allJobs.push({ ...job, _category: category });
-          }
-        }
-
-        nextPageToken = result.serpapi_pagination?.next_page_token || null;
-        if (!nextPageToken) break;
-
-        await new Promise(r => setTimeout(r, JOB_SCRAPER_CONFIG.delayBetweenRequests));
-      } catch (error: any) {
-      // console.warn(`Job scraper error for "${query}" page ${page}:`, error.message);
-        break;
-      }
-    }
-
-    await new Promise(r => setTimeout(r, JOB_SCRAPER_CONFIG.delayBetweenQueries));
-  }
-
-  return {
-    jobs: allJobs,
-    stats: {
-      totalApiCalls,
-      duplicatesSkipped: totalDuplicates,
-      queriesRun: JOB_SCRAPER_QUERIES.length,
-    },
-  };
-}
-
-// Helper: Generate short 8-char alphanumeric ID for SEO-friendly URLs
-function generateShortId(length = 8): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  const bytes = require('crypto').randomBytes(length);
-  for (let i = 0; i < length; i++) {
-    result += chars[bytes[i] % chars.length];
-  }
-  return result;
-}
-
-// Helper: Generate a unique shortId (check Firestore for collisions)
-async function generateUniqueShortId(db: admin.firestore.Firestore): Promise<string> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const shortId = generateShortId();
-    const existing = await db.collection('jobs').where('shortId', '==', shortId).limit(1).get();
-    if (existing.empty) return shortId;
-  }
-  // Fallback: 10-char to virtually eliminate collision
-  return generateShortId(10);
-}
-
-// Helper: Write jobs to Firestore with dedup
-async function writeJobsToFirestore(jobs: any[]): Promise<{ newJobs: number; updatedJobs: number }> {
-  const db = admin.firestore();
-  const now = admin.firestore.Timestamp.now();
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  let newJobs = 0;
-  let updatedJobs = 0;
-
-  // Process in batches of 400 (Firestore limit is 500 per batch, using 400 for safety — 2 ops per doc possible)
-  const batchSize = 400;
-  for (let i = 0; i < jobs.length; i += batchSize) {
-    const chunk = jobs.slice(i, i + batchSize);
-    const batch = db.batch();
-
-    for (const job of chunk) {
-      if (!job.job_id) continue;
-
-      // Use base64 job_id as doc ID (Google's job_id can be very long)
-      const docId = Buffer.from(job.job_id).toString('base64').replace(/[/+=]/g, '_').substring(0, 128);
-      const docRef = db.collection('jobs').doc(docId);
-
-      // Check if exists
-      const existing = await docRef.get();
-
-      if (existing.exists) {
-        // Update lastSeen + backfill postedTimestamp if missing
-        const existingData = existing.data();
-        const updateData: any = {
-          lastSeen: now,
-          status: 'active',
-        };
-        if (!existingData?.postedTimestamp) {
-          const postedAtStr = existingData?.postedAt || job.detected_extensions?.posted_at || '';
-          if (postedAtStr) {
-            const nowMs = Date.now();
-            const normalized = postedAtStr.replace(/[٠-٩]/g, (d: string) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
-            const lower = normalized.toLowerCase();
-            const numMatch = lower.match(/(\d+)/);
-            const num = numMatch ? parseInt(numMatch[1], 10) : 0;
-            if (num > 0) {
-              const refMs = existingData?.firstSeen?.toMillis ? existingData.firstSeen.toMillis() : nowMs;
-              let msAgo = 0;
-              if (/minute|minuto|دقيق/.test(lower)) msAgo = num * 60 * 1000;
-              else if (/hour|hora|ساع/.test(lower)) msAgo = num * 3600 * 1000;
-              else if (/day|dia|día|يوم/.test(lower)) msAgo = num * 86400 * 1000;
-              else if (/week|semana|أسبوع/.test(lower)) msAgo = num * 7 * 86400 * 1000;
-              else if (/month|mes|mês|شهر/.test(lower)) msAgo = num * 30 * 86400 * 1000;
-              if (msAgo > 0) {
-                updateData.postedTimestamp = admin.firestore.Timestamp.fromMillis(refMs - msAgo);
-              }
-            }
-          }
-        }
-        batch.update(docRef, updateData);
-        updatedJobs++;
-      } else {
-        // New job — full write
-        // Generate SEO-friendly short ID
-        const shortId = await generateUniqueShortId(db);
-
-        // Convert relative postedAt string to actual timestamp
-        const postedAtStr = job.detected_extensions?.posted_at || '';
-        let postedTimestamp = now;
-        if (postedAtStr) {
-          try {
-            const nowMs = Date.now();
-            // Normalize Arabic/Eastern digits to Western
-            const normalized = postedAtStr.replace(/[٠-٩]/g, (d: string) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
-            const lower = normalized.toLowerCase();
-            const numMatch = lower.match(/(\d+)/);
-            const num = numMatch ? parseInt(numMatch[1], 10) : 0;
-            if (num > 0) {
-              let msAgo = 0;
-              if (lower.match(/minute|minuto|دقيق/)) msAgo = num * 60 * 1000;
-              else if (lower.match(/hour|hora|ساع/)) msAgo = num * 3600 * 1000;
-              else if (lower.match(/day|dia|día|يوم/)) msAgo = num * 86400 * 1000;
-              else if (lower.match(/week|semana|أسبوع/)) msAgo = num * 7 * 86400 * 1000;
-              else if (lower.match(/month|mes|mês|شهر/)) msAgo = num * 30 * 86400 * 1000;
-              if (msAgo > 0) {
-                postedTimestamp = admin.firestore.Timestamp.fromMillis(nowMs - msAgo);
-              }
-            }
-          } catch (_e) {
-            // fallback to now
-          }
-        }
-
-        batch.set(docRef, {
-          shortId,
-          jobId: job.job_id,
-          title: job.title || '',
-          company: job.company_name || '',
-          location: job.location || '',
-          description: job.description || '',
-          via: job.via || '',
-          scheduleType: job.detected_extensions?.schedule_type || '',
-          isRemote: job.detected_extensions?.work_from_home || false,
-          category: job._category || '',
-          salary: job.detected_extensions?.salary || null,
-          postedAt: postedAtStr,
-          postedTimestamp,
-          firstSeen: now,
-          lastSeen: now,
-          scrapedDate: todayStr,
-          status: 'active',
-          applyOptions: (job.apply_options || []).map((o: any) => ({
-            source: o.title || '',
-            link: o.link || '',
-          })),
-          shareLink: job.share_link || '',
-          qualifications: job.detected_extensions?.qualifications || '',
-          highlights: job.job_highlights || [],
-          thumbnail: job.thumbnail || null,
-        });
-        newJobs++;
-      }
-    }
-
-    await batch.commit();
-    // console.log(`📦 Batch committed: ${chunk.length} jobs (index ${i}-${i + chunk.length - 1})`);
-  }
-
-  return { newJobs, updatedJobs };
-}
-
-// Helper: Backfill postedTimestamp for existing jobs that don't have it
-async function backfillPostedTimestamp(): Promise<number> {
-  const db = admin.firestore();
-  const nowMs = Date.now();
-  let updated = 0;
-
-  // Get active jobs without postedTimestamp (they'll have firstSeen but not postedTimestamp)
-  const snapshot = await db.collection('jobs')
-    .where('status', '==', 'active')
-    .limit(500)
-    .get();
-
-  if (snapshot.empty) return 0;
-
-  const batchSize = 400;
-  for (let i = 0; i < snapshot.docs.length; i += batchSize) {
-    const chunk = snapshot.docs.slice(i, i + batchSize);
-    const batch = db.batch();
-
-    for (const docSnap of chunk) {
-      const data = docSnap.data();
-      if (data.postedTimestamp) continue; // Already has it
-
-      let postedTimestamp = data.firstSeen || admin.firestore.Timestamp.now();
-      const postedAtStr = data.postedAt || '';
-      if (postedAtStr) {
-        try {
-          // Normalize Arabic/Eastern digits to Western
-          const normalized = postedAtStr.replace(/[٠-٩]/g, (d: string) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
-          const lower = normalized.toLowerCase();
-          const numMatch = lower.match(/(\d+)/);
-          const num = numMatch ? parseInt(numMatch[1], 10) : 0;
-          if (num > 0) {
-            const refMs = data.firstSeen?.toMillis ? data.firstSeen.toMillis() : nowMs;
-            let msAgo = 0;
-            if (lower.match(/minute|minuto|دقيق/)) msAgo = num * 60 * 1000;
-            else if (lower.match(/hour|hora|ساع/)) msAgo = num * 3600 * 1000;
-            else if (lower.match(/day|dia|día|يوم/)) msAgo = num * 86400 * 1000;
-            else if (lower.match(/week|semana|أسبوع/)) msAgo = num * 7 * 86400 * 1000;
-            else if (lower.match(/month|mes|mês|شهر/)) msAgo = num * 30 * 86400 * 1000;
-            if (msAgo > 0) {
-              postedTimestamp = admin.firestore.Timestamp.fromMillis(refMs - msAgo);
-            }
-          }
-        } catch (_e) { /* fallback */ }
-      }
-
-      batch.update(docSnap.ref, { postedTimestamp });
-      updated++;
-    }
-
-    await batch.commit();
-  }
-
-  return updated;
-}
-
-// Helper: Mark jobs not seen today as expired
-async function markExpiredJobs(): Promise<number> {
-  const db = admin.firestore();
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  // Get active jobs NOT seen today
-  const snapshot = await db.collection('jobs')
-    .where('status', '==', 'active')
-    .where('scrapedDate', '<', todayStr)
-    .limit(500)
-    .get();
-
-  if (snapshot.empty) return 0;
-
-  const batch = db.batch();
-  snapshot.docs.forEach(doc => {
-    batch.update(doc.ref, { status: 'expired' });
-  });
-  await batch.commit();
-
-  return snapshot.size;
-}
-
-/**
- * 🕐 Scheduled Job Scraper — runs daily at 8 PM IST (2:30 PM UTC)
- */
-export const scheduledJobScraper = functions
-  .runWith({ timeoutSeconds: 540, memory: '1GB' })
-  .pubsub.schedule('30 14 * * *')   // 2:30 PM UTC = 8:00 PM IST
-  .timeZone('Asia/Kolkata')
-  .onRun(async () => {
-    // console.log('🔍 Starting scheduled job scraper...');
-
-    // Read SerpAPI key from Firestore settings
-    const settingsDoc = await admin.firestore().collection('settings').doc('google_serpapi_key').get();
-    const apiKey = settingsDoc.data()?.google_serpapi_key;
-    if (!apiKey) {
-      console.error('❌ SerpAPI key not found in settings/google_serpapi_key');
-      return;
-    }
-
-    try {
-      // 1. Scrape jobs
-      const { jobs, stats } = await runJobScraper(apiKey);
-      // console.log(`✅ Scraped ${jobs.length} unique jobs (${stats.totalApiCalls} API calls, ${stats.duplicatesSkipped} dupes)`);
-
-      if (jobs.length === 0) {
-        // console.log('⚠️ No jobs found today');
-        return;
-      }
-
-      // 2. Write to Firestore
-      const { newJobs, updatedJobs } = await writeJobsToFirestore(jobs);
-      // console.log(`📊 Firestore: ${newJobs} new, ${updatedJobs} updated`);
-
-      // 3. Backfill postedTimestamp for older jobs missing it
-      const backfilled = await backfillPostedTimestamp();
-      if (backfilled > 0) console.log(`🔄 Backfilled postedTimestamp for ${backfilled} existing jobs`);
-
-      // 4. Mark old jobs as expired
-      const expired = await markExpiredJobs();
-      // console.log(`🗑️ Marked ${expired} jobs as expired`);
-
-      // 5. Log scrape run
-      await admin.firestore().collection('jobScrapeLog').add({
-        date: new Date().toISOString().split('T')[0],
-        timestamp: admin.firestore.Timestamp.now(),
-        totalScraped: jobs.length,
-        newJobs,
-        updatedJobs,
-        expired,
-        apiCalls: stats.totalApiCalls,
-        duplicatesSkipped: stats.duplicatesSkipped,
-      });
-
-      // console.log('✅ Job scraper completed successfully');
-    } catch (error: any) {
-      console.error('❌ Job scraper failed:', error.message);
-    }
-  });
-
-/**
- * 🔧 Manual Job Scraper Trigger — callable from admin UI
- */
-export const triggerJobScraper = functions
-  .runWith({ timeoutSeconds: 540, memory: '1GB' })
-  .https.onCall(async (_data, context) => {
-    // Optional: restrict to admin
-    // if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
-
-    // Read SerpAPI key from Firestore settings
-    const settingsDoc = await admin.firestore().collection('settings').doc('google_serpapi_key').get();
-    const apiKey = settingsDoc.data()?.google_serpapi_key;
-    if (!apiKey) {
-      throw new functions.https.HttpsError('failed-precondition', 'SerpAPI key not found in settings/google_serpapi_key');
-    }
-
-    try {
-      const startTime = Date.now();
-
-      // 1. Scrape
-      const { jobs, stats } = await runJobScraper(apiKey);
-
-      if (jobs.length === 0) {
-        return { success: true, message: 'No jobs found today', stats };
-      }
-
-      // 2. Write to Firestore
-      const { newJobs, updatedJobs } = await writeJobsToFirestore(jobs);
-
-      // 3. Backfill postedTimestamp for older jobs missing it
-      await backfillPostedTimestamp();
-
-      // 4. Mark expired
-      const expired = await markExpiredJobs();
-
-      // 4. Log
-      await admin.firestore().collection('jobScrapeLog').add({
-        date: new Date().toISOString().split('T')[0],
-        timestamp: admin.firestore.Timestamp.now(),
-        totalScraped: jobs.length,
-        newJobs,
-        updatedJobs,
-        expired,
-        apiCalls: stats.totalApiCalls,
-        duplicatesSkipped: stats.duplicatesSkipped,
-        triggeredBy: context.auth?.uid || 'manual',
-      });
-
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-
-      return {
-        success: true,
-        totalScraped: jobs.length,
-        newJobs,
-        updatedJobs,
-        expired,
-        apiCalls: stats.totalApiCalls,
-        duplicatesSkipped: stats.duplicatesSkipped,
-        timeTaken: `${elapsed}s`,
-      };
-    } catch (error: any) {
-      console.error('❌ Manual job scraper failed:', error.message);
-      throw new functions.https.HttpsError('internal', 'Job scraper failed', error.message);
-    }
-  });
 
 // ============================================================
 // Personality Trait Aggregation for Exam Dashboard
@@ -8846,753 +8569,280 @@ export const migrateLeaderboardStats = functions
       throw new functions.https.HttpsError('internal', 'Migration failed', error.message);
     }
   });
+
 // ============================================
-// LIVE EXAM STATS - Server-side paginated
-// Replaces heavy client-side fetching in LiveStats
+// RESUME BUILDER - EMAIL VERIFICATION FUNCTIONS
+// sendResumeVerificationEmail: called after signup, stores token + sends email
+// cleanupUnverifiedResumeAccounts: daily cron, deletes unverified accounts >24h old
 // ============================================
-export const getLiveExamStats = functions
+
+/**
+ * Generate a random hex token for email verification
+ */
+function generateVerificationToken(length = 32): string {
+  return require('crypto').randomBytes(length).toString('hex');
+}
+
+/**
+ * 📧 Send Email Verification for Resume Builder External Signups
+ * Called from resume-builder.php after createUserWithEmailAndPassword succeeds.
+ * Stores { emailVerified: false, verificationToken, verificationSentAt } in Firestore,
+ * then sends a branded verification email via Brevo SMTP.
+ *
+ * Callable — requires the user to be authenticated (just signed up).
+ */
+export const sendResumeVerificationEmail = functions
   .region('us-central1')
-  .runWith({ timeoutSeconds: 30, memory: '512MB' })
+  .runWith({ timeoutSeconds: 30, memory: '256MB' })
   .https.onCall(async (data, context) => {
     if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
     }
 
-    const { examId, collegeId, page = 1, pageSize = 20, filter = 'present' } = data;
+    const uid = context.auth.uid;
+    const email = context.auth.token.email || data.email || '';
+    const name = data.name || email.split('@')[0] || 'User';
 
-    if (!examId || !collegeId) {
-      throw new functions.https.HttpsError('invalid-argument', 'examId and collegeId are required');
+    if (!email) {
+      throw new functions.https.HttpsError('invalid-argument', 'Email address is required');
     }
 
     try {
       const db = admin.firestore();
 
-      // ──────────────────────────────────────────
-      // 1. EXAM METADATA
-      // ──────────────────────────────────────────
-      const examDoc = await db.collection(COLLECTIONS.EXAMS).doc(examId).get();
-      if (!examDoc.exists) {
-        throw new functions.https.HttpsError('not-found', 'Exam not found');
-      }
-      const exam = examDoc.data()!;
-      const totalQuestions = exam.totalQuestions || 0;
-      const durationMinutes = parseInt(exam.duration) || 0;
+      // Generate token
+      const token = generateVerificationToken();
+      const now = admin.firestore.Timestamp.now();
 
-      // Calculate exam timing
-      let examStartTime: Date | null = null;
-      let examEndTime: Date | null = null;
-      if (exam.examDate) {
-        const examDate = exam.examDate.toDate ? exam.examDate.toDate() : new Date(exam.examDate);
-        examStartTime = new Date(examDate);
-        if (exam.examTime) {
-          const [hours, minutes] = exam.examTime.split(':').map(Number);
-          examStartTime.setHours(hours, minutes, 0, 0);
-        }
-        examEndTime = new Date(examStartTime.getTime() + durationMinutes * 60 * 1000);
+      // Store verification token in users collection (set with merge in case doc doesn't exist yet)
+      await db.collection(COLLECTIONS.USERS).doc(uid).set({
+        emailVerified: false,
+        verificationToken: token,
+        verificationSentAt: now,
+        updatedAt: now,
+        email: email.toLowerCase(),
+        fullName: name,
+        collegeId: 'RES',
+        createdAt: now,
+      }, { merge: true });
+
+      // Fetch Brevo SMTP credentials from Firestore
+      const emailCredsDoc = await db.doc(FIRESTORE_PATHS.EMAIL_CREDENTIALS).get();
+      if (!emailCredsDoc.exists) {
+        throw new functions.https.HttpsError('failed-precondition', 'Email credentials not configured');
       }
 
-      const now = new Date();
-      let examStatus: 'not_started' | 'in_progress' | 'ended' = 'not_started';
-      if (examStartTime && examEndTime) {
-        if (now < examStartTime) examStatus = 'not_started';
-        else if (now > examEndTime) examStatus = 'ended';
-        else examStatus = 'in_progress';
+      const emailCreds = emailCredsDoc.data();
+      if (!emailCreds?.MAIL_HOST || !emailCreds?.MAIL_USERNAME || !emailCreds?.MAIL_PASSWORD || !emailCreds?.MAIL_PORT) {
+        throw new functions.https.HttpsError('failed-precondition', 'Incomplete email credentials');
       }
 
-      // Progress bar
-      let progressPercent = 0;
-      let elapsedMinutes = 0;
-      let remainingMinutes = durationMinutes;
-      if (examStartTime && examEndTime) {
-        const totalMs = examEndTime.getTime() - examStartTime.getTime();
-        const elapsedMs = Math.max(0, now.getTime() - examStartTime.getTime());
-        progressPercent = Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100));
-        elapsedMinutes = Math.floor(elapsedMs / 60000);
-        remainingMinutes = Math.max(0, Math.floor((totalMs - elapsedMs) / 60000));
-      }
-
-      // ──────────────────────────────────────────
-      // 2. ENROLLMENTS (total count)
-      // ──────────────────────────────────────────
-      const enrollSnap = await db.collection(COLLECTIONS.EXAM_ENROLLMENTS)
-        .where('examId', '==', examId)
-        .where('status', '==', 'active')
-        .get();
-      const totalEnrolled = enrollSnap.size;
-      const enrolledStudentIds = new Set<string>();
-      enrollSnap.docs.forEach(d => enrolledStudentIds.add(d.data().studentId));
-      // console.log(`📊 [DEBUG] Enrollments: collection=${COLLECTIONS.EXAM_ENROLLMENTS}, examId=${examId}, totalEnrolled=${totalEnrolled}, enrolledIds=${Array.from(enrolledStudentIds).slice(0, 3).join(',')}...`);
-
-      // ──────────────────────────────────────────
-      // 3. ATTENDANCE (present students)
-      // ──────────────────────────────────────────
-      const attendanceSnap = await db.collection(COLLECTIONS.ATTENDANCE)
-        .where('examId', '==', examId)
-        .get();
-
-      // Filter: status=present AND enrolled
-      const presentRecords: any[] = [];
-      attendanceSnap.docs.forEach(d => {
-        const rec = d.data();
-        const sid = rec.studentId || rec.userId;
-        if (rec.status === 'present' && (enrolledStudentIds.size === 0 || enrolledStudentIds.has(sid))) {
-          presentRecords.push(rec);
-        }
-      });
-      
-      // ──────────────────────────────────────────
-      // 4. EXAM ATTEMPTS (all for this exam, dedupe by studentId keeping latest)
-      // ──────────────────────────────────────────
-      const attemptsSnap = await db.collection(COLLECTIONS.EXAM_ATTEMPTS)
-        .where('examId', '==', examId)
-        .get();
-
-      const attemptsMap = new Map<string, any>();
-      const attemptCountMap = new Map<string, number>();
-      attemptsSnap.docs.forEach(d => {
-        const attempt: any = { ...d.data(), attemptId: d.id };
-        const sid = attempt.studentId;
-        attemptCountMap.set(sid, (attemptCountMap.get(sid) || 0) + 1);
-
-        const existing = attemptsMap.get(sid);
-        if (!existing) {
-          attemptsMap.set(sid, attempt);
-        } else {
-          const existingStart = existing.startTime?.toDate ? existing.startTime.toDate() : new Date(existing.startTime || 0);
-          const currentStart = attempt.startTime?.toDate ? attempt.startTime.toDate() : new Date(attempt.startTime || 0);
-          if (currentStart > existingStart) {
-            attemptsMap.set(sid, attempt);
-          }
-        }
+      const transporter = nodemailer.createTransport({
+        host: emailCreds.MAIL_HOST,
+        port: parseInt(emailCreds.MAIL_PORT),
+        secure: false,
+        auth: { user: emailCreds.MAIL_USERNAME, pass: emailCreds.MAIL_PASSWORD },
       });
 
-      // If no attendance records but there ARE attempts, treat attempted students as present
-      // This handles exams where attendance was not marked (Firestore rules issue or attendance disabled)
-      if (presentRecords.length === 0 && attemptsMap.size > 0) {
-        // console.log(`📊 [DEBUG] No attendance records but ${attemptsMap.size} attempts found — using attempts as present`);
-        attemptsMap.forEach((attempt, sid) => {
-          if (enrolledStudentIds.size === 0 || enrolledStudentIds.has(sid)) {
-            presentRecords.push({
-              studentId: sid,
-              userId: sid,
-              status: 'present',
-              fullName: attempt.studentName || attempt.fullName || '',
-              studentRoll: attempt.rollNumber || attempt.studentRoll || '',
-              markedAt: attempt.startTime,
-            });
-          }
-        });
-      }
+      const verifyUrl = `https://www.tutorialspoint.com/online-resume-builder.htm?verify_token=${token}&uid=${uid}`;
 
-      const presentCount = presentRecords.length;
-      const absentCount = Math.max(0, totalEnrolled - presentCount);
-      
-      // DEBUG: Log attendance details
-      // const skippedNotPresent = attendanceSnap.docs.filter(d => d.data().status !== 'present').length;
-      // const skippedNotEnrolled = attendanceSnap.docs.filter(d => {
-      //   const rec = d.data();
-      //   const sid = rec.studentId || rec.userId;
-      //   return rec.status === 'present' && enrolledStudentIds.size > 0 && !enrolledStudentIds.has(sid);
-      // }).length;
-      // console.log(`📊 [DEBUG] Attendance: collection=${COLLECTIONS.ATTENDANCE}, totalDocs=${attendanceSnap.size}, statusPresent=${attendanceSnap.docs.filter(d => d.data().status === 'present').length}, skippedNotEnrolled=${skippedNotEnrolled}, skippedNotPresent=${skippedNotPresent}, finalPresent=${presentCount}`);
+      const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+  <div style="max-width:600px;margin:20px auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.1);">
+    <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);padding:40px 30px;text-align:center;">
+      <h1 style="color:#fff;margin:0;font-size:26px;">Verify Your Email</h1>
+      <p style="color:#fff;opacity:.9;margin:8px 0 0;">Resume Builder by Tutorials Point</p>
+    </div>
+    <div style="padding:40px 30px;">
+      <h2 style="color:#667eea;margin-top:0;">Hello ${name}! 👋</h2>
+      <p style="color:#4b5563;font-size:16px;line-height:1.6;">
+        Thanks for signing up! Please verify your email address to activate your account and start saving your resumes.
+      </p>
+      <div style="text-align:center;margin:35px 0;">
+        <a href="${verifyUrl}" style="display:inline-block;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:#fff;padding:15px 40px;text-decoration:none;border-radius:6px;font-weight:bold;font-size:16px;">
+          ✅ Verify My Email
+        </a>
+      </div>
+      <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:15px;border-radius:5px;margin:25px 0;">
+        <p style="color:#92400e;margin:0;font-size:14px;">
+          <strong>⚠️ This link expires in 24 hours.</strong> If you did not create an account, you can safely ignore this email.
+        </p>
+      </div>
+      <p style="color:#6b7280;font-size:13px;">
+        If the button doesn't work, copy and paste this link into your browser:<br>
+        <a href="${verifyUrl}" style="color:#667eea;word-break:break-all;">${verifyUrl}</a>
+      </p>
+    </div>
+    <div style="background:#f7fafc;padding:25px;text-align:center;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;">© ${new Date().getFullYear()} Tutorials Point India Pvt. Ltd. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>`;
 
-      // console.log(`📊 [DEBUG] Attempts: collection=${COLLECTIONS.EXAM_ATTEMPTS}, totalDocs=${attemptsSnap.size}, uniqueStudents=${attemptsMap.size}, duplicates=${attemptsSnap.size - attemptsMap.size}`);
-
-      // ──────────────────────────────────────────
-      // 5. CONNECTIVITY (all for this exam, group by userId)
-      // ──────────────────────────────────────────
-      const connectivityMap = new Map<string, { disconnections: number; duration: number }>();
-      try {
-        const connectSnap = await db.collection(COLLECTIONS.INTERNET_STATUS)
-          .where('examId', '==', examId)
-          .get();
-        connectSnap.docs.forEach(d => {
-          const rec = d.data();
-          const uid = rec.userId;
-          const existing = connectivityMap.get(uid) || { disconnections: 0, duration: 0 };
-          existing.disconnections += 1;
-          existing.duration += (rec.internetUnavailableDuration || 0);
-          connectivityMap.set(uid, existing);
-        });
-      } catch (e) {
-        // console.warn('⚠️ Connectivity fetch failed, continuing without:', e);
-      }
-      // console.log(`📊 [DEBUG] Connectivity: collection=${COLLECTIONS.INTERNET_STATUS}, usersWithData=${connectivityMap.size}, totalEntries=${Array.from(connectivityMap.values()).reduce((s, v) => s + v.disconnections, 0)}, totalDurationSec=${Array.from(connectivityMap.values()).reduce((s, v) => s + v.duration, 0)}`);
-
-      // ──────────────────────────────────────────
-      // 6. COMPUTE SUMMARY STATS
-      // ──────────────────────────────────────────
-      let submittedCount = 0;
-      let totalProgress = 0;
-      let totalViolations = 0;
-      const violationStudentIds = new Set<string>();
-
-      presentRecords.forEach(rec => {
-        const sid = rec.studentId || rec.userId;
-        const attempt = attemptsMap.get(sid);
-        if (!attempt) return;
-
-        // Submitted
-        if (attempt.status === 'submitted' || attempt.status === 'auto_submitted') {
-          submittedCount++;
-        }
-
-        // Progress: count answered questions
-        const answered = attempt.responses
-          ? attempt.responses.filter((r: any) => {
-              if (r.isAnswered === true) return true;
-              if (r.studentAnswer) {
-                if (typeof r.studentAnswer === 'string' && r.studentAnswer.trim().length > 0) return true;
-                if (Array.isArray(r.studentAnswer) && r.studentAnswer.length > 0) return true;
-              }
-              return false;
-            }).length
-          : 0;
-        const pct = totalQuestions > 0 ? (answered / totalQuestions) * 100 : 0;
-        totalProgress += pct;
-
-        // Violations from responses
-        if (attempt.responses) {
-          attempt.responses.forEach((r: any) => {
-            if (r.violations && Array.isArray(r.violations) && r.violations.length > 0) {
-              totalViolations += r.violations.length;
-              violationStudentIds.add(sid);
-            }
-          });
-        }
+      await transporter.sendMail({
+        from: `Tutorials Point <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+        to: email.toLowerCase(),
+        subject: 'Verify your email – Resume Builder',
+        html: emailHtml,
       });
 
-      const avgProgress = presentCount > 0 ? Math.round(totalProgress / presentCount) : 0;
+      // console.log(`✅ Verification email sent to ${email}`);
 
-      // Connectivity aggregate
-      let totalDisconnectionSeconds = 0;
-      let totalDisconnectionTimes = 0;
-      connectivityMap.forEach(v => {
-        totalDisconnectionSeconds += v.duration;
-        totalDisconnectionTimes += v.disconnections;
-      });
+      return { success: true, message: 'Verification email sent' };
 
-      // ──────────────────────────────────────────
-      // 7. PAGINATE STUDENTS (present or absent based on filter)
-      // ──────────────────────────────────────────
-      // Sort present records: submitted first, then active, then others
-      const statusOrder: Record<string, number> = { 'submitted': 0, 'auto_submitted': 0, 'in_progress': 1, 'expired': 2 };
-      presentRecords.sort((a, b) => {
-        const aAttempt = attemptsMap.get(a.studentId || a.userId);
-        const bAttempt = attemptsMap.get(b.studentId || b.userId);
-        const aOrder = statusOrder[aAttempt?.status] ?? 3;
-        const bOrder = statusOrder[bAttempt?.status] ?? 3;
-        return aOrder - bOrder;
-      });
-
-      // Build absent student records if filter is 'absent'
-      let absentRecords: any[] = [];
-      if (filter === 'absent') {
-        const presentStudentIds = new Set(presentRecords.map((r: any) => r.studentId || r.userId));
-        const absentStudentIds = Array.from(enrolledStudentIds).filter(id => !presentStudentIds.has(id));
-        
-        // Fetch user details for absent students in batches
-        const batchSize = 10;
-        for (let i = 0; i < absentStudentIds.length; i += batchSize) {
-          const batch = absentStudentIds.slice(i, i + batchSize);
-          const userSnaps = await Promise.all(
-            batch.map(uid => db.collection('users').doc(uid).get())
-          );
-          userSnaps.forEach((snap, idx) => {
-            const userData = snap.exists ? snap.data() : null;
-            absentRecords.push({
-              studentId: batch[idx],
-              studentName: userData?.fullName || userData?.name || 'Unknown',
-              studentRollNumber: userData?.studentRoll || userData?.rollNumber || 'N/A',
-              email: userData?.email || '',
-            });
-          });
-        }
-        // Sort absent by name
-        absentRecords.sort((a, b) => (a.studentName || '').localeCompare(b.studentName || ''));
-      }
-
-      const recordsToPage = filter === 'absent' ? absentRecords : presentRecords;
-      const totalForFilter = filter === 'absent' ? absentCount : presentCount;
-      const startIndex = (page - 1) * pageSize;
-      const pageRecords = recordsToPage.slice(startIndex, startIndex + pageSize);
-      const totalPages = Math.ceil(totalForFilter / pageSize);
-
-      // ──────────────────────────────────────────
-      // 7b. ENRICH: Fetch user profiles for page records missing name/roll
-      // ──────────────────────────────────────────
-      const missingNameIds: string[] = [];
-      pageRecords.forEach((rec: any) => {
-        const sid = rec.studentId || rec.userId;
-        const attempt = attemptsMap.get(sid);
-        const hasName = rec.studentName || rec.fullName || attempt?.studentName || attempt?.fullName;
-        if (!hasName && sid) {
-          missingNameIds.push(sid);
-        }
-      });
-
-      const userProfileCache = new Map<string, any>();
-      if (missingNameIds.length > 0) {
-        const batchSize = 10;
-        for (let i = 0; i < missingNameIds.length; i += batchSize) {
-          const batch = missingNameIds.slice(i, i + batchSize);
-          const userSnaps = await Promise.all(
-            batch.map(uid => db.collection('users').doc(uid).get())
-          );
-          userSnaps.forEach((snap, idx) => {
-            if (snap.exists) {
-              userProfileCache.set(batch[idx], snap.data());
-            }
-          });
-        }
-      }
-
-      // ──────────────────────────────────────────
-      // 8. MAP STUDENT DATA FOR PAGE
-      // ──────────────────────────────────────────
-      const toDateSafe = (val: any): Date | null => {
-        if (!val) return null;
-        if (val.toDate) return val.toDate();
-        if (val.__time__) return new Date(val.__time__);
-        if (val.seconds) return new Date(val.seconds * 1000 + (val.nanoseconds || 0) / 1e6);
-        if (typeof val === 'number') return new Date(val > 1e12 ? val : val * 1000);
-        if (typeof val === 'string') return new Date(val);
-        return null;
-      };
-
-      const formatTime = (date: Date | null): string | null => {
-        if (!date || isNaN(date.getTime())) return null;
-        return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
-      };
-
-      const students = pageRecords.map(rec => {
-        const sid = rec.studentId || rec.userId;
-        const attempt = attemptsMap.get(sid);
-        const connectivity = connectivityMap.get(sid) || { disconnections: 0, duration: 0 };
-
-        // Activities
-        const activities = attempt?.activities || [];
-        const entryActivities = activities.filter((a: any) => a.type === 'enter');
-        const entryActivity = entryActivities[0];
-        const exitActivity = [...activities].reverse().find((a: any) => a.type === 'exit');
-
-        const entryTime = toDateSafe(entryActivity?.timestamp);
-        const exitTime = toDateSafe(exitActivity?.timestamp);
-        const ipAddress = entryActivity?.ipAddress || '';
-
-        // Multiple IPs check
-        const uniqueIPs = new Set(entryActivities.map((a: any) => a.ipAddress).filter(Boolean));
-
-        // Questions answered
-        const questionsAnswered = attempt?.responses
-          ? attempt.responses.filter((r: any) => {
-              if (r.isAnswered === true) return true;
-              if (r.studentAnswer) {
-                if (typeof r.studentAnswer === 'string' && r.studentAnswer.trim().length > 0) return true;
-                if (Array.isArray(r.studentAnswer) && r.studentAnswer.length > 0) return true;
-              }
-              return false;
-            }).length
-          : 0;
-
-        const progressPct = totalQuestions > 0 ? Math.round((questionsAnswered / totalQuestions) * 100) : 0;
-
-        // Status
-        let status = 'not_started';
-        if (!attempt) {
-          status = 'not_started';
-        } else if (attempt.status === 'submitted' || attempt.status === 'auto_submitted') {
-          status = 'submitted';
-        } else if (attempt.status === 'expired' || attempt.status === 'timeout') {
-          status = 'expired';
-        } else if (attempt.status === 'in_progress') {
-          status = examEndTime && now > examEndTime ? 'expired' : 'active';
-        }
-
-        // Duration
-        let duration = attempt?.timeSpent || 0;
-        if (duration === 0 && entryTime) {
-          const end = exitTime || now;
-          duration = Math.floor((end.getTime() - entryTime.getTime()) / 1000);
-        }
-
-        // Violations from responses
-        const violations: any[] = [];
-        if (attempt?.responses) {
-          attempt.responses.forEach((r: any) => {
-            if (r.violations && Array.isArray(r.violations)) {
-              r.violations.forEach((v: any) => {
-                let severity = v.severity || 'low';
-                if (severity === 'moderate') severity = 'high';
-                if (severity === 'minor') severity = 'low';
-                violations.push({
-                  type: v.type || 'unknown',
-                  details: v.details || '',
-                  severity,
-                  timestamp: v.timestamp || null,
-                  questionNo: r.questionNo || 0,
-                });
-              });
-            }
-          });
-        }
-
-        return {
-          userId: sid,
-          fullName: rec.studentName || rec.fullName || attempt?.studentName || attempt?.fullName || userProfileCache.get(sid)?.fullName || userProfileCache.get(sid)?.name || userProfileCache.get(sid)?.displayName || 'Unknown',
-          studentRoll: rec.studentRollNumber || rec.studentRoll || rec.rollNumber || attempt?.rollNumber || attempt?.studentRoll || userProfileCache.get(sid)?.studentRoll || userProfileCache.get(sid)?.rollNumber || 'N/A',
-          status,
-          attemptId: attempt?.attemptId || null,
-          attemptCount: attemptCountMap.get(sid) || 0,
-          questionsAnswered,
-          totalQuestions,
-          progressPercent: progressPct,
-          entryTime: formatTime(entryTime),
-          exitTime: formatTime(exitTime),
-          duration,
-          markedAt: formatTime(toDateSafe(rec.markedAt)),
-          ipAddress,
-          hasMultipleIPs: uniqueIPs.size > 1,
-          disconnections: connectivity.disconnections,
-          disconnectionDuration: connectivity.duration,
-          violations,
-          violationCount: violations.length,
-        };
-      });
-
-      // console.log(`📊 [DEBUG] FINAL SUMMARY: present=${presentCount}, absent=${absentCount}, enrolled=${totalEnrolled}, submitted=${submittedCount}, avgProgress=${avgProgress}, violations=${totalViolations}, violationStudents=${violationStudentIds.size}, disconnMinutes=${Math.round(totalDisconnectionSeconds / 60)}, disconnTimes=${totalDisconnectionTimes}, connectivityUsers=${connectivityMap.size}, pageStudents=${students.length}, page=${page}/${totalPages}`);
-
-      return {
-        summary: {
-          presentCount,
-          absentCount,
-          totalEnrolled,
-          attendancePercent: totalEnrolled > 0 ? Math.round((presentCount / totalEnrolled) * 100) : 0,
-          examStatus,
-          submittedCount,
-          avgProgress,
-          totalViolations,
-          violationStudentCount: violationStudentIds.size,
-          totalDisconnectionMinutes: Math.round(totalDisconnectionSeconds / 60),
-          totalDisconnectionTimes,
-          affectedUsersPercent: presentCount > 0 ? Math.round((connectivityMap.size / presentCount) * 100) : 0,
-          progressPercent: Math.round(progressPercent),
-          elapsedMinutes,
-          remainingMinutes,
-          mode: exam.mode || 'online',
-          totalQuestions,
-          durationMinutes,
-        },
-        students,
-        pagination: {
-          page,
-          pageSize,
-          totalStudents: totalForFilter,
-          totalPages,
-          hasMore: page < totalPages,
-        },
-      };
     } catch (error: any) {
-      console.error('❌ getLiveExamStats error:', error);
+      console.error('❌ sendResumeVerificationEmail error:', error);
       if (error instanceof functions.https.HttpsError) throw error;
-      throw new functions.https.HttpsError('internal', error.message || 'Failed to fetch live stats');
+      throw new functions.https.HttpsError('internal', `Failed to send verification email: ${error.message}`);
     }
   });
 
-// ============================================
-// 📊 GET EXAM STUDENTS PAGINATED - Server-side pagination + search
-// Single Cloud Function for all student list operations in Result.tsx
-// Supports: browsing (cursor pagination), search (name/roll prefix), tabs (all/present/absent)
-// ============================================
-export const getExamStudentsPaginated = functions
+/**
+ * ✅ Verify Resume Builder Email Token
+ * Called when user clicks the verification link.
+ * Matches token + uid, marks emailVerified: true in Firestore,
+ * and updates Firebase Auth emailVerified flag via Admin SDK.
+ *
+ * Public callable — no auth required (user may not be signed in when clicking link).
+ */
+export const verifyResumeEmail = functions
   .region('us-central1')
-  .runWith({ timeoutSeconds: 60, memory: '512MB' })
-  .https.onCall(async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+  .runWith({ timeoutSeconds: 15, memory: '256MB' })
+  .https.onCall(async (data, _context) => {
+    const { token, uid } = data || {};
+
+    if (!token || !uid) {
+      throw new functions.https.HttpsError('invalid-argument', 'token and uid are required');
     }
-
-    const {
-      examId,
-      pageSize = 20,
-      page = 1,          // page number (1-indexed)
-      filter = 'all',    // 'all' | 'present' | 'absent'
-      searchQuery = '',  // name/roll/email search
-    } = data;
-
-    if (!examId) {
-      throw new functions.https.HttpsError('invalid-argument', 'examId is required');
-    }
-
-    const db = admin.firestore();
-    const search = (searchQuery || '').trim().toLowerCase();
-
-    // console.log(`📊 [getExamStudentsPaginated] examId=${examId}, page=${page}, pageSize=${pageSize}, filter=${filter}, search="${search}"`);
 
     try {
-      // ──────────────────────────────────────────
-      // 0. FETCH EXAM CONFIG (for duration cap)
-      // ──────────────────────────────────────────
-      const examDoc = await db.collection(COLLECTIONS.EXAMS).doc(examId).get();
-      const examConfig = examDoc.exists ? examDoc.data()! : null;
-      const examDurationSeconds = (parseInt(examConfig?.duration) || 0) * 60;
+      const db = admin.firestore();
+      const userRef = db.collection(COLLECTIONS.USERS).doc(uid);
+      const userDoc = await userRef.get();
 
-      // console.log(`📊 [getExamStudentsPaginated] examId=${examId}, duration=${examDurationSeconds}s`);
-
-      // ──────────────────────────────────────────
-      // 1. Get ALL attendance records for this exam (lightweight docs)
-      // ──────────────────────────────────────────
-      const attendanceSnap = await db.collection(COLLECTIONS.ATTENDANCE)
-        .where('examId', '==', examId)
-        .get();
-
-      const attendanceMap = new Map<string, any>(); // studentId -> attendance info
-      const presentStudentIds = new Set<string>();
-      attendanceSnap.docs.forEach(d => {
-        const rec = d.data();
-        const sid = rec.studentId || rec.userId;
-        if (sid) {
-          attendanceMap.set(sid, {
-            studentName: rec.studentName || '',
-            studentEmail: rec.studentEmail || '',
-            rollNumber: rec.studentRollNumber || '',
-            status: rec.status || 'absent',
-          });
-          if (rec.status === 'present') presentStudentIds.add(sid);
-        }
-      });
-
-      // ──────────────────────────────────────────
-      // 2. Get ALL attempts for this exam (dedupe: latest per student)
-      // ──────────────────────────────────────────
-      const attemptsSnap = await db.collection(COLLECTIONS.EXAM_ATTEMPTS)
-        .where('examId', '==', examId)
-        .get();
-
-      const attemptsByStudent = new Map<string, { doc: any; data: any }>();
-      attemptsSnap.docs.forEach(d => {
-        const aData = d.data();
-        const sid = aData.studentId;
-        if (!sid) return;
-        const existing = attemptsByStudent.get(sid);
-        if (!existing) {
-          attemptsByStudent.set(sid, { doc: d, data: aData });
-        } else {
-          const toMs = (t: any) => t?.toDate ? t.toDate().getTime() : new Date(t || 0).getTime();
-          if (toMs(aData.startTime) > toMs(existing.data.startTime)) {
-            attemptsByStudent.set(sid, { doc: d, data: aData });
-          }
-        }
-        // Students with attempts are considered present
-        presentStudentIds.add(sid);
-      });
-
-      // ──────────────────────────────────────────
-      // 3. Get enrolled students not in attendance/attempts
-      // ──────────────────────────────────────────
-      const enrollSnap = await db.collection(COLLECTIONS.EXAM_ENROLLMENTS)
-        .where('examId', '==', examId)
-        .where('status', '==', 'active')
-        .get();
-
-      const allEnrolledIds = new Set<string>();
-      enrollSnap.docs.forEach(d => {
-        const sid = d.data().studentId;
-        if (sid) allEnrolledIds.add(sid);
-      });
-
-      // Find enrolled students with no attendance AND no attempt (truly absent)
-      const unknownStudentIds: string[] = [];
-      allEnrolledIds.forEach(sid => {
-        if (!attendanceMap.has(sid) && !attemptsByStudent.has(sid)) {
-          unknownStudentIds.push(sid);
-        }
-      });
-
-      // Fetch user profiles for unknown students
-      const userProfileMap = new Map<string, any>();
-      const batchSize = 25;
-      for (let i = 0; i < unknownStudentIds.length; i += batchSize) {
-        const batch = unknownStudentIds.slice(i, i + batchSize);
-        const userSnaps = await Promise.all(
-          batch.map(uid => db.collection('users').doc(uid).get())
-        );
-        userSnaps.forEach((snap, idx) => {
-          if (snap.exists) {
-            const uData = snap.data()!;
-            userProfileMap.set(batch[idx], {
-              studentName: uData.fullName || uData.name || uData.displayName || '',
-              studentEmail: uData.email || '',
-              rollNumber: uData.studentRoll || uData.rollNumber || '',
-            });
-          }
-        });
+      if (!userDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Account not found');
       }
 
-      // ──────────────────────────────────────────
-      // 4. Build unified student list
-      // ──────────────────────────────────────────
-      const allStudentIds = new Set<string>();
-      presentStudentIds.forEach(id => allStudentIds.add(id));
-      attendanceMap.forEach((_v, id) => allStudentIds.add(id));
-      allEnrolledIds.forEach(id => allStudentIds.add(id));
+      const userData = userDoc.data()!;
 
-      const toMs = (t: any) => {
-        if (!t) return 0;
-        if (t.toDate) return t.toDate().getTime();
-        if (t instanceof Date) return t.getTime();
-        if (typeof t === 'number') return t;
-        return new Date(t).getTime();
-      };
-
-      // Helper to build lightweight student object
-      const buildStudentObj = (studentId: string) => {
-        const attempt = attemptsByStudent.get(studentId);
-        const attendanceInfo = attendanceMap.get(studentId);
-        const userProfile = userProfileMap.get(studentId);
-        const attemptData = attempt?.data;
-        const isPresent = presentStudentIds.has(studentId);
-
-        if (attemptData) {
-          // ✅ Compute violationCount from responses before stripping them
-          let violationCount = 0;
-          if (attemptData.responses && Array.isArray(attemptData.responses)) {
-            violationCount = attemptData.responses.reduce((t: number, r: any) => t + (r.violations?.length || 0), 0);
-          } else if (typeof attemptData.violationCount === 'number') {
-            violationCount = attemptData.violationCount;
-          } else if (attemptData.violationSummary?.total) {
-            violationCount = attemptData.violationSummary.total;
-          } else if (attemptData.violations && Array.isArray(attemptData.violations)) {
-            violationCount = attemptData.violations.length;
-          }
-
-          // ✅ Compute timeSpent from startTime→submitTime, cap at exam duration
-          let timeSpent = 0;
-          if (attemptData.startTime && attemptData.submitTime) {
-            const start = toMs(attemptData.startTime);
-            const end = toMs(attemptData.submitTime);
-            if (start > 0 && end > start) timeSpent = Math.floor((end - start) / 1000);
-          }
-          if (timeSpent === 0) timeSpent = attemptData.timeSpent || 0;
-          if (examDurationSeconds > 0 && timeSpent > examDurationSeconds) {
-            timeSpent = examDurationSeconds;
-          }
-
-          // Strip heavy arrays, pass through everything else as-is from Firestore
-          const { responses, violations, ...lightData } = attemptData;
-          return {
-            studentId,
-            studentName: attemptData.studentName || attendanceInfo?.studentName || userProfile?.studentName || 'Unknown',
-            studentEmail: attemptData.studentEmail || attendanceInfo?.studentEmail || userProfile?.studentEmail || '',
-            rollNumber: attemptData.rollNumber || attendanceInfo?.rollNumber || userProfile?.rollNumber || '',
-            hasAttempt: true,
-            isPresent,
-            attemptData: {
-              ...lightData,
-              attemptId: attempt!.doc.id,
-              violationCount,
-              timeSpent,
-              likertResponses: attemptData.likertResponses || null,
-            }
-          };
-        } else {
-          return {
-            studentId,
-            studentName: attendanceInfo?.studentName || userProfile?.studentName || 'Unknown',
-            studentEmail: attendanceInfo?.studentEmail || userProfile?.studentEmail || '',
-            rollNumber: attendanceInfo?.rollNumber || userProfile?.rollNumber || '',
-            hasAttempt: false,
-            isPresent,
-            attemptData: null
-          };
-        }
-      };
-
-      // Build full list
-      const allStudents: any[] = [];
-      allStudentIds.forEach(sid => {
-        allStudents.push(buildStudentObj(sid));
-      });
-
-      // ──────────────────────────────────────────
-      // 5. Filter by tab (present/absent)
-      // ──────────────────────────────────────────
-      let filtered: any[];
-      if (filter === 'present') {
-        filtered = allStudents.filter(s => s.isPresent);
-      } else if (filter === 'absent') {
-        filtered = allStudents.filter(s => !s.isPresent);
-      } else {
-        filtered = allStudents;
+      if (userData.emailVerified === true) {
+        return { success: true, message: 'Email already verified' };
       }
 
-      // ──────────────────────────────────────────
-      // 6. Apply search filter
-      // ──────────────────────────────────────────
-      if (search) {
-        filtered = filtered.filter(s => {
-          const name = (s.studentName || '').toLowerCase();
-          const roll = String(s.rollNumber || '').toLowerCase();
-          const email = (s.studentEmail || '').toLowerCase();
-          return name.includes(search) || roll.includes(search) || email.includes(search);
-        });
+      if (userData.verificationToken !== token) {
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid verification token');
       }
 
-      // ──────────────────────────────────────────
-      // 7. Sort: present students with attempts first (by percentage desc),
-      //    then present without attempts, then absent
-      // ──────────────────────────────────────────
-      filtered.sort((a, b) => {
-        // Present before absent
-        if (a.isPresent && !b.isPresent) return -1;
-        if (!a.isPresent && b.isPresent) return 1;
-        // With attempt before without
-        if (a.hasAttempt && !b.hasAttempt) return -1;
-        if (!a.hasAttempt && b.hasAttempt) return 1;
-        // By percentage desc
-        const pA = a.attemptData?.percentage || 0;
-        const pB = b.attemptData?.percentage || 0;
-        return pB - pA;
+      // Check 24-hour expiry
+      const sentAt: admin.firestore.Timestamp = userData.verificationSentAt;
+      const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+      if (!sentAt || (Date.now() - sentAt.toMillis()) > twentyFourHoursMs) {
+        throw new functions.https.HttpsError('deadline-exceeded', 'Verification link has expired. Please request a new one.');
+      }
+
+      // Mark verified in Firestore
+      await userRef.update({
+        emailVerified: true,
+        verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+        verificationToken: admin.firestore.FieldValue.delete(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      // ──────────────────────────────────────────
-      // 8. Paginate
-      // ──────────────────────────────────────────
-      const totalFiltered = filtered.length;
-      const totalPages = Math.ceil(totalFiltered / pageSize);
-      const startIndex = (page - 1) * pageSize;
-      const pageStudents = filtered.slice(startIndex, startIndex + pageSize);
+      // Update Firebase Auth record
+      try {
+        await admin.auth().updateUser(uid, { emailVerified: true });
+      } catch (authErr: any) {
+        // Non-blocking — Firestore is the source of truth for resume app
+        console.warn(`⚠️ Could not update Auth emailVerified for ${uid}:`, authErr.message);
+      }
 
-      // Strip isPresent from response (client uses present/absent arrays)
-      const presentOnPage = pageStudents.filter(s => s.isPresent).map(({ isPresent, ...rest }) => rest);
-      const absentOnPage = pageStudents.filter(s => !s.isPresent).map(({ isPresent, ...rest }) => rest);
+      // console.log(`✅ Email verified for uid: ${uid}`);
+      return { success: true, message: 'Email verified successfully' };
 
-      // Counts
-      const totalPresent = allStudents.filter(s => s.isPresent).length;
-      const totalAbsent = allStudents.filter(s => !s.isPresent).length;
-      const totalAll = allStudents.length;
-
-      // console.log(`✅ [getExamStudentsPaginated] page=${page}/${totalPages}, results=${pageStudents.length}, present=${totalPresent}, absent=${totalAbsent}, search="${search}"`);
-
-      return {
-        present: presentOnPage,
-        absent: absentOnPage,
-        pagination: {
-          page,
-          pageSize,
-          totalFiltered,
-          totalPages,
-          hasMore: page < totalPages,
-        },
-        counts: {
-          totalAll,
-          totalPresent,
-          totalAbsent,
-        },
-      };
     } catch (error: any) {
-      console.error('❌ getExamStudentsPaginated error:', error);
+      console.error('❌ verifyResumeEmail error:', error);
       if (error instanceof functions.https.HttpsError) throw error;
-      throw new functions.https.HttpsError('internal', error.message || 'Failed to fetch students');
+      throw new functions.https.HttpsError('internal', `Verification failed: ${error.message}`);
+    }
+  });
+
+/**
+ * 🧹 Cleanup Unverified Resume Builder Accounts (runs daily at 2:00 AM IST)
+ * Deletes Firebase Auth accounts and Firestore docs for users who signed up
+ * but never verified their email within 24 hours.
+ * Also tracks cleanup in resume_cleanup_log for auditing.
+ */
+export const cleanupUnverifiedResumeAccounts = functions
+  .region('us-central1')
+  .runWith({ timeoutSeconds: 120, memory: '256MB' })
+  .pubsub.schedule('0 2 * * *')
+  .timeZone('Asia/Kolkata')
+  .onRun(async (_context) => {
+    // console.log('🧹 Starting cleanup of unverified resume accounts...');
+
+    const db = admin.firestore();
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+    const cutoffTimestamp = admin.firestore.Timestamp.fromDate(cutoff);
+
+    let deleted = 0;
+    let errors = 0;
+
+    try {
+      const snapshot = await db.collection(COLLECTIONS.USERS)
+        .where('collegeId', '==', 'RES')
+        .where('emailVerified', '==', false)
+        .where('verificationSentAt', '<', cutoffTimestamp)
+        .get();
+
+      if (snapshot.empty) {
+        // console.log('✅ No unverified accounts to clean up');
+        return null;
+      }
+
+      // console.log(`🔍 Found ${snapshot.size} unverified accounts older than 24h`);
+      for (const doc of snapshot.docs) {
+        const uid = doc.id;
+        try {
+          // Delete Firebase Auth account
+          await admin.auth().deleteUser(uid);
+        } catch (authErr: any) {
+          // User may not exist in Auth — still delete Firestore doc
+          if (authErr.code !== 'auth/user-not-found') {
+            console.warn(`⚠️ Could not delete Auth user ${uid}:`, authErr.message);
+          }
+        }
+
+        try {
+          await doc.ref.delete();
+          deleted++;
+          // console.log(`🗑️ Deleted unverified account: ${uid}`);
+        } catch (fsErr: any) {
+          console.error(`❌ Failed to delete Firestore doc for ${uid}:`, fsErr.message);
+          errors++;
+        }
+      }
+
+      // Log cleanup run for auditing
+      await db.collection('resume_cleanup_log').add({
+        runAt: admin.firestore.FieldValue.serverTimestamp(),
+        totalFound: snapshot.size,
+        deleted,
+        errors,
+      });
+
+      // console.log(`✅ Cleanup complete: ${deleted} deleted, ${errors} errors`);
+      return { success: true, deleted, errors };
+
+    } catch (error: any) {
+      console.error('❌ cleanupUnverifiedResumeAccounts error:', error);
+      return { success: false, error: error.message };
     }
   });

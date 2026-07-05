@@ -14,6 +14,9 @@ interface ExportData {
   totalStudents: number;
 }
 
+// ✅ Import firebaseService to fetch responses from sub-collection
+import { firebaseService } from './services/firebase_service';
+
 // ✅ Helper functions to calculate marks from responses array
 function getObtainedMarks(attemptData: any): number {
   // Priority 1: Use pre-calculated if exists
@@ -109,15 +112,18 @@ function getPercentage(attemptData: any, exam?: any): number {
   return total > 0 ? (obtained / total) * 100 : 0;
 }
 
-// ✅ Get violation count from per-response violations (not global violations array)
+// ✅ Get violation count — prefer pre-computed violationCount, fallback to responses
 function getViolationCount(attemptData: any): number {
-  if (Array.isArray(attemptData?.responses)) {
+  if (typeof attemptData?.violationCount === 'number') {
+    return attemptData.violationCount;
+  }
+  if (attemptData?.violationSummary?.total) {
+    return attemptData.violationSummary.total;
+  }
+  if (Array.isArray(attemptData?.responses) && attemptData.responses.length > 0) {
     return attemptData.responses.reduce((sum: number, r: any) => {
       return sum + (Array.isArray(r.violations) ? r.violations.length : 0);
     }, 0);
-  }
-  if (typeof attemptData?.violationCount === 'number') {
-    return attemptData.violationCount;
   }
   if (Array.isArray(attemptData?.violations)) {
     return attemptData.violations.length;
@@ -573,7 +579,10 @@ export async function exportStyledDashboardBrowser(data: ExportData): Promise<vo
   // Add Question-wise Performance sheet (Sheet 3)
   await addQuestionwisePerformanceSheet(workbook, selectedExam, presentStudents, PRIMARY_COLOR);
 
-  // Add Exam Performance sheet (Sheet 4)
+  // Add Chapter-wise Performance sheet (Sheet 4)
+  await addChapterwisePerformanceSheet(workbook, selectedExam, presentStudents, PRIMARY_COLOR);
+
+  // Add Exam Performance sheet (Sheet 5)
   addExamPerformanceSheet(workbook, selectedExam, presentStudents, absentStudents, totalStudents, PRIMARY_COLOR);
 
   // Add Personality Assessment sheet — only if exam has personality assessment
@@ -742,7 +751,7 @@ async function addQuestionDetailsSheet(workbook: any, selectedExam: any, PRIMARY
         type: question.type || 'mcq',
         marks: question.maximumMarks || question.marks || 0,
         difficulty: question.difficulty || question.difficultyLevel || 'Medium',
-        chapter: question.chapter || question.topic || 'N/A',
+        chapter: question.chapter || 'N/A',
         detail: question.questionText || question.question || 'N/A'
       }, row);
       row++;
@@ -776,7 +785,7 @@ async function addQuestionDetailsSheet(workbook: any, selectedExam: any, PRIMARY
           type: pq.type || 'code',
           marks: poolMarks || pq.maximumMarks || pq.marks || 0,
           difficulty: pq.difficulty || pq.difficultyLevel || 'Medium',
-          chapter: pq.chapter || pq.topic || 'N/A',
+          chapter: pq.chapter || 'N/A',
           detail: `[Pool Question] ${pq.questionText || pq.question || pq.title || 'Random pool question'}`
         }, row);
         row++;
@@ -879,20 +888,21 @@ async function addQuestionwisePerformanceSheet(workbook: any, selectedExam: any,
     { width: 15 },  // I - Browser
     { width: 15 },  // J - Question ID
     { width: 18 },  // K - Question Type
-    { width: 15 },  // L - Maximum Marks
-    { width: 15 },  // M - Difficulty Level
-    { width: 15 },  // N - Obtained Marks
-    { width: 12 },  // O - Violations Count
-    { width: 40 },  // P - Violation Details
-    { width: 12 },  // Q - Time Spent
-    { width: 15 },  // R - Revisit Count
-    { width: 15 }   // S - Attempt Count
+    { width: 22 },  // L - Chapter
+    { width: 15 },  // M - Maximum Marks
+    { width: 15 },  // N - Difficulty Level
+    { width: 15 },  // O - Obtained Marks
+    { width: 12 },  // P - Violations Count
+    { width: 40 },  // Q - Violation Details
+    { width: 12 },  // R - Time Spent
+    { width: 15 },  // S - Revisit Count
+    { width: 15 }   // T - Attempt Count
   ];
 
   let row = 2;
 
   // Header
-  worksheet.mergeCells(row, 1, row, 19);
+  worksheet.mergeCells(row, 1, row, 20);
   const headerCell = worksheet.getCell(row, 1);
   headerCell.value = 'QUESTION-WISE PERFORMANCE';
   headerCell.font = { name: 'Segoe UI', size: 20, bold: true, color: { argb: 'FF' + PRIMARY_COLOR } };
@@ -901,7 +911,7 @@ async function addQuestionwisePerformanceSheet(workbook: any, selectedExam: any,
   row += 2;
 
   // Exam info
-  worksheet.mergeCells(row, 1, row, 19);
+  worksheet.mergeCells(row, 1, row, 20);
   const examInfoCell = worksheet.getCell(row, 1);
   examInfoCell.value = `Exam: ${selectedExam?.name || 'N/A'}`;
   examInfoCell.font = { name: 'Segoe UI', size: 11, color: { argb: 'FF666666' } };
@@ -913,7 +923,7 @@ async function addQuestionwisePerformanceSheet(workbook: any, selectedExam: any,
   const headers = [
     'Roll Number', 'Student Name', 'Enter IP Address', 'Exit IP Address', 
     'Total Activities', 'Enter Count', 'Exit Count', 'OS', 'Browser', 'Question ID', 'Question Type', 
-    'Maximum Marks', 'Difficulty Level', 'Obtained Marks', 'Violations Count', 
+    'Chapter', 'Maximum Marks', 'Difficulty Level', 'Obtained Marks', 'Violations Count', 
     'Violation Details', 'Time Spent (sec)', 'Revisit Count', 'Attempt Count'
   ];
   
@@ -936,7 +946,7 @@ async function addQuestionwisePerformanceSheet(workbook: any, selectedExam: any,
   const questions = selectedExam?.questionsList || [];
   
   if (presentStudents.length === 0 || questions.length === 0) {
-    worksheet.mergeCells(row, 1, row, 19);
+    worksheet.mergeCells(row, 1, row, 20);
     worksheet.getCell(row, 1).value = 'No data available';
     worksheet.getCell(row, 1).font = { name: 'Segoe UI', size: 11, italic: true, color: { argb: 'FF999999' } };
     worksheet.getCell(row, 1).alignment = { horizontal: 'center', vertical: 'middle' };
@@ -963,7 +973,18 @@ async function addQuestionwisePerformanceSheet(workbook: any, selectedExam: any,
 
       // ✅ FIXED: Loop through STUDENT'S ACTUAL RESPONSES instead of exam's questionsList
       // This ensures we show only what the student actually answered (including pool questions)
-      const responsesArray = attemptData.responses || [];
+      // ✅ SUB-COLLECTION: Fetch responses from attemptResponses sub-collection
+      let responsesArray = attemptData.responses || [];
+      if (responsesArray.length === 0 && attemptData.attemptId) {
+        try {
+          const subCollResp = await firebaseService.getAttemptResponses(attemptData.attemptId);
+          if (subCollResp && subCollResp.length > 0) {
+            responsesArray = subCollResp;
+          }
+        } catch (e) {
+          console.warn('⚠️ Failed to fetch responses for attempt:', attemptData.attemptId);
+        }
+      }
       
       responsesArray.forEach((questionAnswer: any, qIndex: number) => {
         const bgColor = dataRowIndex % 2 === 0 ? 'FFFFFFFF' : 'FFF8F9FA';
@@ -1069,64 +1090,71 @@ async function addQuestionwisePerformanceSheet(workbook: any, selectedExam: any,
         worksheet.getCell(row, 11).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
         worksheet.getCell(row, 11).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // Maximum Marks (Column 12)
-        const maxMarks = question.maximumMarks || question.marks || 0;
-        worksheet.getCell(row, 12).value = maxMarks;
-        worksheet.getCell(row, 12).font = { name: 'Segoe UI', size: 9 };
+        // Chapter (Column 12)
+        const chapterName = question.chapter || 'N/A';
+        worksheet.getCell(row, 12).value = chapterName;
+        worksheet.getCell(row, 12).font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF' + PRIMARY_COLOR } };
         worksheet.getCell(row, 12).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
-        worksheet.getCell(row, 12).alignment = { horizontal: 'center', vertical: 'middle' };
+        worksheet.getCell(row, 12).alignment = { horizontal: 'left', vertical: 'middle' };
 
-        // Difficulty Level (Column 13)
+        // Maximum Marks (Column 13)
+        const maxMarks = question.maximumMarks || question.marks || 0;
+        worksheet.getCell(row, 13).value = maxMarks;
+        worksheet.getCell(row, 13).font = { name: 'Segoe UI', size: 9 };
+        worksheet.getCell(row, 13).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        worksheet.getCell(row, 13).alignment = { horizontal: 'center', vertical: 'middle' };
+
+        // Difficulty Level (Column 14)
         const difficulty = question.difficulty || question.difficultyLevel || 'Medium';
         const difficultyColor = 
           difficulty === 'Easy' ? '27AE60' :
           difficulty === 'Hard' ? 'E74C3C' : 'F39C12';
-        worksheet.getCell(row, 13).value = difficulty;
-        worksheet.getCell(row, 13).font = { name: 'Segoe UI', size: 9, color: { argb: 'FF' + difficultyColor } };
-        worksheet.getCell(row, 13).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
-        worksheet.getCell(row, 13).alignment = { horizontal: 'center', vertical: 'middle' };
-
-        // Obtained Marks (Column 14)
-        worksheet.getCell(row, 14).value = obtainedMarks;
-        const marksColor = obtainedMarks >= maxMarks * 0.7 ? '27AE60' : obtainedMarks >= maxMarks * 0.4 ? 'F39C12' : 'E74C3C';
-        worksheet.getCell(row, 14).font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF' + marksColor } };
+        worksheet.getCell(row, 14).value = difficulty;
+        worksheet.getCell(row, 14).font = { name: 'Segoe UI', size: 9, color: { argb: 'FF' + difficultyColor } };
         worksheet.getCell(row, 14).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
         worksheet.getCell(row, 14).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // Violations Count (Column 15)
-        const violationCount = questionViolations.length;
-        worksheet.getCell(row, 15).value = violationCount;
-        worksheet.getCell(row, 15).font = { name: 'Segoe UI', size: 9, bold: violationCount > 0, color: { argb: violationCount > 0 ? 'FFE74C3C' : 'FF27AE60' } };
+        // Obtained Marks (Column 15)
+        worksheet.getCell(row, 15).value = obtainedMarks;
+        const marksColor = obtainedMarks >= maxMarks * 0.7 ? '27AE60' : obtainedMarks >= maxMarks * 0.4 ? 'F39C12' : 'E74C3C';
+        worksheet.getCell(row, 15).font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF' + marksColor } };
         worksheet.getCell(row, 15).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
         worksheet.getCell(row, 15).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // Violation Details (Column 16)
-        const violationDetails = questionViolations.map((v: any) => v.type).join(' | ');
-        worksheet.getCell(row, 16).value = violationDetails || 'None';
-        worksheet.getCell(row, 16).font = { name: 'Segoe UI', size: 9, color: { argb: violationCount > 0 ? 'FFE74C3C' : 'FF27AE60' } };
+        // Violations Count (Column 16)
+        const violationCount = questionViolations.length;
+        worksheet.getCell(row, 16).value = violationCount;
+        worksheet.getCell(row, 16).font = { name: 'Segoe UI', size: 9, bold: violationCount > 0, color: { argb: violationCount > 0 ? 'FFE74C3C' : 'FF27AE60' } };
         worksheet.getCell(row, 16).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
-        worksheet.getCell(row, 16).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
+        worksheet.getCell(row, 16).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // Time Spent (Column 17)
-        worksheet.getCell(row, 17).value = Math.round(timeSpent);
-        worksheet.getCell(row, 17).font = { name: 'Segoe UI', size: 9 };
+        // Violation Details (Column 17)
+        const violationDetails = questionViolations.map((v: any) => v.type).join(' | ');
+        worksheet.getCell(row, 17).value = violationDetails || 'None';
+        worksheet.getCell(row, 17).font = { name: 'Segoe UI', size: 9, color: { argb: violationCount > 0 ? 'FFE74C3C' : 'FF27AE60' } };
         worksheet.getCell(row, 17).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
-        worksheet.getCell(row, 17).alignment = { horizontal: 'center', vertical: 'middle' };
+        worksheet.getCell(row, 17).alignment = { horizontal: 'left', vertical: 'middle', wrapText: true };
 
-        // Revisit Count (Column 18)
-        worksheet.getCell(row, 18).value = revisitCount;
+        // Time Spent (Column 18)
+        worksheet.getCell(row, 18).value = Math.round(timeSpent);
         worksheet.getCell(row, 18).font = { name: 'Segoe UI', size: 9 };
         worksheet.getCell(row, 18).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
         worksheet.getCell(row, 18).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // Attempt Count (Column 19)
-        worksheet.getCell(row, 19).value = attemptCount;
+        // Revisit Count (Column 19)
+        worksheet.getCell(row, 19).value = revisitCount;
         worksheet.getCell(row, 19).font = { name: 'Segoe UI', size: 9 };
         worksheet.getCell(row, 19).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
         worksheet.getCell(row, 19).alignment = { horizontal: 'center', vertical: 'middle' };
 
+        // Attempt Count (Column 20)
+        worksheet.getCell(row, 20).value = attemptCount;
+        worksheet.getCell(row, 20).font = { name: 'Segoe UI', size: 9 };
+        worksheet.getCell(row, 20).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        worksheet.getCell(row, 20).alignment = { horizontal: 'center', vertical: 'middle' };
+
         // Add borders to all cells in this row
-        for (let col = 1; col <= 19; col++) {
+        for (let col = 1; col <= 20; col++) {
           const cell = worksheet.getCell(row, col);
           cell.border = {
             top: { style: 'thin', color: { argb: 'FFD0D0D0' } },
@@ -1147,7 +1175,7 @@ async function addQuestionwisePerformanceSheet(workbook: any, selectedExam: any,
     const lastDataRow = row - 1;
 
     // Top border (thick) - on header row
-    for (let col = 1; col <= 19; col++) {
+    for (let col = 1; col <= 20; col++) {
       const cell = worksheet.getCell(headerRow, col);
       cell.border = {
         ...cell.border,
@@ -1156,7 +1184,7 @@ async function addQuestionwisePerformanceSheet(workbook: any, selectedExam: any,
     }
 
     // Bottom border (thick) - on last data row
-    for (let col = 1; col <= 19; col++) {
+    for (let col = 1; col <= 20; col++) {
       const cell = worksheet.getCell(lastDataRow, col);
       cell.border = {
         ...cell.border,
@@ -1175,7 +1203,7 @@ async function addQuestionwisePerformanceSheet(workbook: any, selectedExam: any,
 
     // Right border (thick) - on last column
     for (let r = headerRow; r <= lastDataRow; r++) {
-      const cell = worksheet.getCell(r, 19);
+      const cell = worksheet.getCell(r, 20);
       cell.border = {
         ...cell.border,
         right: { style: 'medium', color: { argb: 'FF000000' } }
@@ -1184,7 +1212,7 @@ async function addQuestionwisePerformanceSheet(workbook: any, selectedExam: any,
 
     // Summary
     row += 1;
-    worksheet.mergeCells(row, 1, row, 19);
+    worksheet.mergeCells(row, 1, row, 20);
     const summaryCell = worksheet.getCell(row, 1);
     summaryCell.value = `Total Records: ${dataRowIndex} (${presentStudents.filter(s => s.hasAttempt).length} students × ${questions.length} questions)`;
     summaryCell.font = { name: 'Segoe UI', size: 11, bold: true, color: { argb: 'FF666666' } };
@@ -1747,4 +1775,213 @@ function addPersonalityAssessmentSheet(workbook: any, selectedExam: any, present
   summCell.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FF666666' } };
   summCell.alignment = { horizontal: 'center', vertical: 'middle' };
   worksheet.getRow(row).height = 25;
+}
+
+/**
+ * Sheet 4: Chapter-wise Performance
+ * Shows each student's aggregated performance per chapter/topic
+ */
+async function addChapterwisePerformanceSheet(workbook: any, selectedExam: any, presentStudents: Student[], PRIMARY_COLOR: string) {
+  console.log('🔍 Sheet 4: Chapter-wise Performance');
+
+  const worksheet = workbook.addWorksheet('Chapter-wise Performance', {
+    views: [{ showGridLines: false }]
+  });
+
+  worksheet.columns = [
+    { width: 15 },  // A - Roll Number
+    { width: 22 },  // B - Student Name
+    { width: 25 },  // C - Chapter
+    { width: 15 },  // D - Total Questions
+    { width: 15 },  // E - Maximum Marks
+    { width: 15 },  // F - Obtained Marks
+    { width: 15 },  // G - Percentage
+    { width: 15 },  // H - Avg Time (sec)
+  ];
+
+  const totalCols = 8;
+  let row = 2;
+
+  // Header
+  worksheet.mergeCells(row, 1, row, totalCols);
+  const headerCell = worksheet.getCell(row, 1);
+  headerCell.value = 'CHAPTER-WISE PERFORMANCE';
+  headerCell.font = { name: 'Segoe UI', size: 20, bold: true, color: { argb: 'FF' + PRIMARY_COLOR } };
+  headerCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getRow(row).height = 35;
+  row += 2;
+
+  // Exam info
+  worksheet.mergeCells(row, 1, row, totalCols);
+  const examInfoCell = worksheet.getCell(row, 1);
+  examInfoCell.value = `Exam: ${selectedExam?.name || 'N/A'}`;
+  examInfoCell.font = { name: 'Segoe UI', size: 11, color: { argb: 'FF666666' } };
+  examInfoCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  worksheet.getRow(row).height = 22;
+  row += 2;
+
+  // Table Headers
+  const headers = [
+    'Roll Number', 'Student Name', 'Chapter', 'Total Questions',
+    'Maximum Marks', 'Obtained Marks', 'Percentage (%)', 'Avg Time (sec)'
+  ];
+
+  for (let i = 0; i < headers.length; i++) {
+    const cell = worksheet.getCell(row, i + 1);
+    cell.value = headers[i];
+    cell.font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + PRIMARY_COLOR } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFFFFFFF' } },
+      bottom: { style: 'thin', color: { argb: 'FFFFFFFF' } },
+      left: { style: 'thin', color: { argb: 'FFFFFFFF' } },
+      right: { style: 'thin', color: { argb: 'FFFFFFFF' } }
+    };
+  }
+  worksheet.getRow(row).height = 35;
+  const headerRowNum = row;
+  row++;
+
+  const questions = selectedExam?.questionsList || [];
+
+  if (presentStudents.length === 0 || questions.length === 0) {
+    worksheet.mergeCells(row, 1, row, totalCols);
+    worksheet.getCell(row, 1).value = 'No data available';
+    worksheet.getCell(row, 1).font = { name: 'Segoe UI', size: 11, italic: true, color: { argb: 'FF999999' } };
+    worksheet.getCell(row, 1).alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(row).height = 30;
+  } else {
+    let dataRowIndex = 0;
+
+    for (const student of presentStudents) {
+      if (!student.hasAttempt || !student.attemptData) continue;
+
+      const attemptData = student.attemptData as any;
+
+      // Get responses (same logic as question-wise sheet)
+      let responsesArray = attemptData.responses || [];
+      if (responsesArray.length === 0 && attemptData.attemptId) {
+        try {
+          const subCollResp = await firebaseService.getAttemptResponses(attemptData.attemptId);
+          if (subCollResp && subCollResp.length > 0) {
+            responsesArray = subCollResp;
+          }
+        } catch (e) {
+          console.warn('⚠️ Failed to fetch responses for attempt:', attemptData.attemptId);
+        }
+      }
+
+      // Aggregate by chapter
+      const chapterMap: Record<string, { totalQuestions: number; maxMarks: number; obtainedMarks: number; totalTime: number }> = {};
+
+      responsesArray.forEach((resp: any) => {
+        const questionId = resp.questionId || '';
+        const question = questions.find((q: any) => (q.id === questionId) || (q.questionId === questionId));
+        const chapter = question?.chapter || resp.chapter || 'Uncategorized';
+        const maxMarks = question?.maximumMarks || question?.marks || resp.maximumMarks || 0;
+        const obtainedMarks = resp.marksAwarded || resp.scoredMarks || 0;
+        const timeSpent = resp.timeSpent || 0;
+
+        if (!chapterMap[chapter]) {
+          chapterMap[chapter] = { totalQuestions: 0, maxMarks: 0, obtainedMarks: 0, totalTime: 0 };
+        }
+        chapterMap[chapter].totalQuestions++;
+        chapterMap[chapter].maxMarks += maxMarks;
+        chapterMap[chapter].obtainedMarks += obtainedMarks;
+        chapterMap[chapter].totalTime += timeSpent;
+      });
+
+      // Write rows per chapter
+      const chapters = Object.keys(chapterMap).sort();
+      for (const chapter of chapters) {
+        const data = chapterMap[chapter];
+        const percentage = data.maxMarks > 0 ? ((data.obtainedMarks / data.maxMarks) * 100) : 0;
+        const avgTime = data.totalQuestions > 0 ? (data.totalTime / data.totalQuestions) : 0;
+        const bgColor = dataRowIndex % 2 === 0 ? 'FFFFFFFF' : 'FFF8F9FA';
+        const marksColor = percentage >= 75 ? '27AE60' : percentage >= 50 ? 'F39C12' : 'E74C3C';
+
+        // Roll Number
+        worksheet.getCell(row, 1).value = student.rollNumber;
+        worksheet.getCell(row, 1).font = { name: 'Segoe UI', size: 9, bold: true };
+        worksheet.getCell(row, 1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        worksheet.getCell(row, 1).alignment = { horizontal: 'center', vertical: 'middle' };
+
+        // Student Name
+        worksheet.getCell(row, 2).value = student.studentName;
+        worksheet.getCell(row, 2).font = { name: 'Segoe UI', size: 9 };
+        worksheet.getCell(row, 2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        worksheet.getCell(row, 2).alignment = { horizontal: 'left', vertical: 'middle' };
+
+        // Chapter
+        worksheet.getCell(row, 3).value = chapter;
+        worksheet.getCell(row, 3).font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF' + PRIMARY_COLOR } };
+        worksheet.getCell(row, 3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        worksheet.getCell(row, 3).alignment = { horizontal: 'left', vertical: 'middle' };
+
+        // Total Questions
+        worksheet.getCell(row, 4).value = data.totalQuestions;
+        worksheet.getCell(row, 4).font = { name: 'Segoe UI', size: 9 };
+        worksheet.getCell(row, 4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        worksheet.getCell(row, 4).alignment = { horizontal: 'center', vertical: 'middle' };
+
+        // Maximum Marks
+        worksheet.getCell(row, 5).value = data.maxMarks;
+        worksheet.getCell(row, 5).font = { name: 'Segoe UI', size: 9 };
+        worksheet.getCell(row, 5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        worksheet.getCell(row, 5).alignment = { horizontal: 'center', vertical: 'middle' };
+
+        // Obtained Marks
+        worksheet.getCell(row, 6).value = data.obtainedMarks;
+        worksheet.getCell(row, 6).font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF' + marksColor } };
+        worksheet.getCell(row, 6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        worksheet.getCell(row, 6).alignment = { horizontal: 'center', vertical: 'middle' };
+
+        // Percentage
+        worksheet.getCell(row, 7).value = Math.round(percentage * 100) / 100;
+        worksheet.getCell(row, 7).font = { name: 'Segoe UI', size: 9, bold: true, color: { argb: 'FF' + marksColor } };
+        worksheet.getCell(row, 7).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        worksheet.getCell(row, 7).alignment = { horizontal: 'center', vertical: 'middle' };
+
+        // Avg Time
+        worksheet.getCell(row, 8).value = Math.round(avgTime);
+        worksheet.getCell(row, 8).font = { name: 'Segoe UI', size: 9 };
+        worksheet.getCell(row, 8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+        worksheet.getCell(row, 8).alignment = { horizontal: 'center', vertical: 'middle' };
+
+        // Borders
+        for (let col = 1; col <= totalCols; col++) {
+          worksheet.getCell(row, col).border = {
+            top: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+            bottom: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+            left: { style: 'thin', color: { argb: 'FFD0D0D0' } },
+            right: { style: 'thin', color: { argb: 'FFD0D0D0' } }
+          };
+        }
+
+        worksheet.getRow(row).height = 20;
+        row++;
+        dataRowIndex++;
+      }
+    }
+
+    // Thick borders around table
+    const lastDataRow = row - 1;
+    for (let col = 1; col <= totalCols; col++) {
+      const cell = worksheet.getCell(headerRowNum, col);
+      cell.border = { ...cell.border, top: { style: 'medium', color: { argb: 'FF000000' } } };
+    }
+    for (let col = 1; col <= totalCols; col++) {
+      const cell = worksheet.getCell(lastDataRow, col);
+      cell.border = { ...cell.border, bottom: { style: 'medium', color: { argb: 'FF000000' } } };
+    }
+    for (let r = headerRowNum; r <= lastDataRow; r++) {
+      const cell = worksheet.getCell(r, 1);
+      cell.border = { ...cell.border, left: { style: 'medium', color: { argb: 'FF000000' } } };
+    }
+    for (let r = headerRowNum; r <= lastDataRow; r++) {
+      const cell = worksheet.getCell(r, totalCols);
+      cell.border = { ...cell.border, right: { style: 'medium', color: { argb: 'FF000000' } } };
+    }
+  }
 }

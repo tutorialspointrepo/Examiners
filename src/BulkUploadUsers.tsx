@@ -74,12 +74,15 @@ export default function BulkUploadUsers({
   const brandTheme = useBrand();
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [uploadStep, setUploadStep] = useState<'select' | 'preview' | 'uploading' | 'complete'>('select');
+  const [uploadStep, setUploadStep] = useState<'select' | 'validating' | 'preview' | 'uploading' | 'complete'>('select');
   const [parsedUsers, setParsedUsers] = useState<UserRow[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [collegeAcademicYearStartMonth, setCollegeAcademicYearStartMonth] = useState<string>('April');
   const [collegeValidClasses, setCollegeValidClasses] = useState<string[]>([]); // ✅ Valid classes from college
   const [collegeSubjects, setCollegeSubjects] = useState<string[]>([]); // ✅ Valid subjects from college
+  const [validCollegeIds, setValidCollegeIds] = useState<string[]>([]); // ✅ All valid college IDs from Firebase
+  const [previewErrors, setPreviewErrors] = useState<Record<number, string>>({}); // ✅ Per-row validation errors
+  const [, setIsValidating] = useState(false);
   const [uploadResults, setUploadResults] = useState<{
     success: number;
     skipped: number;
@@ -158,8 +161,23 @@ export default function BulkUploadUsers({
       }
     };
     
+    // ✅ Load all valid college IDs for validation
+    const loadAllCollegeIds = async () => {
+      try {
+        const colleges = await firebaseService.getAllColleges();
+        if (colleges && Array.isArray(colleges)) {
+          const ids = colleges.map((c: any) => c.collegeId || c.id).filter(Boolean);
+          console.log('🏫 Valid college IDs loaded:', ids.length);
+          setValidCollegeIds(ids);
+        }
+      } catch (error) {
+        console.error('Error loading college IDs:', error);
+      }
+    };
+    
     if (isOpen) {
       loadCollegeData();
+      loadAllCollegeIds();
     }
   }, [isOpen, activeCollegeId]);
 
@@ -399,8 +417,8 @@ export default function BulkUploadUsers({
 
         console.log(`📊 Parsed ${sanitizedUsers.length} users from Excel`);
         setParsedUsers(sanitizedUsers);
-        setPreviewPage(1); // Reset preview pagination
-        setUploadStep('preview');
+        setPreviewPage(1);
+        validateUsersForPreview(sanitizedUsers);
         
       } catch (error: any) {
         showNotification('error', `Failed to parse Excel file: ${error.message}`);
@@ -452,7 +470,94 @@ export default function BulkUploadUsers({
   };
 
   // Validate academic year format
-  // Upload users to Firebase - UPDATED: board from collegeId, createdBy from current user
+  // ✅ PRE-UPLOAD VALIDATION: Run all checks before showing preview
+  const validateUsersForPreview = async (users: UserRow[]) => {
+    setIsValidating(true);
+    setUploadStep('validating');
+    const errors: Record<number, string> = {};
+    const academicYear = calculateAcademicYear(collegeAcademicYearStartMonth);
+
+    for (let i = 0; i < users.length; i++) {
+      const user = users[i];
+      try {
+        // Required fields
+        if (!user.full_name) throw new Error('full_name is required');
+        if (!user.phone) throw new Error('phone is required');
+        if (!user.user_type) throw new Error('user_type is required');
+
+        // User type
+        const userType = user.user_type.trim().toLowerCase().replace(/\s+/g, '_');
+        const validUserTypes = ['system_admin', 'admin', 'principal', 'dean', 'teacher', 'student'];
+        if (!validUserTypes.includes(userType)) throw new Error(`Invalid user_type: ${user.user_type}`);
+
+        // College ID validation
+        const collegeId = user.college_id || activeCollegeId;
+        if (!collegeId) throw new Error('college_id is required');
+        if (validCollegeIds.length > 0 && !validCollegeIds.includes(collegeId)) {
+          throw new Error(`Invalid college_id '${collegeId}'`);
+        }
+
+        // Phone format
+        let cleaned = user.phone.toString().trim().replace(/[\s\-\(\)]/g, '');
+        cleaned = cleaned.replace(/^\+/, '');
+        if (cleaned.startsWith('91') && cleaned.length === 12) cleaned = cleaned.substring(2);
+        if (cleaned.length !== 10 || !/^\d{10}$/.test(cleaned)) throw new Error(`Invalid phone: ${user.phone}`);
+        const normalizedPhone = `+91${cleaned}`;
+
+        // Phone duplicate
+        const phoneExists = await firebaseService.checkUserExistsByPhone(normalizedPhone);
+        if (phoneExists) throw new Error('Phone number already exists');
+
+        // Email format + duplicate
+        if (user.email) {
+          const emailTrimmed = user.email.trim().toLowerCase();
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+            throw new Error(`Invalid email: ${user.email}`);
+          }
+          const emailExists = await firebaseService.checkUserExistsByEmail(emailTrimmed);
+          if (emailExists) throw new Error('Email already exists');
+        }
+
+        // Student validations
+        if (userType === 'student') {
+          if (!user.student_roll) throw new Error('student_roll is required for students');
+          if (!user.student_class) throw new Error('student_class is required for students');
+          const studentClass = user.student_class!.trim();
+          if (collegeValidClasses.length > 0 && !collegeValidClasses.includes(studentClass)) {
+            throw new Error(`Invalid class '${studentClass}'`);
+          }
+          const rollExists = await firebaseService.checkStudentRollExists(collegeId, studentClass, academicYear, user.student_roll!.trim());
+          if (rollExists) throw new Error(`Roll '${user.student_roll}' already exists in ${studentClass}`);
+        }
+
+        // Teacher/Principal/Dean class & subject validation
+        if (['teacher', 'principal', 'dean'].includes(userType)) {
+          if (user.teacher_classes) {
+            const classes = user.teacher_classes.split(',').map((c: string) => c.trim()).filter(Boolean);
+            if (collegeValidClasses.length > 0) {
+              const invalid = classes.filter(cls => !collegeValidClasses.includes(cls));
+              if (invalid.length > 0) throw new Error(`Invalid class(es): ${invalid.join(', ')}`);
+            }
+          }
+          if (user.teacher_subjects) {
+            const subjects = user.teacher_subjects.split(',').map((s: string) => s.trim()).filter(Boolean);
+            if (collegeSubjects.length > 0) {
+              const invalid = subjects.filter(sub => !collegeSubjects.includes(sub));
+              if (invalid.length > 0) throw new Error(`Invalid subject(s): ${invalid.join(', ')}`);
+            }
+          }
+        }
+      } catch (error: any) {
+        errors[i] = error.message;
+      }
+    }
+
+    setPreviewErrors(errors);
+    setIsValidating(false);
+    setUploadStep('preview');
+  };
+
+  // Upload users to Firebase - TWO-PHASE: Validate all first, then create only valid ones
   const uploadUsers = async () => {
     setUploadStep('uploading');
     setUploadProgress(0);
@@ -475,12 +580,31 @@ export default function BulkUploadUsers({
       // ✅ Get current user for createdBy field
       const currentUser = await firebaseService.getCurrentUserProfile();
       const createdBy = currentUser?.userId || 'system';
+      const academicYear = calculateAcademicYear(collegeAcademicYearStartMonth);
+
+      // ═══════════════════════════════════════════════════════════
+      // PHASE 1: VALIDATE ALL ROWS FIRST (no user creation here)
+      // ═══════════════════════════════════════════════════════════
+      const validatedUsers: Array<{ index: number; user: any; userData: any }> = [];
 
       for (let i = 0; i < parsedUsers.length; i++) {
         const user = parsedUsers[i];
         const rowNumber = i + 1;
-        const progress = Math.round(((i + 1) / parsedUsers.length) * 100);
+        const progress = Math.round(((i + 1) / parsedUsers.length) * 50); // 0-50% for validation
         setUploadProgress(progress);
+
+        // ✅ Skip rows already flagged with errors during preview validation
+        if (previewErrors[i]) {
+          results.failed++;
+          results.details.push({
+            rowNumber,
+            fullName: user.full_name || 'Unknown',
+            userType: user.user_type || 'Unknown',
+            status: 'failed',
+            reason: previewErrors[i]
+          });
+          continue;
+        }
 
         try {
           // Validate required fields
@@ -502,10 +626,13 @@ export default function BulkUploadUsers({
             throw new Error(`Invalid user_type: ${user.user_type}`);
           }
 
-          // Validate college_id for non-system_admin users
+          // Validate college_id - MUST belong to a valid college for ALL users
           const collegeId = user.college_id || activeCollegeId;
-          if (userType !== 'system_admin' && !collegeId) {
-            throw new Error('college_id is required for non-system_admin users');
+          if (!collegeId) {
+            throw new Error('college_id is required');
+          }
+          if (validCollegeIds.length > 0 && !validCollegeIds.includes(collegeId)) {
+            throw new Error(`Invalid college_id '${collegeId}'. Does not match any registered college`);
           }
 
           // Validate student-specific fields
@@ -516,6 +643,11 @@ export default function BulkUploadUsers({
 
           // Normalize phone number
           const normalizedPhone = normalizePhoneNumber(user.phone);
+
+          // Validate email format
+          if (user.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(user.email.trim().toLowerCase())) {
+            throw new Error(`Invalid email: ${user.email}`);
+          }
 
           // Check if user already exists (by phone or email)
           const phoneExists = await firebaseService.checkUserExistsByPhone(normalizedPhone);
@@ -534,9 +666,6 @@ export default function BulkUploadUsers({
             continue;
           }
 
-          // ✅ Calculate academic year based on college settings
-          const academicYear = calculateAcademicYear(collegeAcademicYearStartMonth);
-
           // ✅ Validate student class against college's valid classes
           if (userType === 'student') {
             const studentClass = user.student_class!.trim();
@@ -547,7 +676,6 @@ export default function BulkUploadUsers({
 
           // ✅ Validate teacher/principal/dean classes and subjects
           if (userType === 'teacher' || userType === 'principal' || userType === 'dean') {
-            // Validate classes
             if (user.teacher_classes) {
               const classes = user.teacher_classes.split(',').map((c: string) => c.trim()).filter(Boolean);
               if (collegeValidClasses.length > 0) {
@@ -558,7 +686,6 @@ export default function BulkUploadUsers({
               }
             }
             
-            // Validate subjects
             if (user.teacher_subjects) {
               const subjects = user.teacher_subjects.split(',').map((s: string) => s.trim()).filter(Boolean);
               if (collegeSubjects.length > 0) {
@@ -593,7 +720,7 @@ export default function BulkUploadUsers({
             }
           }
 
-          // Prepare user data - UPDATED: board = collegeId, createdBy = current user
+          // ✅ Validation passed — prepare user data for Phase 2
           const userData: any = {
             fullName: user.full_name.trim(),
             title: user.title ? user.title.trim() : '',
@@ -602,27 +729,25 @@ export default function BulkUploadUsers({
             phoneRaw: normalizedPhone.replace('+91', ''),
             userType: userType,
             collegeId: collegeId,
-            board: collegeId, // ✅ Use collegeId as board
-            academicYear: academicYear, // ✅ Add academic year for all users
+            board: collegeId,
+            academicYear: academicYear,
             status: 'active',
-            createdBy: createdBy // ✅ Set to current user who is uploading
+            createdBy: createdBy
           };
 
-          // Add student-specific fields
           if (userType === 'student') {
             userData.studentRoll = user.student_roll!.trim();
             userData.studentClass = user.student_class!.trim();
-            userData.parentPhone = ''; // No parent phone in bulk upload
+            userData.parentPhone = '';
             userData.studentHistory = [{
               academicYear: academicYear,
               class: user.student_class!.trim(),
               rollNumber: user.student_roll!.trim(),
-              board: collegeId, // ✅ Use collegeId as board
+              board: collegeId,
               collegeId: collegeId
             }];
           }
 
-          // Add teacher/principal/dean-specific fields (they may also teach)
           if (userType === 'teacher' || userType === 'principal' || userType === 'dean') {
             userData.teacherClasses = user.teacher_classes 
               ? user.teacher_classes.split(',').map((c: string) => c.trim())
@@ -632,7 +757,32 @@ export default function BulkUploadUsers({
               : [];
           }
 
-          // Create user in Firebase
+          // ✅ Add to validated list (will be created in Phase 2)
+          validatedUsers.push({ index: i, user, userData });
+
+        } catch (error: any) {
+          console.error(`❌ Validation failed: ${user.full_name} - ${error.message}`);
+          results.failed++;
+          results.details.push({
+            rowNumber,
+            fullName: user.full_name,
+            userType: user.user_type,
+            status: 'failed',
+            reason: error.message
+          });
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════
+      // PHASE 2: CREATE ONLY VALIDATED USERS
+      // ═══════════════════════════════════════════════════════════
+      for (let j = 0; j < validatedUsers.length; j++) {
+        const { index, user, userData } = validatedUsers[j];
+        const rowNumber = index + 1;
+        const progress = 50 + Math.round(((j + 1) / validatedUsers.length) * 50); // 50-100% for creation
+        setUploadProgress(progress);
+
+        try {
           await firebaseService.createBulkUser(userData);
 
           console.log(`✅ Added: ${user.full_name}`);
@@ -643,9 +793,8 @@ export default function BulkUploadUsers({
             userType: user.user_type,
             status: 'success'
           });
-
         } catch (error: any) {
-          console.error(`❌ Failed: ${user.full_name} - ${error.message}`);
+          console.error(`❌ Creation failed: ${user.full_name} - ${error.message}`);
           results.failed++;
           results.details.push({
             rowNumber,
@@ -680,6 +829,7 @@ export default function BulkUploadUsers({
     setParsedUsers([]);
     setUploadProgress(0);
     setUploadResults({ success: 0, skipped: 0, failed: 0, details: [] });
+    setPreviewErrors({});
     setNotification({ type: 'info', message: '', visible: false });
     onClose();
   };
@@ -735,7 +885,7 @@ export default function BulkUploadUsers({
               className="px-3 py-1.5 text-white/90 font-medium text-sm rounded-lg transition-all duration-200 flex items-center space-x-2 hover:bg-white/20"
             >
               <Download size={16} />
-              <span>Template</span>
+              <span>Download Template</span>
             </button>
             <button
               onClick={handleClose}
@@ -832,18 +982,39 @@ export default function BulkUploadUsers({
             </div>
           )}
 
+          {uploadStep === 'validating' && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div 
+                className="w-24 h-24 rounded-full flex items-center justify-center mb-6"
+                style={{ backgroundColor: brandTheme.colors.primary + '15' }}
+              >
+                <Loader2 size={48} className="animate-spin" style={{ color: brandTheme.colors.primary }} />
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">Validating Users...</h3>
+              <p className="text-gray-500">Checking phone, email, college ID & roll numbers</p>
+            </div>
+          )}
+
           {uploadStep === 'preview' && (
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">Preview Users</h3>
-                  <p className="text-sm text-gray-500">{parsedUsers.length} users found in file</p>
+                  <p className="text-sm text-gray-500">
+                    {parsedUsers.length} users found
+                    {Object.keys(previewErrors).length > 0 && (
+                      <span className="text-red-600 font-medium ml-1">
+                        — {Object.keys(previewErrors).length} with errors
+                      </span>
+                    )}
+                  </p>
                 </div>
                 <button
                   onClick={() => {
                     setUploadStep('select');
                     setParsedUsers([]);
                     setPreviewPage(1);
+                    setPreviewErrors({});
                   }}
                   className="px-4 py-2 border border-gray-300 text-gray-700 font-medium text-sm rounded-lg hover:bg-gray-50 transition-colors"
                 >
@@ -869,6 +1040,7 @@ export default function BulkUploadUsers({
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Phone</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Type</th>
                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Class/Roll</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -877,21 +1049,35 @@ export default function BulkUploadUsers({
                         .map((user, idx) => {
                           const actualIndex = (previewPage - 1) * PREVIEW_ITEMS_PER_PAGE + idx;
                           const userTypeLower = user.user_type?.toLowerCase().trim();
+                          const rowError = previewErrors[actualIndex];
                           return (
-                            <tr key={actualIndex} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-4 py-3 text-sm text-gray-600">{actualIndex + 1}</td>
-                              <td className="px-4 py-3 text-sm text-gray-900 font-medium">{user.full_name}</td>
-                              <td className="px-4 py-3 text-sm text-gray-600">{user.phone}</td>
+                            <tr key={actualIndex} className={rowError ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'} style={{ transition: 'background-color 0.15s' }}>
+                              <td className={`px-4 py-3 text-sm ${rowError ? 'text-red-600' : 'text-gray-600'}`}>{actualIndex + 1}</td>
+                              <td className={`px-4 py-3 text-sm font-medium ${rowError ? 'text-red-800' : 'text-gray-900'}`}>{user.full_name}</td>
+                              <td className={`px-4 py-3 text-sm ${rowError ? 'text-red-600' : 'text-gray-600'}`}>{user.phone}</td>
                               <td className="px-4 py-3 text-sm">
-                                <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium">
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${rowError ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}`}>
                                   {user.user_type}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
+                              <td className={`px-4 py-3 text-sm ${rowError ? 'text-red-600' : 'text-gray-600'}`}>
                                 {userTypeLower === 'student' 
                                   ? `${user.student_class || '—'} / ${user.student_roll || '—'}`
                                   : user.teacher_classes || '—'
                                 }
+                              </td>
+                              <td className="px-4 py-3 text-sm">
+                                {rowError ? (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800" title={rowError}>
+                                    <AlertCircle size={12} className="mr-1 flex-shrink-0" />
+                                    <span className="truncate max-w-[160px]">{rowError}</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    <CheckCircle size={12} className="mr-1" />
+                                    Valid
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           );
@@ -963,6 +1149,7 @@ export default function BulkUploadUsers({
                     setUploadStep('select');
                     setParsedUsers([]);
                     setPreviewPage(1);
+                    setPreviewErrors({});
                   }}
                   className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors"
                 >
@@ -970,10 +1157,11 @@ export default function BulkUploadUsers({
                 </button>
                 <button
                   onClick={uploadUsers}
-                  className="flex-1 px-4 py-3 text-white font-medium rounded-lg transition-all shadow-md hover:shadow-lg"
+                  disabled={parsedUsers.length === Object.keys(previewErrors).length}
+                  className="flex-1 px-4 py-3 text-white font-medium rounded-lg transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   style={{ background: brandTheme.gradients.primary }}
                 >
-                  Upload {parsedUsers.length} Users
+                  Upload {parsedUsers.length - Object.keys(previewErrors).length} Valid Users
                 </button>
               </div>
             </div>

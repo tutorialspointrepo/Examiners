@@ -1,495 +1,413 @@
 /**
- * Audit Firebase Problems - Find Corrupted/Incomplete Documents
- * Based on problem-template.php field usage
- * 
+ * Problem Document Auditor
+ * Reads all problems from Firebase and reports:
+ *   - Missing top-level fields
+ *   - Empty/null fields that should have content
+ *   - Invalid or incomplete nested structures
+ *   - Invalid JSON sub-structures
+ *
  * Usage:
- *   node audit_problems.js                          (audit all coding problems)
- *   node audit_problems.js --fix-list               (audit all + write broken slugs to fix_list.txt)
- *   node audit_problems.js --slug <id>              (audit single problem in detail)
- *   node audit_problems.js --no-testcases              (list problems with no test cases)
- *   node audit_problems.js --no-testcases --save        (also save to no_testcases.txt)
- *   node audit_problems.js --fix-paramorder          (dry run - show what would be fixed)
- *   node audit_problems.js --fix-paramorder --apply  (write paramOrder to Firebase)
+ *   node audit_problems.js              — audit ALL problems in the collection
+ *   node audit_problems.js --problem knight-dialer  — audit single problem by slug
+ *   node audit_problems.js --verbose    — show full details per field
+ *   node audit_problems.js --type coding — filter by problemType (coding or sql)
  */
 
 const admin = require('firebase-admin');
-const fs = require('fs');
 
+// ==================== CONFIGURATION ====================
 const FIREBASE_SERVICE_ACCOUNT = require('./serviceAccountKey.json');
 const FIREBASE_PROJECT_ID = 'examiners-app';
 const COLLECTION_NAME = 'problems';
 
-const REQUIRED_LANGUAGES = ['c', 'cpp', 'java', 'python', 'javascript', 'go'];
+// ==================== INITIALIZE ====================
+admin.initializeApp({
+  credential: admin.credential.cert(FIREBASE_SERVICE_ACCOUNT),
+  projectId: FIREBASE_PROJECT_ID,
+});
+const db = admin.firestore();
 
-let db = null;
+// ==================== FIELD DEFINITIONS ====================
 
-function initFirebase() {
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.cert(FIREBASE_SERVICE_ACCOUNT),
-      projectId: FIREBASE_PROJECT_ID,
-    });
-  }
-  db = admin.firestore();
-}
+// Fields every document must have (coding + sql)
+const COMMON_REQUIRED_FIELDS = [
+  'id', 'problem_id', 'slug', 'number', 'title',
+  'description', 'descriptionText',
+  'difficulty', 'level', 'category',
+  'tags', 'topics', 'related',
+  'problemType',
+  'analogy', 'approaches', 'examples', 'testCases',
+  'constraints', 'defaultCode', 'solutionSummary', 'visualize',
+  'companies', 'stats', 'seo',
+  'createdAt', 'updatedAt',
+];
 
-// ==================== VALIDATION ====================
+// Fields only for coding problems
+const CODING_ONLY_FIELDS = ['paramOrder'];
 
-function auditProblem(id, data) {
+// Fields only for SQL problems
+const SQL_ONLY_FIELDS = ['tableSchema'];
+
+// Fields that must not be empty/null/[] for a complete document
+const MUST_HAVE_CONTENT = {
+  title:           v => typeof v === 'string' && v.trim().length > 0,
+  description:     v => typeof v === 'string' && v.trim().length > 0,
+  descriptionText: v => typeof v === 'string' && v.trim().length > 0,
+  difficulty:      v => typeof v === 'string' && v.trim().length > 0,
+  tags:            v => Array.isArray(v) && v.length > 0,
+  examples:        v => Array.isArray(v) && v.length > 0,
+  testCases:       v => Array.isArray(v), // can be empty for SQL, just must exist
+  constraints:     v => Array.isArray(v) && v.length > 0,
+  approaches:      v => v && typeof v === 'object' && Object.keys(v).length > 0,
+  defaultCode:     v => v && typeof v === 'object' && Object.keys(v).length > 0,
+  solutionSummary: v => typeof v === 'string' && v.trim().length > 0,
+  analogy:         v => v && typeof v === 'object',
+  visualize:       v => v && typeof v === 'object',
+  seo:             v => v && typeof v === 'object' && v.title && v.canonical,
+  stats:           v => v && typeof v === 'object' && v.acceptance,
+};
+
+// ==================== APPROACH VALIDATOR ====================
+
+const CODING_LANGUAGES = ['python', 'javascript', 'java', 'cpp', 'go', 'c'];
+
+function auditApproaches(approaches, isSQL) {
   const issues = [];
 
-  // ─────────── CRITICAL (❌) - Page breaks ───────────
-
-  // title (used in <h1>, SEO, breadcrumbs)
-  if (!data.title || typeof data.title !== 'string' || data.title.trim() === '') {
-    issues.push('❌ title: EMPTY or MISSING');
+  if (!approaches || typeof approaches !== 'object') {
+    return ['approaches is missing or not an object'];
   }
 
-  // description (HTML content shown in problem tab)
-  if (!data.description || typeof data.description !== 'string' || data.description.trim() === '') {
-    issues.push('❌ description: EMPTY or MISSING');
+  const keys = Object.keys(approaches);
+  if (keys.length === 0) {
+    return ['approaches is empty — no approaches defined'];
   }
 
-  // descriptionText (used in meta description fallback)
-  if (!data.descriptionText || typeof data.descriptionText !== 'string' || data.descriptionText.trim() === '') {
-    issues.push('⚠️  descriptionText: EMPTY or MISSING');
+  // Check for brute force — accept common key variants
+  const hasBruteForce = keys.some(k =>
+    k === 'brute-force' || k === 'brute_force' || k === 'bruteforce' ||
+    k.startsWith('brute') || k.includes('naive') || k.includes('recursive-brute')
+  );
+  if (!hasBruteForce) {
+    issues.push('approaches: missing brute-force key (expected key starting with "brute" or containing "naive")');
   }
 
-  // approaches (table + code editor + algorithm steps)
-  if (!data.approaches || typeof data.approaches !== 'object' || Object.keys(data.approaches).length === 0) {
-    issues.push('❌ approaches: EMPTY or MISSING');
-  } else {
-    for (const [name, approach] of Object.entries(data.approaches)) {
-      const p = `approaches.${name}`;
+  for (const key of keys) {
+    const ap = approaches[key];
+    const prefix = `approaches["${key}"]`;
 
-      // approach.code (loaded into Monaco editor)
-      if (!approach.code || typeof approach.code !== 'object' || Object.keys(approach.code).length === 0) {
-        issues.push(`❌ ${p}.code: EMPTY or MISSING`);
-      } else {
-        const presentLangs = Object.keys(approach.code);
-        const missingLangs = REQUIRED_LANGUAGES.filter(l => !presentLangs.includes(l));
-        if (missingLangs.length > 0) {
-          issues.push(`⚠️  ${p}.code: missing [${missingLangs.join(', ')}]`);
-        }
-        for (const [lang, code] of Object.entries(approach.code)) {
-          if (typeof code !== 'string') {
-            issues.push(`❌ ${p}.code.${lang}: NOT A STRING (type: ${typeof code})`);
-          } else if (code.trim() === '') {
-            issues.push(`❌ ${p}.code.${lang}: EMPTY string`);
-          }
+    // Required fields per approach
+    const apRequired = ['title', 'icon', 'summary', 'description', 'steps', 'pros', 'cons', 'complexity', 'code', 'visualization'];
+    for (const f of apRequired) {
+      if (ap[f] === undefined || ap[f] === null) {
+        issues.push(`${prefix}: missing field "${f}"`);
+      }
+    }
+
+    // Complexity
+    if (ap.complexity) {
+      for (const cf of ['time', 'timeExplain', 'space', 'spaceExplain']) {
+        if (!ap.complexity[cf]) {
+          issues.push(`${prefix}.complexity: missing "${cf}"`);
         }
       }
+    }
 
-      // approach.complexity.time / .space (shown in approaches table)
-      if (!approach.complexity || typeof approach.complexity !== 'object') {
-        issues.push(`⚠️  ${p}.complexity: MISSING`);
+    // Code languages
+    if (ap.code) {
+      if (isSQL) {
+        if (!ap.code.sql) issues.push(`${prefix}.code: missing "sql"`);
       } else {
-        if (!approach.complexity.time) issues.push(`⚠️  ${p}.complexity.time: MISSING`);
-        if (!approach.complexity.space) issues.push(`⚠️  ${p}.complexity.space: MISSING`);
-      }
-
-      // approach.title (shown in table row + section heading)
-      if (!approach.title) issues.push(`⚠️  ${p}.title: MISSING`);
-
-      // approach.summary (shown in table Notes column)
-      if (!approach.summary) issues.push(`⚠️  ${p}.summary: MISSING`);
-
-      // approach.description (shown in approach detail)
-      if (!approach.description) issues.push(`⚠️  ${p}.description: MISSING`);
-
-      // approach.steps[] (rendered as <ol> in Algorithm Steps section)
-      if (!approach.steps || !Array.isArray(approach.steps) || approach.steps.length === 0) {
-        issues.push(`⚠️  ${p}.steps: EMPTY or MISSING`);
-      }
-
-      // approach.visualization.svg (rendered in Visualization section)
-      if (approach.visualization) {
-        if (!approach.visualization.svg) issues.push(`ℹ️  ${p}.visualization.svg: MISSING`);
+        for (const lang of CODING_LANGUAGES) {
+          if (!ap.code[lang]) issues.push(`${prefix}.code: missing "${lang}"`);
+        }
       }
     }
-  }
 
-  // defaultCode (loaded when user resets editor)
-  if (!data.defaultCode || typeof data.defaultCode !== 'object' || Object.keys(data.defaultCode).length === 0) {
-    issues.push('❌ defaultCode: EMPTY or MISSING');
-  } else {
-    const presentLangs = Object.keys(data.defaultCode);
-    const missingLangs = REQUIRED_LANGUAGES.filter(l => !presentLangs.includes(l));
-    if (missingLangs.length > 0) {
-      issues.push(`⚠️  defaultCode: missing [${missingLangs.join(', ')}]`);
-    }
-    for (const [lang, code] of Object.entries(data.defaultCode)) {
-      if (typeof code !== 'string') {
-        issues.push(`❌ defaultCode.${lang}: NOT A STRING (type: ${typeof code})`);
-      } else if (code.trim() === '') {
-        issues.push(`❌ defaultCode.${lang}: EMPTY string`);
+    // Visualization
+    if (ap.visualization) {
+      if (!ap.visualization.svg || !ap.visualization.svg.trim().startsWith('<svg')) {
+        issues.push(`${prefix}.visualization.svg: missing or invalid SVG`);
       }
     }
-  }
-
-  // testCases (used by Run button + paramOrder logic)
-  if (!data.testCases || !Array.isArray(data.testCases) || data.testCases.length === 0) {
-    issues.push('❌ testCases: EMPTY or MISSING');
-  } else {
-    for (let i = 0; i < data.testCases.length; i++) {
-      const tc = data.testCases[i];
-      if (tc.expected === undefined || tc.expected === null) {
-        issues.push(`❌ testCases[${i}]: missing 'expected'`);
-      }
-      if (!tc.input || typeof tc.input !== 'object' || Object.keys(tc.input).length === 0) {
-        issues.push(`❌ testCases[${i}]: missing or empty 'input'`);
-      }
-    }
-  }
-
-  // ─────────── WARNINGS (⚠️) - Incomplete sections ───────────
-
-  // examples (shown in Examples tab + SQL test data)
-  if (!data.examples || !Array.isArray(data.examples) || data.examples.length === 0) {
-    issues.push('⚠️  examples: EMPTY or MISSING');
-  }
-
-  // constraints (rendered in Constraints section)
-  if (!data.constraints || !Array.isArray(data.constraints) || data.constraints.length === 0) {
-    issues.push('⚠️  constraints: EMPTY or MISSING');
-  }
-
-  // tags (shown as tag pills)
-  if (!data.tags || !Array.isArray(data.tags) || data.tags.length === 0) {
-    issues.push('⚠️  tags: EMPTY or MISSING');
-  }
-
-  // solutionSummary (shown in solution panel)
-  if (!data.solutionSummary || (typeof data.solutionSummary === 'string' && data.solutionSummary.trim() === '')) {
-    issues.push('⚠️  solutionSummary: EMPTY or MISSING');
-  }
-
-  // seo.description (meta tag)
-  if (!data.seo || !data.seo.description) {
-    issues.push('⚠️  seo.description: MISSING');
-  }
-
-  // difficulty / level
-  if (!data.difficulty) issues.push('⚠️  difficulty: MISSING');
-
-  // slug
-  if (!data.slug) issues.push('⚠️  slug: MISSING');
-
-  // paramOrder (only matters for multi-input problems)
-  if (data.testCases && Array.isArray(data.testCases) && data.testCases.length > 0) {
-    const firstInput = data.testCases[0].input;
-    if (firstInput && typeof firstInput === 'object' && Object.keys(firstInput).length > 1) {
-      if (!data.paramOrder || !Array.isArray(data.paramOrder) || data.paramOrder.length === 0) {
-        issues.push('⚠️  paramOrder: MISSING (multi-input problem - order matters)');
-      }
-    }
-  }
-
-  // ─────────── INFO (ℹ️) - Nice to have ───────────
-
-  // analogy (rendered in Analogy tab)
-  if (!data.analogy || typeof data.analogy !== 'object') {
-    issues.push('ℹ️  analogy: MISSING');
-  }
-
-  // visualize.svg (main problem visualization)
-  if (!data.visualize || !data.visualize.svg) {
-    issues.push('ℹ️  visualize.svg: MISSING');
-  }
-
-  // companies (company tag pills)
-  if (!data.companies || !Array.isArray(data.companies) || data.companies.length === 0) {
-    issues.push('ℹ️  companies: EMPTY');
-  }
-
-  // related (related problems links)
-  if (!data.related || !Array.isArray(data.related) || data.related.length === 0) {
-    issues.push('ℹ️  related: EMPTY');
-  }
-
-  // \r\n in description
-  if (data.description && typeof data.description === 'string' && data.description.includes('\r\n')) {
-    issues.push('⚠️  description: contains \\r\\n (carriage returns)');
   }
 
   return issues;
 }
 
-// ==================== SEVERITY ====================
+// ==================== MAIN AUDIT FUNCTION ====================
 
-function classifyProblem(issues) {
-  const critical = issues.filter(i => i.startsWith('❌')).length;
-  const warning = issues.filter(i => i.startsWith('⚠️')).length;
-  if (critical > 0) return 'BROKEN';
-  if (warning > 0) return 'INCOMPLETE';
-  if (issues.length > 0) return 'MINOR';
-  return 'HEALTHY';
-}
+function auditDocument(slug, doc) {
+  const issues = [];
+  const missingFields = [];
+  const emptyFields = [];
+  const isSQL = doc.problemType === 'sql';
 
-// ==================== HELPERS ====================
-
-function naturalSort(keys) {
-  return keys.slice().sort((a, b) => {
-    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
-  });
-}
-
-function needsParamOrderFix(keys) {
-  // Only fix if there are numbered params out of order (v1/v2, root1/root2, etc)
-  const numbered = keys.filter(k => /\d+$/.test(k));
-  if (numbered.length < 2) return false;
-  const sorted = naturalSort(numbered);
-  for (let i = 0; i < numbered.length; i++) {
-    if (keys.indexOf(numbered[i]) !== keys.indexOf(sorted[i])) return true;
+  // 1. Check common required fields exist
+  for (const field of COMMON_REQUIRED_FIELDS) {
+    if (!(field in doc)) {
+      missingFields.push(field);
+    }
   }
-  return false;
-}
 
-function getParamOrder(data) {
-  if (!data.testCases || !Array.isArray(data.testCases) || data.testCases.length === 0) return null;
-  const firstInput = data.testCases[0].input;
-  if (!firstInput || typeof firstInput !== 'object' || Object.keys(firstInput).length === 0) return null;
-  
-  const inputKeys = Object.keys(firstInput);
-  
-  // Try to extract order from examples first (most reliable)
-  if (data.examples && Array.isArray(data.examples) && data.examples.length > 0) {
-    const exampleInput = data.examples[0].input;
-    if (exampleInput && typeof exampleInput === 'string') {
-      // Parse "s = \"ab\", t = 1, nums = [...]" → ["s", "t", "nums"]
-      const matches = exampleInput.match(/(\w+)\s*=/g);
-      if (matches) {
-        const exampleOrder = matches.map(m => m.replace(/\s*=/, '').trim());
-        // Verify all keys are present
-        if (exampleOrder.length === inputKeys.length && 
-            inputKeys.every(k => exampleOrder.includes(k))) {
-          return exampleOrder;
+  // 2. Check type-specific fields
+  const typeFields = isSQL ? SQL_ONLY_FIELDS : CODING_ONLY_FIELDS;
+  for (const field of typeFields) {
+    if (!(field in doc)) {
+      missingFields.push(field);
+    }
+  }
+
+  // 3. Check fields that must have real content
+  for (const [field, validator] of Object.entries(MUST_HAVE_CONTENT)) {
+    if (field in doc) {
+      try {
+        if (!validator(doc[field])) {
+          emptyFields.push(field);
         }
+      } catch {
+        issues.push(`${field}: validator threw error — value may be malformed`);
       }
     }
   }
-  
-  // Fallback: natural sort
-  return naturalSort(inputKeys);
+
+  // 4. Deep audit approaches
+  if ('approaches' in doc) {
+    const approachIssues = auditApproaches(doc.approaches, isSQL);
+    issues.push(...approachIssues);
+  }
+
+  // 5. Validate visualize SVG
+  if (doc.visualize) {
+    if (!doc.visualize.svg || !doc.visualize.svg.trim().startsWith('<svg')) {
+      issues.push('visualize.svg: missing or does not start with <svg>');
+    }
+  }
+
+  // 6. Validate analogy structure
+  if (doc.analogy && typeof doc.analogy === 'object') {
+    if (!doc.analogy.title) issues.push('analogy: missing "title"');
+    if (!doc.analogy.description) issues.push('analogy: missing "description"');
+    if (!Array.isArray(doc.analogy.approaches) || doc.analogy.approaches.length === 0) {
+      issues.push('analogy: missing or empty "approaches" array');
+    }
+  }
+
+  // 7. Validate defaultCode has correct languages
+  if (doc.defaultCode && typeof doc.defaultCode === 'object') {
+    if (isSQL) {
+      if (!doc.defaultCode.sql) issues.push('defaultCode: missing "sql"');
+    } else {
+      for (const lang of CODING_LANGUAGES) {
+        if (!doc.defaultCode[lang]) issues.push(`defaultCode: missing "${lang}"`);
+      }
+    }
+  }
+
+  // 8. Validate examples structure
+  if (Array.isArray(doc.examples) && doc.examples.length > 0) {
+    doc.examples.forEach((ex, i) => {
+      if (!ex.input) issues.push(`examples[${i}]: missing "input"`);
+      if (!ex.output && ex.output !== 0 && ex.output !== false) issues.push(`examples[${i}]: missing "output"`);
+    });
+  }
+
+  // 9. Validate testCases for coding problems
+  if (!isSQL && Array.isArray(doc.testCases)) {
+    if (doc.testCases.length < 3) {
+      issues.push(`testCases: only ${doc.testCases.length} test case(s) — expected at least 3`);
+    }
+    doc.testCases.forEach((tc, i) => {
+      if (!tc.input) issues.push(`testCases[${i}]: missing "input"`);
+      if (tc.expected === undefined) issues.push(`testCases[${i}]: missing "expected"`);
+    });
+  }
+
+  // 10. Validate paramOrder for coding problems
+  if (!isSQL && 'paramOrder' in doc) {
+    if (!Array.isArray(doc.paramOrder) || doc.paramOrder.length === 0) {
+      issues.push('paramOrder: empty or not an array');
+    }
+  }
+
+  return { missingFields, emptyFields, issues };
+}
+
+// ==================== REPORT PRINTER ====================
+
+function printReport(results, verbose) {
+  const clean = [];
+  const withIssues = [];
+
+  for (const r of results) {
+    const total = r.missingFields.length + r.emptyFields.length + r.issues.length;
+    if (total === 0) {
+      clean.push(r.slug);
+    } else {
+      withIssues.push(r);
+    }
+  }
+
+  console.log('\n========================================');
+  console.log('📋 AUDIT REPORT');
+  console.log('========================================');
+  console.log(`✅ Clean:      ${clean.length}`);
+  console.log(`⚠️  With Issues: ${withIssues.length}`);
+  console.log(`❌ Not Found:  ${results.filter(r => r.notFound).length}`);
+  console.log('========================================\n');
+
+  if (withIssues.length > 0) {
+    console.log('── PROBLEMS WITH ISSUES ──────────────────\n');
+    for (const r of withIssues) {
+      if (r.notFound) {
+        console.log(`❌ [NOT FOUND] ${r.slug}`);
+        continue;
+      }
+
+      const totalIssues = r.missingFields.length + r.emptyFields.length + r.issues.length;
+      console.log(`⚠️  ${r.slug}  (${r.problemType || '?'})  —  ${totalIssues} issue(s)`);
+
+      if (r.missingFields.length > 0) {
+        console.log(`   🔴 Missing fields:  ${r.missingFields.join(', ')}`);
+      }
+      if (r.emptyFields.length > 0) {
+        console.log(`   🟡 Empty/null fields: ${r.emptyFields.join(', ')}`);
+      }
+      if (r.issues.length > 0 && verbose) {
+        for (const issue of r.issues) {
+          console.log(`   🔸 ${issue}`);
+        }
+      } else if (r.issues.length > 0) {
+        console.log(`   🔸 Deep issues (${r.issues.length}): ${r.issues.slice(0, 3).join(' | ')}${r.issues.length > 3 ? ` ... +${r.issues.length - 3} more` : ''}`);
+      }
+      console.log();
+    }
+  }
+
+  if (verbose && clean.length > 0) {
+    console.log('── CLEAN PROBLEMS ────────────────────────');
+    console.log(clean.map(s => `   ✅ ${s}`).join('\n'));
+    console.log();
+  }
+
+  // Summary table by issue type
+  const missingFieldCounts = {};
+  const emptyFieldCounts = {};
+  for (const r of withIssues) {
+    for (const f of r.missingFields) missingFieldCounts[f] = (missingFieldCounts[f] || 0) + 1;
+    for (const f of r.emptyFields)   emptyFieldCounts[f]   = (emptyFieldCounts[f]   || 0) + 1;
+  }
+
+  if (Object.keys(missingFieldCounts).length > 0) {
+    console.log('── MISSING FIELD FREQUENCY ───────────────');
+    Object.entries(missingFieldCounts)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([f, count]) => console.log(`   ${String(count).padStart(3)}x  ${f}`));
+    console.log();
+  }
+
+  if (Object.keys(emptyFieldCounts).length > 0) {
+    console.log('── EMPTY/NULL FIELD FREQUENCY ────────────');
+    Object.entries(emptyFieldCounts)
+      .sort((a, b) => b[1] - a[1])
+      .forEach(([f, count]) => console.log(`   ${String(count).padStart(3)}x  ${f}`));
+    console.log();
+  }
 }
 
 // ==================== MAIN ====================
 
 async function main() {
   const args = process.argv.slice(2);
-  const cmd = args[0] || '';
-  const param = args[1] || '';
+  const verbose = args.includes('--verbose');
+  const problemIdx = args.indexOf('--problem');
+  const singleProblem = problemIdx !== -1 ? args[problemIdx + 1] : null;
+  const typeIdx = args.indexOf('--type');
+  const filterType = typeIdx !== -1 ? args[typeIdx + 1] : null; // 'coding' or 'sql'
 
-  initFirebase();
-
-  // Single problem audit
-  if (cmd === '--slug' && param) {
-    const doc = await db.collection(COLLECTION_NAME).doc(param).get();
-    if (!doc.exists) {
-      console.log(`❌ Problem not found: ${param}`);
-      process.exit(1);
-    }
-    const data = doc.data();
-    const issues = auditProblem(doc.id, data);
-    const status = classifyProblem(issues);
-
-    console.log(`\n🔍 Audit: ${doc.id} (${data.title || 'NO TITLE'})`);
-    console.log(`   Status: ${status}`);
-    if (issues.length === 0) {
-      console.log('   ✅ No issues found');
-    } else {
-      issues.forEach(i => console.log(`   ${i}`));
-    }
-    process.exit(0);
+  if (problemIdx !== -1 && !singleProblem) {
+    console.error('❌ --problem flag requires a problem ID. Example: --problem knight-dialer');
+    process.exit(1);
+  }
+  if (typeIdx !== -1 && !['coding', 'sql'].includes(filterType)) {
+    console.error('❌ --type must be "coding" or "sql"');
+    process.exit(1);
   }
 
-  // List problems with no test cases
-  if (cmd === '--no-testcases') {
-    console.log('📋 Problems with NO test cases:\n');
+  console.log('========================================');
+  console.log('🔍 Problem Document Auditor');
+  if (singleProblem) console.log(`🎯 Mode: Single — ${singleProblem}`);
+  else if (filterType) console.log(`🔎 Mode: All ${filterType.toUpperCase()} problems`);
+  else console.log('🌐 Mode: Full collection scan');
+  if (verbose) console.log('📣 Verbose mode ON');
+  console.log('========================================\n');
 
-    const snapshot = await db.collection(COLLECTION_NAME)
-      .where('problemType', '==', 'coding')
-      .get();
+  const results = [];
 
-    const missing = [];
-
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
-      if (!data.testCases || !Array.isArray(data.testCases) || data.testCases.length === 0) {
-        missing.push({ id: doc.id, title: data.title || 'NO TITLE', difficulty: data.difficulty || '?' });
-      }
-    }
-
-    missing.sort((a, b) => a.id.localeCompare(b.id));
-
-    for (const p of missing) {
-      console.log(`  📄 ${p.id} — ${p.title} [${p.difficulty}]`);
-    }
-
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`📦 Total without testCases: ${missing.length} / ${snapshot.docs.length}`);
-    console.log(`${'='.repeat(60)}`);
-
-    if (param === '--save') {
-      fs.writeFileSync('no_testcases.txt', missing.map(p => p.id).join('\n') + '\n');
-      console.log(`\n📄 Written to no_testcases.txt`);
-    }
-
-    process.exit(0);
-  }
-
-  // Fix paramOrder for all problems
-  if (cmd === '--fix-paramorder') {
-    console.log('🔧 Fixing paramOrder for all coding problems...\n');
-
-    const snapshot = await db.collection(COLLECTION_NAME)
-      .where('problemType', '==', 'coding')
-      .get();
-
-    let fixed = 0, skipped = 0, alreadySet = 0, noTestCases = 0;
-    const dryRun = param !== '--apply';
-
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
-      const computed = getParamOrder(data);
-
-      if (!computed) {
-        noTestCases++;
-        continue;
-      }
-
-      const existing = data.paramOrder;
-      const hasValid = existing && Array.isArray(existing) && existing.length > 0;
-
-      // Check current key order (from existing paramOrder or from input keys)
-      const currentKeys = hasValid ? existing : Object.keys(data.testCases[0].input);
-      
-      if (hasValid) {
-        // Already has paramOrder - only fix if numbered params are misordered
-        if (!needsParamOrderFix(currentKeys)) {
-          alreadySet++;
-          continue;
-        }
-        // Skip if computed order is same as existing
-        if (JSON.stringify(existing) === JSON.stringify(computed)) {
-          alreadySet++;
-          continue;
-        }
+  if (singleProblem) {
+    // ── Single problem mode ──
+    process.stdout.write(`Fetching: ${singleProblem} ... `);
+    try {
+      const docSnap = await db.collection(COLLECTION_NAME).doc(singleProblem).get();
+      if (!docSnap.exists) {
+        console.log('❌ NOT FOUND');
+        results.push({ slug: singleProblem, notFound: true, missingFields: [], emptyFields: [], issues: [] });
       } else {
-        // No paramOrder - set it for any multi-input problem
-        if (currentKeys.length <= 1) {
-          skipped++;
-          continue;
-        }
+        const doc = docSnap.data();
+        const { missingFields, emptyFields, issues } = auditDocument(singleProblem, doc);
+        const total = missingFields.length + emptyFields.length + issues.length;
+        console.log(total === 0 ? '✅ OK' : `⚠️  ${total} issue(s)`);
+        results.push({ slug: singleProblem, problemType: doc.problemType, notFound: false, missingFields, emptyFields, issues });
       }
+    } catch (err) {
+      console.log(`❌ ERROR: ${err.message}`);
+      results.push({ slug: singleProblem, notFound: false, missingFields: [], emptyFields: [], issues: [`fetch error: ${err.message}`] });
+    }
 
-      if (dryRun) {
-        if (hasValid) {
-          console.log(`  📄 ${doc.id} → [${existing.join(', ')}] ⇒ [${computed.join(', ')}]`);
+  } else {
+    // ── Full collection scan ──
+    console.log('📖 Fetching all documents from collection...');
+
+    let query = db.collection(COLLECTION_NAME).orderBy('slug');
+    if (filterType) {
+      query = query.where('problemType', '==', filterType);
+    }
+
+    const snapshot = await query.get();
+    const total = snapshot.size;
+    console.log(`📊 Found ${total} document(s)\n`);
+
+    let i = 0;
+    for (const docSnap of snapshot.docs) {
+      i++;
+      const slug = docSnap.id;
+      const doc = docSnap.data();
+
+      process.stdout.write(`[${String(i).padStart(4)}/${total}] ${slug.padEnd(60)} `);
+
+      try {
+        const { missingFields, emptyFields, issues } = auditDocument(slug, doc);
+        const totalIssues = missingFields.length + emptyFields.length + issues.length;
+
+        if (totalIssues === 0) {
+          console.log('✅ OK');
         } else {
-          console.log(`  📄 ${doc.id} → paramOrder: [${computed.join(', ')}]`);
+          console.log(`⚠️  ${totalIssues} issue(s)`);
         }
-      } else {
-        await db.collection(COLLECTION_NAME).doc(doc.id).update({ paramOrder: computed });
-        console.log(`  ✅ ${doc.id} → [${computed.join(', ')}]`);
+
+        results.push({ slug, problemType: doc.problemType, notFound: false, missingFields, emptyFields, issues });
+      } catch (err) {
+        console.log(`❌ ERROR: ${err.message}`);
+        results.push({ slug, notFound: false, missingFields: [], emptyFields: [], issues: [`audit error: ${err.message}`] });
       }
-      fixed++;
-    }
-
-    console.log(`\n${'='.repeat(60)}`);
-    console.log(`📋 PARAMORDER FIX ${dryRun ? '(DRY RUN)' : 'APPLIED'}`);
-    console.log(`  🔧 ${dryRun ? 'Would fix' : 'Fixed'}: ${fixed}`);
-    console.log(`  ✅ Already set:  ${alreadySet}`);
-    console.log(`  ⏭️  Single input: ${skipped}`);
-    console.log(`  ❌ No testCases: ${noTestCases}`);
-    console.log(`  📦 Total:        ${snapshot.docs.length}`);
-    console.log(`${'='.repeat(60)}`);
-
-    if (dryRun && fixed > 0) {
-      console.log(`\n💡 Run with --fix-paramorder --apply to write to Firebase`);
-    }
-
-    process.exit(0);
-  }
-
-  // Full audit
-  console.log('🔍 Auditing all coding problems...\n');
-
-  const snapshot = await db.collection(COLLECTION_NAME)
-    .where('problemType', '==', 'coding')
-    .get();
-
-  const results = { BROKEN: [], INCOMPLETE: [], MINOR: [], HEALTHY: [] };
-  const fixList = [];
-
-  for (const doc of snapshot.docs) {
-    const data = doc.data();
-    const issues = auditProblem(doc.id, data);
-    const status = classifyProblem(issues);
-
-    results[status].push({ id: doc.id, title: data.title || 'NO TITLE', issues });
-
-    if (status === 'BROKEN') {
-      fixList.push(doc.id);
     }
   }
 
-  const total = snapshot.docs.length;
-
-  console.log(`${'='.repeat(60)}`);
-  console.log(`📊 AUDIT RESULTS — ${total} coding problems`);
-  console.log(`${'='.repeat(60)}\n`);
-
-  // BROKEN
-  if (results.BROKEN.length > 0) {
-    console.log(`🔴 BROKEN (${results.BROKEN.length}) — Critical fields missing:\n${'─'.repeat(60)}`);
-    for (const p of results.BROKEN) {
-      console.log(`\n  📄 ${p.id} — ${p.title}`);
-      p.issues.filter(i => i.startsWith('❌')).forEach(i => console.log(`     ${i}`));
-    }
-    console.log('');
-  }
-
-  // INCOMPLETE
-  if (results.INCOMPLETE.length > 0) {
-    console.log(`🟡 INCOMPLETE (${results.INCOMPLETE.length}) — Warnings:\n${'─'.repeat(60)}`);
-    for (const p of results.INCOMPLETE) {
-      console.log(`\n  📄 ${p.id} — ${p.title}`);
-      p.issues.filter(i => !i.startsWith('ℹ️')).forEach(i => console.log(`     ${i}`));
-    }
-    console.log('');
-  }
-
-  // MINOR
-  if (results.MINOR.length > 0) {
-    console.log(`🟢 MINOR (${results.MINOR.length}) — Nice to have:\n${'─'.repeat(60)}`);
-    for (const p of results.MINOR) {
-      console.log(`\n  📄 ${p.id} — ${p.title}`);
-      p.issues.forEach(i => console.log(`     ${i}`));
-    }
-    console.log('');
-  }
-
-  // Summary
-  console.log(`${'='.repeat(60)}`);
-  console.log(`📋 SUMMARY`);
-  console.log(`  🔴 BROKEN:     ${results.BROKEN.length}`);
-  console.log(`  🟡 INCOMPLETE: ${results.INCOMPLETE.length}`);
-  console.log(`  🟢 MINOR:      ${results.MINOR.length}`);
-  console.log(`  ✅ HEALTHY:    ${results.HEALTHY.length}`);
-  console.log(`  📦 TOTAL:      ${total}`);
-  console.log(`${'='.repeat(60)}`);
-
-  // Write fix list
-  if ((cmd === '--fix-list' || cmd === '--fixlist') && fixList.length > 0) {
-    fs.writeFileSync('fix_list.txt', fixList.join('\n') + '\n');
-    console.log(`\n📄 Written ${fixList.length} broken slugs to fix_list.txt`);
-  }
-
+  printReport(results, verbose);
   process.exit(0);
 }
 
 main().catch(err => {
-  console.error('Fatal:', err);
+  console.error('Fatal error:', err);
   process.exit(1);
 });

@@ -294,12 +294,7 @@ const AuditUserList: React.FC<AuditUserListProps> = ({ collegeId, onUserSelect, 
                     </span>
                   </div>
 
-                  <div className="flex items-center space-x-4 text-sm text-gray-600">
-                    <div className="flex items-center">
-                      <FontAwesomeIcon icon={faEnvelope} className="w-4 mr-2 text-gray-400" />
-                      <span className="truncate">{user.email}</span>
-                    </div>
-
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
                     {user.studentRoll && (
                       <div className="flex items-center">
                         <FontAwesomeIcon icon={faIdBadge} className="w-4 mr-2 text-gray-400" />
@@ -313,6 +308,11 @@ const AuditUserList: React.FC<AuditUserListProps> = ({ collegeId, onUserSelect, 
                         <span>{user.studentClass}</span>
                       </div>
                     )}
+
+                    <div className="flex items-center">
+                      <FontAwesomeIcon icon={faEnvelope} className="w-4 mr-2 text-gray-400" />
+                      <span className="truncate">{user.email}</span>
+                    </div>
                   </div>
                 </div>
 

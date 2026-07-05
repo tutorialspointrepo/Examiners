@@ -9,6 +9,7 @@ import {
   faGraduationCap,
   faChevronDown,
   faChevronLeft,
+  faChevronRight,
   faTelescope,
   faBuilding,
   faCheckSquare,
@@ -17,7 +18,6 @@ import {
   faChartBar
 } from '@fortawesome/sharp-light-svg-icons';
 import { firebaseService } from './services/firebase_service';
-import type { DocumentSnapshot } from 'firebase/firestore';
 import { EXAM_STATUS, EXAM_MODES, SECURITY_LEVELS, FILTER_VALUES, type QuestionType, type ExamStatus, type ExamMode, type SecurityLevel } from './constants';
 
 interface Question {
@@ -121,6 +121,7 @@ function Exams({
   onCountsChange,
   newlyCreatedExamId,
   onExamAutoSelected,
+  onViewResults,
   userId, // ✅ ADDED: Current student's user ID
   currentUserType, // ✅ ADDED: User type
   studentClass: _studentClass, // ✅ ADDED: Student's class
@@ -131,10 +132,8 @@ function Exams({
   const [exams, setExams] = useState<Exam[]>([]);
   const [isLoadingExams, setIsLoadingExams] = useState(true);
   const [loadingExamId, setLoadingExamId] = useState<string | null>(null); // ✅ PERF: Track which exam is loading full data
+  const [viewResultLoadingId, setViewResultLoadingId] = useState<string | null>(null); // spinner on "Exams Result" click
   const [enrolledExamIds, setEnrolledExamIds] = useState<Set<string> | null>(null); // ✅ ADDED: Enrolled exam IDs for students
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
   const [examFilter, setExamFilter] = useState<typeof FILTER_VALUES.ALL | typeof EXAM_STATUS.UPCOMING | typeof EXAM_STATUS.COMPLETED>(FILTER_VALUES.ALL);
   const [highlightedExamId, setHighlightedExamId] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<string>(FILTER_VALUES.ALL);
@@ -158,8 +157,11 @@ function Exams({
   const boardDropdownRef = useRef<HTMLDivElement>(null);
   const examTypeDropdownRef = useRef<HTMLDivElement>(null);
   const examCardsRef = useRef<{ [key: string]: HTMLDivElement | null }>({});
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Client-side pagination
+  const EXAMS_PER_PAGE = 5;
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Helper function to format date in DD-MON-YYYY
   function formatExamDate(dateString: string): string {
@@ -273,61 +275,79 @@ function Exams({
   }
 
   // ✅ PERF: Ref to current exams for cache lookup without re-creating callbacks
-  const examsRef = useRef(exams);
-  examsRef.current = exams;
 
-  // ✅ PERF: Lazy-load full exam data when user selects an exam
-  // Shows lite data immediately, fetches full data in background (non-blocking)
+  // Simple: Upcoming/Live = metadata only. Completed = fetch questions.
   const handleExamSelect = useCallback((exam: Exam | null) => {
     if (!exam) {
       onExamSelect(null);
       setLoadingExamId(null);
       return;
     }
-    
-    // Check if we already have full data cached
-    const cachedExam = examsRef.current.find(e => e.id === exam.id);
-    const examToCheck = cachedExam || exam;
-    
-    const hasFullData = (examToCheck.questionsList && examToCheck.questionsList.length > 0) ||
-                        (examToCheck.questionPaperImages && examToCheck.questionPaperImages.length > 0) ||
-                        (examToCheck as any)._isLite === false;
-    if (hasFullData) {
-      onExamSelect(examToCheck);
-      setLoadingExamId(null);
+
+    // Check if current user is the creator
+    const isCreator = exam.createdById === userId || 
+      exam.createdBy === userId;
+
+    // Students don't need questions on the listing page — they get questions when they Start Exam
+    if (currentUserType === 'student') {
+      onExamSelect({
+        ...exam,
+        questionsList: [],
+        questionPool: [],
+        likertQuestions: [],
+      } as Exam);
       return;
     }
 
-    // Show lite version immediately (card highlight, basic info)
-    onExamSelect(exam);
-    setLoadingExamId(exam.id);
-    
-    // Fetch full data in background — NON-BLOCKING (no await in click handler)
-    firebaseService.getExamFullById(exam.id).then(fullExam => {
-      if (fullExam) {
-        const formattedFull = {
-          ...exam,
-          questionPaperImages: fullExam.questionPaperImages,
-          questionsList: fullExam.questionsList,
-          questionPool: fullExam.questionPool,
-          pickRandomCount: fullExam.pickRandomCount,
-          poolQuestionMarks: fullExam.poolQuestionMarks,
-          personalityAssessment: fullExam.personalityAssessment,
-          likertQuestions: fullExam.likertQuestions,
-          likertDuration: fullExam.likertDuration,
-          _isLite: false,
-        } as Exam;
-        
-        // Cache in exams list
-        setExams(prev => prev.map(e => e.id === exam.id ? formattedFull : e));
-        onExamSelect(formattedFull);
+    // Check if within 30 minutes of exam start
+    const isWithin30Min = (() => {
+      if (!exam.examDate) return false;
+      const now = new Date();
+      const examStart = new Date(exam.examDate);
+      if (exam.examTime) {
+        const [hours, minutes] = exam.examTime.split(':').map(Number);
+        examStart.setHours(hours, minutes, 0, 0);
+      } else {
+        examStart.setHours(0, 0, 0, 0);
       }
+      return now >= new Date(examStart.getTime() - 30 * 60 * 1000);
+    })();
+
+    const isCompleted = exam.status === EXAM_STATUS.COMPLETED;
+    const shouldFetchQuestions = isCompleted || isCreator || isWithin30Min;
+
+    if (!shouldFetchQuestions) {
+      // Non-creator, not within 30min, not completed — show metadata only
+      onExamSelect({
+        ...exam,
+        questionsList: [],
+        questionPool: [],
+        likertQuestions: [],
+      } as Exam);
+      return;
+    }
+
+    // Fetch questions via Cloud Function (respects permissions for all user types)
+    setLoadingExamId(exam.id);
+    firebaseService.getExamQuestionsList(exam.id).then(examData => {
+      const questions = examData ? {
+        questionsList: examData.questionsList,
+        questionPool: examData.questionPool,
+        likertQuestions: examData.likertQuestions,
+      } : { questionsList: [], questionPool: [], likertQuestions: [] };
+      onExamSelect({
+        ...exam,
+        questionsList: questions.questionsList,
+        questionPool: questions.questionPool,
+        likertQuestions: questions.likertQuestions,
+      } as Exam);
     }).catch(error => {
-      console.error('Error loading full exam:', error);
+      console.error('Error loading exam questions:', error);
+      onExamSelect(exam);
     }).finally(() => {
       setLoadingExamId(null);
     });
-  }, [onExamSelect]);
+  }, [onExamSelect, userId]);
 
   const loadInitialExams = useCallback(async () => {
     if (!activeCollegeId) {
@@ -338,15 +358,12 @@ function Exams({
     
     setIsLoadingExams(true);
     setExams([]);
-    setLastDoc(null);
-    setHasMore(true);
     
   try {
-      // FIX: Use the existing teacher function but filter it in the memoized baseFilteredExams
-      // rather than calling a non-existent student-specific function.
-      const result = await firebaseService.getExamsPaginated(activeCollegeId, selectedYear, 25);
+      // ✅ SUB-COLLECTION: Load all exams in one shot — parent docs are lightweight (~1.5KB)
+      const allExams = await firebaseService.getExams(activeCollegeId, selectedYear);
       
-      const formattedExams = result.exams.map(exam => ({
+      const formattedExams = allExams.map(exam => ({
         id: exam.id,
         type: exam.type,
         typeColor: exam.typeColor,
@@ -376,6 +393,7 @@ function Exams({
         collegeId: exam.collegeId,
         personalityAssessment: (exam as any).personalityAssessment || false,
         likertQuestions: (exam as any).likertQuestions || [],
+        likertQuestionCount: (exam as any).likertQuestionCount || 0,
         likertDuration: (exam as any).likertDuration || 0,
         createdAt: exam.createdAt.toLocaleString(),
         createdBy: exam.createdByName,
@@ -384,8 +402,6 @@ function Exams({
       }));
       
       setExams(formattedExams as Exam[]);
-      setLastDoc(result.lastDoc);
-      setHasMore(result.hasMore);
       
       // Notify parent component of the updated exams list
       if (onExamsListChange) {
@@ -402,15 +418,13 @@ function Exams({
     } finally {
       setIsLoadingExams(false);
     }
-    // Note: onCountsChange is called conditionally and is a stable function reference,
-    // so it's safe to omit from dependencies to avoid unnecessary recreations
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCollegeId, selectedYear, onExamsListChange]);
   
-  // ✅ NEW: Check submission status after exams load
+  // Check submission status after exams load — students only
   useEffect(() => {
     const checkSubmissions = async () => {
-      if (!userId || exams.length === 0) {
+      if (!userId || exams.length === 0 || currentUserType !== 'student') {
         return;
       }
       
@@ -426,98 +440,7 @@ function Exams({
     checkSubmissions();
   }, [exams, userId]);
 
-  const loadMoreExams = useCallback(async () => {
-    if (!activeCollegeId || !lastDoc || !hasMore || isLoadingMore) {
-      return;
-    }
-    
-    setIsLoadingMore(true);
-    
-    try {
-      const result = await firebaseService.getExamsPaginated(
-        activeCollegeId, 
-        selectedYear, 
-        25, 
-        lastDoc
-      );
-      
-      const formattedExams = result.exams.map(exam => ({
-        id: exam.id,
-        type: exam.type,
-        typeColor: exam.typeColor,
-        year: exam.year,
-        class: exam.class,
-        subject: exam.subject,
-        title: exam.title,
-        board: exam.board,
-        status: exam.status,
-        mode: exam.mode,
-        securityLevel: exam.securityLevel,
-        attendance: exam.attendance,
-        avProctoring: exam.avProctoring,
-        examDate: exam.examDate,
-        examTime: exam.examTime,
-        duration: exam.duration,
-        totalQuestions: exam.totalQuestions,
-        maxMarks: exam.maxMarks,
-        totalStudents: exam.totalStudents,
-        questionPaperImages: exam.questionPaperImages,
-        questionsList: exam.questionsList,
-        // Question Pool fields for random selection
-        questionPool: exam.questionPool,
-        pickRandomCount: exam.pickRandomCount,
-        poolQuestionMarks: exam.poolQuestionMarks,
-        collegeId: exam.collegeId,
-        personalityAssessment: (exam as any).personalityAssessment || false,
-        likertQuestions: (exam as any).likertQuestions || [],
-        likertDuration: (exam as any).likertDuration || 0,
-        createdAt: exam.createdAt.toLocaleString(),
-        createdBy: exam.createdByName,
-        createdById: exam.createdBy,
-        createdByRole: exam.createdByRole
-      }));
-      
-      setExams(prevExams => [...prevExams, ...(formattedExams as Exam[])]);
-      setLastDoc(result.lastDoc);
-      setHasMore(result.hasMore);
-      
-      // Notify parent component
-      const updatedExams = [...exams, ...formattedExams];
-      if (onExamsListChange) {
-        onExamsListChange(updatedExams as Exam[]);
-      }
-    } catch (error) {
-      console.error('Error loading more exams:', error);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [activeCollegeId, selectedYear, lastDoc, hasMore, isLoadingMore, exams, onExamsListChange]);
-
-  // Setup intersection observer for infinite scroll
-  useEffect(() => {
-    if (!sentinelRef.current) return;
-
-    const options = {
-      root: null,
-      rootMargin: '100px',
-      threshold: 0.1
-    };
-
-    observerRef.current = new IntersectionObserver((entries) => {
-      const firstEntry = entries[0];
-      if (firstEntry.isIntersecting && hasMore && !isLoadingMore && !isLoadingExams) {
-        loadMoreExams();
-      }
-    }, options);
-
-    observerRef.current.observe(sentinelRef.current);
-
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
-  }, [hasMore, isLoadingMore, isLoadingExams, loadMoreExams]);
+  // ✅ SUB-COLLECTION: No more loadMoreExams or infinite scroll — all exams loaded in one shot
 
   useEffect(() => {
     if (activeCollegeId) {
@@ -759,6 +682,23 @@ function Exams({
     return sorted;
   }, [baseFilteredExams, examFilter, exams.length, highlightedExamId, currentUserType]);
 
+  // ✅ Client-side pagination
+  const totalPages = Math.max(1, Math.ceil(filteredExams.length / EXAMS_PER_PAGE));
+  const paginatedExams = useMemo(() => {
+    const start = (currentPage - 1) * EXAMS_PER_PAGE;
+    return filteredExams.slice(start, start + EXAMS_PER_PAGE);
+  }, [filteredExams, currentPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [examFilter, selectedClass, selectedBoard, selectedExamType]);
+
+  // Scroll to top when page changes
+  useEffect(() => {
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentPage]);
+
   // Notify parent component when filtered exams change
   useEffect(() => {
     if (onExamsListChange) {
@@ -796,9 +736,9 @@ function Exams({
           </div>
         </div>
       ) : (
-        <>
+        <div className="flex flex-col h-full">
           {/* Header with Filters */}
-          <div className="sticky top-0 z-[100] h-[72px] bg-white px-6 py-4 pb-5 shadow-sm">
+          <div className="flex-shrink-0 z-[100] h-[72px] bg-white px-6 py-4 pb-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
                 <FontAwesomeIcon icon={faClipboardList} style={{ fontSize: '28px' }} className="text-gray-900" />
@@ -819,7 +759,7 @@ function Exams({
                       </button>
                       
                       {isClassDropdownOpen && (
-                        <div className="absolute top-full left-0 mt-2 w-44 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[1000]">
+                        <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-200 py-2 z-[1000]">
                           {classes.map((classItem) => (
                             <button
                               key={classItem}
@@ -897,7 +837,7 @@ function Exams({
           </div>
 
           {/* Exam List Content */}
-          <div className="flex-1 overflow-y-auto h-[calc(100vh-72px)] px-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-6 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {/* Status Filter Buttons - Sticky */}
             <div className="sticky top-0 z-50 bg-white pt-4 pb-4 -mx-6 px-6">
               <div className="flex items-center space-x-3">
@@ -992,7 +932,10 @@ function Exams({
               </div>
             </div>
 
-            <p className="text-sm text-gray-600 mb-4">{filteredExams.length} examination{filteredExams.length !== 1 ? 's' : ''}</p>
+            <p className="text-sm text-gray-600 mb-4">
+              {filteredExams.length} examination{filteredExams.length !== 1 ? 's' : ''}
+              {totalPages > 1 && <span className="text-gray-400"> · Page {currentPage} of {totalPages}</span>}
+            </p>
 
             {/* Loading State */}
             {isLoadingExams ? (
@@ -1019,8 +962,8 @@ function Exams({
               </div>
             ) : (
               /* Exams Grid */
-              <div className="grid grid-cols-1 gap-4 pb-20">
-                {filteredExams.map((exam) => {
+              <div className="grid grid-cols-1 gap-4 pb-4">
+                {paginatedExams.map((exam) => {
                   return (
                     <div 
                       key={exam.id}
@@ -1053,7 +996,7 @@ function Exams({
                         }
                       }}
                       onMouseLeave={(e) => {
-                        if (selectedExam?.id !== exam.id && !submittedExams[exam.id]) {
+                        if (selectedExam?.id !== exam.id) {
                           e.currentTarget.style.borderColor = '#e5e7eb';
                         }
                       }}
@@ -1153,17 +1096,27 @@ function Exams({
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                      <div className="flex flex-row-reverse items-center justify-between pt-3 border-t border-gray-100">
                         <div className="flex items-center gap-2">
-                          {/* Board Badge */}
-                          <span className="inline-flex items-center text-[10px] font-semibold text-indigo-700 bg-gradient-to-r from-indigo-50 to-indigo-100 px-2 py-1 rounded-full">
-                            {exam.board}
-                          </span>
-                          
-                          {/* Year Badge */}
-                          <span className="inline-flex items-center text-[10px] font-semibold text-blue-700 bg-gradient-to-r from-blue-50 to-blue-100 px-2 py-1 rounded-full">
-                            {exam.year}
-                          </span>
+                          {/* Status Badge (replaces board + year) */}
+                          {(() => {
+                            const over = isExamOver(exam) || exam.status === EXAM_STATUS.COMPLETED;
+                            const live = !over && isExamLive(exam.examDate, exam.examTime || '', String((parseInt(exam.duration) || 0) + (exam.personalityAssessment ? (exam.likertDuration || 0) : 0)));
+                            const label = live ? 'Live' : over ? 'Completed' : 'Upcoming';
+                            const cls = live ? 'text-red-600' : over ? 'text-green-600' : 'text-amber-600';
+                            return (
+                              <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold ${cls}`}>
+                                {live ? (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                                ) : over ? (
+                                  <FontAwesomeIcon icon={faCheckSquare} style={{ fontSize: '10px' }} />
+                                ) : (
+                                  <FontAwesomeIcon icon={faClock} style={{ fontSize: '10px' }} />
+                                )}
+                                {label}
+                              </span>
+                            );
+                          })()}
                           
                           {/* Security Level Badge */}
                           {exam.mode === EXAM_MODES.ONLINE && exam.securityLevel === SECURITY_LEVELS.SECURE && (
@@ -1196,9 +1149,9 @@ function Exams({
                           )}
                         </div>
                         
-                        {/* View Details Button */}
-                        <div className="flex items-center gap-2 ml-auto">
-                          {submittedExams[exam.id] && (
+                        {/* Action pills */}
+                        <div className="flex flex-row-reverse items-center gap-2">
+                          {currentUserType === 'student' && submittedExams[exam.id] && (
                             <div className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-[10px] font-semibold flex items-center gap-1">
                               <FontAwesomeIcon icon={faCheckSquare} style={{ fontSize: '9px' }} />
                               <span>Submitted</span>
@@ -1216,32 +1169,62 @@ function Exams({
                               <span>Scheduled</span>
                             </div>
                           )}
+                          {onViewResults && currentUserType !== 'student' && (exam.status === EXAM_STATUS.COMPLETED || isExamOver(exam)) && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setViewResultLoadingId(exam.id);
+                                onViewResults(exam);
+                                window.setTimeout(() => setViewResultLoadingId((cur) => (cur === exam.id ? null : cur)), 1200);
+                              }}
+                              disabled={viewResultLoadingId === exam.id}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 hover:shadow-md"
+                              style={{ color: '#fff', background: '#10b981', opacity: viewResultLoadingId === exam.id ? 0.8 : 1 }}
+                              onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(1.06)'; }}
+                              onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
+                            >
+                              {viewResultLoadingId === exam.id ? (
+                                <>
+                                  <div className="w-3 h-3 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(255,255,255,0.4)', borderTopColor: '#fff' }} />
+                                  Loading...
+                                </>
+                              ) : (
+                                <>
+                                  <FontAwesomeIcon icon={faChartBar} style={{ fontSize: '11px' }} />
+                                  Exams Result
+                                </>
+                              )}
+                            </button>
+                          )}
                           <button 
                           onClick={(e) => {
                             e.stopPropagation();
                             handleExamSelect(exam);
                           }}
                           disabled={loadingExamId === exam.id}
-                          className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-1 rounded-full transition-all duration-200 hover:shadow-sm"
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 hover:shadow-md"
                           style={{ 
-                            color: brandTheme.colors.primary,
-                            backgroundColor: `${brandTheme.colors.primary}15`,
-                            opacity: loadingExamId === exam.id ? 0.7 : 1
+                            color: '#fff',
+                            background: `linear-gradient(135deg, ${brandTheme.colors.primary} 0%, #7c3aed 100%)`,
+                            opacity: loadingExamId === exam.id ? 0.8 : 1
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = `${brandTheme.colors.primary}25`;
+                            e.currentTarget.style.filter = 'brightness(1.06)';
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = `${brandTheme.colors.primary}15`;
+                            e.currentTarget.style.filter = 'none';
                           }}
                         >
                           {loadingExamId === exam.id ? (
                             <>
-                              <div className="w-3 h-3 border-2 rounded-full animate-spin" style={{ borderColor: `${brandTheme.colors.primary}30`, borderTopColor: brandTheme.colors.primary }} />
+                              <div className="w-3 h-3 border-2 rounded-full animate-spin" style={{ borderColor: 'rgba(255,255,255,0.4)', borderTopColor: '#fff' }} />
                               Loading...
                             </>
                           ) : (
-                            'View Details'
+                            <>
+                              <FontAwesomeIcon icon={faClipboardList} style={{ fontSize: '11px' }} />
+                              Exams Detail
+                            </>
                           )}
                         </button>
                         </div>
@@ -1250,25 +1233,8 @@ function Exams({
                   );
                 })}
 
-                {/* Sentinel for infinite scroll and loading indicator */}
-                {hasMore && (
-                  <div ref={sentinelRef} className="flex items-center justify-center py-8">
-                    {isLoadingMore && (
-                      <div className="flex items-center space-x-2">
-                        <div className="w-6 h-6 border-4 rounded-full animate-spin"
-                          style={{ 
-                            borderColor: brandTheme.colors.primary + '20',
-                            borderTopColor: brandTheme.colors.primary
-                          }}
-                        />
-                        <span className="text-sm text-gray-500">Loading more exams...</span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* No more exams indicator */}
-                {!hasMore && exams.length > 0 && (
+                {/* End of exams indicator */}
+                {currentPage === totalPages && filteredExams.length > 0 && (
                   <div className="flex flex-col items-center justify-center py-8">
                     <div className="relative mb-3">
                       <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
@@ -1285,7 +1251,61 @@ function Exams({
               </div>
             )}
           </div>
-        </>
+
+          {/* Sticky Pagination Bar */}
+          {!isLoadingExams && totalPages > 1 && (
+            <div className="flex-shrink-0 bg-white border-t border-gray-200 px-6 h-14 flex items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+              <div className="w-full flex items-center justify-between">
+                <span className="text-xs text-gray-400">
+                  Showing {((currentPage - 1) * EXAMS_PER_PAGE) + 1}–{Math.min(currentPage * EXAMS_PER_PAGE, filteredExams.length)} of {filteredExams.length}
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage <= 1}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    <FontAwesomeIcon icon={faChevronLeft} className="text-[10px]" />
+                    Prev
+                  </button>
+
+                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                    let pageNum: number;
+                    const total = totalPages;
+                    if (total <= 5) { pageNum = i + 1; }
+                    else if (currentPage <= 3) { pageNum = i + 1; }
+                    else if (currentPage >= total - 2) { pageNum = total - 4 + i; }
+                    else { pageNum = currentPage - 2 + i; }
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setCurrentPage(pageNum)}
+                        className={`w-7 h-7 flex items-center justify-center text-xs font-medium rounded-md transition-all ${
+                          pageNum === currentPage
+                            ? 'text-white shadow-sm'
+                            : 'text-gray-600 bg-white border border-gray-200 hover:bg-gray-50'
+                        }`}
+                        style={pageNum === currentPage ? { backgroundColor: brandTheme.colors.primary } : {}}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage >= totalPages}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    Next
+                    <FontAwesomeIcon icon={faChevronRight} className="text-[10px]" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </>
   );

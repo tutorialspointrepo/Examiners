@@ -1,0 +1,86 @@
+[
+  {
+    "problemId": "number-guessing-game",
+    "problemName": "Number Guessing Game",
+    "parseError": "Expected ',' or '}' after property value in JSON at position 23588 (line 89 column 201)",
+    "responsePreview": "{\n  \"problem_id\": \"number-guessing-game\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>Create a simple number guessing game where the computer generates a random number between <strong>1 and 100</strong> (inclusive), and the user attempts to guess it.</p><p>Your program should:</p><ul><li>Generate a random number between 1-100</li><li>Allow the user to make guesses</li><li>Provide feedback: <code>\\\"too high\\\"</code>, <code>\\\"too low\\\"</code>, or <code>\\\"correct\\\"</code></li><li>Count and disp",
+    "responseLength": 35204
+  },
+  {
+    "problemId": "log-file-analyzer",
+    "problemName": "Log File Analyzer",
+    "parseError": "Expected ',' or '}' after property value in JSON at position 22445 (line 37 column 4161)",
+    "responsePreview": "{\n  \"problem_id\": \"log-file-analyzer\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>You are given an array of web server log lines in the standard Apache/Nginx format. Each log line contains an IP address, timestamp, URL, and HTTP status code.</p><p><strong>Parse each log line</strong> to extract these four components and generate a comprehensive report containing:</p><ul><li>The <strong>top 3 most frequent IP addresses</strong> with their request counts</li><li>The <strong>overall error rate",
+    "responseLength": 60801
+  },
+  {
+    "problemId": "social-network-analyzer",
+    "problemName": "Social Network Analyzer",
+    "parseError": "Expected double-quoted property name in JSON at position 24896 (line 42 column 6412)",
+    "responsePreview": "```json\n{\n  \"problem_id\": \"social-network-analyzer\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>You are tasked with analyzing a social network represented as an undirected graph. Each person is a node, and friendships are edges between nodes.</p><p>Given a list of friendships and two people, implement the following features:</p><ul><li><strong>Find mutual friends:</strong> Return all common friends between two people</li><li><strong>Calculate degrees of separation:</strong> Find the shortes",
+    "responseLength": 69441
+  },
+  {
+    "problemId": "red-black-tree",
+    "problemName": "Red-Black Tree",
+    "parseError": "Expected ',' or ']' after array element in JSON at position 101475 (line 125 column 6)",
+    "responsePreview": "```json\n{\n  \"problem_id\": \"red-black-tree\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>Implement a <strong>Red-Black Tree</strong> data structure that supports three core operations: insert, delete, and search. A Red-Black Tree is a self-balancing binary search tree where each node has an additional color attribute (red or black).</p><p>Your implementation must maintain all <strong>five Red-Black Tree properties</strong>:</p><ol><li>Every node is either red or black</li><li>The root is alwa",
+    "responseLength": 101489
+  },
+  {
+    "problemId": "b-tree-implementation",
+    "problemName": "B-Tree Implementation",
+    "parseError": "Unterminated string in JSON at position 98168 (line 183 column 1711)",
+    "responsePreview": "```json\n{\n  \"problem_id\": \"b-tree-implementation\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>Implement a <strong>B-Tree</strong> of order <code>M</code> that supports the following operations:</p><ul><li><strong>Insert:</strong> Add a key to the B-Tree while maintaining the B-Tree properties</li><li><strong>Search:</strong> Find if a key exists in the B-Tree</li><li><strong>Delete:</strong> Remove a key from the B-Tree while maintaining balance</li><li><strong>Range Query:</strong> Find al",
+    "responseLength": 98248
+  },
+  {
+    "problemId": "rope-data-structure",
+    "problemName": "Rope Data Structure",
+    "parseError": "Expected double-quoted property name in JSON at position 6667 (line 40 column 555)",
+    "responsePreview": "```json\n{\n  \"problem_id\": \"rope-data-structure\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>A <strong>Rope</strong> is a tree-based data structure optimized for efficiently performing operations on large strings, particularly concatenation and substring extraction. Unlike regular strings, ropes allow these operations to be performed in <code>O(log n)</code> time instead of <code>O(n)</code>.</p><p>Your task is to implement a Rope data structure that supports the following operations:</p><ul",
+    "responseLength": 33486
+  },
+  {
+    "problemId": "lexer-builder",
+    "problemName": "Lexer Builder",
+    "parseError": "Expected ',' or '}' after property value in JSON at position 60927 (line 137 column 266)",
+    "responsePreview": "{\n  \"problem_id\": \"lexer-builder\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>Build a lexer that tokenizes a simple programming language. Given a string of source code, return an array of tokens where each token has a <strong>type</strong> and <strong>value</strong>.</p><p>The language supports:</p><ul><li><strong>Keywords:</strong> <code>if</code>, <code>else</code>, <code>while</code>, <code>for</code>, <code>return</code></li><li><strong>Identifiers:</strong> Variable names (letters, dig",
+    "responseLength": 70579
+  },
+  {
+    "problemId": "simple-interpreter",
+    "problemName": "Simple Interpreter",
+    "parseError": "Unterminated string in JSON at position 102315 (line 100 column 190)",
+    "responsePreview": "```json\n{\n  \"problem_id\": \"simple-interpreter\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>Build an interpreter for a <strong>tiny programming language</strong> that supports:</p><ul><li><strong>Variables:</strong> Assignment and lookup (e.g., <code>x = 5</code>)</li><li><strong>Arithmetic:</strong> Addition, subtraction, multiplication, division</li><li><strong>Conditionals:</strong> If-else statements</li><li><strong>Loops:</strong> While loops</li><li><strong>Expressions:</strong> Nested",
+    "responseLength": 102354
+  },
+  {
+    "problemId": "aes-encryption-simplified",
+    "problemName": "AES Encryption (Simplified)",
+    "parseError": "Unterminated string in JSON at position 57615 (line 71 column 4181)",
+    "responsePreview": "{\n  \"problem_id\": \"aes-encryption-simplified\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>Implement a <strong>simplified version of the AES encryption algorithm</strong> that performs the core transformation steps on a single 4x4 block of data.</p><p>Your implementation should include these four essential AES operations:</p><ul><li><strong>SubBytes:</strong> Replace each byte using the AES S-box substitution table</li><li><strong>ShiftRows:</strong> Cyclically shift the rows of the 4x4 matr",
+    "responseLength": 57714
+  },
+  {
+    "problemId": "rsa-key-generation",
+    "problemName": "RSA Key Generation",
+    "parseError": "Expected ',' or ']' after array element in JSON at position 88583 (line 216 column 68)",
+    "responsePreview": "```json\n{\n  \"problem_id\": \"rsa-key-generation\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>Implement a simplified RSA cryptosystem with key generation, encryption, and decryption capabilities.</p><p>Your task is to create an RSA system that:</p><ul><li><strong>Generates RSA keys</strong> - Find two prime numbers and compute public/private key pairs</li><li><strong>Encrypts messages</strong> - Convert plaintext to ciphertext using the public key</li><li><strong>Decrypts messages</strong> - C",
+    "responseLength": 88611
+  },
+  {
+    "problemId": "run-length-encoding-for-images",
+    "problemName": "Run-Length Encoding for Images",
+    "parseError": "Expected ',' or ']' after array element in JSON at position 56053 (line 136 column 20)",
+    "responsePreview": "{\n  \"problem_id\": \"run-length-encoding-for-images\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>Implement Run-Length Encoding (RLE) compression for binary images represented as 2D arrays.</p><p><strong>RLE Compression:</strong> Consecutive identical pixels are encoded as <code>[count, value]</code> pairs. For example, <code>[1,1,1,0,0]</code> becomes <code>[[3,1],[2,0]]</code>.</p><p>Your task is to implement both:</p><ul><li><strong>Encoding:</strong> Convert a 2D binary matrix into RLE for",
+    "responseLength": 66351
+  },
+  {
+    "problemId": "concurrent-skip-list",
+    "problemName": "Concurrent Skip List",
+    "parseError": "Expected ',' or ']' after array element in JSON at position 98847 (line 182 column 6)",
+    "responsePreview": "```json\n{\n  \"problem_id\": \"concurrent-skip-list\",\n  \"problemType\": \"coding\",\n  \"description\": \"<p>Implement a <strong>lock-free concurrent skip list</strong> that supports concurrent insert, search, and delete operations. A skip list is a probabilistic data structure that allows O(log n) average-case performance for search, insert, and delete operations.</p><p>Your implementation should handle multiple threads accessing the data structure simultaneously without using traditional locks. Instead, ",
+    "responseLength": 98906
+  }
+]

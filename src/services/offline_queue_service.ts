@@ -71,13 +71,13 @@ class OfflineQueueService {
           const age = now - item.timestamp;
           const isStale = age > 24 * 60 * 60 * 1000; // 24 hours
           if (isStale) {
-            console.log(`🧹 Removing stale queue item (${Math.round(age / 1000 / 60)} minutes old):`, item.questionNo);
+//             console.log(`🧹 Removing stale queue item (${Math.round(age / 1000 / 60)} minutes old):`, item.questionNo);
           }
           return !isStale;
         });
         
         this.queue = freshQueue;
-        console.log(`📦 Loaded ${this.queue.length} queued answers from storage (removed ${parsedQueue.length - freshQueue.length} stale items)`);
+//         console.log(`📦 Loaded ${this.queue.length} queued answers from storage (removed ${parsedQueue.length - freshQueue.length} stale items)`);
         
         // Save cleaned queue back to storage
         if (freshQueue.length !== parsedQueue.length) {
@@ -106,7 +106,7 @@ class OfflineQueueService {
    */
   private setupNetworkListeners(): void {
     window.addEventListener('online', () => {
-      console.log('🌐 Network connection restored');
+//       console.log('🌐 Network connection restored');
       this.isOnline = true;
       this.notifyListeners();
       // Immediately sync when connection is restored
@@ -114,7 +114,7 @@ class OfflineQueueService {
     });
 
     window.addEventListener('offline', () => {
-      console.log('🔴 Network connection lost');
+//       console.log('🔴 Network connection lost');
       this.isOnline = false;
       this.notifyListeners();
     });
@@ -201,7 +201,7 @@ class OfflineQueueService {
         );
 
         if (result.success) {
-          console.log(`✅ Answer submitted immediately for Q${questionNo} (ID: ${questionId})`);
+//           console.log(`✅ Answer submitted immediately for Q${questionNo} (ID: ${questionId})`);
           this.clearAnswerFromBackup(attemptId, questionId);
           return {
             success: true,
@@ -209,7 +209,7 @@ class OfflineQueueService {
             queued: false,
           };
         } else {
-          console.warn(`⚠️ Submit failed, queueing answer for Q${questionNo} (ID: ${questionId})`);
+//           console.warn(`⚠️ Submit failed, queueing answer for Q${questionNo} (ID: ${questionId})`);
           this.queue.push(queueItem);
           this.saveQueueToStorage();
           this.notifyListeners();
@@ -234,7 +234,7 @@ class OfflineQueueService {
         };
       }
     } else {
-      console.log(`🔴 Offline - queueing answer for Q${questionNo} (ID: ${questionId})`);
+//       console.log(`🔴 Offline - queueing answer for Q${questionNo} (ID: ${questionId})`);
       this.queue.push(queueItem);
       this.saveQueueToStorage();
       this.notifyListeners();
@@ -264,7 +264,7 @@ class OfflineQueueService {
         timestamp: Date.now(),
       };
       localStorage.setItem(backupKey, JSON.stringify(backup));
-      console.log(`💾 Saved backup for questionId: ${questionId}`);
+//       console.log(`💾 Saved backup for questionId: ${questionId}`);
     } catch (error) {
       console.error('❌ Error saving to local backup:', error);
     }
@@ -279,7 +279,7 @@ class OfflineQueueService {
       const backup = localStorage.getItem(backupKey);
       if (backup) {
         const parsed = JSON.parse(backup);
-        console.log(`📦 Loaded ${Object.keys(parsed).length} backup answers for attempt ${attemptId}`);
+//         console.log(`📦 Loaded ${Object.keys(parsed).length} backup answers for attempt ${attemptId}`);
         return parsed;
       }
       return {};
@@ -302,10 +302,10 @@ class OfflineQueueService {
         
         if (Object.keys(backup).length === 0) {
           localStorage.removeItem(backupKey);
-          console.log(`🗑️ Backup empty - removed for attempt ${attemptId}`);
+//           console.log(`🗑️ Backup empty - removed for attempt ${attemptId}`);
         } else {
           localStorage.setItem(backupKey, JSON.stringify(backup));
-          console.log(`🧹 Cleared ${questionId} from backup (${Object.keys(backup).length} remaining)`);
+//           console.log(`🧹 Cleared ${questionId} from backup (${Object.keys(backup).length} remaining)`);
         }
       }
     } catch (error) {
@@ -320,7 +320,7 @@ class OfflineQueueService {
     try {
       const backupKey = `exam_backup_${attemptId}`;
       localStorage.removeItem(backupKey);
-      console.log(`🗑️ Cleared entire backup for attempt ${attemptId}`);
+//       console.log(`🗑️ Cleared entire backup for attempt ${attemptId}`);
     } catch (error) {
       console.error('❌ Error clearing backup:', error);
     }
@@ -333,12 +333,12 @@ class OfflineQueueService {
    */
   public async syncQueue(): Promise<void> {
     if (!this.isOnline) {
-      console.log('🔴 Cannot sync - offline');
+//       console.log('🔴 Cannot sync - offline');
       return;
     }
 
     if (this.syncInProgress) {
-      console.log('🔄 Sync already in progress');
+//       console.log('🔄 Sync already in progress');
       return;
     }
 
@@ -346,7 +346,7 @@ class OfflineQueueService {
       return;
     }
 
-    console.log(`🔄 Starting sync of ${this.queue.length} queued answers...`);
+//     console.log(`🔄 Starting sync of ${this.queue.length} queued answers...`);
     this.syncInProgress = true;
     this.notifyListeners();
 
@@ -378,7 +378,7 @@ class OfflineQueueService {
         if (result.success) {
           item.status = 'synced';
           successCount++;
-          console.log(`✅ Synced answer for Q${item.questionNo} (ID: ${item.questionId})`);
+//           console.log(`✅ Synced answer for Q${item.questionNo} (ID: ${item.questionId})`);
           
           this.clearAnswerFromBackup(item.attemptId, item.questionId);
         } else {
@@ -404,7 +404,7 @@ class OfflineQueueService {
       const syncedAttemptIds = new Set(pendingItems.filter(i => i.status === 'synced').map(i => i.attemptId));
       syncedAttemptIds.forEach(attemptId => {
         this.clearBackup(attemptId);
-        console.log(`🧹 All answers synced - cleared entire backup for attempt ${attemptId}`);
+//         console.log(`🧹 All answers synced - cleared entire backup for attempt ${attemptId}`);
       });
     }
     
@@ -419,7 +419,7 @@ class OfflineQueueService {
     this.syncInProgress = false;
     this.notifyListeners();
 
-    console.log(`✅ Sync complete: ${successCount} succeeded, ${failCount} failed, ${this.queue.length} remaining`);
+//     console.log(`✅ Sync complete: ${successCount} succeeded, ${failCount} failed, ${this.queue.length} remaining`);
   }
 
   /**
@@ -429,11 +429,11 @@ class OfflineQueueService {
     const failedItems = this.queue.filter(item => item.status === 'failed');
     
     if (failedItems.length === 0) {
-      console.log('✅ No failed items to retry');
+//       console.log('✅ No failed items to retry');
       return;
     }
 
-    console.log(`🔄 Retrying ${failedItems.length} failed items...`);
+//     console.log(`🔄 Retrying ${failedItems.length} failed items...`);
     
     // Reset retry count for failed items
     failedItems.forEach(item => {
@@ -498,7 +498,7 @@ class OfflineQueueService {
     this.queue = [];
     this.saveQueueToStorage();
     this.notifyListeners();
-    console.log('🗑️ Queue cleared');
+//     console.log('🗑️ Queue cleared');
   }
 
   /**
@@ -516,20 +516,20 @@ class OfflineQueueService {
    */
   public async forceSyncNow(): Promise<boolean> {
     if (!this.isOnline) {
-      console.log('🔴 Cannot force sync - offline');
+//       console.log('🔴 Cannot force sync - offline');
       return false;
     }
 
-    console.log('⚡ Force syncing all pending answers...');
+//     console.log('⚡ Force syncing all pending answers...');
     await this.syncQueue();
     
     // Check if queue is empty (all synced)
     const hasFailures = this.queue.length > 0;
     
     if (hasFailures) {
-      console.warn(`⚠️ ${this.queue.length} answers still pending after force sync`);
+//       console.warn(`⚠️ ${this.queue.length} answers still pending after force sync`);
     } else {
-      console.log('✅ All answers synced successfully');
+//       console.log('✅ All answers synced successfully');
     }
     
     return !hasFailures;

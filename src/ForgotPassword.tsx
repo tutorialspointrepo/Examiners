@@ -64,8 +64,8 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
 
   const handleResetPassword = async () => {
     // Validate OTP
-    if (!otp || otp.length !== 4) {
-      setMessage({ type: 'error', text: 'Please enter a valid 4-digit OTP' });
+    if (!otp || otp.length !== 6) {
+      setMessage({ type: 'error', text: 'Please enter a valid 6-digit OTP' });
       return;
     }
 
@@ -273,7 +273,7 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
               {/* OTP Input */}
               <div>
                 <label htmlFor="otp-input" className="block text-sm font-semibold text-gray-700 mb-1.5">
-                  Enter 4-Digit OTP
+                  Enter 6-Digit OTP
                 </label>
                 <input
                   id="otp-input"
@@ -281,11 +281,11 @@ export default function ForgotPassword({ onBackToLogin }: ForgotPasswordProps) {
                    autoComplete="off"
                   value={otp}
                   onChange={(e) => {
-                    const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+                    const value = e.target.value.replace(/\D/g, '').slice(0, 6);
                     setOtp(value);
                   }}
-                  placeholder="• • • •"
-                  maxLength={4}
+                  placeholder="• • • • • •"
+                  maxLength={6}
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl transition-all outline-none font-bold text-center text-xl tracking-[0.8rem]"
                   onFocus={(e) => {
                     e.target.style.borderColor = brand.colors.primary;

@@ -204,15 +204,6 @@ export default function Classes({ activeCollegeId, onClassSelect, selectedClass,
     const matchesAcademicYear = selectedAcademicYear === FILTER_VALUES.ALL || classData.academicYear === selectedAcademicYear;
     return matchesBoard && matchesClass && matchesAcademicYear;
   });
-
-  console.log('🔍 Classes Filter Applied:', {
-    selectedAcademicYear,
-    selectedBoard,
-    selectedClassFilter,
-    totalClasses: classes.length,
-    filteredClasses: filteredClasses.length
-  });
-
   if (!activeCollegeId) {
     return (
       <div className="h-full flex items-center justify-center p-6">

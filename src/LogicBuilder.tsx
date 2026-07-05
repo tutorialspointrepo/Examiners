@@ -1001,14 +1001,14 @@ const LogicBuilder: React.FC = () => {
                 <div className="relative">
                   <textarea
                     value={customText}
-                    onChange={(e) => setCustomText(e.target.value.slice(0, 500))}
-                    maxLength={500}
-                    placeholder="Describe your algorithm problem here (max 500 characters)...
+                    onChange={(e) => setCustomText(e.target.value.slice(0, 1024))}
+                    maxLength={1024}
+                    placeholder="Describe your algorithm problem here (max 1024 characters)...
 
 Example: Write a function that finds the maximum sum of any contiguous subarray..."
                     className="w-full h-48 p-4 border border-gray-300 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                   />
-                  <div className="absolute bottom-3 right-3 text-xs text-gray-400">{customText.length}/500</div>
+                  <div className="absolute bottom-3 right-3 text-xs text-gray-400">{customText.length}/1024</div>
                 </div>
 
                 {/* What we're looking for */}
@@ -1039,7 +1039,7 @@ Example: Write a function that finds the maximum sum of any contiguous subarray.
                     </p>
                     <p>
                       <span className="mr-2">✏️</span>
-                      <span className="font-semibold">Character Limit:</span> Maximum 500 characters to ensure focused problem descriptions.
+                      <span className="font-semibold">Character Limit:</span> Maximum 1024 characters to ensure focused problem descriptions.
                     </p>
                     <p className="mt-4 pt-4 border-t border-gray-200">
                       <span className="mr-2">🚀</span>

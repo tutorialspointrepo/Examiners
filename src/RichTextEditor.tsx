@@ -1885,4 +1885,15 @@ const RichTextEditor: React.FC<RichTextEditorProps> = ({
   );
 };
 
-export default RichTextEditor;
+// Perf: skip re-renders when the parent updates value/onChange on every keystroke.
+// TipTap owns the content after mount, and every consumer remounts this editor (modal
+// re-open, or a `key` per question) when content must change externally — so value
+// changes while mounted are just the user typing and don't need a re-render.
+// (Toolbar active-states still update: that's TipTap's internal state, not props.)
+const areRichTextPropsEqual = (prev: RichTextEditorProps, next: RichTextEditorProps) =>
+  prev.darkMode === next.darkMode &&
+  prev.placeholder === next.placeholder &&
+  prev.minHeight === next.minHeight &&
+  prev.height === next.height;
+
+export default React.memo(RichTextEditor, areRichTextPropsEqual);

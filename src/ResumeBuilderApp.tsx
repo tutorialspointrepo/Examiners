@@ -2899,8 +2899,13 @@ const PersonalInfoForm: React.FC<{
               if (words.length <= 200) {
                 updateField('summary', text);
               } else {
-                // Trim to 200 words if exceeded
-                updateField('summary', words.slice(0, 200).join(' '));
+                // Trim to 200 words while preserving newlines
+                let count = 0;
+                const trimmed = text.replace(/\S+/g, (word) => {
+                  if (count < 200) { count++; return word; }
+                  return '';
+                }).replace(/\n{3,}/g, '\n\n').trimEnd();
+                updateField('summary', trimmed);
               }
             }}
             placeholder="Write a compelling professional summary that highlights your key skills and experience..."
@@ -4373,9 +4378,6 @@ const PrintPreviewModal: React.FC<{
   const [pages, setPages] = useState<string[]>([]);
   const measureRef = useRef<HTMLDivElement>(null);
 
-  const SummaryText: React.FC<{ text: string; style?: React.CSSProperties }> = ({ text, style = {} }) => (
-    <p style={{ whiteSpace: 'pre-line', lineHeight: '1.6', margin: '0', ...style }}>{text}</p>
-  );
 
   const getSampleData = () => ({
     personalInfo: {
@@ -4410,7 +4412,7 @@ const PrintPreviewModal: React.FC<{
   const getTemplateContent = () => {
     const displayData = getSampleData();
     const colors = getColorTheme(selectedColor);
-    const templateProps = { displayData, cleanUrl, SummaryText, mode: 'preview' as const, colors };
+    const templateProps = { displayData, cleanUrl, mode: 'preview' as const, colors };
      
     switch (selectedTemplate) {
       case 'modern': return renderModernTemplate(templateProps);
@@ -4619,19 +4621,6 @@ const ResumePreview: React.FC<{
   printRef?: React.RefObject<HTMLDivElement | null>;
 }> = ({ data, template, selectedColor, zoom, previewMode = 'single', isPreparingPrint: _isPreparingPrint = false, printRef }) => {
 
-  const SummaryText: React.FC<{ 
-    text: string; 
-    style?: React.CSSProperties; 
-  }> = ({ text, style = {} }) => (
-    <p style={{ 
-      whiteSpace: 'pre-line', 
-      lineHeight: '1.6',
-      margin: '0',
-      ...style 
-    }}>
-      {text}
-    </p>
-  );
 
   const getSampleData = () => ({
     personalInfo: {
@@ -4671,7 +4660,7 @@ const ResumePreview: React.FC<{
 
   const getTemplateContent = () => {
     const colors = getColorTheme(selectedColor);
-    const templateProps = { displayData, cleanUrl, SummaryText, mode: 'preview' as const, colors };
+    const templateProps = { displayData, cleanUrl, mode: 'preview' as const, colors };
      
     switch (template) {
       case 'modern': return renderModernTemplate(templateProps);

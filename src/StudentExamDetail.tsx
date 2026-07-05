@@ -246,6 +246,7 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
       console.log('📊 [STUDENT_EXAM_DETAIL] Exam object:', exam?.id);
       
       // ✅ Reset all state when switching exams/students to prevent stale data
+      setLoading(true);
       setMergedQuestions([]);
       setFullAttempt(null);
       setAttemptData(null);
@@ -258,12 +259,16 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
           console.log('✅ [STUDENT_EXAM_DETAIL] Setting full attempt with responses');
           setFullAttempt(student.attemptData);
           mergeQuestionsWithResponses(student.attemptData);
+          setLoading(false);
+          return;
         } else if (student.attemptData.attemptId) {
           console.log('📥 [STUDENT_EXAM_DETAIL] Fetching full attempt data from attemptId');
           try {
             const fullData = await firebaseService.getStudentAttempt(student.attemptData.attemptId);
             setFullAttempt(fullData);
             mergeQuestionsWithResponses(fullData);
+            setLoading(false);
+            return;
           } catch (error) {
             console.error('❌ [STUDENT_EXAM_DETAIL] Error fetching attempt:', error);
             // Even if fetch fails, still set attemptData so component renders
@@ -1710,8 +1715,9 @@ export default function StudentExamDetail({ exam, student, brandTheme, onBack, c
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-white">
+      <div className="flex-1 flex flex-col items-center justify-center bg-white gap-4">
         <div className="w-12 h-12 border-4 rounded-full animate-spin" style={{ borderColor: brandTheme.colors.primary + '20', borderTopColor: brandTheme.colors.primary }} />
+        <p className="text-sm text-gray-500">Loading answer sheet...</p>
       </div>
     );
   }

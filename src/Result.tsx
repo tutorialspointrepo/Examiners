@@ -9,6 +9,7 @@ import {
   faGraduationCap,
   faChevronDown,
   faChevronLeft,
+  faChevronRight,
   faUser,
   faBuilding,
   faCheckSquare,
@@ -17,10 +18,11 @@ import {
   faChartBar,
   faFingerprint,
   faStar,
-  faVideo
+  faVideo,
+  faSearch,
+  faUserCheck
 } from '@fortawesome/sharp-light-svg-icons';
 import { firebaseService } from './services/firebase_service';
-import type { DocumentSnapshot } from 'firebase/firestore';
 import { 
   EXAM_STATUS, 
   EXAM_MODES,
@@ -166,9 +168,11 @@ function Result({
     }
   }, [selectedExam]);
   const [isLoadingExams, setIsLoadingExams] = useState(true);
-  const [isLoadingMoreExams, setIsLoadingMoreExams] = useState(false); // ✅ ADDED: For exams pagination
-  const [hasMoreExams, setHasMoreExams] = useState(true); // ✅ ADDED: For exams pagination
-  const [lastExamDoc, setLastExamDoc] = useState<DocumentSnapshot | null>(null); // ✅ ADDED: For exams pagination
+  
+  // Client-side pagination for exam cards
+  const RESULTS_PER_PAGE = 25;
+  const [examCurrentPage, setExamCurrentPage] = useState(1);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   
   const [selectedClass, setSelectedClass] = useState<string>('all');
   const [selectedBoard, setSelectedBoard] = useState<string>('all');
@@ -216,8 +220,6 @@ function Result({
   const examCardsRef = useRef<{ [key: string]: HTMLDivElement | null }>({});
   
   // ✅ ADDED: Refs for pagination
-  const examObserverRef = useRef<IntersectionObserver | null>(null);
-  const examSentinelRef = useRef<HTMLDivElement>(null);
 
   // Helper: count answered questions from attempt responses (more reliable than stored field)
   // Unified isAnswered check — used everywhere
@@ -343,28 +345,16 @@ function Result({
     }
     
     setIsLoadingExams(true);
-    setExams([]); // ✅ ADDED: Clear exams on initial load
-    setLastExamDoc(null); // ✅ ADDED: Reset pagination
-    setHasMoreExams(true); // ✅ ADDED: Reset hasMore flag
+    setExams([]);
     
     try {
-      console.log('📊 [RESULT.TSX] Loading completed exams for:', { activeCollegeId, selectedYear });
-      
-      // ✅ MODIFIED: Use getExamsPaginated instead of getExams
-      const result = await firebaseService.getExamsPaginated(activeCollegeId, selectedYear, 25);
+      // Load all exams in one shot — parent docs are lightweight (~1.5KB each)
+      const allExams = await firebaseService.getExams(activeCollegeId, selectedYear);
       
       // Filter only completed exams
-      const completedExams = result.exams.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
-      
-      console.log('✅ [RESULT.TSX] Initial load complete:', {
-        total: result.exams.length,
-        completed: completedExams.length,
-        hasMore: result.hasMore
-      });
+      const completedExams = allExams.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
       
       setExams(completedExams as unknown as Exam[]);
-      setLastExamDoc(result.lastDoc); // ✅ ADDED: Store last document
-      setHasMoreExams(result.hasMore); // ✅ ADDED: Store hasMore flag
       
       // ✅ Extract unique filter values from completed exams (for class/board only)
       const uniqueClasses = [...new Set(completedExams.map(e => e.class).filter(Boolean))];
@@ -396,88 +386,6 @@ function Result({
       setIsLoadingExams(false);
     }
   }, [activeCollegeId, selectedYear, onResultsListChange]);
-
-  // ✅ ADDED: New function to load more exams
-  const loadMoreExams = useCallback(async () => {
-    if (!activeCollegeId || !lastExamDoc || !hasMoreExams || isLoadingMoreExams) {
-      return;
-    }
-    
-    console.log('📊 [RESULT.TSX] Loading more exams...');
-    setIsLoadingMoreExams(true);
-    
-    try {
-      const result = await firebaseService.getExamsPaginated(
-        activeCollegeId, 
-        selectedYear, 
-        25, 
-        lastExamDoc
-      );
-      
-      // Filter only completed exams
-      const completedExams = result.exams.filter(exam => exam.status === EXAM_STATUS.COMPLETED);
-      
-      console.log('📊 [RESULT.TSX] More exams fetched:', completedExams.length);
-      
-      const updatedExams = [...exams, ...completedExams as unknown as Exam[]];
-      setExams(updatedExams);
-      setLastExamDoc(result.lastDoc);
-      setHasMoreExams(result.hasMore);
-      
-      // ✅ Update class/board filter options with new exams (exam types from college config)
-      const uniqueClasses = [...new Set(updatedExams.map(e => e.class).filter(Boolean))];
-      const uniqueBoards = [...new Set(updatedExams.map(e => e.board).filter(Boolean))];
-      
-      if (uniqueClasses.length > 0) {
-        setClasses(['all', ...uniqueClasses.sort()]);
-        setShowClassFilter(uniqueClasses.length >= 1);
-      }
-      
-      if (uniqueBoards.length > 1) {
-        setBoards(['all', ...uniqueBoards.sort()]);
-        setShowBoardFilter(true);
-      }
-      
-      // Note: sidebar count is synced via filteredExams useEffect
-      
-      console.log('✅ [RESULT.TSX] Load more complete:', {
-        newExams: completedExams.length,
-        totalExams: updatedExams.length,
-        hasMore: result.hasMore
-      });
-    } catch (error) {
-      console.error('Error loading more exams:', error);
-    } finally {
-      setIsLoadingMoreExams(false);
-    }
-  }, [activeCollegeId, selectedYear, lastExamDoc, hasMoreExams, isLoadingMoreExams, exams , onResultsListChange]);
-
-  // ✅ ADDED: Setup intersection observer for exams infinite scroll
-  useEffect(() => {
-    if (!examSentinelRef.current || viewingStudents) return;
-
-    const options = {
-      root: null,
-      rootMargin: '100px',
-      threshold: 0.1
-    };
-
-    examObserverRef.current = new IntersectionObserver((entries) => {
-      const firstEntry = entries[0];
-      if (firstEntry.isIntersecting && hasMoreExams && !isLoadingMoreExams && !isLoadingExams) {
-        console.log('🔄 [RESULT.TSX] Exam sentinel intersecting, loading more exams...');
-        loadMoreExams();
-      }
-    }, options);
-
-    examObserverRef.current.observe(examSentinelRef.current);
-
-    return () => {
-      if (examObserverRef.current) {
-        examObserverRef.current.disconnect();
-      }
-    };
-  }, [hasMoreExams, isLoadingMoreExams, isLoadingExams, loadMoreExams, viewingStudents]);
 
   // Load students for selected exam - Server-side paginated via Cloud Function
   const STUDENT_PAGE_SIZE = 20;
@@ -519,32 +427,7 @@ function Result({
     setTotalAbsentCount(0);
     
     try {
-      // ✅ PERF: Lazy-load full exam data if this is a lite exam (no questionsList)
-      let fullExam = exam;
-      const hasFullData = (exam.questionsList && exam.questionsList.length > 0) ||
-                          (exam.questionPaperImages && exam.questionPaperImages.length > 0) ||
-                          (exam as any)._isLite === false;
-      if (!hasFullData) {
-        const fetched = await firebaseService.getExamFullById(exam.id);
-        if (fetched) {
-          fullExam = {
-            ...exam,
-            questionPaperImages: fetched.questionPaperImages,
-            questionsList: fetched.questionsList,
-            questionPool: fetched.questionPool,
-            pickRandomCount: fetched.pickRandomCount,
-            poolQuestionMarks: fetched.poolQuestionMarks,
-            personalityAssessment: fetched.personalityAssessment,
-            likertQuestions: fetched.likertQuestions,
-            likertDuration: fetched.likertDuration,
-            _isLite: false,
-          } as Exam;
-          // Cache in exams list so re-selecting doesn't re-fetch
-          setExams(prev => prev.map(e => e.id === exam.id ? fullExam : e));
-        }
-      }
-
-      const result = await fetchStudentsPage(fullExam.id, 1, 'all', '');
+      const result = await fetchStudentsPage(exam.id, 1, 'all', '');
       
       console.log('✅ [RESULT.TSX] Initial page loaded:', {
         present: result.present.length,
@@ -561,7 +444,7 @@ function Result({
       setTotalAbsentCount(result.counts.totalAbsent);
       setTotalStudents(result.counts.totalAll);
       
-      const examWithCorrectCount = { ...fullExam, totalStudents: result.counts.totalAll };
+      const examWithCorrectCount = { ...exam, totalStudents: result.counts.totalAll };
       setSelectedExamForStudents(examWithCorrectCount);
       setViewingStudents(true);
     } catch (error) {
@@ -827,6 +710,25 @@ function Result({
     });
   }, [exams, selectedClass, selectedBoard, selectedExamType, currentUserType, enrolledExamIds]);
 
+  // Client-side pagination
+  const examTotalPages = Math.max(1, Math.ceil(filteredExams.length / RESULTS_PER_PAGE));
+  const paginatedExams = useMemo(() => {
+    const start = (examCurrentPage - 1) * RESULTS_PER_PAGE;
+    return filteredExams.slice(start, start + RESULTS_PER_PAGE);
+  }, [filteredExams, examCurrentPage]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setExamCurrentPage(1);
+  }, [selectedClass, selectedBoard, selectedExamType]);
+
+  // Scroll to top when page changes
+  useEffect(() => {
+    if (!viewingStudents) {
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [examCurrentPage, viewingStudents]);
+
   // Sync filtered results count to sidebar
   useEffect(() => {
     if (onResultsListChange) {
@@ -1062,7 +964,7 @@ function Result({
           </div>
 
           {/* Content Area */}
-          <div className={`flex-1 overflow-y-auto ${viewingStudents ? 'h-[calc(100vh-140px)]' : 'h-[calc(100vh-72px)]'} ${viewingStudents ? '' : 'px-6'} bg-white [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]`}>
+          <div ref={!viewingStudents ? scrollContainerRef : undefined} className={`flex-1 overflow-y-auto ${viewingStudents ? '' : 'px-6'} bg-white [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]`}>
             {viewingStudents ? (
               // ========== STUDENTS VIEW ==========
               !canViewStudentList ? (
@@ -1151,9 +1053,11 @@ function Result({
                   </div>
                 ) : totalStudents === 0 ? (
                   <div className="flex flex-col items-center justify-center py-20">
-                    <FontAwesomeIcon icon={faUsers} style={{ fontSize: '80px' }} className="text-gray-300 mb-6" />
-                    <p className="text-gray-700 font-semibold text-lg mb-2">No students found</p>
-                    <p className="text-sm text-gray-500 mb-4">No attendance records found for this exam</p>
+                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-200 flex items-center justify-center mb-4">
+                      <FontAwesomeIcon icon={faUsers} style={{ fontSize: '32px' }} className="text-gray-300" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-600">No students found</p>
+                    <p className="text-xs text-gray-400 mt-1.5 text-center max-w-[260px]">No attendance or enrollment records found for this exam</p>
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -1385,10 +1289,12 @@ function Result({
 
                         {/* ✅ No results found for search */}
                         {searchQuery.trim() && !isLoadingStudents && filtered.present.length === 0 && filtered.absent.length === 0 && (
-                          <div className="flex flex-col items-center justify-center py-12">
-                            <FontAwesomeIcon icon={faUsers} style={{ fontSize: '48px' }} className="text-gray-300 mb-4" />
-                            <p className="text-gray-600 font-semibold mb-1">No students found</p>
-                            <p className="text-sm text-gray-400">No results for "{searchQuery}" in this exam</p>
+                          <div className="flex flex-col items-center justify-center py-16">
+                            <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center mb-4">
+                              <FontAwesomeIcon icon={faSearch} style={{ fontSize: '24px' }} className="text-gray-300" />
+                            </div>
+                            <p className="text-sm font-semibold text-gray-600">No students found</p>
+                            <p className="text-xs text-gray-400 mt-1.5">No results for "{searchQuery}" in this exam</p>
                           </div>
                         )}
 
@@ -1552,9 +1458,23 @@ function Result({
 
                         {/* ✅ No results for search in present tab */}
                         {searchQuery.trim() && !isLoadingStudents && filtered.present.length === 0 && (
-                          <div className="flex flex-col items-center justify-center py-12">
-                            <p className="text-gray-600 font-semibold mb-1">No present students found</p>
-                            <p className="text-sm text-gray-400">No results for "{searchQuery}"</p>
+                          <div className="flex flex-col items-center justify-center py-16">
+                            <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center mb-4">
+                              <FontAwesomeIcon icon={faSearch} style={{ fontSize: '24px' }} className="text-gray-300" />
+                            </div>
+                            <p className="text-sm font-semibold text-gray-600">No present students found</p>
+                            <p className="text-xs text-gray-400 mt-1.5">No results for "{searchQuery}"</p>
+                          </div>
+                        )}
+
+                        {/* ✅ Empty state for Present tab with 0 students (no search) */}
+                        {!searchQuery.trim() && !isLoadingStudents && filtered.present.length === 0 && (
+                          <div className="flex flex-col items-center justify-center py-20">
+                            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 border border-dashed border-blue-200 flex items-center justify-center mb-4">
+                              <FontAwesomeIcon icon={faUserCheck} style={{ fontSize: '32px' }} className="text-blue-300" />
+                            </div>
+                            <p className="text-sm font-semibold text-gray-600">No present students</p>
+                            <p className="text-xs text-gray-400 mt-1.5 text-center max-w-[260px]">No students were marked present for this exam</p>
                           </div>
                         )}
 
@@ -1613,8 +1533,11 @@ function Result({
                               <div className="flex flex-col items-center justify-center py-20">
                                 {searchQuery.trim() ? (
                                   <>
-                                    <p className="text-gray-600 font-semibold mb-1">No absent students found</p>
-                                    <p className="text-sm text-gray-400">No results for "{searchQuery}"</p>
+                                    <div className="w-16 h-16 rounded-2xl bg-gray-50 border border-dashed border-gray-200 flex items-center justify-center mb-4">
+                                      <FontAwesomeIcon icon={faSearch} style={{ fontSize: '24px' }} className="text-gray-300" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-gray-600">No absent students found</p>
+                                    <p className="text-xs text-gray-400 mt-1.5">No results for "{searchQuery}"</p>
                                   </>
                                 ) : (
                                   <>
@@ -1794,8 +1717,8 @@ function Result({
                   </div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-1 gap-4 pb-10">
-                      {filteredExams.map((exam) => {
+                    <div className="grid grid-cols-1 gap-4 pb-4">
+                      {paginatedExams.map((exam) => {
                         return (
                           <div 
                             key={exam.id}
@@ -1865,10 +1788,11 @@ function Result({
                               // Load students and show dashboard when card is clicked
                               if (canViewStudentList) {
                                 setViewingStudents(true);
+                                // ✅ Select exam IMMEDIATELY so right panel shows loading spinner
+                                onExamSelect(exam);
                                 try {
                                   await loadStudentsForExam(exam);
-                                  // ✅ PERF: loadStudentsForExam already fetched full data,
-                                  // get the cached version from exams state
+                                  // ✅ PERF: Update with full cached data after students load
                                   const cachedFull = exams.find(e => e.id === exam.id) || exam;
                                   onExamSelect(cachedFull);
                                 } finally {
@@ -1904,23 +1828,7 @@ function Result({
                               }
                             }}
                           >
-                            {/* Loading Overlay */}
-                            {loadingExamId === exam.id && (
-                              <div className="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-xl flex items-center justify-center z-10">
-                                <div className="flex flex-col items-center">
-                                  <div className="w-10 h-10 border-4 rounded-full animate-spin mb-2"
-                                    style={{ 
-                                      borderColor: brandTheme.colors.primary + '20',
-                                      borderTopColor: brandTheme.colors.primary
-                                    }}
-                                  />
-                                  <p className="text-sm font-medium" style={{ color: brandTheme.colors.primary }}>
-                                    Loading...
-                                  </p>
-                                </div>
-                              </div>
-                            )}
-                            
+                            {/* Card content */}
                             <div className="flex items-start justify-between mb-4">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1">
@@ -2057,10 +1965,16 @@ function Result({
                                     className="inline-flex items-center text-[10px] font-semibold px-2 py-1 rounded-full pointer-events-none"
                                     style={{
                                       backgroundColor: `${brandTheme.colors.primary}15`,
-                                      color: brandTheme.colors.primary
+                                      color: brandTheme.colors.primary,
+                                      opacity: loadingExamId === exam.id ? 0.7 : 1
                                     }}
                                   >
-                                    View Results
+                                    {loadingExamId === exam.id ? (
+                                      <>
+                                        <div className="w-3 h-3 border-2 rounded-full animate-spin mr-1" style={{ borderColor: `${brandTheme.colors.primary}30`, borderTopColor: brandTheme.colors.primary }} />
+                                        Loading...
+                                      </>
+                                    ) : 'View Results'}
                                   </div>
                                 )}
                                 {/* View Students Button - for teachers/admins */}
@@ -2069,12 +1983,22 @@ function Result({
                                     className="inline-flex items-center text-[10px] font-semibold px-2 py-1 rounded-full pointer-events-none"
                                     style={{
                                       backgroundColor: `${brandTheme.colors.primary}15`,
-                                      color: brandTheme.colors.primary
+                                      color: brandTheme.colors.primary,
+                                      opacity: loadingExamId === exam.id ? 0.7 : 1
                                     }}
                                     title="Click card to view students"
                                   >
-                                    <FontAwesomeIcon icon={faUsers} style={{ fontSize: '9px' }} className="mr-1" />
-                                    View Students
+                                    {loadingExamId === exam.id ? (
+                                      <>
+                                        <div className="w-3 h-3 border-2 rounded-full animate-spin mr-1" style={{ borderColor: `${brandTheme.colors.primary}30`, borderTopColor: brandTheme.colors.primary }} />
+                                        Loading...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <FontAwesomeIcon icon={faUsers} style={{ fontSize: '9px' }} className="mr-1" />
+                                        View Students
+                                      </>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -2083,44 +2007,81 @@ function Result({
                         );
                       })}
                     </div>
-
-                    {/* ✅ ADDED: Sentinel for exams infinite scroll and loading indicator */}
-                    {hasMoreExams && (
-                      <div ref={examSentinelRef} className="flex items-center justify-center py-8">
-                        {isLoadingMoreExams && (
-                          <div className="flex items-center space-x-2">
-                            <div className="w-6 h-6 border-4 rounded-full animate-spin"
-                              style={{ 
-                                borderColor: brandTheme.colors.primary + '20',
-                                borderTopColor: brandTheme.colors.primary
-                              }}
-                            />
-                            <span className="text-sm text-gray-500">Loading more exams...</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* ✅ ADDED: No more exams indicator */}
-                    {!hasMoreExams && exams.length > 0 && (
-                      <div className="flex flex-col items-center justify-center py-8">
-                        <div className="relative mb-3">
-                          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
-                            <div className="text-center">
-                              <div className="text-2xl mb-1">📭</div>
-                              <div className="w-8 h-0.5 bg-gray-300 rounded"></div>
-                            </div>
-                          </div>
-                        </div>
-                        <p className="text-sm font-semibold text-gray-700">That's everything!</p>
-                        <p className="text-xs text-gray-400 mt-1">No more exams to load</p>
-                      </div>
-                    )}
                   </>
                 )}
               </>
             )}
           </div>
+
+          {/* End of exams indicator */}
+          {!viewingStudents && !isLoadingExams && examCurrentPage === examTotalPages && filteredExams.length > 0 && (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="relative mb-3">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-gray-50 to-gray-100 border border-dashed border-gray-300 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-2xl mb-1">📭</div>
+                    <div className="w-8 h-0.5 bg-gray-300 rounded"></div>
+                  </div>
+                </div>
+              </div>
+              <p className="text-sm font-semibold text-gray-700">That's everything!</p>
+              <p className="text-xs text-gray-400 mt-1">No more exams to load</p>
+            </div>
+          )}
+
+          {/* Sticky Pagination Bar for exam cards */}
+          {!viewingStudents && !isLoadingExams && examTotalPages > 1 && (
+            <div className="flex-shrink-0 bg-white border-t border-gray-200 px-4 py-2.5 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-400">
+                  Showing {((examCurrentPage - 1) * RESULTS_PER_PAGE) + 1}–{Math.min(examCurrentPage * RESULTS_PER_PAGE, filteredExams.length)} of {filteredExams.length}
+                </span>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setExamCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={examCurrentPage <= 1}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    <FontAwesomeIcon icon={faChevronLeft} className="text-[10px]" />
+                    Prev
+                  </button>
+
+                  {Array.from({ length: Math.min(examTotalPages, 5) }, (_, i) => {
+                    let pageNum: number;
+                    const total = examTotalPages;
+                    if (total <= 5) { pageNum = i + 1; }
+                    else if (examCurrentPage <= 3) { pageNum = i + 1; }
+                    else if (examCurrentPage >= total - 2) { pageNum = total - 4 + i; }
+                    else { pageNum = examCurrentPage - 2 + i; }
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => setExamCurrentPage(pageNum)}
+                        className={`w-7 h-7 flex items-center justify-center text-xs font-medium rounded-md transition-all ${
+                          pageNum === examCurrentPage
+                            ? 'text-white shadow-sm'
+                            : 'text-gray-600 bg-white border border-gray-200 hover:bg-gray-50'
+                        }`}
+                        style={pageNum === examCurrentPage ? { backgroundColor: brandTheme.colors.primary } : {}}
+                      >
+                        {pageNum}
+                      </button>
+                    );
+                  })}
+
+                  <button
+                    onClick={() => setExamCurrentPage(p => Math.min(examTotalPages, p + 1))}
+                    disabled={examCurrentPage >= examTotalPages}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium rounded-md border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  >
+                    Next
+                    <FontAwesomeIcon icon={faChevronRight} className="text-[10px]" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </>

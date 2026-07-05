@@ -1,5 +1,10 @@
 /**
- * Courses Uploader V2 - Optimized Structure
+ * Courses Uploader V3 - With section_order & sequence_number support
+ * 
+ * Changes from V2:
+ * - Uses section_order from Excel for chapter ordering (instead of insertion order)
+ * - Uses sequence_number from Excel for lecture ordering (instead of insertion order)
+ * - Stores preview flag from Excel
  * 
  * Structure:
  * courses/{slug}                      ← Listing fields
@@ -7,12 +12,7 @@
  *   └── curriculum/unit_N             ← Unit with chapters + lecture summaries (includes videoUrl)
  *   └── lectures/{lectureId}          ← Heavy data only (quiz, exercises, text, attachments)
  * 
- * Benefits:
- * - Single curriculum fetch loads everything for sidebar
- * - Videos play instantly (videoUrl in curriculum)
- * - Quiz/Exercise lazy loaded only when clicked
- * 
- * Usage: node upload_courses_from_excel_v2.js <excel_file_path>
+ * Usage: node upload_courses_from_excel_v3.js <excel_file_path>
  */
 
 const admin = require('firebase-admin');
@@ -83,6 +83,8 @@ function buildCourses(metadata, curriculum) {
     courseRows.forEach(row => {
       const unitNumber = row.unit_number;
       const chapterName = row.chapter || 'Default Chapter';
+      const sectionOrder = Number(row.section_order) || 1;
+      const sequenceNumber = Number(row.sequence_number) || 1;
       
       // Initialize unit if not exists
       if (!unitsMap[unitNumber]) {
@@ -94,49 +96,55 @@ function buildCourses(metadata, curriculum) {
         };
       }
       
+      // Use section_order as chapter key to handle ordering properly
+      const chapterKey = `${sectionOrder}_${chapterName}`;
+      
       // Initialize chapter if not exists
-      if (!unitsMap[unitNumber].chaptersMap[chapterName]) {
-        const chapterOrder = Object.keys(unitsMap[unitNumber].chaptersMap).length + 1;
-        unitsMap[unitNumber].chaptersMap[chapterName] = {
-          chapterId: `${courseId}_unit_${unitNumber}_ch_${chapterOrder}`,
+      if (!unitsMap[unitNumber].chaptersMap[chapterKey]) {
+        unitsMap[unitNumber].chaptersMap[chapterKey] = {
+          chapterId: `${courseId}_unit_${unitNumber}_ch_${sectionOrder}`,
           chapterName: chapterName,
-          chapterOrder: chapterOrder,
+          chapterOrder: sectionOrder,  // ✅ Use section_order from Excel
           lectures: []
         };
       }
       
-      // Add lecture
-      const lectureType = (row.type || 'video').toLowerCase();
-      
+      // Add lecture with sequence_number
       const lecture = {
         lectureId: row.lecture_id,
         lectureName: row.lecture_name || '',
         lectureType: row.type || 'video',
-        lectureOrder: unitsMap[unitNumber].chaptersMap[chapterName].lectures.length + 1,
+        lectureOrder: sequenceNumber,  // ✅ Use sequence_number from Excel
         durationInSeconds: row.duration_in_seconds || 0,
         videoUrl: row.video_url || null,
-        textContent: row.lecture_description || null,  // Notes for all lecture types
+        preview: row.preview === 1 || row.preview === true || row.preview === 'TRUE',
+        textContent: row.lecture_description || null,
         quizQuestions: row.quiz_questions || null,
         exerciseQuestions: row.exercises || null,
         assessmentQuestions: row.assessments || null,
         attachments: row.attachments ? [row.attachments] : []
       };
       
-      unitsMap[unitNumber].chaptersMap[chapterName].lectures.push(lecture);
+      unitsMap[unitNumber].chaptersMap[chapterKey].lectures.push(lecture);
     });
     
-    // Convert maps to arrays
+    // Convert maps to arrays — sort by section_order and sequence_number
     const curriculumArray = Object.keys(unitsMap)
       .sort((a, b) => Number(a) - Number(b))
-      .map(unitNum => {
+      .map((unitNum, idx) => {
         const unit = unitsMap[unitNum];
         const chapters = Object.values(unit.chaptersMap)
           .sort((a, b) => a.chapterOrder - b.chapterOrder);
         
+        // Sort lectures within each chapter by sequence_number
+        chapters.forEach(chapter => {
+          chapter.lectures.sort((a, b) => a.lectureOrder - b.lectureOrder);
+        });
+        
         return {
           unitId: unit.unitId,
-          unitName: unit.unitName,
-          unitOrder: unit.unitOrder,
+          unitName: `Unit ${idx + 1}`,
+          unitOrder: idx + 1,
           chapters: chapters
         };
       });
@@ -211,8 +219,8 @@ async function uploadCourse(course) {
     
     // 1. ROOT DOCUMENT - Listing info
     const listingDoc = {
-      slug: slug,  // String
-      courseId: Number(course.courseId),  // Number
+      slug: slug,
+      courseId: Number(course.courseId),
       courseName: course.courseName || '',
       courseAuthor: course.courseAuthor || '',
       thumbnailUrl: course.thumbnailUrl || '',
@@ -256,27 +264,28 @@ async function uploadCourse(course) {
       // Build chapters with lecture SUMMARIES only (includes videoUrl)
       const chapters = chaptersArray.map((chapter, chapterIdx) => {
         const lectures = (chapter.lectures || []).map((lecture, lectureIdx) => ({
-          lectureId: Number(lecture.lectureId),  // Number
+          lectureId: Number(lecture.lectureId),
           lectureName: lecture.lectureName || '',
           lectureType: lecture.lectureType || 'video',
-          lectureOrder: Number(lecture.lectureOrder) || lectureIdx + 1,  // Number
-          durationInSeconds: Number(lecture.durationInSeconds) || 0,  // Number
-          videoUrl: lecture.videoUrl || null  // Include videoUrl for instant video playback
+          lectureOrder: Number(lecture.lectureOrder) || lectureIdx + 1,
+          durationInSeconds: Number(lecture.durationInSeconds) || 0,
+          videoUrl: lecture.videoUrl || null,
+          preview: lecture.preview || false
         }));
         
         return {
-          chapterId: chapter.chapterId,  // String (composite ID)
+          chapterId: chapter.chapterId,
           chapterName: chapter.chapterName || '',
-          chapterOrder: Number(chapter.chapterOrder) || chapterIdx + 1,  // Number
+          chapterOrder: Number(chapter.chapterOrder) || chapterIdx + 1,
           totalLectures: lectures.length,
           lectures: lectures
         };
       });
       
       const unitDoc = {
-        unitId: unit.unitId,  // String (composite ID)
+        unitId: unit.unitId,
         unitName: unit.unitName || '',
-        unitOrder: Number(unit.unitOrder) || i + 1,  // Number
+        unitOrder: Number(unit.unitOrder) || i + 1,
         totalChapters: chaptersArray.length,
         chapters: chapters
       };
@@ -284,16 +293,16 @@ async function uploadCourse(course) {
       await courseRef.collection('curriculum').doc(unitKey).set(unitDoc);
     }
     
-    // 4. LECTURES SUBCOLLECTION - Create for ALL lectures (heavy data stored here)
+    // 4. LECTURES SUBCOLLECTION - Heavy data only
     for (const unit of curriculumArray) {
       for (const chapter of unit.chapters || []) {
         for (const lecture of chapter.lectures || []) {
           const numericLectureId = Number(lecture.lectureId);
           
           const lectureDoc = {
-            lectureId: numericLectureId,  // Number
-            chapterId: chapter.chapterId,  // String (composite ID)
-            unitId: unit.unitId,  // String (composite ID)
+            lectureId: numericLectureId,
+            chapterId: chapter.chapterId,
+            unitId: unit.unitId,
             quizQuestions: lecture.quizQuestions || null,
             exerciseQuestions: lecture.exerciseQuestions || null,
             assessmentQuestions: lecture.assessmentQuestions || null,
@@ -301,7 +310,6 @@ async function uploadCourse(course) {
             attachments: lecture.attachments || []
           };
           
-          // Document ID is string (Firebase requirement), but lectureId field is number
           await courseRef.collection('lectures').doc(String(numericLectureId)).set(lectureDoc);
         }
       }
@@ -316,7 +324,7 @@ async function uploadCourse(course) {
     
   } catch (error) {
     console.error(`    ❌ Error: ${error.message}`);
-    return { success: false, units: 0, chapters: 0, lectures: 0, lecturesWithHeavyData: 0 };
+    return { success: false, units: 0, chapters: 0, lectures: 0 };
   }
 }
 
@@ -324,14 +332,14 @@ async function main() {
   const args = process.argv.slice(2);
   
   if (args.length === 0) {
-    console.log('Usage: node upload_courses_from_excel_v2.js <excel_file_path>');
+    console.log('Usage: node upload_courses_from_excel_v3.js <excel_file_path>');
     process.exit(1);
   }
   
   const excelPath = args[0];
   
   console.log('========================================');
-  console.log('🚀 Courses Uploader V2 (Optimized Structure)');
+  console.log('🚀 Courses Uploader V3 (section_order + sequence_number)');
   console.log('========================================');
   console.log('📁 Structure:');
   console.log('   courses/{slug}              ← Listing');

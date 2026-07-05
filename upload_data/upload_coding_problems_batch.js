@@ -1,4 +1,3 @@
-
 /**
  * Coding Problems Uploader - BATCH VERSION
  * Reads problems from Excel, generates rich content via Claude AI Batch API (50% cheaper), uploads to Firebase
@@ -465,6 +464,55 @@ YOU MUST REPLACE these with actual parameter names from paramOrder and correct t
 - WRONG: console.log(JSON.stringify(s))  →  CORRECT: console.log(s)
 - Only use JSON for ARRAYS, not for single strings/integers/booleans
 
+7. ANALOGY - THIS IS THE MOST VISIBLE SECTION TO USERS. MAKE IT EXCELLENT.
+   
+   The analogy appears prominently on the right sidebar. It must tell a STORY that makes the algorithm click.
+   
+   STRUCTURE:
+   - "title": A catchy, specific scenario name (NOT generic like "Weather App" or "Simple Comparison")
+   - "description": 2-3 sentences setting up a CONCRETE everyday situation. Use specific details (names, numbers, places).
+   - "icon": Emoji matching the scenario
+   - "bruteForce": 2-3 sentences explaining the SLOWEST approach using the scenario. Make it feel tedious.
+   - "twoPass": 2-3 sentences explaining a SMARTER middle approach. Show the "aha" improvement.
+   - "optimal": 2-3 sentences explaining the FASTEST approach. Make it feel clever and satisfying.
+   - "keyInsight": The ONE sentence "aha moment" that makes everything click.
+   
+   CRITICAL RULES:
+   a) bruteForce, twoPass, and optimal MUST directly map to your generated approaches (approach 1, 2, 3)
+   b) If you only have 2 approaches, still fill all 3 fields - make twoPass a stepping-stone explanation
+   c) Each field must be 2-3 FULL sentences, NOT one-liners like "The slow way" or "The fast way"
+   d) Use SPECIFIC real-life details: "Sarah has 200 books on 5 shelves..." NOT "Imagine you have items..."
+   e) The story must be CONSISTENT across all fields - same scenario, different strategies
+   
+   ✅ EXCELLENT ANALOGY (Two Sum - brute-force + hash-map):
+   {
+     "title": "🏪 Finding Two Items That Fit Your Budget at a Flea Market",
+     "description": "You're at a flea market with exactly $50 left. You need to find TWO items whose prices add up to exactly $50. There are 100 stalls, each with a price tag. How do you find your perfect pair?",
+     "icon": "🏪",
+     "bruteForce": "You pick up the first item ($12), then walk to EVERY other stall asking 'Do you have something for $38?' No luck after 99 stalls. You go back, pick the second item ($7), and walk to every remaining stall asking for $43. This takes forever — for 100 stalls you make nearly 5,000 comparisons!",
+     "twoPass": "Smart move: you first walk through ALL stalls and write every price on a notepad. Then you walk through again — for each item priced $12, you instantly check your notepad for $38. Two complete walks through the market, but much faster than the zigzag approach.",
+     "optimal": "Even smarter: carry a notepad and check it AS you walk. See a $12 item? Check notepad for $38 — not there, so write down '$12 at Stall #3'. See a $38 item? Check notepad — '$12 at Stall #3' exists! Done in a single walk through the market!",
+     "keyInsight": "💡 Writing down what you've seen as you go (like a hash map) lets you find the match in one pass instead of checking every pair."
+   }
+   
+   ❌ BAD ANALOGY (too generic, no story, no detail):
+   {
+     "title": "Weather App Temperature Display",
+     "description": "Just like a weather app that shows temperature.",
+     "bruteForce": "The slow manual way",
+     "optimal": "The efficient way",
+     "keyInsight": "💡 Use formulas"
+   }
+   
+   MORE GOOD SCENARIO IDEAS BY PROBLEM TYPE:
+   - Array problems: Organizing books on shelves, sorting playing cards, arranging students in a line
+   - String problems: Proofreading a letter, solving a crossword, decoding a secret message
+   - Tree problems: Company org chart, family tree lookup, tournament brackets
+   - Graph problems: Planning a road trip, subway navigation, social network connections  
+   - DP problems: Planning a road trip budget, choosing items for a backpack, scheduling TV shows
+   - Sorting: Arranging library books, sorting exam papers by roll number, organizing a playlist
+   - Search: Finding a word in a dictionary, looking up a contact in your phone, finding a house on a street
+
 {
   "problem_id": "${problemId}",
   "problemType": "coding",
@@ -472,13 +520,13 @@ YOU MUST REPLACE these with actual parameter names from paramOrder and correct t
   "descriptionText": "Plain text version (no HTML)",
   "paramOrder": ["param1", "param2"],
   "analogy": {
-    "title": "Simple real-world comparison",
-    "description": "Brief relatable scenario (1-2 sentences)",
+    "title": "Catchy specific scenario (e.g., '🏪 Finding Two Items That Fit Your Budget at a Flea Market')",
+    "description": "2-3 sentences setting up the CONCRETE everyday situation with specific details (names, numbers, places)",
     "icon": "🎯",
-    "bruteForce": "How you'd do it the slow way",
-    "twoPass": "A smarter approach",
-    "optimal": "The fastest way",
-    "keyInsight": "💡 One sentence key insight"
+    "bruteForce": "2-3 sentences: How would you solve this the TEDIOUS way? Make it feel painful and slow. Must map to your first approach.",
+    "twoPass": "2-3 sentences: A smarter strategy that improves on brute force. Show the 'aha' moment. Must map to your middle approach (or be a stepping stone if only 2 approaches).",
+    "optimal": "2-3 sentences: The clever trick that solves it fastest. Make it feel satisfying. Must map to your best approach.",
+    "keyInsight": "💡 ONE punchy sentence: the real-world trick that makes the algorithm click"
   },
   "approaches": {
     "brute-force": {
@@ -689,6 +737,10 @@ CHECKLIST - VERIFY EACH ITEM BEFORE SUBMITTING:
 20. ✅ If Linked List/Tree problem: ListNode/TreeNode class defined at TOP of code in ALL languages
 21. ✅ STRING inputs: read as plain text (NO json.loads/JSON.parse)
 22. ✅ STRING outputs: print as plain text (NO json.dumps/JSON.stringify, NO quotes around output)
+23. ✅ ANALOGY: title is a catchy scenario name with emoji, NOT generic (NOT "Simple Comparison" or "Weather App")
+24. ✅ ANALOGY: description is 2-3 sentences with SPECIFIC details (names, numbers, places)
+25. ✅ ANALOGY: bruteForce, twoPass, optimal are each 2-3 FULL sentences telling a STORY, NOT one-liners
+26. ✅ ANALOGY: All three fields describe the SAME scenario with different strategies, mapping to your approaches
 
 Return ONLY the JSON object, no markdown.`;
 }
@@ -929,12 +981,12 @@ CRITICAL INSTRUCTIONS:
     "notes": "Additional notes about the table"
   },
   "analogy": {
-    "title": "Simple real-world comparison",
-    "description": "Brief relatable scenario (1-2 sentences)",
+    "title": "Catchy specific scenario (e.g., '📋 Finding Top Students in Each Classroom')",
+    "description": "2-3 sentences setting up a CONCRETE everyday situation with specific details that maps to this SQL problem",
     "icon": "📊",
-    "bruteForce": "The slow manual way",
-    "optimal": "The efficient SQL way",
-    "keyInsight": "💡 One sentence key insight"
+    "bruteForce": "2-3 sentences: The tedious manual way to solve this in real life. Make it feel painful.",
+    "optimal": "2-3 sentences: The clever organized way. Must map to your SQL approach.",
+    "keyInsight": "💡 ONE punchy sentence: the real-world trick that makes the SQL pattern click"
   },
   "approaches": {
     "window-function": {
@@ -1099,6 +1151,8 @@ CHECKLIST - VERIFY EACH ITEM BEFORE SUBMITTING:
 10. ✅ NO overlapping text or elements in SVG
 11. ⛔ APPROACHES COUNT: Maximum 2 approaches (1 is preferred for most SQL problems)
 12. ✅ NULL values use null (not "null" string)
+13. ✅ ANALOGY: title is catchy with emoji, description is 2-3 sentences with SPECIFIC real-life details
+14. ✅ ANALOGY: bruteForce and optimal are each 2-3 FULL sentences, NOT one-liners
 
 Return ONLY the JSON object, no markdown.`;
 }

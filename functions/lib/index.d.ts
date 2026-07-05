@@ -36,6 +36,13 @@ export declare const aiCodeAssistant: functions.HttpsFunction & functions.Runnab
 export declare const sendWelcomeEmail: functions.HttpsFunction & functions.Runnable<any>;
 export declare const sendOTPEmail: functions.HttpsFunction & functions.Runnable<any>;
 /**
+ * Send a password-reset OTP — fully server-side so it works from the signed-out
+ * Forgot-Password screen (no client Firestore access → no permission-denied).
+ * Looks up the user by email, generates + stores the OTP (same doc-id encoding as
+ * resetPasswordSecurely), and emails it. The OTP is never returned to the client.
+ */
+export declare const sendPasswordResetOTP: functions.HttpsFunction & functions.Runnable<any>;
+/**
  * Secure Password Reset Cloud Function
  * Uses Firebase Admin SDK to update user passwords securely
  *
@@ -100,18 +107,33 @@ export declare const syncStudentLearningDetailsCron: functions.CloudFunction<unk
 export declare const syncStudentLearningDetailsManual: functions.HttpsFunction & functions.Runnable<any>;
 export declare const fetchLeetCodeStats: functions.HttpsFunction & functions.Runnable<any>;
 export declare const aiInterviewChat: functions.HttpsFunction & functions.Runnable<any>;
-/**
- * 🕐 Scheduled Job Scraper — runs daily at 8 PM IST (2:30 PM UTC)
- */
-export declare const scheduledJobScraper: functions.CloudFunction<unknown>;
-/**
- * 🔧 Manual Job Scraper Trigger — callable from admin UI
- */
-export declare const triggerJobScraper: functions.HttpsFunction & functions.Runnable<any>;
 export declare const getPersonalityTraitAggregation: functions.HttpsFunction & functions.Runnable<any>;
 export declare const updateLeaderboardStats: functions.CloudFunction<functions.Change<functions.firestore.DocumentSnapshot>>;
 export declare const getLeaderboardPaginated: functions.HttpsFunction & functions.Runnable<any>;
 export declare const migrateLeaderboardStats: functions.HttpsFunction & functions.Runnable<any>;
-export declare const getLiveExamStats: functions.HttpsFunction & functions.Runnable<any>;
-export declare const getExamStudentsPaginated: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * 📧 Send Email Verification for Resume Builder External Signups
+ * Called from resume-builder.php after createUserWithEmailAndPassword succeeds.
+ * Stores { emailVerified: false, verificationToken, verificationSentAt } in Firestore,
+ * then sends a branded verification email via Brevo SMTP.
+ *
+ * Callable — requires the user to be authenticated (just signed up).
+ */
+export declare const sendResumeVerificationEmail: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * ✅ Verify Resume Builder Email Token
+ * Called when user clicks the verification link.
+ * Matches token + uid, marks emailVerified: true in Firestore,
+ * and updates Firebase Auth emailVerified flag via Admin SDK.
+ *
+ * Public callable — no auth required (user may not be signed in when clicking link).
+ */
+export declare const verifyResumeEmail: functions.HttpsFunction & functions.Runnable<any>;
+/**
+ * 🧹 Cleanup Unverified Resume Builder Accounts (runs daily at 2:00 AM IST)
+ * Deletes Firebase Auth accounts and Firestore docs for users who signed up
+ * but never verified their email within 24 hours.
+ * Also tracks cleanup in resume_cleanup_log for auditing.
+ */
+export declare const cleanupUnverifiedResumeAccounts: functions.CloudFunction<unknown>;
 //# sourceMappingURL=index.d.ts.map

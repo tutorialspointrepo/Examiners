@@ -1763,7 +1763,31 @@ async function applyFixes(problemId, fixes, validationReport = null) {
 
 async function fetchFailedProblems(limit = null, skip = 0, reverse = false) {
   initFirebase();
-  console.log(`📥 Fetching coding problems where tests_passed is missing or false...${skip > 0 ? ` (skipping first ${skip})` : ''}${reverse ? ' (reverse Z→A)' : ''}`);
+  console.log(`📥 Fetching coding problems where tests_passed is false...${skip > 0 ? ` (skipping first ${skip})` : ''}${reverse ? ' (reverse Z→A)' : ''}`);
+  try {
+    const snapshot = await db.collection(COLLECTION_NAME)
+      .where('problemType', '==', 'coding')
+      .where('tests_passed', '==', false)
+      .get();
+    const allProblems = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      allProblems.push({ id: doc.id, ...data });
+    });
+    allProblems.sort((a, b) => reverse ? b.id.localeCompare(a.id) : a.id.localeCompare(b.id));
+    const problems = skip > 0 ? allProblems.slice(skip) : allProblems;
+    const finalProblems = limit ? problems.slice(0, limit) : problems;
+    console.log(`✅ Found ${allProblems.length} total failed/unvalidated, skipped ${skip}, returning ${finalProblems.length} problems\n`);
+    return finalProblems;
+  } catch (error) {
+    console.error('❌ Error fetching:', error.message);
+    return [];
+  }
+}
+
+async function fetchUnpassedProblems(limit = null, skip = 0, reverse = false) {
+  initFirebase();
+  console.log(`📥 Fetching coding problems where tests_passed is false or missing...${skip > 0 ? ` (skipping first ${skip})` : ''}${reverse ? ' (reverse Z→A)' : ''}`);
   try {
     const snapshot = await db.collection(COLLECTION_NAME)
       .where('problemType', '==', 'coding')
@@ -1771,8 +1795,7 @@ async function fetchFailedProblems(limit = null, skip = 0, reverse = false) {
     const allProblems = [];
     snapshot.forEach(doc => {
       const data = doc.data();
-      // Pick up if tests_passed doesn't exist OR is false/null/undefined
-      if (!data.tests_passed) {
+      if (data.tests_passed !== true) {
         allProblems.push({ id: doc.id, ...data });
       }
     });
@@ -1851,7 +1874,9 @@ async function runTestApply(problemId) {
 }
 
 async function runFixAll(limit, apply = false, skip = 0, reverse = false) {
-  const problems = await fetchFailedProblems(limit, skip, reverse);
+  const problems = apply
+    ? await fetchUnpassedProblems(limit, skip, reverse)
+    : await fetchFailedProblems(limit, skip, reverse);
   if (problems.length === 0) { console.log('✅ No failed problems!'); return; }
 
   console.log(`\n🔧 Fixing ${problems.length} problems (apply=${apply})`);

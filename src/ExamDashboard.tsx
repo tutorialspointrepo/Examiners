@@ -193,6 +193,13 @@ export default function ExamDashboard({
     
     // Always fetch full dashboard data for accurate stats (props may be paginated/incomplete)
     if (examId) {
+      // ✅ Reset immediately so loading spinner shows instantly on exam switch
+      setLoading(true);
+      setDashboardData(null);
+      setError(null);
+      setShowStudentPerformance(false);
+      setStudentPerformanceData(null);
+      setShowQuestionPaper(false);
       fetchDashboardData();
     } else {
       setLoading(false);
@@ -224,7 +231,7 @@ export default function ExamDashboard({
         }
       })();
     }
-  }, [selectedExam?.examId, selectedExam?.id, propsPresentStudents?.length]);
+  }, [selectedExam?.examId, selectedExam?.id]);
 
   const fetchDashboardData = async () => {
     try {

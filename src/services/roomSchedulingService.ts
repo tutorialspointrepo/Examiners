@@ -95,7 +95,7 @@ export const getRoomAvailability = async (
   endDate: string
 ): Promise<AvailabilityResponse> => {
   try {
-    console.log('🔍 Fetching room availability:', { roomId, collegeId, startDate, endDate });
+//     console.log('🔍 Fetching room availability:', { roomId, collegeId, startDate, endDate });
 
     const db = getFirestore();
     
@@ -108,19 +108,19 @@ export const getRoomAvailability = async (
     );
 
     const bookingsSnapshot = await getDocs(bookingsQuery);
-    console.log(`📊 Found ${bookingsSnapshot.size} active bookings for room ${roomId}`);
+//     console.log(`📊 Found ${bookingsSnapshot.size} active bookings for room ${roomId}`);
     
     const bookedSlots: BookedSlot[] = [];
 
     bookingsSnapshot.forEach((doc) => {
       const data = doc.data();
       
-      console.log(`📅 Checking booking ${doc.id}:`, {
-        dateRange: `${data.startDate} to ${data.endDate}`,
-        timeRange: `${data.startTime} to ${data.endTime}`,
-        purpose: data.purpose,
-        status: data.status
-      });
+//       console.log(`📅 Checking booking ${doc.id}:`, {
+//        dateRange: `${data.startDate} to ${data.endDate}`,
+//        timeRange: `${data.startTime} to ${data.endTime}`,
+//        purpose: data.purpose,
+//        status: data.status
+//      });
       
       // Check if this booking overlaps with our date range
       const bookingStartDate = data.startDate;
@@ -128,7 +128,7 @@ export const getRoomAvailability = async (
       
       // Check if dates overlap: booking overlaps if it starts before our end and ends after our start
       if (bookingStartDate <= endDate && bookingEndDate >= startDate) {
-        console.log(`✅ Booking ${doc.id} overlaps with requested date range`);
+//         console.log(`✅ Booking ${doc.id} overlaps with requested date range`);
         
         // Generate slots for each day in the booking that overlaps with our range
         const start = new Date(Math.max(new Date(data.startDate).getTime(), new Date(startDate).getTime()));
@@ -153,11 +153,11 @@ export const getRoomAvailability = async (
           });
         }
       } else {
-        console.log(`⏭️ Booking ${doc.id} does not overlap with requested date range`);
+//         console.log(`⏭️ Booking ${doc.id} does not overlap with requested date range`);
       }
     });
 
-    console.log(`📋 Total booked slots in range: ${bookedSlots.length}`);
+//     console.log(`📋 Total booked slots in range: ${bookedSlots.length}`);
 
     return {
       success: true,
@@ -194,30 +194,30 @@ export const checkSlotConflict = async (
   error?: string;
 }> => {
   try {
-    console.log('🔍 Checking slot conflict:', {
-      roomId,
-      dateRange: `${startDate} to ${endDate}`,
-      timeRange: `${startTime} to ${endTime}`,
-      excludeBookingId
-    });
+//     console.log('🔍 Checking slot conflict:', {
+//      roomId,
+//      dateRange: `${startDate} to ${endDate}`,
+//      timeRange: `${startTime} to ${endTime}`,
+//      excludeBookingId
+//    });
     
     const availability = await getRoomAvailability(roomId, collegeId, startDate, endDate);
     
     if (!availability.success) {
-      console.log('⚠️ Failed to get availability:', availability.error);
+//       console.log('⚠️ Failed to get availability:', availability.error);
       return {
         hasConflict: false,
         error: availability.error
       };
     }
 
-    console.log(`📋 Found ${availability.bookedSlots.length} existing bookings for this room`);
+//     console.log(`📋 Found ${availability.bookedSlots.length} existing bookings for this room`);
 
     // Check for time conflicts
     const conflicts = availability.bookedSlots.filter(slot => {
       // Skip if it's the same booking we're updating
       if (excludeBookingId && slot.id === excludeBookingId) {
-        console.log(`⏭️ Skipping excluded booking: ${slot.id}`);
+//         console.log(`⏭️ Skipping excluded booking: ${slot.id}`);
         return false;
       }
 
@@ -230,21 +230,21 @@ export const checkSlotConflict = async (
       const hasTimeOverlap = (reqStart < slotEnd && reqEnd > slotStart);
       
       if (hasTimeOverlap) {
-        console.log(`❌ Conflict found with booking ${slot.id}:`, {
-          existingSlot: `${slot.startTime}-${slot.endTime}`,
-          requestedSlot: `${startTime}-${endTime}`,
-          purpose: slot.purpose,
-          status: slot.status
-        });
+//         console.log(`❌ Conflict found with booking ${slot.id}:`, {
+//          existingSlot: `${slot.startTime}-${slot.endTime}`,
+//          requestedSlot: `${startTime}-${endTime}`,
+//          purpose: slot.purpose,
+//          status: slot.status
+//        });
       }
       
       return hasTimeOverlap;
     });
 
     if (conflicts.length > 0) {
-      console.log(`🚫 Total conflicts: ${conflicts.length}`);
+//       console.log(`🚫 Total conflicts: ${conflicts.length}`);
     } else {
-      console.log('✅ No conflicts found');
+//       console.log('✅ No conflicts found');
     }
 
     return {
@@ -269,7 +269,7 @@ export const createRoomBooking = async (
   bookingData: RoomBookingRequest
 ): Promise<BookingResponse> => {
   try {
-    console.log('Creating room booking:', bookingData);
+//     console.log('Creating room booking:', bookingData);
 
     // Validate required fields
     if (!bookingData.roomId?.trim()) {
@@ -377,7 +377,7 @@ export const createRoomBooking = async (
 
     const docRef = await addDoc(collection(db, COLLECTIONS.ROOM_BOOKINGS), newBooking);
     
-    console.log('Room booking created successfully:', docRef.id);
+//     console.log('Room booking created successfully:', docRef.id);
     
     return {
       success: true,
@@ -408,7 +408,7 @@ export const updateBookingStatus = async (
   userId: string
 ): Promise<BookingResponse> => {
   try {
-    console.log('Updating booking status:', { bookingId, status, userId });
+//     console.log('Updating booking status:', { bookingId, status, userId });
 
     const db = getFirestore();
     const bookingRef = doc(db, COLLECTIONS.ROOM_BOOKINGS, bookingId);
@@ -437,7 +437,7 @@ export const updateBookingStatus = async (
       updatedAt: Timestamp.now()
     });
 
-    console.log('Booking status updated successfully');
+//     console.log('Booking status updated successfully');
     
     return {
       success: true,
@@ -473,7 +473,7 @@ export const deleteRoomBooking = async (
   isAdmin: boolean = false
 ): Promise<BookingResponse> => {
   try {
-    console.log('Deleting room booking:', { bookingId, userId, isAdmin });
+//     console.log('Deleting room booking:', { bookingId, userId, isAdmin });
 
     const db = getFirestore();
     const bookingRef = doc(db, COLLECTIONS.ROOM_BOOKINGS, bookingId);
@@ -499,7 +499,7 @@ export const deleteRoomBooking = async (
     // Delete the booking
     await deleteDoc(bookingRef);
 
-    console.log('Booking deleted successfully:', bookingId);
+//     console.log('Booking deleted successfully:', bookingId);
 
     return {
       success: true,
@@ -530,7 +530,7 @@ export const getRoomBookings = async (
   error?: string;
 }> => {
   try {
-    console.log('Fetching room bookings:', { roomId, collegeId, startDate, endDate });
+//     console.log('Fetching room bookings:', { roomId, collegeId, startDate, endDate });
 
     const db = getFirestore();
     
@@ -564,7 +564,7 @@ export const getRoomBookings = async (
       }
     });
 
-    console.log('Found bookings:', bookings.length);
+//     console.log('Found bookings:', bookings.length);
 
     return {
       success: true,
@@ -595,7 +595,7 @@ export const getUserBookings = async (
   error?: string;
 }> => {
   try {
-    console.log('Fetching user bookings:', { userId, status });
+//     console.log('Fetching user bookings:', { userId, status });
 
     const db = getFirestore();
     
@@ -818,35 +818,35 @@ export const getClassesByCollege = async (collegeId: string): Promise<Array<{
   try {
     const db = getFirestore();
     
-    console.log('🔍 [getClassesByCollege] Starting with collegeId:', collegeId);
+//     console.log('🔍 [getClassesByCollege] Starting with collegeId:', collegeId);
     
     // Get college document to fetch validClasses
     const collegeRef = doc(db, COLLECTIONS.COLLEGES, collegeId);
     const collegeDoc = await getDoc(collegeRef);
     
     if (!collegeDoc.exists()) {
-      console.warn('⚠️ [getClassesByCollege] College not found:', collegeId);
+//       console.warn('⚠️ [getClassesByCollege] College not found:', collegeId);
       return [];
     }
     
     const collegeData = collegeDoc.data();
-    console.log('📄 [getClassesByCollege] College data:', collegeData);
+//     console.log('📄 [getClassesByCollege] College data:', collegeData);
     
     const validClasses = collegeData.validClasses || [];
     const supportedBoards = collegeData.supportedBoards || ['CBSE'];
     const collegeAcademicYearStartMonth = collegeData.academicYear || 'April';
     
-    console.log('✅ [getClassesByCollege] validClasses:', validClasses);
-    console.log('✅ [getClassesByCollege] supportedBoards:', supportedBoards);
+//     console.log('✅ [getClassesByCollege] validClasses:', validClasses);
+//     console.log('✅ [getClassesByCollege] supportedBoards:', supportedBoards);
     
     if (validClasses.length === 0) {
-      console.warn('⚠️ [getClassesByCollege] No classes configured for college:', collegeId);
+//       console.warn('⚠️ [getClassesByCollege] No classes configured for college:', collegeId);
       return [];
     }
     
     // Get current academic year based on college's start month
     const currentAcademicYear = getCurrentAcademicYear(collegeAcademicYearStartMonth);
-    console.log('📅 [getClassesByCollege] Current academic year:', currentAcademicYear);
+//     console.log('📅 [getClassesByCollege] Current academic year:', currentAcademicYear);
     
     // Query students to get counts for each class
     const studentsQuery = query(
@@ -856,7 +856,7 @@ export const getClassesByCollege = async (collegeId: string): Promise<Array<{
     );
 
     const snapshot = await getDocs(studentsQuery);
-    console.log('👥 [getClassesByCollege] Total students found:', snapshot.size);
+//     console.log('👥 [getClassesByCollege] Total students found:', snapshot.size);
     
     // Count students per class/board/year combination
     const classCountMap = new Map<string, number>();
@@ -870,11 +870,11 @@ export const getClassesByCollege = async (collegeId: string): Promise<Array<{
       if (className) {
         const key = `${className}_${board}_${academicYear}`;
         classCountMap.set(key, (classCountMap.get(key) || 0) + 1);
-        console.log(`   Student: class="${className}", board="${board}", year="${academicYear}", key="${key}"`);
+//         console.log(`   Student: class="${className}", board="${board}", year="${academicYear}", key="${key}"`);
       }
     });
 
-    console.log('📊 [getClassesByCollege] Class count map:', Object.fromEntries(classCountMap));
+//     console.log('📊 [getClassesByCollege] Class count map:', Object.fromEntries(classCountMap));
 
     // Create class entries for all valid classes across all boards
     const classes: Array<{
@@ -898,7 +898,7 @@ export const getClassesByCollege = async (collegeId: string): Promise<Array<{
           studentCount: studentCount
         });
         
-        console.log(`   Creating class entry: ${className} (${board}) - ${studentCount} students`);
+//         console.log(`   Creating class entry: ${className} (${board}) - ${studentCount} students`);
       });
     });
 
@@ -914,8 +914,8 @@ export const getClassesByCollege = async (collegeId: string): Promise<Array<{
       return a.className.localeCompare(b.className);
     });
 
-    console.log('✅ [getClassesByCollege] Final classes array:', classes);
-    console.log('📈 [getClassesByCollege] Total classes returned:', classes.length);
+//     console.log('✅ [getClassesByCollege] Final classes array:', classes);
+//     console.log('📈 [getClassesByCollege] Total classes returned:', classes.length);
     
     return classes;
 
@@ -947,7 +947,7 @@ export const getExamTypesByCollege = async (collegeId: string): Promise<Array<{
       
       // Check if college has custom exam types configured
       if (collegeData.examTypes && Array.isArray(collegeData.examTypes) && collegeData.examTypes.length > 0) {
-        console.log('Using configured exam types from college');
+//         console.log('Using configured exam types from college');
         
         // Handle two formats:
         // 1. Array of strings: ["Home Work", "Unit Test", ...]
@@ -957,7 +957,7 @@ export const getExamTypesByCollege = async (collegeId: string): Promise<Array<{
         
         // If first item is a string, convert all to objects
         if (typeof firstItem === 'string') {
-          console.log('Converting string array to exam type objects');
+//           console.log('Converting string array to exam type objects');
           
           // Default colors to cycle through
           const colors = ['blue', 'purple', 'green', 'orange', 'pink', 'red', 'indigo', 'teal', 'cyan', 'amber'];
@@ -971,14 +971,14 @@ export const getExamTypesByCollege = async (collegeId: string): Promise<Array<{
         
         // If first item is already an object, use as is
         if (typeof firstItem === 'object' && firstItem !== null) {
-          console.log('Using object array exam types');
+//           console.log('Using object array exam types');
           return collegeData.examTypes;
         }
       }
     }
     
     // Return default exam types if not configured
-    console.log('Using default exam types');
+//     console.log('Using default exam types');
     return [
       { id: 'homework', name: 'Homework', color: 'blue' },
       { id: 'subject-assessment', name: 'Subject Assessment', color: 'purple' },
@@ -1045,7 +1045,7 @@ export const getRoomsByCollege = async (collegeId: string): Promise<Array<{
       };
     });
 
-    console.log('Rooms fetched:', rooms.length);
+//     console.log('Rooms fetched:', rooms.length);
     return rooms;
 
   } catch (error) {
@@ -1078,7 +1078,7 @@ export const getStudentsByClass = async (
 
     const snapshot = await getDocs(studentsQuery);
     
-    console.log('📚 Firestore returned', snapshot.size, 'student documents');
+//     console.log('📚 Firestore returned', snapshot.size, 'student documents');
     
     const students = snapshot.docs.map((doc, index) => {
       const data = doc.data();
@@ -1088,15 +1088,15 @@ export const getStudentsByClass = async (
       };
       
       if (index === 0) {
-        console.log('📚 First student doc.id:', doc.id);
-        console.log('📚 First student data fields:', Object.keys(data));
-        console.log('📚 First student after mapping:', student);
+//         console.log('📚 First student doc.id:', doc.id);
+//         console.log('📚 First student data fields:', Object.keys(data));
+//         console.log('📚 First student after mapping:', student);
       }
       
       return student;
     });
 
-    console.log('📚 Returning', students.length, 'students');
+//     console.log('📚 Returning', students.length, 'students');
     return students;
 
   } catch (error) {
@@ -1116,7 +1116,7 @@ export const createHallTicketGroup = async (hallTicketGroup: any): Promise<{
   try {
     const db = getFirestore();
 
-    console.log('Creating hall ticket group:', hallTicketGroup);
+//     console.log('Creating hall ticket group:', hallTicketGroup);
 
     // Add server timestamp and flat studentIds for querying
     const studentIds = (hallTicketGroup.students || []).map((s: any) => s.studentId).filter(Boolean);
@@ -1133,7 +1133,7 @@ export const createHallTicketGroup = async (hallTicketGroup: any): Promise<{
       groupData
     );
 
-    console.log('✅ Hall ticket group created:', docRef.id);
+//     console.log('✅ Hall ticket group created:', docRef.id);
 
     return {
       success: true,
@@ -1155,38 +1155,38 @@ export const createHallTicketGroup = async (hallTicketGroup: any): Promise<{
  */
 export const diagnoseHallTicketGroups = async (): Promise<void> => {
   try {
-    console.log('🔍 === HALL TICKET GROUPS DIAGNOSTIC START ===');
+//     console.log('🔍 === HALL TICKET GROUPS DIAGNOSTIC START ===');
     const db = getFirestore();
     
     // Get all documents
     const allDocsQuery = query(collection(db, 'hallTicketGroups'));
     const allDocsSnapshot = await getDocs(allDocsQuery);
     
-    console.log('📊 Total documents in hallTicketGroups collection:', allDocsSnapshot.size);
+//     console.log('📊 Total documents in hallTicketGroups collection:', allDocsSnapshot.size);
     
     if (allDocsSnapshot.size === 0) {
-      console.warn('⚠️ The hallTicketGroups collection is empty or does not exist!');
-      console.log('💡 Make sure you have created at least one hall ticket group.');
+//       console.warn('⚠️ The hallTicketGroups collection is empty or does not exist!');
+//       console.log('💡 Make sure you have created at least one hall ticket group.');
       return;
     }
     
     // Analyze each document
-    allDocsSnapshot.docs.forEach((doc, index) => {
-      const data = doc.data();
-      console.log(`\n📄 Document ${index + 1}/${allDocsSnapshot.size}:`);
-      console.log('  ID:', doc.id);
-      console.log('  collegeId:', data.collegeId, `(type: ${typeof data.collegeId})`);
-      console.log('  academicYear:', data.academicYear);
-      console.log('  studentClass:', data.studentClass);
-      console.log('  examType:', data.examType);
-      console.log('  status:', data.status);
-      console.log('  numberOfStudents:', data.numberOfStudents);
-      console.log('  students array length:', data.students?.length || 0);
-      console.log('  createdAt:', data.createdAt);
-      console.log('  All fields:', Object.keys(data).join(', '));
+    allDocsSnapshot.docs.forEach((_doc) => {
+//       const data = doc.data();
+//       console.log(`\n📄 Document ${index + 1}/${allDocsSnapshot.size}:`);
+//       console.log('  ID:', doc.id);
+//       console.log('  collegeId:', data.collegeId, `(type: ${typeof data.collegeId})`);
+//       console.log('  academicYear:', data.academicYear);
+//       console.log('  studentClass:', data.studentClass);
+//       console.log('  examType:', data.examType);
+//       console.log('  status:', data.status);
+//       console.log('  numberOfStudents:', data.numberOfStudents);
+//       console.log('  students array length:', data.students?.length || 0);
+//       console.log('  createdAt:', data.createdAt);
+//       console.log('  All fields:', Object.keys(data).join(', '));
     });
     
-    console.log('\n🔍 === HALL TICKET GROUPS DIAGNOSTIC END ===\n');
+//     console.log('\n🔍 === HALL TICKET GROUPS DIAGNOSTIC END ===\n');
     
   } catch (error) {
     console.error('❌ Error in diagnostic:', error);
@@ -1207,12 +1207,9 @@ export const getHallTicketGroups = async (
   }
 ): Promise<any[]> => {
   try {
-    console.log('🔍 getHallTicketGroups called with:', { collegeId, filters });
     const db = getFirestore();
 
     // First, try to get all documents without orderBy to see if collegeId filtering works
-    console.log('📋 Querying hallTicketGroups collection...');
-    
     const constraints: any[] = [
       where('collegeId', '==', collegeId)
     ];
@@ -1222,12 +1219,11 @@ export const getHallTicketGroups = async (
     if (filters?.studentId) {
       const authUid = getAuth().currentUser?.uid;
       if (!authUid) {
-        console.warn('⚠️ No authenticated user found, returning empty');
+//         console.warn('⚠️ No authenticated user found, returning empty');
         return [];
       }
       // Always use the authenticated UID, ignore the passed studentId for security
       constraints.push(where('studentIds', 'array-contains', authUid));
-      console.log('👨‍🎓 Adding student filter using auth UID:', authUid);
     }
 
     let hallTicketsQuery = query(
@@ -1235,17 +1231,15 @@ export const getHallTicketGroups = async (
       ...constraints
     );
 
-    console.log('⏳ Executing query...');
     const snapshot = await getDocs(hallTicketsQuery);
-    console.log('📊 Query returned:', snapshot.size, 'documents');
 
     if (snapshot.empty) {
-      console.log('📋 No hall ticket groups found matching the query.');
+//       console.log('📋 No hall ticket groups found matching the query.');
     }
     
     let hallTickets: any[] = snapshot.docs.map(doc => {
       const data = doc.data();
-      console.log('📄 Document:', doc.id, 'has collegeId:', data.collegeId);
+//       console.log('📄 Document:', doc.id, 'has collegeId:', data.collegeId);
       return {
         id: doc.id,
         ...data
@@ -1254,26 +1248,23 @@ export const getHallTicketGroups = async (
 
     // Apply additional filters in memory
     if (filters?.academicYear && filters.academicYear !== 'all') {
-      const beforeFilter = hallTickets.length;
       hallTickets = hallTickets.filter(ht => ht.academicYear === filters.academicYear);
-      console.log(`🔍 Academic year filter (${filters.academicYear}): ${beforeFilter} → ${hallTickets.length}`);
+//       console.log(`🔍 Academic year filter (${filters.academicYear}): ${beforeFilter} → ${hallTickets.length}`);
     } else if (filters?.academicYear === 'all') {
-      console.log(`✅ Skipping academic year filter (showing all years): ${hallTickets.length} documents`);
+//       console.log(`✅ Skipping academic year filter (showing all years): ${hallTickets.length} documents`);
     }
     
     if (filters?.className && filters.className !== 'all') {
-      const beforeFilter = hallTickets.length;
       hallTickets = hallTickets.filter(ht => ht.studentClass === filters.className);
-      console.log(`🔍 Class filter (${filters.className}): ${beforeFilter} → ${hallTickets.length}`);
+//       console.log(`🔍 Class filter (${filters.className}): ${beforeFilter} → ${hallTickets.length}`);
     }
     
     if (filters?.examType && filters.examType !== 'all') {
-      const beforeFilter = hallTickets.length;
       hallTickets = hallTickets.filter(ht => ht.examType === filters.examType);
-      console.log(`🔍 Exam type filter (${filters.examType}): ${beforeFilter} → ${hallTickets.length}`);
+//       console.log(`🔍 Exam type filter (${filters.examType}): ${beforeFilter} → ${hallTickets.length}`);
     }
 
-    console.log('✅ Hall ticket groups fetched:', hallTickets.length);
+//     console.log('✅ Hall ticket groups fetched:', hallTickets.length);
     return hallTickets;
 
   } catch (error) {
@@ -1298,7 +1289,7 @@ export const getHallTicketGroupById = async (
       return null;
     }
 
-    console.log('Hall ticket group fetched:', groupId);
+//     console.log('Hall ticket group fetched:', groupId);
     return {
       id: groupDoc.id,
       ...groupDoc.data()
@@ -1327,7 +1318,7 @@ export const updateHallTicketGroupStatus = async (
       updatedAt: serverTimestamp()
     });
 
-    console.log('✅ Hall ticket group status updated:', groupId, status);
+//     console.log('✅ Hall ticket group status updated:', groupId, status);
     return true;
 
   } catch (error) {
@@ -1374,7 +1365,7 @@ export const updateHallTicketStatus = async (
       updatedAt: serverTimestamp()
     });
 
-    console.log('✅ Hall ticket status updated:', studentId, status);
+//     console.log('✅ Hall ticket status updated:', studentId, status);
     return true;
 
   } catch (error) {

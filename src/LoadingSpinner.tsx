@@ -130,15 +130,6 @@ export function LoadingSpinner({
 }: LoadingSpinnerProps) {
   const brand = useBrand();
   
-  // DEBUG: Verify brand colors
-  React.useEffect(() => {
-    console.log('🔍 [LOADING SPINNER] Brand Colors:', {
-      primary: brand.colors.primary,
-      secondary: brand.colors.secondary,
-      accent: brand.colors.accent,
-      collegeName: brand.collegeName
-    });
-  }, [brand]);
   
   const styleId = 'examiners-spinner-styles';
   const [progress, setProgress] = React.useState(0);

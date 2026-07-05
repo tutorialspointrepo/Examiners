@@ -130,7 +130,7 @@ export const useExamAttempt = (
           console.log(`📦 Found ${Object.keys(backupAnswers).length} backup answers in localStorage`);
           
           // Update local state with backup answers
-          const updatedResponses = [...existingAttempt.responses];
+          const updatedResponses = [...(existingAttempt.responses || [])];
           Object.entries(backupAnswers).forEach(([questionNoStr, backup]: [string, any]) => {
             const questionNo = parseInt(questionNoStr);
             const existingIndex = updatedResponses.findIndex(r => r.questionNo === questionNo);
@@ -314,7 +314,7 @@ export const useExamAttempt = (
       setAttempt(prev => {
         if (!prev) return null;
         
-        const updatedResponses = [...prev.responses];
+        const updatedResponses = [...(prev.responses || [])];
         const existingIndex = updatedResponses.findIndex((r: any) => r.questionId === questionId);
         
         const responseUpdate = {
@@ -381,7 +381,7 @@ export const useExamAttempt = (
         const backupAnswers = offlineQueueService.loadAnswersFromBackup(currentAttemptId);
         
         if (Object.keys(backupAnswers).length > 0) {
-          const updatedResponses = [...updated.responses];
+          const updatedResponses = [...(updated.responses || [])];
           Object.entries(backupAnswers).forEach(([questionNoStr, backup]: [string, any]) => {
             const questionNo = parseInt(questionNoStr);
             const existingIndex = updatedResponses.findIndex(r => r.questionNo === questionNo);
@@ -497,7 +497,7 @@ export const useExamAttempt = (
   // Get response for a specific question
   const getResponse = useCallback((questionNo: number): StudentQuestionResponse | null => {
     if (!attempt) return null;
-    return attempt.responses.find(r => r.questionNo === questionNo) || null;
+    return attempt.responses?.find(r => r.questionNo === questionNo) || null;
   }, [attempt]);
 
   // Check if question is answered
@@ -565,11 +565,11 @@ export async function generateStudentReport(attemptId: string): Promise<StudentR
   
   // Performance summary
   const performanceSummary = {
-    totalQuestions: attempt.responses.length,
-    attempted: attempt.responses.filter(r => r.studentAnswer !== null).length,
-    correct: attempt.responses.filter(r => r.isCorrect === true).length,
-    incorrect: attempt.responses.filter(r => r.isCorrect === false).length,
-    pending: attempt.responses.filter(r => r.evaluationStatus !== 'completed').length,
+    totalQuestions: (attempt.responses || []).length,
+    attempted: (attempt.responses || []).filter(r => r.studentAnswer !== null).length,
+    correct: (attempt.responses || []).filter(r => r.isCorrect === true).length,
+    incorrect: (attempt.responses || []).filter(r => r.isCorrect === false).length,
+    pending: (attempt.responses || []).filter(r => r.evaluationStatus !== 'completed').length,
   };
 
   // Strengths and weaknesses
@@ -602,8 +602,8 @@ export async function generateStudentReport(attemptId: string): Promise<StudentR
 
   // Time management
   if (attempt.actualDuration && attempt.scheduledDuration) {
-    const avgTimePerQuestion = (attempt.actualDuration || 0) / attempt.responses.length;
-    const scheduledTimePerQuestion = ((attempt.scheduledDuration || 0) * 60) / attempt.responses.length;
+    const avgTimePerQuestion = (attempt.actualDuration || 0) / (attempt.responses || []).length;
+    const scheduledTimePerQuestion = ((attempt.scheduledDuration || 0) * 60) / (attempt.responses || []).length;
     
     if (avgTimePerQuestion < scheduledTimePerQuestion * 0.8) {
       strengths.push('Excellent time management');
@@ -710,8 +710,8 @@ function generateRecommendations(attempt: StudentExamAttempt): string[] {
 
   // Time management
   if (attempt.actualDuration && attempt.scheduledDuration) {
-    const avgTimePerQuestion = (attempt.actualDuration || 0) / attempt.responses.length;
-    const scheduledTimePerQuestion = ((attempt.scheduledDuration || 0) * 60) / attempt.responses.length;
+    const avgTimePerQuestion = (attempt.actualDuration || 0) / (attempt.responses || []).length;
+    const scheduledTimePerQuestion = ((attempt.scheduledDuration || 0) * 60) / (attempt.responses || []).length;
     
     if (avgTimePerQuestion > scheduledTimePerQuestion * 1.5) {
       recommendations.push('Practice solving questions faster');

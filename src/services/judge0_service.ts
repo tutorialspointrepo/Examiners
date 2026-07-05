@@ -241,7 +241,7 @@ class Judge0Service {
       return result;
     } catch (error) {
       // Fallback to async submission + polling
-      console.log('Falling back to async submission...');
+//       console.log('Falling back to async submission...');
       const result = await this.submitCode(submission);
       return await this.pollForResult(result.token!, maxWaitTime);
     }
@@ -274,7 +274,7 @@ class Judge0Service {
   private preprocessCode(code: string, language: string): string {
     const lang = language.toLowerCase();
     
-    console.log(`🔧 Preprocessing ${language} code...`);
+//     console.log(`🔧 Preprocessing ${language} code...`);
     
     switch (lang) {
       case 'java':
@@ -316,7 +316,7 @@ class Judge0Service {
    * Preprocess Java code - Fix class name to Main
    */
   private preprocessJavaCode(code: string): string {
-    console.log('  🔧 Java: Fixing class name...');
+//     console.log('  🔧 Java: Fixing class name...');
     
     const publicClassPattern = /public\s+class\s+([A-Za-z_]\w*)/g;
     let processedCode = code;
@@ -325,7 +325,7 @@ class Judge0Service {
     while ((match = publicClassPattern.exec(code)) !== null) {
       const className = match[1];
       if (className !== 'Main') {
-        console.log(`  🔄 Renaming class "${className}" → "Main"`);
+//         console.log(`  🔄 Renaming class "${className}" → "Main"`);
         
         // Rename class declaration
         processedCode = processedCode.replace(
@@ -347,7 +347,7 @@ class Judge0Service {
       }
     }
     
-    console.log('  ✅ Java preprocessing complete');
+//     console.log('  ✅ Java preprocessing complete');
     return processedCode;
   }
 
@@ -355,11 +355,11 @@ class Judge0Service {
    * Preprocess Kotlin code
    */
   private preprocessKotlinCode(code: string): string {
-    console.log('  🔧 Kotlin: Ensuring main function...');
+//     console.log('  🔧 Kotlin: Ensuring main function...');
     
     // Check if main function exists
     if (!code.includes('fun main')) {
-      console.log('  ⚠️ No main function found in Kotlin code');
+//       console.log('  ⚠️ No main function found in Kotlin code');
     }
     
     // Ensure package declaration is at top if present
@@ -371,7 +371,7 @@ class Judge0Service {
       processedCode = [...packageLines, '', ...otherLines].join('\n');
     }
     
-    console.log('  ✅ Kotlin preprocessing complete');
+//     console.log('  ✅ Kotlin preprocessing complete');
     return processedCode;
   }
 
@@ -379,7 +379,7 @@ class Judge0Service {
    * Preprocess C# code
    */
   private preprocessCSharpCode(code: string): string {
-    console.log('  🔧 C#: Checking class structure...');
+//     console.log('  🔧 C#: Checking class structure...');
     
     let processedCode = code;
     
@@ -395,7 +395,7 @@ class Judge0Service {
       processedCode = usings.join('\n') + '\n\n' + processedCode;
     }
     
-    console.log('  ✅ C# preprocessing complete');
+//     console.log('  ✅ C# preprocessing complete');
     return processedCode;
   }
 
@@ -403,7 +403,7 @@ class Judge0Service {
    * Preprocess C++ code
    */
   private preprocessCppCode(code: string): string {
-    console.log('  🔧 C++: Checking includes and namespace...');
+//     console.log('  🔧 C++: Checking includes and namespace...');
     
     let processedCode = code;
     
@@ -412,12 +412,12 @@ class Judge0Service {
     const hasNamespace = code.includes('using namespace std');
     
     if (!hasIostream) {
-      console.log('  ➕ Adding #include <iostream>');
+//       console.log('  ➕ Adding #include <iostream>');
       processedCode = '#include <iostream>\n' + processedCode;
     }
     
     if (!hasNamespace && code.includes('cout') || code.includes('cin') || code.includes('endl')) {
-      console.log('  ➕ Adding using namespace std;');
+//       console.log('  ➕ Adding using namespace std;');
       const includeEnd = processedCode.lastIndexOf('#include');
       const nextLine = processedCode.indexOf('\n', includeEnd) + 1;
       processedCode = 
@@ -426,7 +426,7 @@ class Judge0Service {
         processedCode.slice(nextLine);
     }
     
-    console.log('  ✅ C++ preprocessing complete');
+//     console.log('  ✅ C++ preprocessing complete');
     return processedCode;
   }
 
@@ -434,19 +434,19 @@ class Judge0Service {
    * Preprocess Python code
    */
   private preprocessPythonCode(code: string): string {
-    console.log('  🔧 Python: Checking indentation and syntax...');
+//     console.log('  🔧 Python: Checking indentation and syntax...');
     
     let processedCode = code;
     
     // Fix common indentation issues (convert tabs to spaces)
     if (code.includes('\t')) {
-      console.log('  🔄 Converting tabs to spaces');
+//       console.log('  🔄 Converting tabs to spaces');
       processedCode = processedCode.replace(/\t/g, '    ');
     }
     
     // Remove Windows line endings
     if (code.includes('\r\n')) {
-      console.log('  🔄 Normalizing line endings');
+//       console.log('  🔄 Normalizing line endings');
       processedCode = processedCode.replace(/\r\n/g, '\n');
     }
     
@@ -456,7 +456,7 @@ class Judge0Service {
       .map(line => line.trimEnd())
       .join('\n');
     
-    console.log('  ✅ Python preprocessing complete');
+//     console.log('  ✅ Python preprocessing complete');
     return processedCode;
   }
 
@@ -464,7 +464,7 @@ class Judge0Service {
    * Preprocess JavaScript/TypeScript code
    */
   private preprocessJavaScriptCode(code: string): string {
-    console.log('  🔧 JavaScript/TypeScript: Checking structure...');
+//     console.log('  🔧 JavaScript/TypeScript: Checking structure...');
     
     // No major preprocessing needed for JS/TS
     // Just ensure proper encoding
@@ -475,7 +475,7 @@ class Judge0Service {
       processedCode = processedCode.replace(/\r\n/g, '\n');
     }
     
-    console.log('  ✅ JavaScript preprocessing complete');
+//     console.log('  ✅ JavaScript preprocessing complete');
     return processedCode;
   }
 
@@ -500,14 +500,14 @@ class Judge0Service {
       // ✅ Preprocess code based on language
       const processedCode = this.preprocessCode(code, language);
 
-      console.log(`🚀 Executing ${language} code...`);
+//       console.log(`🚀 Executing ${language} code...`);
       const result = await this.submitAndWait({
         source_code: processedCode,
         language_id: languageId,
         stdin: input,
       });
 
-      console.log('✅ Execution result:', result);
+//       console.log('✅ Execution result:', result);
 
       // Status 3 = Accepted (success)
       const success = result.status.id === 3;
@@ -575,11 +575,11 @@ class Judge0Service {
     let totalFailed = 0;
     const startTime = Date.now();
 
-    console.log(`🧪 Running ${testCases.length} test cases for ${language}...`);
+//     console.log(`🧪 Running ${testCases.length} test cases for ${language}...`);
 
     for (let i = 0; i < testCases.length; i++) {
       const testCase = testCases[i];
-      console.log(`  📝 Test case ${i + 1}/${testCases.length}...`);
+//       console.log(`  📝 Test case ${i + 1}/${testCases.length}...`);
 
       try {
         const result = await this.submitAndWait({
@@ -607,12 +607,12 @@ class Judge0Service {
 
         if (passed) {
           totalPassed++;
-          console.log(`    ✅ Test case ${i + 1} passed`);
+//           console.log(`    ✅ Test case ${i + 1} passed`);
         } else {
           totalFailed++;
-          console.log(`    ❌ Test case ${i + 1} failed`);
-          console.log(`       Expected: "${expectedOutput}"`);
-          console.log(`       Got: "${actualOutput}"`);
+//           console.log(`    ❌ Test case ${i + 1} failed`);
+//           console.log(`       Expected: "${expectedOutput}"`);
+//           console.log(`       Got: "${actualOutput}"`);
         }
         
         // ✅ Add small delay between test cases to avoid overwhelming Judge0
@@ -637,7 +637,7 @@ class Judge0Service {
     }
 
     const executionTime = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`✅ Test execution complete: ${totalPassed} passed, ${totalFailed} failed (${executionTime}s)`);
+//     console.log(`✅ Test execution complete: ${totalPassed} passed, ${totalFailed} failed (${executionTime}s)`);
 
     return {
       results,

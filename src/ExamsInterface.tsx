@@ -116,6 +116,39 @@ interface Violation {
   proofUrl?: string;
 }
 
+// ==================== STUDENT WORK STORE ====================
+// Single source of truth for every student answer, keyed by questionId.
+// Eliminates shared single-value refs and race conditions.
+// Language is stored per-question so compiler always gets the right one.
+// Code is stored per-language so switching languages preserves work.
+interface QuestionWorkState {
+  questionId: string;
+  questionNo: number;
+  type: string;
+  dirty: boolean;              // has user actually touched the answer?
+  lastModified: number;        // timestamp of last user edit
+  savedToDb: boolean;          // successfully saved to Firebase?
+
+  // CODE / SQL — per-language code storage
+  selectedLanguage: string;
+  codePerLanguage: Record<string, string>;
+
+  // MCQ
+  selectedOptions: string[];
+
+  // Descriptive
+  descriptiveHtml: string;
+
+  // FITB
+  fillBlanks: string[];
+
+  // Jumbled
+  jumbledOrder: string[];
+
+  // Likert
+  likertValue: string;
+}
+
 
 interface Question {
   id: string;
@@ -178,7 +211,7 @@ interface ExamsInterfaceProps {
   duration: number;
   examDate: string;
   examTime: string;
-  completionPolicy?: 'strict' | 'flexible';
+  completionPolicy?: 'strict' | 'flexible' | 'window';
   collegeId: string;
   collegeName: string;
   selectedAudioDeviceId?: string;
@@ -831,7 +864,7 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
               ? 'sql'
               : (q.starterCodes || q.starter_codes)?.length > 0
                 ? (q.starterCodes || q.starter_codes)[0].language.toLowerCase()
-                : (q.programmingLanguage || q.programming_language || 'javascript').toLowerCase(),
+                : (q.programmingLanguage || q.programming_language || '').toLowerCase() || (() => { if (typeStr === QUESTION_TYPES.CODE) console.error(`❌ LANGUAGE NOT SET for code question (ID: ${q.id || 'unknown'}). Fix question data.`); return ''; })(),
             solution: q.solution || '', // ONLY for grading reference, NEVER shown to student
             hint: q.hint || '', // Optional hint
             // SQL specific
@@ -994,7 +1027,7 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
                 ? 'sql'
                 : (q.starterCodes || q.starter_codes)?.length > 0
                   ? (q.starterCodes || q.starter_codes)[0].language.toLowerCase()
-                  : (q.programmingLanguage || q.programming_language || 'javascript').toLowerCase(),
+                  : (q.programmingLanguage || q.programming_language || '').toLowerCase() || (() => { if (typeStr === QUESTION_TYPES.CODE) console.error(`❌ LANGUAGE NOT SET for pool code question (ID: ${q.id || 'unknown'}). Fix question data.`); return ''; })(),
               solution: q.solution || '',
               hint: q.hint || '',
               isSql: questionType === QUESTION_TYPES.SQL,
@@ -1165,6 +1198,7 @@ const ExamsInterface: React.FC<ExamsInterfaceProps> = ({
     // console.log('🔄 examId changed, resetting all state:', examId);
     setCurrentQuestionIndex(0);
     setAnswers({});
+    studentWorkStore.current = {}; // Clear store for new exam
     setCodeInput('');
     setMcqAnswer([]);
     setDescriptiveAnswer('');
@@ -1328,6 +1362,7 @@ useEffect(() => {
   
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [answerSource, setAnswerSource] = useState<Record<string, 'db' | 'local'>>({});
   const [, setLastSavedAnswers] = useState<Record<string, any>>({}); // 🔥 DIRTY FLAG: Track last saved answers
   const [answersInitialized, setAnswersInitialized] = useState(false); // 🔥 NEW: Track if initial answers are loaded
   const answersRef = useRef<Record<string, any>>({}); // ✅ NEW: Ref to always access latest answers
@@ -1348,6 +1383,7 @@ useEffect(() => {
   const [timeLeft, setTimeLeft] = useState(duration * 60);
   const [showExamInfoDialog, setShowExamInfoDialog] = useState(false);
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
+  const [validationAlert, setValidationAlert] = useState<string | null>(null);
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus>(SUBMIT_STATUS.IDLE);
   const [submitMessage, setSubmitMessage] = useState('');
   const [showActivityMonitorDialog, setShowActivityMonitorDialog] = useState(false);
@@ -1373,6 +1409,7 @@ useEffect(() => {
   
   // ==================== MONITORING STATE ====================
   const [violations, setViolations] = useState<Violation[]>([]);
+  const [violationBlink, setViolationBlink] = useState(false);
   
   // ==================== PER-QUESTION VIOLATION TRACKING ====================
   // Track violations grouped by question ID
@@ -1476,7 +1513,7 @@ useEffect(() => {
     // ✅ CREATE PLACEHOLDER ON-DEMAND (when student views question)
     const currentQ = questions[currentQuestionIndex];
     if (currentQ && attempt?.attemptId) {
-      const hasResponse = attempt.responses.some(
+      const hasResponse = (attempt.responses || []).some(
         (r) => r.questionId === currentQ.id
       );
       
@@ -1689,7 +1726,9 @@ useEffect(() => {
         // ✅ Save to localStorage as backup
         localStorage.setItem(VIOLATIONS_TRACKING_KEY, JSON.stringify(groupedViolations));
         
-        // console.log('✅ Loaded', totalViolationCount, 'violations from question-level data');
+        // 🔥 Blink violation icon for 5 seconds on reload
+        setViolationBlink(true);
+        setTimeout(() => setViolationBlink(false), 10000);
       } else {
         // console.log('📭 No violations found in responses');
         // Clear localStorage if no violations
@@ -1835,6 +1874,67 @@ useEffect(() => {
 
   
   // Track if cleanup has completed (starts true, set to false when cleanup begins)
+  
+  // ── BACKUP FUNCTION: Save dirty answers to localStorage ──
+  const saveBackupToLocalStorage = useCallback(() => {
+    if (!attempt?.attemptId) return;
+    const backupKey = `examBackup_${examId}_${userId}`;
+    const store = studentWorkStore.current;
+    const dirtyEntries: Record<string, any> = {};
+    let hasDirty = false;
+    
+    for (const [qId, ws] of Object.entries(store)) {
+      if (!ws.dirty) continue;
+      hasDirty = true;
+      
+      if (ws.type === QUESTION_TYPES.CODE || ws.type === QUESTION_TYPES.SQL) {
+        dirtyEntries[qId] = { answer: ws.codePerLanguage, language: ws.selectedLanguage, type: 'code', timestamp: Date.now() };
+      } else if (ws.type === QUESTION_TYPES.MCQ) {
+        dirtyEntries[qId] = { answer: ws.selectedOptions, timestamp: Date.now() };
+      } else if (ws.type === QUESTION_TYPES.DESCRIPTIVE) {
+        dirtyEntries[qId] = { answer: ws.descriptiveHtml, timestamp: Date.now() };
+      } else if (ws.type === QUESTION_TYPES.FITB) {
+        dirtyEntries[qId] = { answer: ws.fillBlanks, timestamp: Date.now() };
+      } else if (ws.type === QUESTION_TYPES.JUMBLED) {
+        dirtyEntries[qId] = { answer: ws.jumbledOrder, timestamp: Date.now() };
+      } else if (ws.type === QUESTION_TYPES.LIKERT) {
+        dirtyEntries[qId] = { answer: ws.likertValue, timestamp: Date.now() };
+      }
+    }
+    
+    if (hasDirty) {
+      try {
+        const existing = JSON.parse(localStorage.getItem(backupKey) || '{}');
+        const merged = { ...existing, answers: { ...(existing.answers || {}), ...dirtyEntries }, updatedAt: Date.now() };
+        localStorage.setItem(backupKey, JSON.stringify(merged));
+      } catch (_) { /* ignore */ }
+    }
+  }, [attempt?.attemptId, examId, userId]);
+
+  // ── PERIODIC BACKUP: Every 10 seconds ──
+  useEffect(() => {
+    if (!attempt?.attemptId) return;
+    const backupInterval = setInterval(saveBackupToLocalStorage, 10000);
+    return () => clearInterval(backupInterval);
+  }, [attempt?.attemptId, saveBackupToLocalStorage]);
+
+  // ── EXIT BACKUP: Save on page exit / tab switch ──
+  useEffect(() => {
+    if (!attempt?.attemptId) return;
+    
+    const handleBeforeUnload = () => saveBackupToLocalStorage();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') saveBackupToLocalStorage();
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [attempt?.attemptId, saveBackupToLocalStorage]);
   const [isCleanupComplete, setIsCleanupComplete] = useState(true);
   
 // Load saved answers when attempt is initialized OR when responses change
@@ -1872,79 +1972,68 @@ useEffect(() => {
         return;
       }
       
-      // ==================== STEP 1: Load from Firebase (DB) — PRIMARY SOURCE ====================
+      
+      // ==================== STEP 1: Load from localStorage → fill in-memory ====================
       let answersMap: Record<string, any> = {};
+      const sourceMap: Record<string, 'db' | 'local'> = {};
       
-      if (attempt.responses && attempt.responses.length > 0) {
-        // console.log('\n📥 STEP 1: Loading from Firebase (DB):', attempt.responses.length, 'responses');
-        
-        for (const response of attempt.responses) {
-          if (response.studentAnswer === null || response.studentAnswer === undefined) continue;
-          
-          const questionId = (response as any).questionId;
-          if (!questionId) {
-            console.error(`  ❌ Response missing questionId for questionNo ${response.questionNo} — SKIPPED`);
-            continue;
-          }
-          
-          const question = questions.find(q => q.id === questionId);
-          if (!question) {
-            console.error(`  ❌ Question not found for questionId: ${questionId} — SKIPPED`);
-            continue;
-          }
-          
-          answersMap[questionId] = response.studentAnswer;
-          // console.log(`  ✅ DB → Q${question.questionNo} (ID: ${questionId})`);
-        }
-        
-        // console.log(`\n✅ Loaded ${Object.keys(answersMap).length} answers from DB`);
-      } else {
-        // console.log('📭 No responses in Firebase');
-      }
-      
-      // ==================== STEP 2: localStorage fallback — ONLY for questions NOT in DB ====================
-      // Check offline queue backup (keyed by questionId)
+      // 1a: Offline queue backup
       try {
         const offlineBackup = offlineQueueService.loadAnswersFromBackup(attempt.attemptId);
-        if (Object.keys(offlineBackup).length > 0) {
-          // console.log('\n📦 STEP 2: Checking offline backup (by questionId):', Object.keys(offlineBackup).length, 'entries');
-          
-          for (const [questionId, entry] of Object.entries(offlineBackup)) {
-            // Only use backup if DB doesn't have this answer
-            if (!answersMap[questionId]) {
-              const question = questions.find(q => q.id === questionId);
-              if (question) {
-                const backupAnswer = entry?.answer !== undefined ? entry.answer : entry;
-                answersMap[questionId] = backupAnswer;
-                // console.log(`  ✅ Offline backup → Q${question.questionNo} (ID: ${questionId}) — not in DB`);
-              }
-            }
-          }
+        for (const [questionId, entry] of Object.entries(offlineBackup)) {
+          const question = questions.find(q => q.id === questionId);
+          if (!question) continue;
+          const backupAnswer = entry?.answer !== undefined ? entry.answer : entry;
+          answersMap[questionId] = backupAnswer;
+          sourceMap[questionId] = 'local';
         }
       } catch (error) {
         console.error('❌ Failed to load offline backup:', error);
       }
       
-      // Also check periodic backup (keyed by questionId)
+      // 1b: Periodic backup (examBackup_)
       try {
         const backupKey = `examBackup_${examId}_${userId}`;
         const backup = localStorage.getItem(backupKey);
-        
         if (backup) {
           const backupData = JSON.parse(backup);
           if (backupData.answers && typeof backupData.answers === 'object') {
-            // console.log('\n📦 STEP 2b: Checking periodic backup:', Object.keys(backupData.answers).length, 'entries');
-            
             for (const [questionId, backupEntry] of Object.entries(backupData.answers as Record<string, any>)) {
-              // Only use backup if DB doesn't have this answer
-              if (!answersMap[questionId]) {
-                const question = questions.find(q => q.id === questionId);
-                if (question) {
-                  const backupAnswer = backupEntry?.answer !== undefined ? backupEntry.answer : backupEntry;
-                  answersMap[questionId] = backupAnswer;
-                  // console.log(`  ✅ Periodic backup → Q${question.questionNo} (ID: ${questionId}) — not in DB`);
+              const question = questions.find(q => q.id === questionId);
+              if (!question) continue;
+              
+              if (backupEntry?.type === 'code' && (question.type === QUESTION_TYPES.CODE || question.type === QUESTION_TYPES.SQL)) {
+                const ws = getWorkState(question);
+                if (backupEntry.language) ws.selectedLanguage = backupEntry.language;
+                if (typeof backupEntry.answer === 'object' && !Array.isArray(backupEntry.answer)) {
+                  for (const [lang, code] of Object.entries(backupEntry.answer)) {
+                    ws.codePerLanguage[lang] = code as string;
+                  }
+                } else if (typeof backupEntry.answer === 'string' && backupEntry.language) {
+                  ws.codePerLanguage[backupEntry.language] = backupEntry.answer;
                 }
+                ws.dirty = true;
+                answersMap[questionId] = ws.codePerLanguage[ws.selectedLanguage] || '';
+              } else {
+                const backupAnswer = backupEntry?.answer !== undefined ? backupEntry.answer : backupEntry;
+                answersMap[questionId] = backupAnswer;
+                // Populate store for non-code types so dirty flag works
+                const ws = getWorkState(question);
+                const qType = question.type.toLowerCase();
+                if (qType === QUESTION_TYPES.MCQ && Array.isArray(backupAnswer)) {
+                  ws.selectedOptions = backupAnswer;
+                } else if (qType === QUESTION_TYPES.DESCRIPTIVE && typeof backupAnswer === 'string') {
+                  ws.descriptiveHtml = backupAnswer;
+                } else if (qType === QUESTION_TYPES.FITB && Array.isArray(backupAnswer)) {
+                  ws.fillBlanks = backupAnswer;
+                } else if (qType === QUESTION_TYPES.JUMBLED && Array.isArray(backupAnswer)) {
+                  ws.jumbledOrder = backupAnswer;
+                } else if (qType === QUESTION_TYPES.LIKERT && typeof backupAnswer === 'string') {
+                  ws.likertValue = backupAnswer;
+                }
+                ws.dirty = true;
               }
+              if (!sourceMap[questionId]) sourceMap[questionId] = 'local';
             }
           }
         }
@@ -1952,39 +2041,79 @@ useEffect(() => {
         console.error('❌ Failed to load periodic backup:', error);
       }
       
-      // console.log('\n🎯 FINAL ANSWERS STATE:');
-      // console.log('  - Total answers:', Object.keys(answersMap).length);
-      // Object.entries(answersMap).forEach(([qId, _ans]) => {
-        // const _q = questions.find(q => q.id === qId);
-        // console.log(`  - Q${q?.questionNo || '?'} (${qId}): ${typeof ans === 'string' ? ans.slice(0, 50) + '...' : JSON.stringify(ans)}`);
-      // });
-      
-      // ✅ FIX: Merge Firebase answers with existing local answers instead of full replacement
-      // This prevents locally-submitted answers from being lost when Firebase listener 
-      // triggers a reload before the write is reflected back
-      setAnswers(prev => {
-        let result: Record<string, any>;
-        if (!answersInitialized) {
-          // First load (or after reset): Firebase is the source of truth
-          // console.log('  📥 First load — using Firebase answers as base');
-          result = answersMap;
-        } else {
-          // Subsequent reloads (triggered by responses.length change):
-          // Keep ALL local answers, only ADD new answers from Firebase that don't exist locally
-          result = { ...prev };
-          for (const [qId, firebaseAnswer] of Object.entries(answersMap)) {
-            if (!(qId in prev)) {
-              // New answer from Firebase that we don't have locally (e.g., from another device/tab)
-              result[qId] = firebaseAnswer;
-              // const _q = questions.find(q => q.id === qId);
-              // console.log(`  📥 Added new Firebase answer for Q${q?.questionNo || '?'}`);
+      // ==================== STEP 2: Load from DB → overwrite in-memory + update localStorage ====================
+      if (attempt.responses && attempt.responses.length > 0) {
+        const backupKey = `examBackup_${examId}_${userId}`;
+        let backupData: any = {};
+        try {
+          backupData = JSON.parse(localStorage.getItem(backupKey) || '{}');
+          if (!backupData.answers) backupData.answers = {};
+        } catch { backupData = { answers: {} }; }
+        
+        for (const response of attempt.responses) {
+          if (response.studentAnswer === null || response.studentAnswer === undefined) continue;
+          const questionId = (response as any).questionId;
+          if (!questionId) continue;
+          const question = questions.find(q => q.id === questionId);
+          if (!question) continue;
+          
+          // DB overwrites localStorage answer
+          answersMap[questionId] = response.studentAnswer;
+          sourceMap[questionId] = 'db';
+          
+          // Update localStorage with DB data
+          if (question.type === QUESTION_TYPES.CODE || question.type === QUESTION_TYPES.SQL) {
+            const lang = ((response as any).programmingLanguage || '').toLowerCase();
+            if (lang) {
+              const existing = backupData.answers[questionId];
+              if (existing?.type === 'code' && typeof existing.answer === 'object') {
+                existing.answer[lang] = response.studentAnswer;
+                existing.language = lang;
+              } else {
+                backupData.answers[questionId] = { answer: { [lang]: response.studentAnswer }, language: lang, type: 'code', timestamp: Date.now() };
+              }
+              const ws = getWorkState(question);
+              ws.codePerLanguage[lang] = response.studentAnswer as string;
+              ws.selectedLanguage = lang;
+              ws.savedToDb = true;
+              // Only mark clean if no other unsaved languages exist in store
+              const hasUnsavedLangs = Object.keys(ws.codePerLanguage).some(k => k !== lang);
+              ws.dirty = hasUnsavedLangs;
             }
-            // If local already has this answer, keep local version (it's more recent)
+          } else {
+            backupData.answers[questionId] = { answer: response.studentAnswer, timestamp: Date.now() };
+            // DB answer loaded — mark store clean
+            const ws = getWorkState(question);
+            const qType = question.type.toLowerCase();
+            if (qType === QUESTION_TYPES.MCQ && Array.isArray(response.studentAnswer)) {
+              ws.selectedOptions = response.studentAnswer;
+            } else if (qType === QUESTION_TYPES.DESCRIPTIVE && typeof response.studentAnswer === 'string') {
+              ws.descriptiveHtml = response.studentAnswer;
+            } else if (qType === QUESTION_TYPES.FITB && Array.isArray(response.studentAnswer)) {
+              ws.fillBlanks = response.studentAnswer;
+            } else if (qType === QUESTION_TYPES.JUMBLED && Array.isArray(response.studentAnswer)) {
+              ws.jumbledOrder = response.studentAnswer;
+            } else if (qType === QUESTION_TYPES.LIKERT && typeof response.studentAnswer === 'string') {
+              ws.likertValue = response.studentAnswer;
+            }
+            ws.savedToDb = true;
+            ws.dirty = false;
           }
         }
-        // 🔥 CRITICAL: Sync answersRef immediately so useLayoutEffect reads fresh data
-        answersRef.current = result;
-        return result;
+        
+        // Write merged data back to localStorage
+        try {
+          backupData.updatedAt = Date.now();
+          localStorage.setItem(backupKey, JSON.stringify(backupData));
+        } catch { /* ignore */ }
+      }
+      
+      // ==================== STEP 3: Set state ====================
+      setAnswerSource(sourceMap);
+      
+      setAnswers(() => {
+        answersRef.current = answersMap;
+        return answersMap;
       });
       setAnswersInitialized(true);
       // console.log('✅ answersInitialized set to TRUE');
@@ -2012,37 +2141,40 @@ useEffect(() => {
         }
       }
 
-      // ✅ Restore likert answers from answersMap into likertAnswers state/ref
+      // ✅ Restore likert answers from answersMap into likertAnswers state/ref AND store
       const restoredLikertAnswers: Record<string, string> = {};
       Object.entries(answersMap).forEach(([questionId, answer]) => {
         const q = questions.find(q => q.id === questionId);
         if (q && (q as any).type === 'likert' && answer !== null && answer !== undefined && answer !== '') {
           restoredLikertAnswers[questionId] = String(answer);
+          // Populate store
+          const ws = getWorkState(q);
+          ws.likertValue = String(answer);
+          ws.savedToDb = true;
         }
       });
       if (Object.keys(restoredLikertAnswers).length > 0) {
         likertAnswersRef.current = restoredLikertAnswers;
         setLikertAnswers(restoredLikertAnswers);
-        // console.log('✅ Restored', Object.keys(restoredLikertAnswers).length, 'likert answers');
       }
 
       // ── DETERMINE EXAM PHASE ON (RE-)ENTRY ────────────────────────────
       // Only relevant for exams that have both likert AND actual questions
-      if (likertOnlyQuestions.length > 0 && questions.length > 0 && likertDurationMins > 0 && attempt.startTime) {
+      if (likertOnlyQuestions.length > 0 && questions.length > 0 && likertDurationMins > 0) {
         const [eh, em] = examTime.split(':').map(Number);
         const scheduledStart = new Date(examDate);
         scheduledStart.setHours(eh, em, 0, 0);
 
-        // Compute when likert window ends:
-        // strict  → scheduledStart + likertDuration (fixed wall-clock)
-        // flexible → attempt.startTime + likertDuration (student gets full time)
-        const st = attempt.startTime instanceof Date
-          ? attempt.startTime
-          : (attempt.startTime as any).toDate();
-
-        const likertWindowEnd = completionPolicy === 'flexible'
-          ? new Date(st.getTime() + likertDurationMins * 60 * 1000)
-          : new Date(scheduledStart.getTime() + likertDurationMins * 60 * 1000);
+        // Use attempt.startTime if available, otherwise use scheduled start
+        let likertWindowEnd: Date;
+        if (attempt.startTime && (completionPolicy === 'flexible' || completionPolicy === 'window')) {
+          const st = attempt.startTime instanceof Date
+            ? attempt.startTime
+            : (attempt.startTime as any).toDate();
+          likertWindowEnd = new Date(st.getTime() + likertDurationMins * 60 * 1000);
+        } else {
+          likertWindowEnd = new Date(scheduledStart.getTime() + likertDurationMins * 60 * 1000);
+        }
 
         const nowMs = Date.now();
         const secsRemaining = Math.floor((likertWindowEnd.getTime() - nowMs) / 1000);
@@ -2122,19 +2254,81 @@ useEffect(() => {
   const [fillBlanksAnswers, setFillBlanksAnswers] = useState<string[]>([]);
   const [jumbledAnswers, setJumbledAnswers] = useState<string[]>([]);
   
-  // ✅ FIX: Refs to access latest answer values in auto-save interval (prevents stale closure)
-  const mcqAnswerRef = useRef<string[]>([]);
-  const descriptiveAnswerRef = useRef<string>('');
-  const fillBlanksAnswersRef = useRef<string[]>([]);
-  const jumbledAnswersRef = useRef<string[]>([]);
+  // ==================== STUDENT WORK STORE (Single Source of Truth) ====================
+  const studentWorkStore = useRef<Record<string, QuestionWorkState>>({});
+  
+  // Helper: Get or create a work state entry for a question — NO FALLBACK on language, raise error
+  const getWorkState = useCallback((question: Question): QuestionWorkState => {
+    if (!studentWorkStore.current[question.id]) {
+      // Determine language — NO silent fallback
+      let defaultLang = '';
+      if (question.type.toLowerCase() === QUESTION_TYPES.SQL) {
+        defaultLang = 'sql';
+      } else if (question.type.toLowerCase() === QUESTION_TYPES.CODE) {
+        if (question.starterCodes && question.starterCodes.length > 0) {
+          defaultLang = question.starterCodes[0].language.toLowerCase();
+        } else if (question.language) {
+          defaultLang = question.language.toLowerCase();
+        } else {
+          console.error(`❌ LANGUAGE NOT SET for code question Q${question.questionNo} (ID: ${question.id}). Fix the question data — no fallback allowed.`);
+          defaultLang = ''; // Will be caught when trying to compile
+        }
+      }
+      
+      studentWorkStore.current[question.id] = {
+        questionId: question.id,
+        questionNo: question.questionNo,
+        type: question.type.toLowerCase(),
+        dirty: false,
+        lastModified: 0,
+        savedToDb: false,
+        selectedLanguage: defaultLang,
+        codePerLanguage: {},
+        selectedOptions: [],
+        descriptiveHtml: '',
+        fillBlanks: [],
+        jumbledOrder: [],
+        likertValue: '',
+      };
+    }
+    return studentWorkStore.current[question.id];
+  }, []);
+
+  // Helper: Get the "answer" from store in the format Firebase expects
+  const getAnswerFromStore = useCallback((questionId: string): any => {
+    const work = studentWorkStore.current[questionId];
+    if (!work || !work.dirty) return undefined;
+    switch (work.type) {
+      case QUESTION_TYPES.CODE:
+      case QUESTION_TYPES.SQL:
+        return work.codePerLanguage[work.selectedLanguage] || '';
+      case QUESTION_TYPES.MCQ:
+        return work.selectedOptions.length > 0 ? work.selectedOptions : undefined;
+      case QUESTION_TYPES.DESCRIPTIVE:
+        return work.descriptiveHtml || undefined;
+      case QUESTION_TYPES.FITB:
+        return work.fillBlanks.length > 0 ? work.fillBlanks : undefined;
+      case QUESTION_TYPES.JUMBLED:
+        return work.jumbledOrder.length > 0 ? work.jumbledOrder : undefined;
+      case QUESTION_TYPES.LIKERT:
+        return work.likertValue || undefined;
+      default:
+        return undefined;
+    }
+  }, []);
+
+  // Helper: Get selected language from store (for compiler and Firebase)
+  const getLanguageFromStore = useCallback((questionId: string): string => {
+    const work = studentWorkStore.current[questionId];
+    if (!work || !work.selectedLanguage) {
+      console.error(`❌ NO LANGUAGE in store for question ${questionId}. Cannot compile or save.`);
+      return '';
+    }
+    return work.selectedLanguage;
+  }, []);
   
   // 🔥 Track initial code length for stable editor key (doesn't change while typing)
   const initialCodeLengthRef = useRef<Record<string, number>>({});
-  const codeInputRef = useRef<string>('');
-  
-  // 🔥 Track which question the user has actively modified (dirty flag per question ID)
-  // Prevents late-arriving Firebase data from overwriting in-progress typing
-  const dirtyQuestionsRef = useRef<Set<string>>(new Set());
   
   // 🔥 Track answer load version for RichTextEditor key (increments only when loading from Firebase)
   const answerLoadVersionRef = useRef<Record<string, number>>({});
@@ -2149,9 +2343,8 @@ useEffect(() => {
   // Code execution states
   const [codeOutput, setCodeOutput] = useState('');
   const [isRunning, setIsRunning] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState('cpp'); // Default to C++
-  const selectedLanguagePerQuestion = useRef<Record<string, string>>({}); // ✅ Track language per question
-  const [langSwitchConfirm, setLangSwitchConfirm] = useState<{ newLang: string; starterCode: string } | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState('cpp'); // UI display — synced FROM store on question change
+  // Language switch is handled directly in dropdown onChange — no confirmation needed
   const [activeCodeTab, setActiveCodeTab] = useState<'output' | 'stdin'>('output'); // Tabbed panel
   
   // Resizer states
@@ -2166,6 +2359,8 @@ useEffect(() => {
   const [executionMemory, setExecutionMemory] = useState('0KB');
 
   const currentQuestion = questions[currentQuestionIndex];
+  // Track for Monaco onDidChangeModelContent closure (can't access React state)
+  if (currentQuestion?.id) (window as any).__currentQuestionId = currentQuestion.id;
 
   const handleViewImages = () => {
     if (currentQuestion.imageUrls && currentQuestion.imageUrls.length > 0) {
@@ -2176,10 +2371,6 @@ useEffect(() => {
   };
 
   // ✅ FIX: Keep answer refs in sync with state (for auto-save interval)
-  useEffect(() => { mcqAnswerRef.current = mcqAnswer; }, [mcqAnswer]);
-  useEffect(() => { descriptiveAnswerRef.current = descriptiveAnswer; }, [descriptiveAnswer]);
-  useEffect(() => { fillBlanksAnswersRef.current = fillBlanksAnswers; }, [fillBlanksAnswers]);
-  useEffect(() => { jumbledAnswersRef.current = jumbledAnswers; }, [jumbledAnswers]);
 
   // ✅ NEW: Calculate visible test cases for UI display
   const visibleTestCases = currentQuestion?.testCases 
@@ -2573,180 +2764,113 @@ useEffect(() => {
   // ==================== SAVE CURRENT ANSWER ====================
   const saveCurrentAnswer = useCallback(async (_syncToBackend: boolean = false) => {
 
-  // 🔥 CAPTURE ID IMMEDIATELY — prevents saving Question A's answer into Question B's slot
-  // if the user navigates while this async function is still executing
   const savingQuestion = currentQuestion;
   const savingQuestionId = currentQuestion?.id;
 
   if (!savingQuestion || !savingQuestionId) {
-    // console.warn('⚠️ Cannot save answer: currentQuestion is undefined');
     return;
   }
 
-  let answer: any;
+  // Read answer from store — if not dirty, read directly from store fields
+  const work = studentWorkStore.current[savingQuestionId];
+  let answer: any = work ? getAnswerFromStore(savingQuestionId) : undefined;
   
-  // Normalize question type to lowercase for matching
+  // If dirty is false but store has data, use it (re-save scenario)
+  if (answer === undefined && work) {
+    const qType = savingQuestion.type.toLowerCase();
+    if ((qType === QUESTION_TYPES.CODE || qType === QUESTION_TYPES.SQL) && work.codePerLanguage[work.selectedLanguage]) {
+      answer = work.codePerLanguage[work.selectedLanguage];
+    } else if (qType === QUESTION_TYPES.MCQ && work.selectedOptions.length > 0) {
+      answer = work.selectedOptions;
+    } else if (qType === QUESTION_TYPES.DESCRIPTIVE && work.descriptiveHtml) {
+      answer = work.descriptiveHtml;
+    } else if (qType === QUESTION_TYPES.FITB && work.fillBlanks.length > 0) {
+      answer = work.fillBlanks;
+    } else if (qType === QUESTION_TYPES.JUMBLED && work.jumbledOrder.length > 0) {
+      answer = work.jumbledOrder;
+    } else if (qType === QUESTION_TYPES.LIKERT && work.likertValue) {
+      answer = work.likertValue;
+    }
+  }
+  
   const questionType = savingQuestion.type.toLowerCase();
+
+  // ==================== VALIDATION: User must actually provide an answer ====================
   
-  switch (questionType) {
-    case QUESTION_TYPES.SQL:
-    case QUESTION_TYPES.CODE:
-      answer = codeInputRef.current || (editorRef.current ? editorRef.current.getValue() : codeInput);
-      break;
-    case QUESTION_TYPES.MCQ:
-      answer = mcqAnswerRef.current;
-      // console.log('🔍 MCQ Answer Debug:');
-      // console.log('  - mcqAnswer state:', mcqAnswer);
-      // console.log('  - Array?', Array.isArray(mcqAnswer));
-      // console.log('  - Length:', mcqAnswer.length);
-      if (mcqAnswer.length > 0) {
-        // console.log('  - First item:', mcqAnswer[0]);
-        // console.log('  - First item type:', typeof mcqAnswer[0]);
-        // console.log('  - Is valid option?', savingQuestion.options?.includes(mcqAnswer[0]));
-        
-        // ✅ CRITICAL: Validate MCQ answer is actually from the options array
-        const invalidAnswers = mcqAnswer.filter(ans => !savingQuestion.options?.includes(ans));
-        if (invalidAnswers.length > 0) {
-          console.error('❌ CRITICAL ERROR: MCQ answer contains invalid options!');
-          console.error('   Question:', savingQuestion.questionNo);
-          console.error('   Invalid answers:', invalidAnswers);
-          console.error('   Valid options:', savingQuestion.options);
-          console.error('   All states:');
-          console.error('   - mcqAnswer:', mcqAnswer);
-          console.error('   - jumbledAnswers:', jumbledAnswers);
-          console.error('   - fillBlanksAnswers:', fillBlanksAnswers);
-          alert(`ERROR: Invalid MCQ answer detected for Q${savingQuestion.questionNo}. Please reselect your answer.`);
-          return; // Don't save invalid answer
-        }
-      }
-      break;
-    case QUESTION_TYPES.DESCRIPTIVE:
-      answer = descriptiveAnswerRef.current;
-      // console.log('📝 DESCRIPTIVE Answer Details:');
-      // console.log('  - Full HTML:', descriptiveAnswer);
-      // console.log('  - Contains <span data-latex:', descriptiveAnswer.includes('data-latex'));
-      // console.log('  - Contains <span class="math:', descriptiveAnswer.includes('class="math'));
-      break;
-    case QUESTION_TYPES.FITB:
-      answer = fillBlanksAnswersRef.current;  // ✅ Use REF for latest value
-      break;
-    case QUESTION_TYPES.JUMBLED:
-      answer = jumbledAnswersRef.current;
-      break;
-    case QUESTION_TYPES.LIKERT:
-      answer = likertAnswersRef.current[savingQuestion.id] || '';
-      break;
+  // CODE / SQL: check if user typed anything beyond boilerplate
+  if (questionType === QUESTION_TYPES.CODE || questionType === QUESTION_TYPES.SQL) {
+    const code = (typeof answer === 'string') ? answer.trim() : '';
+    const boilerplate = (savingQuestion.boilerplate || '').trim();
+    const isStarterCode = savingQuestion.starterCodes?.some(
+      (sc: any) => sc.code.trim() === code
+    );
+    if (!code || code === boilerplate || isStarterCode) {
+      setValidationAlert(`Please write your code for Q${savingQuestion.questionNo - likertOnlyQuestions.length} before saving.`);
+      setIsSavingAnswer(false);
+      return;
+    }
   }
   
-  // Validate answer is not empty
-  let isEmptyAnswer = false;
-  
-  // 🔍 DEBUG: Log the answer we're trying to save
-  // console.log('🔍 DEBUG - saveCurrentAnswer called:');
-  // console.log('  Question type:', savingQuestion.type);
-  // console.log('  Answer value:', answer);
-  // console.log('  Answer type:', typeof answer);
-  // console.log('  Answer length:', typeof answer === 'string' ? answer.length : 'N/A');
-  // console.log('  descriptiveAnswer state:', descriptiveAnswer);
-
-  // console.log(`Answer: ${answer})`);
-
-
-  if (!answer) {
-    isEmptyAnswer = true;
-  } else if (typeof answer === 'string') {
-    // String answer (Descriptive, Coding)
-    if (savingQuestion.type === QUESTION_TYPES.CODE || savingQuestion.type === QUESTION_TYPES.SQL) {
-      // For coding, allow submission even if code matches boilerplate (student may want partial credit)
-      isEmptyAnswer = !answer.trim();
-    } else if (savingQuestion.type === QUESTION_TYPES.DESCRIPTIVE) {
-      // For descriptive (HTML from RichTextEditor), strip HTML tags and check content
-      const textContent = answer.replace(/<[^>]*>/g, '').trim();
-      isEmptyAnswer = !textContent || textContent === '';
-    } else {
-      isEmptyAnswer = !answer.trim();
+  // MCQ: must select at least one option
+  if (questionType === QUESTION_TYPES.MCQ) {
+    if (!Array.isArray(answer) || answer.length === 0) {
+      setValidationAlert(`Please select an option for Q${savingQuestion.questionNo - likertOnlyQuestions.length} before saving.`);
+      setIsSavingAnswer(false);
+      return;
     }
-  } else if (Array.isArray(answer)) {
-    // Array answer (MCQ, Fill in the Blank, Jumbled)
-    if (answer.length === 0) {
-      isEmptyAnswer = true;
-    } else if (savingQuestion.type === QUESTION_TYPES.FITB) {
-      // For FITB, check if at least one blank is filled
-      isEmptyAnswer = !answer.some((item: string) => item && item.trim() !== '');
+    // Validate selected options are valid
+    const invalidAnswers = answer.filter((ans: string) => !savingQuestion.options?.includes(ans));
+    if (invalidAnswers.length > 0) {
+      setValidationAlert(`Invalid option detected for Q${savingQuestion.questionNo - likertOnlyQuestions.length}. Please reselect your answer.`);
+      setIsSavingAnswer(false);
+      return;
     }
-    // For Jumbled and MCQ, having items in array is enough
   }
   
-  if (isEmptyAnswer) {
-    // console.log('📭 Clearing answer for Q' + savingQuestion.questionNo);
-    
-    // ✅ Show saving state
-    setIsSavingAnswer(true);
-    
-    // ✅ Clear from local state and ref
-    const updatedRef = { ...answersRef.current };
-    delete updatedRef[savingQuestion.id];
-    answersRef.current = updatedRef;
-    
-    setAnswers(prev => {
-      if (prev[savingQuestion.id] !== undefined) {
-        const newAnswers = { ...prev };
-        delete newAnswers[savingQuestion.id];
-        return newAnswers;
-      }
-      return prev;
-    });
-    
-    // ✅ Also clear from Firebase if online
-    if (isOnline && attempt) {
-      try {
-        const questionData = questions.find(q => q.id === savingQuestion.id);
-        if (questionData) {
-          // console.log(`🌐 Clearing answer for Q${savingQuestion.questionNo} from Firebase...`);
-          // ✅ Send empty value based on question type to clear the answer
-          const emptyAnswer = 
-            savingQuestion.type === QUESTION_TYPES.MCQ ? [] :
-            savingQuestion.type === QUESTION_TYPES.FITB ? [] :
-            savingQuestion.type === QUESTION_TYPES.JUMBLED ? [] :
-            '';  // For CODE and DESCRIPTIVE
-          
-          await offlineQueueService.queueAnswer(
-            attempt.attemptId,
-            savingQuestion.id,
-            savingQuestion.questionNo,
-            emptyAnswer,
-            {
-              id: questionData.id,
-              type: questionData.type,
-              questionText: questionData.questionText,
-              maximumMarks: questionData.maxMarks,
-              options: questionData.options,
-              correctAnswers: questionData.correctAnswers,
-              fromPool: questionData.fromPool || false,
-            } as any,
-            {
-              complexity: questionData.complexity || 'easy',
-              chapter: questionData.chapter,
-            } as any,
-            0,
-            bookmarkedQuestions.has(savingQuestion.id),
-            undefined,
-            undefined // ✅ Violations handled by dedicated addViolation()
-          );
-          // console.log(`✅ Answer cleared for Q${savingQuestion.questionNo}`);
-        }
-      } catch (error) {
-        console.error(`❌ Error clearing answer:`, error);
-      }
+  // DESCRIPTIVE: must type something
+  if (questionType === QUESTION_TYPES.DESCRIPTIVE) {
+    const textContent = (typeof answer === 'string') ? answer.replace(/<[^>]*>/g, '').trim() : '';
+    if (!textContent) {
+      setValidationAlert(`Please type your answer for Q${savingQuestion.questionNo - likertOnlyQuestions.length} before saving.`);
+      setIsSavingAnswer(false);
+      return;
     }
-    
-    // ✅ Show visual feedback
-    setLastSavedQuestion(savingQuestion.id);
-    setTimeout(() => setLastSavedQuestion(null), 2000);
-    
-    setIsSavingAnswer(false);
-    return;
   }
+  
+  // FITB: must fill at least one blank
+  if (questionType === QUESTION_TYPES.FITB) {
+    if (!Array.isArray(answer) || !answer.some((item: string) => item && item.trim() !== '')) {
+      setValidationAlert(`Please fill in at least one blank for Q${savingQuestion.questionNo - likertOnlyQuestions.length} before saving.`);
+      setIsSavingAnswer(false);
+      return;
+    }
+  }
+  
+  // JUMBLED: must rearrange (check if order differs from default)
+  if (questionType === QUESTION_TYPES.JUMBLED) {
+    const defaultOrder = savingQuestion.jumbledOptions || savingQuestion.jumbledItems || [];
+    if (!Array.isArray(answer) || answer.length === 0) {
+      setValidationAlert(`Please arrange the items for Q${savingQuestion.questionNo - likertOnlyQuestions.length} before saving.`);
+      setIsSavingAnswer(false);
+      return;
+    }
+    if (JSON.stringify(answer) === JSON.stringify(defaultOrder)) {
+      setValidationAlert(`Please rearrange the items for Q${savingQuestion.questionNo - likertOnlyQuestions.length}. The current order is the same as the original.`);
+      setIsSavingAnswer(false);
+      return;
+    }
+  }
+  
+  // LIKERT: must select a value
+  if (questionType === QUESTION_TYPES.LIKERT) {
+    if (!answer || (typeof answer === 'string' && !answer.trim())) {
+      setValidationAlert(`Please select a response for Q${savingQuestion.questionNo} before saving.`);
+      setIsSavingAnswer(false);
+      return;
+    }
+  }
+  
+  // ==================== PASSED VALIDATION — proceed to save ====================
 
   setIsSavingAnswer(true);
   
@@ -2840,7 +2964,7 @@ useEffect(() => {
             ? [questionData.solution]
             : (questionData as any).correctAnswers,
           programmingLanguage: (questionData.type.toLowerCase() === QUESTION_TYPES.CODE || questionData.type.toLowerCase() === QUESTION_TYPES.SQL)
-            ? selectedLanguage
+            ? getLanguageFromStore(savingQuestion.id)
             : questionData.language,
           testCases: questionData.testCases,
           testStub: questionData.boilerplate,
@@ -2882,6 +3006,21 @@ useEffect(() => {
             ...prev,
             [savingQuestion.id]: answer
           }));
+          
+          // Mark in store that this answer has been saved — reset dirty
+          const savedWork = studentWorkStore.current[savingQuestion.id];
+          if (savedWork) {
+            savedWork.savedToDb = !result.queued;
+            savedWork.dirty = false;
+          }
+          
+          // Mark as DB-sourced for palette color (green instead of orange)
+          if (!result.queued) {
+            setAnswerSource(prev => ({ ...prev, [savingQuestion.id]: 'db' }));
+          }
+          
+          // localStorage backup is NOT deleted here — it's only cleared on exam submit
+          // On re-entry, localStorage serves as backup; DB is primary source
           
           // Show success feedback
           setLastSavedQuestion(savingQuestion.id);
@@ -2949,7 +3088,7 @@ useEffect(() => {
               ? [questionData.solution]  // ✅ For Descriptive & Code: use solution field
               : (questionData as any).correctAnswers,  // ✅ For MCQ, FITB, Jumbled: use correctAnswers array
           programmingLanguage: (questionData.type === QUESTION_TYPES.CODE || questionData.type === QUESTION_TYPES.SQL)
-            ? selectedLanguage
+            ? getLanguageFromStore(savingQuestion.id)
             : questionData.language,
           testCases: questionData.testCases,
           testStub: questionData.boilerplate,
@@ -2982,19 +3121,15 @@ useEffect(() => {
 }, [
   currentQuestion,
   editorRef,
-  codeInput,
-  selectedLanguage,
-  mcqAnswer,
-  descriptiveAnswer,
-  fillBlanksAnswers,
-  jumbledAnswers,
   questionStartTime,
   attempt,
   questionTimeTracking,
   isOnline,
   questions,
   questionViolations,
-  bookmarkedQuestions
+  bookmarkedQuestions,
+  getAnswerFromStore,
+  getLanguageFromStore
 ]);
 
   // ==================== SUBMIT EXAM HANDLER ====================
@@ -3040,31 +3175,62 @@ useEffect(() => {
       });
     }
   }  
-  await saveCurrentAnswer(true);
-  // Get final answers including the current question
+  // ==================== SAVE ALL UNSAVED ANSWERS FROM STORE ====================
+  // Loop through all dirty questions in the store and save them to Firebase
+  const allDirtyQuestionIds = Object.keys(studentWorkStore.current).filter(
+    qId => studentWorkStore.current[qId].dirty
+  );
+  
+  // Build finalAnswers from store (all dirty) + previously saved answers
   const finalAnswers = { ...answers };
-  if (currentQuestion) {
-    let currentAnswer: any;
-    switch (currentQuestion.type) {
-      case QUESTION_TYPES.SQL:
-    case QUESTION_TYPES.CODE:
-        currentAnswer = editorRef.current ? editorRef.current.getValue() : codeInput;
-        break;
-      case QUESTION_TYPES.MCQ:
-        currentAnswer = mcqAnswerRef.current;  // ✅ Use REF for latest value
-        break;
-      case QUESTION_TYPES.DESCRIPTIVE:
-        currentAnswer = descriptiveAnswerRef.current;  // ✅ Use REF for latest value
-        break;
-      case QUESTION_TYPES.FITB:
-        currentAnswer = fillBlanksAnswersRef.current;  // ✅ Use REF for latest value
-        break;
-      case QUESTION_TYPES.JUMBLED:
-        currentAnswer = jumbledAnswersRef.current;  // ✅ Use REF for latest value
-        break;
-    }
-    if (currentAnswer && (typeof currentAnswer === 'string' ? currentAnswer.trim() : true)) {
-      finalAnswers[currentQuestion.id] = currentAnswer;
+  
+  for (const qId of allDirtyQuestionIds) {
+    const storeAnswer = getAnswerFromStore(qId);
+    if (storeAnswer !== undefined) {
+      finalAnswers[qId] = storeAnswer;
+      
+      // Save each unsaved answer to Firebase
+      if (attempt && isOnline) {
+        const questionData = questions.find(q => q.id === qId);
+        if (questionData) {
+          try {
+            await offlineQueueService.queueAnswer(
+              attempt.attemptId,
+              qId,
+              questionData.questionNo,
+              storeAnswer,
+              {
+                id: questionData.id,
+                type: questionData.type,
+                questionText: questionData.questionText,
+                maximumMarks: questionData.maxMarks,
+                options: questionData.options,
+                correctAnswers: (questionData.type.toLowerCase() === QUESTION_TYPES.DESCRIPTIVE || 
+                    questionData.type.toLowerCase() === QUESTION_TYPES.CODE ||
+                    questionData.type.toLowerCase() === QUESTION_TYPES.SQL) && questionData.solution
+                  ? [questionData.solution]
+                  : (questionData as any).correctAnswers,
+                programmingLanguage: (questionData.type.toLowerCase() === QUESTION_TYPES.CODE || questionData.type.toLowerCase() === QUESTION_TYPES.SQL)
+                  ? getLanguageFromStore(qId)
+                  : questionData.language,
+                testCases: questionData.testCases,
+                testStub: questionData.boilerplate,
+                fromPool: questionData.fromPool || false,
+              } as any,
+              {
+                complexity: questionData.complexity || 'easy',
+                chapter: questionData.chapter,
+              } as any,
+              0,
+              bookmarkedQuestions.has(qId),
+              undefined,
+              undefined
+            );
+          } catch (error) {
+            console.error(`❌ Failed to save Q${questionData.questionNo} during submit:`, error);
+          }
+        }
+      }
     }
   }
   
@@ -3226,25 +3392,26 @@ useEffect(() => {
 
    // Timer effect - Calculate remaining time based on exam end time
 useEffect(() => {
+  // Don't calculate time until attempt and questions are fully loaded
+  if (!attempt?.startTime) return;
+  if (questions.length === 0) return;
+  // Don't calculate until likert duration is loaded for exams with personality assessment
+  if (likertOnlyQuestions.length > 0 && likertDurationMins === 0) return;
+  
   const calculateTimeLeft = () => {    
     // Get student's actual start time from attempt
-    const studentStartTime = attempt?.startTime instanceof Date 
+    const studentStartTime = attempt.startTime instanceof Date 
       ? attempt.startTime 
-      : new Date((attempt?.startTime as any)?.toDate?.() || Date.now());
+      : new Date((attempt.startTime as any)?.toDate?.() || Date.now());
 
     // Calculate this student's end time
-    // duration is the actual exam duration (separate from likertDuration)
-    // The exam timer starts from when likert phase ends, so offset startTime by likertDurationMins
-    const effectiveStartTime = (likertOnlyQuestions.length > 0 && likertDurationMins > 0)
-      ? new Date(studentStartTime.getTime() + likertDurationMins * 60 * 1000)
-      : studentStartTime;
-
+    // calculateStudentEndTime already accounts for likertDurationMins internally
     const endTime = calculateStudentEndTime(
       examDate,
       examTime || '00:00',
       duration,
       completionPolicy,
-      effectiveStartTime,
+      studentStartTime,
       likertDurationMins
     );
     
@@ -3253,6 +3420,7 @@ useEffect(() => {
     const difference = end - now;
     
     const secondsLeft = Math.floor(difference / 1000);
+    
     
     if (secondsLeft <= 0) {
       setTimeLeft(0);
@@ -3277,6 +3445,10 @@ useEffect(() => {
       return;
     }
   
+  // Timer is positive — if overlay was shown due to stale calculation, dismiss it
+  if (showTimeExpiredOverlay) {
+    setShowTimeExpiredOverlay(false);
+  }
   setTimeLeft(secondsLeft);
 
     // Show 15-minute warning (900 seconds = 15 minutes)
@@ -3610,136 +3782,12 @@ useEffect(() => {
   }, [isOnline, cleanupOfflineQueue, offlineEventQueue.length]);
 
   // Auto-save current answer to Firebase every 60 seconds when online
-// WITH DIRTY FLAG - Only save if answer actually changed!
-useEffect(() => {
-  if (!isOnline || !currentQuestion || !attempt?.attemptId || attemptLoading || !answersInitialized) {
-    return;
-  }
-  
-  // console.log('⏰ AUTO-SAVE STARTED at', new Date().toLocaleTimeString(), '- Will save every 60 seconds');
-  
-  const autoSaveInterval = setInterval(() => {
-    // const _triggerTime = new Date().toLocaleTimeString();
-    
-    // ✅ FIX: Get current question index from REF (not stale closure)
-    const currentIdx = currentQuestionRef.current.index;
-    const currentQ = questions[currentIdx];
-    if (!currentQ) {
-      // console.log('⏭️ Auto-save skipped - no current question');
-      return;
-    }
-    
-    // console.log('\n⏰ AUTO-SAVE TRIGGER at', triggerTime, '- Question', currentQ.questionNo);
-    
-    // ✅ FIX: Get current answer from REFS (not stale closure values)
-    let currentAnswer: any;
-    
-    switch (currentQ.type) {
-      case QUESTION_TYPES.SQL:
-    case QUESTION_TYPES.CODE:
-        // editorRef is already a ref, so this is safe
-        currentAnswer = editorRef.current ? editorRef.current.getValue() : '';
-        break;
-      case QUESTION_TYPES.MCQ:
-        currentAnswer = mcqAnswerRef.current; // ✅ USE REF
-        break;
-      case QUESTION_TYPES.DESCRIPTIVE:
-        currentAnswer = descriptiveAnswerRef.current; // ✅ USE REF
-        break;
-      case QUESTION_TYPES.FITB:
-        currentAnswer = fillBlanksAnswersRef.current; // ✅ USE REF
-        break;
-      case QUESTION_TYPES.JUMBLED:
-        currentAnswer = jumbledAnswersRef.current; // ✅ USE REF
-        break;
-    }
-    
-    // Check if there's an answer
-    let hasAnswer = false;
-    
-    switch (currentQ.type) {
-      case QUESTION_TYPES.SQL:
-    case QUESTION_TYPES.CODE:
-        hasAnswer = currentAnswer && currentAnswer.trim() !== (currentQ.boilerplate || '');
-        break;
-      case QUESTION_TYPES.MCQ:
-        hasAnswer = Array.isArray(currentAnswer) && currentAnswer.length > 0;
-        break;
-      case QUESTION_TYPES.DESCRIPTIVE:
-        hasAnswer = !!currentAnswer && currentAnswer.trim() !== '';
-        break;
-      case QUESTION_TYPES.FITB:
-        hasAnswer = Array.isArray(currentAnswer) && currentAnswer.some((a: string) => a && a.trim() !== '');
-        break;
-      case QUESTION_TYPES.JUMBLED:
-        hasAnswer = Array.isArray(currentAnswer) && currentAnswer.length > 0;
-        break;
-    }
-    
-    if (!hasAnswer) {
-      // console.log('⏭️ Auto-save skipped for Q' + currentQ.questionNo + ' - no answer');
-      return;
-    }
-    
-    // 🔥 DIRTY FLAG CHECK: Compare with last saved answer (use answersRef for latest)
-    const lastSaved = answersRef.current[currentQ.id];
-    const currentSerialized = JSON.stringify(currentAnswer);
-    const lastSavedSerialized = JSON.stringify(lastSaved);
-    
-    if (currentSerialized === lastSavedSerialized) {
-      // const _skipTime = new Date().toLocaleTimeString();
-      // console.log('⏭️ Auto-save SKIPPED at', skipTime, '- Q' + currentQ.questionNo + ' - no changes since last save');
-      return;
-    }
-
-    // const _saveTime = new Date().toLocaleTimeString();
-    // console.log('⏰ Auto-save triggered for Q' + currentQ.questionNo + ' - answer changed!');
-    // console.log('💾 SAVING NOW at', saveTime);
-    // console.log('  - Code length:', currentQ.type === QUESTION_TYPES.CODE || currentQ.type === QUESTION_TYPES.SQL ? currentAnswer?.length : 'N/A');
-    // console.log('  - Last saved length:', currentQ.type === QUESTION_TYPES.CODE || currentQ.type === QUESTION_TYPES.SQL ? lastSaved?.length : 'N/A');
-    saveCurrentAnswer(true);
-  }, 60000); // 60 seconds
-
-  return () => {
-    // console.log('⏰ AUTO-SAVE INTERVAL CLEARED');
-    clearInterval(autoSaveInterval);
-  };
-}, [isOnline, attempt?.attemptId, attemptLoading, answersInitialized]); // ✅ MINIMAL DEPENDENCIES - only recreate when these critical values change
-
 // ✅ Keep answersRef in sync with answers state
 useEffect(() => {
   answersRef.current = answers;
 }, [answers]);
 
-// Periodic backup save (every 60 seconds) - extra safety
-useEffect(() => {
-  const backupInterval = setInterval(() => {
-    const currentAnswers = answersRef.current; // ✅ Use ref to get latest answers
-    if (Object.keys(currentAnswers).length > 0) {
-      try {
-        const backup = {
-          answers: currentAnswers,
-          timestamp: new Date().toISOString(),
-          examId,
-          userId
-        };
-        localStorage.setItem(`examBackup_${examId}_${userId}`, JSON.stringify(backup));
-        // console.log('💾 🔒 Backup save completed:', Object.keys(currentAnswers).length, 'answers');
-      } catch (error) {
-        console.error('❌ Backup save failed:', error);
-      }
-    }
-  }, 60000); // 60 seconds
-  
-  return () => clearInterval(backupInterval);
-}, [examId, userId]);
 
-
-  // ✅ Keep answersRef in sync with answers state
-  useEffect(() => {
-    answersRef.current = answers;
-  }, [answers]);
-  
   // Robust internet connectivity monitoring with actual network checks
   useEffect(() => {
     let failedAttempts = 0;
@@ -3989,297 +4037,269 @@ useEffect(() => {
   const lastLoadedQuestionIdRef = useRef<string | null>(null);
   
   useLayoutEffect(() => {
-    if (!currentQuestion) {
-      // console.log('⏳ No current question yet...');
-      return;
-    }
+    if (!currentQuestion) return;
 
     const isQuestionChange = lastLoadedQuestionIdRef.current !== currentQuestion.id;
 
-    // ════════════════════════════════════════════════════════════════════
-    // DIRTY GUARD: If this is NOT a question change (e.g. answersInitialized toggled)
-    // and the user has already started typing on this question, do NOT touch anything
-    // ════════════════════════════════════════════════════════════════════
-    if (!isQuestionChange && dirtyQuestionsRef.current.has(currentQuestion.id)) {
-      // console.log(`⏭️ Skipping re-load for Q${currentQuestion.questionNo} — user has active edits (dirty)`);
+    // DIRTY GUARD: If NOT a question change and user has active edits, don't touch anything
+    const work = studentWorkStore.current[currentQuestion.id];
+    if (!isQuestionChange && work?.dirty) {
       return;
     }
 
     // ════════════════════════════════════════════════════════════════════
-    // PHASE 1: CLEAR EVERYTHING — prevent any cross-question contamination
+    // PHASE 1: CLEAR — prevent cross-question contamination
     // ════════════════════════════════════════════════════════════════════
 
-    // 🔥 Destroy PGlite instance (each SQL question has its own schema)
     if (pgliteRef.current) {
-      // console.log(`🗑️ Destroying PGlite instance for question change to Q${currentQuestion.questionNo}`);
       try { pgliteRef.current.close(); } catch (e) { /* ignore */ }
       pgliteRef.current = null;
     }
 
-    // 🔥 Reset ALL input fields unconditionally — they will be re-populated below
+    // Reset all UI input fields — they will be re-populated from store below
     setCodeInput('');
-    codeInputRef.current = '';
     setMcqAnswer([]);
-    mcqAnswerRef.current = [];
     setDescriptiveAnswer('');
-    descriptiveAnswerRef.current = '';
     setFillBlanksAnswers([]);
-    fillBlanksAnswersRef.current = [];
     setJumbledAnswers([]);
-    jumbledAnswersRef.current = [];
-
-    // 🔥 Clear the dirty flag for the NEW question (fresh start)
-    if (isQuestionChange) {
-      dirtyQuestionsRef.current.delete(currentQuestion.id);
-    }
 
     // Track which question we last loaded
     lastLoadedQuestionIdRef.current = currentQuestion.id;
 
-    // console.log(`🧹 Cleared ALL answer fields for Q${currentQuestion.questionNo} (type: ${currentQuestion.type})`);
-
     // ════════════════════════════════════════════════════════════════════
-    // PHASE 2: READ saved answer from REF (always latest, never stale)
+    // PHASE 2: Initialize store entry + read saved answer from DB
     // ════════════════════════════════════════════════════════════════════
 
-    // 🔥 CRITICAL: Use answersRef instead of answers state to avoid stale closures
+    const ws = getWorkState(currentQuestion); // creates entry if not exists
     const savedAnswer = answersRef.current[currentQuestion.id];
 
     if (!answersInitialized && savedAnswer) {
-      // console.log('⏳ Waiting for saved answer to be loaded from Firebase...');
-      return;
+      return; // Wait for Firebase answers to load first
     }
 
-    // Allow loading default content for all question types without waiting for attempt
-    const immediateLoadTypes: QuestionType[] = [
-      QUESTION_TYPES.CODE, 
-      QUESTION_TYPES.SQL,
-      QUESTION_TYPES.JUMBLED, 
-      QUESTION_TYPES.DESCRIPTIVE,
-      QUESTION_TYPES.MCQ,
-      QUESTION_TYPES.FITB
-    ];
-    const shouldWaitForAttempt = !immediateLoadTypes.includes(currentQuestion.type);
-
-    if (shouldWaitForAttempt && (!attempt || attemptLoading)) {
-      // console.log('⏳ Waiting for attempt to load before setting question answer...');
+    if ((!attempt || attemptLoading) && currentQuestion.type.toLowerCase() === QUESTION_TYPES.LIKERT) {
       return;
     }
     
     setViewedQuestions(prev => new Set([...prev, currentQuestion.id]));
 
     // ════════════════════════════════════════════════════════════════════
-    // PHASE 3: LOAD the correct answer for the current question type
+    // PHASE 3: LOAD — populate UI from store (if dirty) or from DB/defaults
     // ════════════════════════════════════════════════════════════════════
-      
-      // console.log('\n' + '='.repeat(80));
-      // console.log(`📝 LOADING ANSWER FOR Q${currentQuestion.questionNo}`);
-      // console.log(`  - Question ID: ${currentQuestion.id}`);
-      // console.log(`  - Question Type: ${currentQuestion.type}`);
-      // console.log(`  - Saved answer found?`, savedAnswer ? 'YES' : 'NO');
-      if (savedAnswer) {
-        // console.log(`  - Saved answer type:`, typeof savedAnswer);
-        // console.log(`  - Saved answer preview:`, typeof savedAnswer === 'string' ? savedAnswer.slice(0, 100) + '...' : JSON.stringify(savedAnswer));
-      }
-      // console.log('='.repeat(80) + '\n');
-      
-      switch (currentQuestion.type) {
-        case QUESTION_TYPES.SQL:
-    case QUESTION_TYPES.CODE: {
-          // Auto-set language: local ref (most recent) > saved response > question data
-          const localLang = selectedLanguagePerQuestion.current[currentQuestion.id];
-          const savedResponse = attempt?.responses?.find((r: any) => r.questionId === currentQuestion.id);
-          const savedLang = savedResponse?.programmingLanguage;
-          const defaultLang = currentQuestion.language || 'javascript';
-          if (currentQuestion.type === QUESTION_TYPES.SQL) {
-            setSelectedLanguage('sql');
-          } else if (localLang) {
-            setSelectedLanguage(localLang.toLowerCase());
-          } else if (savedLang) {
-            setSelectedLanguage(savedLang.toLowerCase());
-          } else if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
-            setSelectedLanguage(currentQuestion.starterCodes[0].language.toLowerCase());
-          } else if (defaultLang) {
-            setSelectedLanguage(defaultLang);
-          }
 
-          // Determine the code to load: saved answer > starter code > boilerplate
-          let newCode = (savedAnswer && typeof savedAnswer === 'string') ? savedAnswer : '';
-          if (!newCode) {
-            if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
-              const lang = currentQuestion.type === QUESTION_TYPES.SQL ? 'sql'
-                : currentQuestion.starterCodes[0].language.toLowerCase();
-              const starterCode = currentQuestion.starterCodes.find(
-                (sc: any) => sc.language.toLowerCase() === lang
-              );
-              newCode = starterCode?.code || currentQuestion.boilerplate || '';
-            } else {
-              newCode = currentQuestion.boilerplate || '';
-            }
-          }
-          
-          // Defensive check: Ensure we're not accidentally loading solution
-          if (newCode === currentQuestion.solution && currentQuestion.solution) {
-            console.error('⚠️ CRITICAL ERROR: Attempting to load solution instead of testStub!');
-            newCode = '// Error: No starter code available\n';
-          }
-          
-          // Store initial length for stable editor key
-          initialCodeLengthRef.current[currentQuestion.id] = newCode.length;
-          
-          // SQL: Default placeholder if no code
-          if (!newCode && currentQuestion.type === QUESTION_TYPES.SQL) {
-            newCode = '-- Write your SQL query here\n';
-          }
-          
-          // console.log(`🔧 Setting codeInput for Q${currentQuestion.questionNo}: ${newCode.slice(0, 50)}...`);
-          setCodeInput(newCode);
-          codeInputRef.current = newCode;
-          
-          // Auto-populate customInput with first test case input
-          if (currentQuestion.testCases && currentQuestion.testCases.length > 0 && currentQuestion.testCases[0].input) {
-            const sampleInput = currentQuestion.testCases[0].input;
-            const unescapedInput = sampleInput.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
-            setCustomInput(unescapedInput);
+    switch (currentQuestion.type) {
+      case QUESTION_TYPES.SQL:
+      case QUESTION_TYPES.CODE: {
+        // --- LANGUAGE: store > DB response > question data > ERROR ---
+        let lang = ws.selectedLanguage; // store has it from getWorkState init or previous visit
+        
+        if (!lang) {
+          // Try DB saved response
+          const savedResponse = attempt?.responses?.find((r: any) => r.questionId === currentQuestion.id);
+          if (savedResponse?.programmingLanguage) {
+            lang = savedResponse.programmingLanguage.toLowerCase();
+          } else if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
+            lang = currentQuestion.starterCodes[0].language.toLowerCase();
+          } else if (currentQuestion.language) {
+            lang = currentQuestion.language.toLowerCase();
           } else {
-            setCustomInput('');
+            console.error(`❌ LANGUAGE NOT SET for Q${currentQuestion.questionNo} (ID: ${currentQuestion.id}). Fix the question data.`);
+            lang = '';
           }
-          break;
+          // Save resolved language into store
+          ws.selectedLanguage = lang;
         }
-        case QUESTION_TYPES.MCQ: {
-          // MCQ answer should be an array of actual option text (not indices)
-          if (savedAnswer !== undefined && Array.isArray(savedAnswer)) {
-            // Convert old index-based answers to actual option text
-            const convertedAnswer = savedAnswer.map((item: any) => {
-              if (typeof item === 'string' && /^\d+$/.test(item.trim())) {
-                const numIndex = parseInt(item);
-                if (currentQuestion.options && currentQuestion.options[numIndex]) {
-                  return currentQuestion.options[numIndex];
-                }
-              } else if (typeof item === 'number') {
-                if (currentQuestion.options && currentQuestion.options[item]) {
-                  return currentQuestion.options[item];
-                }
-              }
-              return item;
-            });
-            
-            // Filter out invalid options
-            const validOptions = convertedAnswer.filter((ans: string) => currentQuestion.options?.includes(ans));
-            
-            if (validOptions.length !== convertedAnswer.length) {
-              // const _invalidOptions = convertedAnswer.filter((ans: string) => !currentQuestion.options?.includes(ans));
-              // console.warn(`⚠️ Filtered out ${invalidOptions.length} invalid MCQ options for Q${currentQuestion.questionNo}:`, invalidOptions);
-              // Auto-fix the answers state
-              setAnswers(prev => ({
-                ...prev,
-                [currentQuestion.id]: validOptions
-              }));
-              answersRef.current[currentQuestion.id] = validOptions;
-            }
-            
-            setMcqAnswer(validOptions);
-            mcqAnswerRef.current = validOptions;
-            // console.log(`✅ MCQ Q${currentQuestion.questionNo}: Loaded ${validOptions.length} selected option(s)`);
-          } else if (savedAnswer !== undefined && typeof savedAnswer === 'string') {
-            // Backward compatibility: convert string to array
-            if (/^\d+$/.test(savedAnswer.trim())) {
-              const numIndex = parseInt(savedAnswer);
-              if (currentQuestion.options && currentQuestion.options[numIndex]) {
-                const converted = [currentQuestion.options[numIndex]];
-                setMcqAnswer(converted);
-                mcqAnswerRef.current = converted;
-              } else {
-                // console.warn(`⚠️ Invalid index ${numIndex} for Q${currentQuestion.questionNo}`);
-                setMcqAnswer([]);
-                mcqAnswerRef.current = [];
-              }
-            } else if (currentQuestion.options?.includes(savedAnswer)) {
-              const converted = [savedAnswer];
-              setMcqAnswer(converted);
-              mcqAnswerRef.current = converted;
-            } else {
-              // console.warn(`⚠️ Invalid option "${savedAnswer}" for Q${currentQuestion.questionNo}`);
-              setMcqAnswer([]);
-              mcqAnswerRef.current = [];
-            }
+        
+        if (lang) {
+          setSelectedLanguage(lang);
+        }
+
+        // --- CODE: store per-language > DB saved answer > starter code > boilerplate ---
+        let newCode = '';
+        
+        if (ws.dirty && ws.codePerLanguage[lang]) {
+          // User previously typed on this question — restore from store
+          newCode = ws.codePerLanguage[lang];
+        } else if (savedAnswer && typeof savedAnswer === 'string') {
+          // Saved in DB — load it AND populate store
+          newCode = savedAnswer;
+          ws.codePerLanguage[lang] = savedAnswer;
+          ws.savedToDb = true;
+        } else {
+          // No saved answer — load starter code / boilerplate (but do NOT mark dirty)
+          if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
+            const starterLang = currentQuestion.type === QUESTION_TYPES.SQL ? 'sql' : lang;
+            const starterCode = currentQuestion.starterCodes.find(
+              (sc: any) => sc.language.toLowerCase() === starterLang
+            );
+            newCode = starterCode?.code || currentQuestion.boilerplate || '';
           } else {
-            setMcqAnswer([]);
-            mcqAnswerRef.current = [];
+            newCode = currentQuestion.boilerplate || '';
           }
-          break;
-        }
-        case QUESTION_TYPES.DESCRIPTIVE: {
-          if (savedAnswer !== undefined && typeof savedAnswer === 'string') {
-            setDescriptiveAnswer(savedAnswer);
-            descriptiveAnswerRef.current = savedAnswer;
-            // Only increment version if answer is different from current (prevents unnecessary remounts)
-            answerLoadVersionRef.current[currentQuestion.id] = (answerLoadVersionRef.current[currentQuestion.id] || 0) + 1;
-            // console.log(`✅ Descriptive Q${currentQuestion.questionNo} loaded: ${savedAnswer.substring(0, 50)}...`);
-          } else {
-            if (savedAnswer !== undefined) {
-              console.error(`⚠️ WRONG TYPE: Descriptive Q${currentQuestion.questionNo} has non-string answer:`, typeof savedAnswer);
-            }
-            setDescriptiveAnswer('');
-            descriptiveAnswerRef.current = '';
-            answerLoadVersionRef.current[currentQuestion.id] = (answerLoadVersionRef.current[currentQuestion.id] || 0) + 1;
+          // Pre-populate store per-language with starter code (NOT dirty)
+          if (newCode && lang) {
+            ws.codePerLanguage[lang] = newCode;
           }
-          break;
         }
-        case QUESTION_TYPES.FITB: {
-          const blanksCount = currentQuestion.blanksCount || 
-                             currentQuestion.correctAnswers?.length || 
-                             (currentQuestion.questionText?.match(/_{3,}/g) || []).length || 
-                             0;
-          
-          if (savedAnswer && Array.isArray(savedAnswer)) {
-            // Ensure the array has the right length
-            const padded = [...savedAnswer];
-            while (padded.length < blanksCount) padded.push('');
-            setFillBlanksAnswers(padded.slice(0, Math.max(blanksCount, padded.length)));
-            fillBlanksAnswersRef.current = padded.slice(0, Math.max(blanksCount, padded.length));
-            // console.log(`✅ FITB Q${currentQuestion.questionNo}: Loaded ${savedAnswer.length} answers for ${blanksCount} blanks`);
-          } else {
-            if (savedAnswer) {
-              console.error(`⚠️ WRONG TYPE: FITB Q${currentQuestion.questionNo} has non-array answer:`, typeof savedAnswer);
-            }
-            const empty = Array(blanksCount).fill('');
-            setFillBlanksAnswers(empty);
-            fillBlanksAnswersRef.current = empty;
-            // console.log(`📝 FITB Q${currentQuestion.questionNo}: Initialized ${blanksCount} blank(s)`);
-          }
-          break;
+        
+        // Safety: never load solution
+        if (newCode === currentQuestion.solution && currentQuestion.solution) {
+          console.error('❌ CRITICAL: Attempting to load solution instead of starter code!');
+          newCode = '// Error: No starter code available\n';
         }
-      case QUESTION_TYPES.JUMBLED: {
-          const jumbledItems = currentQuestion.jumbledOptions || currentQuestion.jumbledItems || [];
-          
-          if (savedAnswer && Array.isArray(savedAnswer) && savedAnswer.length > 0) {
-            setJumbledAnswers(savedAnswer);
-            jumbledAnswersRef.current = savedAnswer;
-            // console.log(`✅ Jumbled Q${currentQuestion.questionNo}: Loaded saved answer with ${savedAnswer.length} items`);
-          } else if (savedAnswer && !Array.isArray(savedAnswer)) {
-            console.error(`⚠️ WRONG TYPE: Jumbled Q${currentQuestion.questionNo} has non-array answer:`, typeof savedAnswer);
-            setJumbledAnswers(jumbledItems);
-            jumbledAnswersRef.current = jumbledItems;
-          } else {
-            setJumbledAnswers(jumbledItems);
-            jumbledAnswersRef.current = jumbledItems;
-            // console.log(`📝 Jumbled Q${currentQuestion.questionNo}: Initialized with ${jumbledItems.length} items`);
-          }
-          break;
+        
+        initialCodeLengthRef.current[currentQuestion.id] = newCode.length;
+        
+        if (!newCode && currentQuestion.type === QUESTION_TYPES.SQL) {
+          newCode = '-- Write your SQL query here\n';
         }
+        
+        setCodeInput(newCode);
+        
+        // Custom input from first test case
+        if (currentQuestion.testCases && currentQuestion.testCases.length > 0 && currentQuestion.testCases[0].input) {
+          const sampleInput = currentQuestion.testCases[0].input;
+          setCustomInput(sampleInput.replace(/\\n/g, '\n').replace(/\\t/g, '\t'));
+        } else {
+          setCustomInput('');
+        }
+        break;
       }
-  }, [currentQuestion?.id, answersInitialized]); // 🔥 Only re-run when question ID changes or answers first load
+      case QUESTION_TYPES.MCQ: {
+        let options: string[] = [];
+        
+        if (ws.dirty && ws.selectedOptions.length > 0) {
+          // Restore from store
+          options = ws.selectedOptions;
+        } else if (savedAnswer !== undefined && Array.isArray(savedAnswer)) {
+          // Convert old index-based answers to option text
+          const converted = savedAnswer.map((item: any) => {
+            if (typeof item === 'string' && /^\d+$/.test(item.trim())) {
+              const idx = parseInt(item);
+              return currentQuestion.options?.[idx] || item;
+            } else if (typeof item === 'number') {
+              return currentQuestion.options?.[item] || String(item);
+            }
+            return item;
+          });
+          options = converted.filter((ans: string) => currentQuestion.options?.includes(ans));
+          // Populate store
+          ws.selectedOptions = options;
+          ws.savedToDb = true;
+          if (options.length !== converted.length) {
+            setAnswers(prev => ({ ...prev, [currentQuestion.id]: options }));
+            answersRef.current[currentQuestion.id] = options;
+          }
+        } else if (savedAnswer !== undefined && typeof savedAnswer === 'string') {
+          // Backward compat: string answer
+          if (/^\d+$/.test(savedAnswer.trim())) {
+            const idx = parseInt(savedAnswer);
+            if (currentQuestion.options?.[idx]) {
+              options = [currentQuestion.options[idx]];
+            }
+          } else if (currentQuestion.options?.includes(savedAnswer)) {
+            options = [savedAnswer];
+          }
+          ws.selectedOptions = options;
+          ws.savedToDb = true;
+        }
+        
+        setMcqAnswer(options);
+        break;
+      }
+      case QUESTION_TYPES.DESCRIPTIVE: {
+        let html = '';
+        
+        if (ws.dirty && ws.descriptiveHtml) {
+          html = ws.descriptiveHtml;
+        } else if (savedAnswer !== undefined && typeof savedAnswer === 'string') {
+          html = savedAnswer;
+          ws.descriptiveHtml = savedAnswer;
+          ws.savedToDb = true;
+        } else if (savedAnswer !== undefined) {
+          console.error(`❌ WRONG TYPE: Descriptive Q${currentQuestion.questionNo} has non-string answer:`, typeof savedAnswer);
+        }
+        
+        setDescriptiveAnswer(html);
+        answerLoadVersionRef.current[currentQuestion.id] = (answerLoadVersionRef.current[currentQuestion.id] || 0) + 1;
+        break;
+      }
+      case QUESTION_TYPES.FITB: {
+        const blanksCount = currentQuestion.blanksCount || 
+                           currentQuestion.correctAnswers?.length || 
+                           (currentQuestion.questionText?.match(/_{3,}/g) || []).length || 0;
+        let blanks: string[] = [];
+        
+        if (ws.dirty && ws.fillBlanks.length > 0) {
+          blanks = ws.fillBlanks;
+        } else if (savedAnswer && Array.isArray(savedAnswer)) {
+          const padded = [...savedAnswer];
+          while (padded.length < blanksCount) padded.push('');
+          blanks = padded.slice(0, Math.max(blanksCount, padded.length));
+          ws.fillBlanks = blanks;
+          ws.savedToDb = true;
+        } else {
+          if (savedAnswer) {
+            console.error(`❌ WRONG TYPE: FITB Q${currentQuestion.questionNo} has non-array answer:`, typeof savedAnswer);
+          }
+          blanks = Array(blanksCount).fill('');
+        }
+        
+        setFillBlanksAnswers(blanks);
+        break;
+      }
+      case QUESTION_TYPES.JUMBLED: {
+        const jumbledItems = currentQuestion.jumbledOptions || currentQuestion.jumbledItems || [];
+        let order: string[] = [];
+        
+        if (ws.dirty && ws.jumbledOrder.length > 0) {
+          order = ws.jumbledOrder;
+        } else if (savedAnswer && Array.isArray(savedAnswer) && savedAnswer.length > 0) {
+          order = savedAnswer;
+          ws.jumbledOrder = savedAnswer;
+          ws.savedToDb = true;
+        } else {
+          if (savedAnswer && !Array.isArray(savedAnswer)) {
+            console.error(`❌ WRONG TYPE: Jumbled Q${currentQuestion.questionNo} has non-array answer:`, typeof savedAnswer);
+          }
+          order = jumbledItems;
+        }
+        
+        setJumbledAnswers(order);
+        break;
+      }
+      case QUESTION_TYPES.LIKERT: {
+        let val = '';
+        
+        if (ws.dirty && ws.likertValue) {
+          val = ws.likertValue;
+        } else if (savedAnswer !== undefined && savedAnswer !== null && savedAnswer !== '') {
+          val = String(savedAnswer);
+          ws.likertValue = val;
+          ws.savedToDb = true;
+        }
+        
+        if (val) {
+          likertAnswersRef.current = { ...likertAnswersRef.current, [currentQuestion.id]: val };
+          setLikertAnswers(prev => ({ ...prev, [currentQuestion.id]: val }));
+        }
+        break;
+      }
+    }
+  }, [currentQuestion?.id, answersInitialized]); // Only re-run when question ID changes or answers first load
 
   // DEBUG: Track when codeInput actually changes
   useEffect(() => {
     // console.log(`🔄 codeInput state changed for Q${currentQuestion?.questionNo}, length: ${codeInput.length}, preview: ${codeInput.slice(0, 50)}...`);
   }, [codeInput]);
 
-  // ✅ Track selected language per question so navigating back restores the correct dropdown
+  // ✅ Track selected language per question in store so navigating back restores it
   useEffect(() => {
     if (currentQuestion?.id && (currentQuestion.type === QUESTION_TYPES.CODE || currentQuestion.type === QUESTION_TYPES.SQL)) {
-      selectedLanguagePerQuestion.current[currentQuestion.id] = selectedLanguage;
+      const ws = studentWorkStore.current[currentQuestion.id];
+      if (ws) {
+        ws.selectedLanguage = selectedLanguage;
+      }
     }
   }, [selectedLanguage, currentQuestion?.id]);
 
@@ -4512,6 +4532,10 @@ const formatTime = (seconds: number) => {
 
       // 4. Update State & Local Storage (for UI display)
       setViolations(prev => [...prev, violation]);
+      
+      // 🔥 Blink the violation icon for 5 seconds
+      setViolationBlink(true);
+      setTimeout(() => setViolationBlink(false), 10000);
       
       if (currentQuestionId && currentQuestionId !== 'unknown') {
         setQuestionViolations(prev => {
@@ -4875,7 +4899,6 @@ const formatTime = (seconds: number) => {
       }
       
       // 🔥 ALWAYS clear console and show warning — if DevTools is open they see ONLY this
-      // If DevTools is closed, this is invisible and costs nothing
       try {
         console.clear();
         console.log(
@@ -4889,10 +4912,6 @@ const formatTime = (seconds: number) => {
         console.log(
           '%c ⚠️  This violation has been RECORDED and REPORTED to your examiner. \n ⚠️  Close Developer Tools IMMEDIATELY to continue your exam. \n ⚠️  Repeated violations may result in exam cancellation. ',
           'color: #DC2626; font-size: 16px; font-weight: bold; background: #FEE2E2; padding: 12px 20px; border-left: 6px solid #DC2626; border-radius: 4px; line-height: 2;'
-        );
-        console.log(
-          '%c' + '█'.repeat(80),
-          'color: #DC2626; font-size: 8px;'
         );
       } catch (_) { /* ignore */ }
       
@@ -5030,10 +5049,11 @@ const formatTime = (seconds: number) => {
 
 
   const handlePrevious = async () => {
+    if (isSavingAnswer) return;
+    saveBackupToLocalStorage();
     // Phase boundary: during likert phase, don't go below index 0; during exam phase, don't go into likert questions
     const minIndex = examPhase === 'exam' ? likertOnlyQuestions.length : 0;
     if (currentQuestionIndex > minIndex) {
-      await saveCurrentAnswer(true);
       const newIndex = currentQuestionIndex - 1;
       setCurrentQuestionIndex(newIndex);
       // Clear terminal output
@@ -5052,12 +5072,13 @@ const formatTime = (seconds: number) => {
   };
 
   const handleNext = async () => {
+    if (isSavingAnswer) return;
+    saveBackupToLocalStorage();
     // Phase boundary: during likert phase, don't go past last likert question
     const maxIndex = examPhase === 'likert' && likertOnlyQuestions.length > 0
       ? likertOnlyQuestions.length - 1
       : questions.length - 1;
     if (currentQuestionIndex < maxIndex) {
-      await saveCurrentAnswer(true);
       const newIndex = currentQuestionIndex + 1;
       setCurrentQuestionIndex(newIndex);
       // Clear terminal output
@@ -5076,10 +5097,11 @@ const formatTime = (seconds: number) => {
   };
 
   const handleQuestionClick = async (index: number) => {
+    if (isSavingAnswer) return;
+    saveBackupToLocalStorage();
     // Phase boundary: don't allow crossing into the other phase's questions
     if (examPhase === 'likert' && index >= likertOnlyQuestions.length) return;
     if (examPhase === 'exam' && index < likertOnlyQuestions.length) return;
-    await saveCurrentAnswer(true); // ✅ Save before navigating
     setCurrentQuestionIndex(index);
     // Clear terminal output
     setCodeOutput('');
@@ -5135,6 +5157,12 @@ const calculateStudentEndTime = (
   // Calculate scheduled end time — include likert duration since exam starts AFTER likert
   const scheduledEndTime = new Date(examStartDate.getTime() + (likertDurationMins + duration) * 60 * 1000);
   
+  // WINDOW MODE: the clock starts when THE STUDENT starts. Full duration from their start
+  // time, regardless of the scheduled time (exam just stays open for the attempt window).
+  if (completionPolicy === 'window') {
+    return new Date(studentStartTime.getTime() + (likertDurationMins + duration) * 60 * 1000);
+  }
+  
   // STRICT MODE: Everyone ends at scheduled time (likert + exam duration from scheduled start)
   if (completionPolicy === 'strict') {
     return scheduledEndTime;
@@ -5189,23 +5217,30 @@ const calculateStudentEndTime = (
 
   const getStatusColor = (questionId: string, index: number) => {
     const isCurrent = index === currentQuestionIndex;
-    const isAnswered = !!answers[questionId];
+    const isInDb = !!answers[questionId];
+    const isDirtyInStore = !!studentWorkStore.current[questionId]?.dirty;
+    const isAnswered = isInDb || isDirtyInStore;
     const isBookmarked = bookmarkedQuestions.has(questionId);
     const isViewed = viewedQuestions.has(questionId);
+    const source = answerSource[questionId];
     
-    // Current question shows blue gradient with purple border if bookmarked
     if (isCurrent) {
       return isBookmarked 
         ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg border-[4px] border-purple-500'
         : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg';
     }
     
-    // Other questions show their status
-    if (isAnswered && isBookmarked) return 'bg-green-500 text-white border-[4px] border-purple-500 shadow-md'; // Answered + Bookmarked
-    if (isAnswered) return 'bg-green-500 text-white'; // Just answered
-    if (isBookmarked) return 'bg-purple-500 text-white border-[4px] border-purple-300'; // Just bookmarked
-    if (isViewed) return 'bg-orange-400 text-white'; // Skipped
-    return 'bg-gray-300 text-gray-700'; // Not viewed
+    if (isAnswered && isBookmarked) {
+      return (source === 'db' || isInDb)
+        ? 'bg-green-500 text-white border-[4px] border-purple-500 shadow-md'
+        : 'bg-orange-400 text-white border-[4px] border-purple-500 shadow-md';
+    }
+    if (isAnswered) {
+      return (source === 'db' || isInDb) ? 'bg-green-500 text-white' : 'bg-orange-400 text-white';
+    }
+    if (isBookmarked) return 'bg-purple-500 text-white border-[4px] border-purple-300';
+    if (isViewed) return 'bg-orange-500 text-white'; // Skipped — viewed but not answered
+    return darkMode ? 'bg-gray-700 text-gray-500' : 'bg-gray-300 text-gray-700'; // Not viewed
   };
 
   // Handle Fill in the Blank answer change
@@ -5213,8 +5248,10 @@ const calculateStudentEndTime = (
     const newAnswers = [...fillBlanksAnswers];
     newAnswers[index] = value;
     setFillBlanksAnswers(newAnswers);
-    fillBlanksAnswersRef.current = newAnswers;
-    if (currentQuestion?.id) dirtyQuestionsRef.current.add(currentQuestion.id);
+    if (currentQuestion?.id) {
+      const ws = studentWorkStore.current[currentQuestion.id];
+      if (ws) { ws.fillBlanks = newAnswers; ws.dirty = true; ws.lastModified = Date.now(); }
+    }
   };
 
   // Handle Jumbled drag and drop
@@ -5228,8 +5265,10 @@ const calculateStudentEndTime = (
     newItems.splice(hoverIndex, 0, draggedItem);
     
     setJumbledAnswers(newItems);
-    jumbledAnswersRef.current = newItems;
-    if (currentQuestion?.id) dirtyQuestionsRef.current.add(currentQuestion.id);
+    if (currentQuestion?.id) {
+      const ws = studentWorkStore.current[currentQuestion.id];
+      if (ws) { ws.jumbledOrder = newItems; ws.dirty = true; ws.lastModified = Date.now(); }
+    }
   };
 
   // ==================== PGlite SQL Functions ====================
@@ -5556,8 +5595,8 @@ const calculateStudentEndTime = (
       // console.log('🚀 Running with fresh code, length:', freshCode.length);
       
       const result = await judge0Service.executeCode(
-        freshCode,  // ✅ FRESH FROM EDITOR
-        selectedLanguage,
+        freshCode,
+        currentQuestion?.id ? getLanguageFromStore(currentQuestion.id) : selectedLanguage,
         customInput
       );
 
@@ -5583,6 +5622,8 @@ const calculateStudentEndTime = (
       setIsRunning(false);
     }
   };
+
+  // Helper: Question save status label
 
   const progress = Math.round((stats.answered / (phaseQuestions.length || 1)) * 100);
 
@@ -5643,7 +5684,14 @@ const calculateStudentEndTime = (
     
     const code = editor.getValue();
     const lines = code.split('\n');
-    const commentIndex = lines.findIndex((line: string) => line.trim().includes('Write your code here'));
+    // Find protected region: everything up to and including the "start here" comment
+    // Common markers: "// Your Code Starts Here", "# Your Code Starts Here", "-- Write your SQL", "// Write your code here"
+    const commentIndex = lines.findIndex((line: string) => {
+      const trimmed = line.trim().toLowerCase();
+      return trimmed.includes('your code starts here') || 
+             trimmed.includes('write your code here') ||
+             trimmed.includes('write your sql');
+    });
     
     if (commentIndex !== -1) {
       // commentIndex is 0-based, Monaco is 1-based
@@ -5682,7 +5730,21 @@ const calculateStudentEndTime = (
         } else {
           const val = editor.getValue();
           setCodeInput(val);
-          codeInputRef.current = val;
+          // Write to store per-language
+          const qId = (window as any).__currentQuestionId;
+          if (qId && studentWorkStore.current[qId]) {
+            const ws = studentWorkStore.current[qId];
+            ws.codePerLanguage[ws.selectedLanguage] = val;
+            ws.lastModified = Date.now();
+            // Compare against starter code / boilerplate
+            const trimmed = val.trim();
+            const q = questions[currentQuestionIndex];
+            const isStarter = q?.starterCodes?.some(
+              (sc: any) => sc.code.trim() === trimmed
+            );
+            const isBoilerplate = trimmed === (q?.boilerplate || '').trim();
+            ws.dirty = !!(trimmed && !isStarter && !isBoilerplate);
+          }
         }
       });
       
@@ -5785,45 +5847,30 @@ const calculateStudentEndTime = (
                   value={selectedLanguage}
                   onChange={(e) => {
                     const newLang = e.target.value;
-                    // If question has starterCodes, load the matching boilerplate
-                    if (currentQuestion.starterCodes && currentQuestion.starterCodes.length > 0) {
+                    const ws = currentQuestion?.id ? studentWorkStore.current[currentQuestion.id] : null;
+                    
+                    // Save to localStorage before switching
+                    saveBackupToLocalStorage();
+                    
+                    // STEP 1: Save current code under current language
+                    if (ws) {
                       const currentCode = editorRef.current ? editorRef.current.getValue() : codeInput;
-                      // Only switch boilerplate if current code is empty or matches another starterCode
-                      const normalizeCode = (code: string) => code.replace(/\s+/g, ' ').trim();
-                      const normalizedCurrent = normalizeCode(currentCode);
-                      const isBoilerplate = !currentCode.trim() || currentQuestion.starterCodes.some(
-                        (sc: any) => normalizeCode(sc.code) === normalizedCurrent
-                      );
-                      if (isBoilerplate) {
-                        // Code is unedited — switch silently
-                        setSelectedLanguage(newLang);
-                        const starterCode = currentQuestion.starterCodes.find(
-                          (sc: any) => sc.language.toLowerCase() === newLang
-                        );
-                        if (starterCode) {
-                          setCodeInput(starterCode.code);
-                          if (editorRef.current) {
-                            editorRef.current.setValue(starterCode.code);
-                          }
-                          codeInputRef.current = starterCode.code;
-                          initialCodeLengthRef.current[currentQuestion.id] = starterCode.code.length;
-                        }
-                      } else {
-                        // Code has been edited — show confirmation dialog
-                        const starterCode = currentQuestion.starterCodes.find(
-                          (sc: any) => sc.language.toLowerCase() === newLang
-                        );
-                        if (starterCode) {
-                          setLangSwitchConfirm({ newLang, starterCode: starterCode.code });
-                        } else {
-                          // No starter code for this language — just switch language, keep code
-                          setSelectedLanguage(newLang);
-                        }
-                      }
-                    } else {
-                      // No starterCodes — just switch language
-                      setSelectedLanguage(newLang);
+                      ws.codePerLanguage[ws.selectedLanguage] = currentCode;
                     }
+                    
+                    // STEP 2: Load code for new language — from store or boilerplate
+                    let newCode = ws?.codePerLanguage[newLang] || '';
+                    if (!newCode && currentQuestion.starterCodes) {
+                      const starter = currentQuestion.starterCodes.find(
+                        (sc: any) => sc.language.toLowerCase() === newLang
+                      );
+                      if (starter) newCode = starter.code;
+                    }
+                    
+                    // STEP 3: Switch
+                    if (ws) ws.selectedLanguage = newLang;
+                    setSelectedLanguage(newLang);
+                    setCodeInput(newCode);
                   }}
                   className={`px-2 py-1 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
                     darkMode 
@@ -5845,7 +5892,7 @@ const calculateStudentEndTime = (
                       })
                     : currentQuestion.language
                       ? <option value={currentQuestion.language.toLowerCase()}>{currentQuestion.language}</option>
-                      : <option value="javascript">JavaScript</option>
+                      : (() => { console.error(`❌ No starterCodes and no language set for question ${currentQuestion.id}`); return <option value="">ERROR: No language</option>; })()
                   }
                 </select>
                 )}
@@ -5904,14 +5951,25 @@ const calculateStudentEndTime = (
                     key={`editor-${currentQuestion.id}-${selectedLanguage}`}
                     height="100%"
                     language={selectedLanguage}
-                    value={codeInput}
+                    defaultValue={codeInput}
                     onMount={handleEditorMount}
                     onChange={(val) => {
                       const newVal = val || '';
                       setCodeInput(newVal);
-                      codeInputRef.current = newVal;
-                      // 🔥 Mark this question as dirty — user has actively typed
-                      if (currentQuestion?.id) dirtyQuestionsRef.current.add(currentQuestion.id);
+                      if (currentQuestion?.id) {
+                        const ws = studentWorkStore.current[currentQuestion.id];
+                        if (ws) {
+                          ws.codePerLanguage[ws.selectedLanguage] = newVal;
+                          ws.lastModified = Date.now();
+                          // Compare against starter code / boilerplate — handles undo back to original
+                          const trimmed = newVal.trim();
+                          const isStarter = currentQuestion.starterCodes?.some(
+                            (sc: any) => sc.code.trim() === trimmed
+                          );
+                          const isBoilerplate = trimmed === (currentQuestion.boilerplate || '').trim();
+                          ws.dirty = !!(trimmed && !isStarter && !isBoilerplate);
+                        }
+                      }
                     }}
                     theme={darkMode ? 'custom-dark' : 'custom-light'}
                     options={{
@@ -6159,11 +6217,13 @@ const calculateStudentEndTime = (
                           newAnswer = mcqAnswer.filter(ans => ans !== option);
                         } else {
                           // Add to selection
-                          newAnswer = currentQuestion.multipleCorrect ? [...mcqAnswer, option] : [option];
+                          newAnswer = [...mcqAnswer, option];
                         }
                         setMcqAnswer(newAnswer);
-                        mcqAnswerRef.current = newAnswer; // ✅ Sync ref immediately
-                        if (currentQuestion?.id) dirtyQuestionsRef.current.add(currentQuestion.id);
+                        if (currentQuestion?.id) {
+                          const ws = studentWorkStore.current[currentQuestion.id];
+                          if (ws) { ws.selectedOptions = newAnswer; ws.dirty = true; ws.lastModified = Date.now(); }
+                        }
                       }}
                       className={buttonClasses}
                     >
@@ -6276,8 +6336,10 @@ const calculateStudentEndTime = (
                       value={descriptiveAnswer}
                       onChange={(value: string) => {
                         setDescriptiveAnswer(value);
-                        descriptiveAnswerRef.current = value; // ✅ Sync ref immediately
-                        if (currentQuestion?.id) dirtyQuestionsRef.current.add(currentQuestion.id);
+                        if (currentQuestion?.id) {
+                          const ws = studentWorkStore.current[currentQuestion.id];
+                          if (ws) { ws.descriptiveHtml = value; ws.dirty = true; ws.lastModified = Date.now(); }
+                        }
                       }}
                       darkMode={darkMode}
                       placeholder="Type your answer here... Use the toolbar to format text, add code blocks, images, and more."
@@ -6584,7 +6646,11 @@ const calculateStudentEndTime = (
                     onClick={() => {
                       likertAnswersRef.current = { ...likertAnswersRef.current, [currentQuestion.id]: String(opt.value) };
                       setLikertAnswers(prev => ({ ...prev, [currentQuestion.id]: String(opt.value) }));
-                      saveCurrentAnswer(true);
+                      // Write to store
+                      if (currentQuestion?.id) {
+                        const ws = studentWorkStore.current[currentQuestion.id];
+                        if (ws) { ws.likertValue = String(opt.value); ws.dirty = true; ws.lastModified = Date.now(); }
+                      }
                     }}
                     className={`w-full flex items-center space-x-4 px-4 py-4 rounded-xl border-2 transition-all duration-150 text-left group ${
                       isSelected
@@ -6832,7 +6898,7 @@ const calculateStudentEndTime = (
 
                     <button
                       onClick={handlePrevious}
-                      disabled={currentQuestionIndex === 0}
+                      disabled={currentQuestionIndex === 0 || isSavingAnswer}
                       className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors flex items-center space-x-1.5 ${
                         currentQuestionIndex === 0
                           ? darkMode
@@ -6849,7 +6915,7 @@ const calculateStudentEndTime = (
 
                     <button
                       onClick={handleNext}
-                      disabled={currentQuestionIndex === questions.length - 1}
+                      disabled={currentQuestionIndex === questions.length - 1 || isSavingAnswer}
                       className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors flex items-center space-x-1.5 ${
                         currentQuestionIndex === questions.length - 1
                           ? darkMode
@@ -7201,14 +7267,17 @@ const calculateStudentEndTime = (
               {/* Activity Monitor Icon */}
               <button
                 onClick={() => setShowActivityMonitorDialog(true)}
-                className={`p-1.5 rounded-lg transition-all hover:scale-110 ${
+                className={`relative p-1.5 rounded-lg transition-all hover:scale-110 ${
                   darkMode 
                     ? 'hover:bg-gray-700 text-blue-400 hover:text-blue-300' 
                     : 'hover:bg-blue-50 text-blue-600 hover:text-blue-700'
                 }`}
                 title="View Activity Monitor"
               >
-                <FontAwesomeIcon icon={faChartLine} className="w-4 h-4" />
+                <FontAwesomeIcon icon={faChartLine} className={`w-4 h-4 ${violationBlink ? 'animate-ping' : ''}`} />
+                {violationBlink && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping" />
+                )}
               </button>
               
               <div className={`w-2.5 h-2.5 rounded-full ${isOnline ? 'bg-green-500 animate-pulse-green' : 'bg-red-500'}`}></div>
@@ -7297,6 +7366,9 @@ const calculateStudentEndTime = (
                 </h3>
                 <p className={`text-xs font-medium mt-0.5 ${examPhase === 'likert' ? 'text-purple-500' : 'text-blue-500'}`}>
                   {examPhase === 'likert' ? '🧠 Personality Assessment Phase' : '📝 Actual Exam Phase'}
+                </p>
+                <p className={`text-[10px] mt-1 font-mono ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                  Exam: {examId}{attempt?.attemptId ? ` • Attempt: ${attempt.attemptId}` : ''}
                 </p>
               </div>
               <button 
@@ -7504,83 +7576,32 @@ const calculateStudentEndTime = (
         </div>
       )}
 
-      {/* Language Switch Confirmation Dialog */}
-      {langSwitchConfirm && (() => {
-        const langLabels: Record<string, string> = {
-          cpp: 'C++', c: 'C', java: 'Java', python: 'Python',
-          javascript: 'JavaScript', typescript: 'TypeScript',
-          csharp: 'C#', go: 'Go', rust: 'Rust', ruby: 'Ruby',
-          kotlin: 'Kotlin', swift: 'Swift', sql: 'SQL'
-        };
-        const langLabel = langLabels[langSwitchConfirm.newLang] || langSwitchConfirm.newLang;
-        return (
-          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[10000] p-4">
-            <div className={`rounded-xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all ${
-              darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'
-            }`}>
-              <div className={`px-5 py-4 border-b ${
-                darkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-100 bg-amber-50'
-              }`}>
-                <div className="flex items-center space-x-3">
-                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                    darkMode ? 'bg-amber-900/50 text-amber-400' : 'bg-amber-100 text-amber-600'
-                  }`}>
-                    <FontAwesomeIcon icon={faCode} />
-                  </div>
-                  <div>
-                    <h3 className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      Switch to {langLabel}?
-                    </h3>
-                    <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      Language change
-                    </p>
-                  </div>
+      {/* Validation Alert Dialog */}
+      {validationAlert && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[10000] p-4">
+          <div className={`rounded-xl shadow-2xl w-full max-w-sm overflow-hidden ${darkMode ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}>
+            <div className={`px-5 py-4 border-b ${darkMode ? 'border-gray-700 bg-yellow-900/30' : 'border-gray-100 bg-yellow-50'}`}>
+              <div className="flex items-center space-x-3">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${darkMode ? 'bg-yellow-900/50 text-yellow-400' : 'bg-yellow-100 text-yellow-600'}`}>
+                  <FontAwesomeIcon icon={faCircleInfo} />
                 </div>
-              </div>
-              <div className="px-5 py-4">
-                <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                  Your current code will be replaced with the <span className="font-semibold">{langLabel}</span> starter code. This action cannot be undone.
-                </p>
-              </div>
-              <div className={`px-5 py-3 flex justify-end space-x-2 border-t ${
-                darkMode ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50'
-              }`}>
-                <button
-                  onClick={() => setLangSwitchConfirm(null)}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    darkMode
-                      ? 'text-gray-300 hover:bg-gray-700'
-                      : 'text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  Keep Current
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedLanguage(langSwitchConfirm.newLang);
-                    setCodeInput(langSwitchConfirm.starterCode);
-                    if (editorRef.current) {
-                      editorRef.current.setValue(langSwitchConfirm.starterCode);
-                    }
-                    codeInputRef.current = langSwitchConfirm.starterCode;
-                    if (currentQuestion) {
-                      initialCodeLengthRef.current[currentQuestion.id] = langSwitchConfirm.starterCode.length;
-                    }
-                    setLangSwitchConfirm(null);
-                  }}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    darkMode
-                      ? 'bg-amber-600 hover:bg-amber-500 text-white'
-                      : 'bg-amber-500 hover:bg-amber-600 text-white'
-                  }`}
-                >
-                  Switch to {langLabel}
-                </button>
+                <h3 className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Action Required</h3>
               </div>
             </div>
+            <div className="px-5 py-4">
+              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{validationAlert}</p>
+            </div>
+            <div className={`px-5 py-3 flex justify-end border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+              <button
+                onClick={() => setValidationAlert(null)}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${darkMode ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-blue-500 hover:bg-blue-600 text-white'}`}
+              >
+                OK
+              </button>
+            </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
 
       {/* Submit Confirmation Dialog */}
       {showSubmitDialog && (
@@ -7959,7 +7980,18 @@ const calculateStudentEndTime = (
                     <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Exam Duration:</span>
                   </div>
                   <span className={`text-sm font-semibold ${darkMode ? 'text-yellow-400' : 'text-yellow-600'}`}>
-                    {Math.floor((Date.now() - entryTimeRef.current.getTime()) / 1000)}s
+                    {(() => {
+                      const startTime = attempt?.startTime instanceof Date 
+                        ? attempt.startTime 
+                        : attempt?.startTime 
+                          ? (attempt.startTime as any).toDate?.() || new Date(attempt.startTime as any)
+                          : entryTimeRef.current;
+                      const secs = Math.floor((Date.now() - startTime.getTime()) / 1000);
+                      const hrs = Math.floor(secs / 3600);
+                      const mins = Math.floor((secs % 3600) / 60);
+                      const s = secs % 60;
+                      return hrs > 0 ? `${hrs}h ${mins}m ${s}s` : mins > 0 ? `${mins}m ${s}s` : `${s}s`;
+                    })()}
                   </span>
                 </div>
 

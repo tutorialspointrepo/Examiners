@@ -1,401 +1,212 @@
 import React from 'react';
-import { Mail, Phone, MapPin, Linkedin, Globe, Star, User } from 'lucide-react';
 
-// Modern Template Preview
+// ─── Shared sample data ───────────────────────────────────────────────────────
+const S = {
+  name:     'Alex Johnson',
+  title:    'Senior Product Manager',
+  email:    'alex.j@example.com',
+  phone:    '+1 (555) 234-5678',
+  location: 'San Francisco, CA',
+  linkedin: 'linkedin.com/in/alexj',
+  summary:  'Results-driven professional with 8+ years delivering innovative solutions and leading cross-functional teams to exceed targets.',
+  company:  'TechCorp Inc.',
+  position: 'Senior Product Manager',
+  dates:    'Jan 2020 – Present',
+  degree:   'B.S. Computer Science',
+  school:   'Stanford University',
+  skills:   ['Product Strategy', 'Data Analysis', 'Agile/Scrum', 'SQL', 'Python'],
+  soft:     ['Leadership', 'Communication', 'Problem Solving'],
+  certs:    ['PMP Certified', 'AWS Solutions Architect'],
+  bullets:  [
+    'Led cross-functional team of 12 to launch 3 major product features',
+    'Defined product roadmap aligned with $50M annual revenue targets',
+  ],
+};
+
+// ─── Tiny shared helpers ──────────────────────────────────────────────────────
+const Tag = ({ label, bg, color }: { label: string; bg: string; color: string }) => (
+  <span style={{ display: 'inline-block', background: bg, color, padding: '2px 8px', borderRadius: '14px', fontSize: '10px', fontWeight: 500, margin: '2px' }}>{label}</span>
+);
+
+const SHdr = ({ title, color, weight = 700, extra = {} }: { title: string; color: string; weight?: number; extra?: React.CSSProperties }) => (
+  <div style={{ color, fontSize: '11px', fontWeight: weight, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '7px', ...extra }}>{title}</div>
+);
+
+const SHdrLeft = ({ title, color }: { title: string; color: string }) => (
+  <div style={{ color, fontSize: '11px', fontWeight: 700, borderLeft: `4px solid ${color}`, paddingLeft: '7px', marginBottom: '7px' }}>{title}</div>
+);
+
+const ExpBlock = ({ color, position, company, dates, bullet }: { color: string; position: string; company: string; dates: string; bullet: string }) => (
+  <div style={{ marginBottom: '8px' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <span style={{ fontSize: '11px', fontWeight: 600, color: '#1f2937' }}>{position}</span>
+      <span style={{ fontSize: '10px', color: '#6b7280' }}>{dates}</span>
+    </div>
+    <div style={{ color, fontSize: '10px', fontWeight: 500, margin: '1px 0' }}>{company}</div>
+    <div style={{ color: '#4b5563', fontSize: '10px' }}>• {bullet}</div>
+  </div>
+);
+
+const EduBlock = ({ color, degree, school, dates }: { color: string; degree: string; school: string; dates: string }) => (
+  <div style={{ marginBottom: '7px' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <span style={{ fontSize: '11px', fontWeight: 600, color: '#1f2937' }}>{degree}</span>
+      <span style={{ fontSize: '10px', color: '#6b7280' }}>{dates}</span>
+    </div>
+    <div style={{ color, fontSize: '10px', fontWeight: 500 }}>{school}</div>
+  </div>
+);
+
+const ProfileCircle = ({ size = 44, border = 'white' }: { size?: number; border?: string }) => (
+  <div style={{ width: size, height: size, borderRadius: '50%', background: 'rgba(255,255,255,0.3)', border: `3px solid ${border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+    <span style={{ fontSize: Math.floor(size * 0.4), color: 'rgba(255,255,255,0.8)' }}>👤</span>
+  </div>
+);
+
+// ─── 1. MODERN ────────────────────────────────────────────────────────────────
+// PHP: border-bottom:3px solid primary | plain white bg | sectionHdr with border-bottom
+// Default color: blue → #4f87c7
 export const ModernTemplatePreview: React.FC = () => {
+  const primary = '#4f87c7';
   return (
-    <div className="bg-white p-6 rounded-lg font-['Segoe_UI',Arial,sans-serif] border border-gray-200 shadow-md">
-      <div className="border-b-[3px] border-blue-500 pb-5 mb-6">
-        <h1 className="text-gray-800 m-0 text-[28px] font-bold">John Anderson</h1>
-        <p className="text-blue-500 mt-2 mb-0 text-base font-semibold">Senior Software Engineer</p>
-        <div className="flex flex-wrap gap-4 mt-3 text-[13px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={14} />john.anderson@email.com</span>
-          <span className="flex items-center gap-1.5"><Phone size={14} />+1 (555) 123-4567</span>
-          <span className="flex items-center gap-1.5"><MapPin size={14} />San Francisco, CA</span>
-          <span className="flex items-center gap-1.5"><Linkedin size={14} />LinkedIn</span>
+    <div style={{ fontFamily: 'sans-serif', background: 'white', padding: '18px', fontSize: '12px' }}>
+      {/* Header */}
+      <div style={{ borderBottom: `3px solid ${primary}`, paddingBottom: '12px', marginBottom: '14px' }}>
+        <div style={{ fontSize: '20px', fontWeight: 700, color: '#1f2937' }}>{S.name}</div>
+        <div style={{ color: primary, fontSize: '12px', fontWeight: 600, margin: '3px 0' }}>{S.title}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '10px', color: '#6b7280', marginTop: '4px' }}>
+          <span>✉ {S.email}</span>
+          <span>📞 {S.phone}</span>
+          <span>📍 {S.location}</span>
         </div>
       </div>
-      <div className="mb-5">
-        <h2 className="text-blue-500 text-base mb-2.5 mt-0 font-semibold">Professional Summary</h2>
-        <p className="text-gray-600 leading-relaxed m-0 text-sm">
-          Experienced software engineer with 8+ years developing scalable applications. Expertise in React, Node.js, and cloud technologies with proven track record of delivering high-quality solutions.
-        </p>
+      {/* Summary */}
+      <div style={{ marginBottom: '12px' }}>
+        <div style={{ color: primary, fontSize: '11px', fontWeight: 600, marginBottom: '4px' }}>Professional Summary</div>
+        <div style={{ color: '#4b5563', fontSize: '10px', lineHeight: 1.5 }}>{S.summary}</div>
       </div>
+      {/* Experience */}
+      <div style={{ marginBottom: '12px' }}>
+        <SHdr title="Experience" color={primary} />
+        <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+      </div>
+      {/* Skills */}
       <div>
-        <h2 className="text-blue-500 text-base mb-3 mt-0 font-semibold">Experience</h2>
-        <div className="mb-4">
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[15px] m-0 font-semibold">Senior Software Engineer</h3>
-            <span className="text-gray-500 text-xs font-medium">2021 - Present</span>
-          </div>
-          <p className="text-blue-500 my-0.5 mb-1.5 text-[13px] font-medium">Google • Mountain View, CA</p>
-          <p className="text-gray-600 m-0 text-[13px]">• Led development of microservices architecture serving 10M+ users</p>
+        <SHdr title="Skills" color={primary} />
+        <div style={{ marginBottom: '4px' }}>
+          <span style={{ fontSize: '10px', fontWeight: 600, color: '#374151' }}>Technical Skills</span>
+          <div style={{ marginTop: '3px' }}>{S.skills.slice(0, 4).map(s => <Tag key={s} label={s} bg="#dbeafe" color="#1e40af" />)}</div>
+        </div>
+        <div>
+          <span style={{ fontSize: '10px', fontWeight: 600, color: '#374151' }}>Soft Skills</span>
+          <div style={{ marginTop: '3px' }}>{S.soft.map(s => <Tag key={s} label={s} bg="#f0fdf4" color="#166534" />)}</div>
         </div>
       </div>
     </div>
   );
 };
 
-// Creative Template Preview
-export const CreativeTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-white p-6 rounded-xl font-['Arial',sans-serif] shadow-md">
-      <div className="mb-6">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-[60px] h-[60px] bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center text-white">
-            <Star size={28} />
-          </div>
-          <div>
-            <h1 className="text-gray-800 m-0 text-[26px] font-bold">Sarah Martinez</h1>
-            <p className="text-amber-500 mt-1 mb-0 text-base font-semibold">Creative Director</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-3.5 text-[13px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={14} />sarah.martinez@email.com</span>
-          <span className="flex items-center gap-1.5"><Phone size={14} />+1 (555) 987-6543</span>
-          <span className="flex items-center gap-1.5"><MapPin size={14} />New York, NY</span>
-          <span className="flex items-center gap-1.5"><Globe size={14} />Portfolio</span>
-        </div>
-      </div>
-      <div className="bg-amber-50 p-4 rounded-lg mb-5 border-l-4 border-amber-500">
-        <h2 className="text-amber-800 text-base mb-2.5 mt-0 font-semibold">Creative Vision</h2>
-        <p className="text-gray-700 leading-relaxed m-0 text-sm">
-          Award-winning creative director with 7+ years crafting compelling visual experiences for global brands. Specialized in brand identity, digital campaigns, and user experience design.
-        </p>
-      </div>
-      <div>
-        <h2 className="text-amber-500 text-base mb-3 mt-0 font-semibold">Experience</h2>
-        <div className="mb-4">
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[15px] m-0 font-semibold">Creative Director</h3>
-            <span className="text-gray-500 text-xs font-medium">2020 - Present</span>
-          </div>
-          <p className="text-amber-500 my-0.5 mb-1.5 text-[13px] font-medium">Design Studio Pro • New York, NY</p>
-          <p className="text-gray-600 m-0 text-[13px]">• Led creative campaigns resulting in 40% increase in brand engagement</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Professional Blue Template Preview
+// ─── 2. PROFESSIONAL BLUE ─────────────────────────────────────────────────────
+// PHP: linear-gradient header | 1fr 2fr grid | accent sidebar | profilePic
+// Default color: blue → #4f87c7
 export const ProfessionalBlueTemplatePreview: React.FC = () => {
+  const primary = '#4f87c7'; const secondary = '#6ba3d6'; const accent = '#dbeafe';
   return (
-    <div className="bg-white rounded-lg font-['Arial',sans-serif] border border-gray-200 shadow-md overflow-hidden">
-      {/* Header with Blue Gradient */}
-      <div className="bg-gradient-to-br from-[#4f87c7] to-[#6ba3d6] p-5 text-white">
-        <div className="flex items-center gap-5">
-          <div className="w-20 h-20 rounded-full bg-white p-[3px]">
-            <div className="w-full h-full rounded-full bg-gradient-to-br from-gray-200 to-gray-100 flex items-center justify-center text-gray-500 text-sm font-semibold">
-              Photo
-            </div>
+    <div style={{ fontFamily: 'sans-serif', background: 'white', fontSize: '12px', overflow: 'hidden' }}>
+      {/* Gradient header */}
+      <div style={{ background: `linear-gradient(135deg,${primary} 0%,${secondary} 100%)`, padding: '16px', color: 'white' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <ProfileCircle size={44} />
+          <div>
+            <div style={{ fontSize: '16px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{S.name}</div>
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.9)', marginTop: '2px' }}>{S.title}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '10px', fontSize: '10px', color: 'rgba(255,255,255,0.9)' }}>
+          <span>📞 {S.phone}</span>
+          <span>✉ {S.email}</span>
+          <span>📍 {S.location}</span>
+        </div>
+      </div>
+      {/* 1fr 2fr grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr' }}>
+        {/* Sidebar */}
+        <div style={{ background: accent, padding: '12px', borderRight: `1px solid #bfdbfe` }}>
+          <div style={{ marginBottom: '12px' }}>
+            <div style={{ color: primary, fontSize: '10px', fontWeight: 700, paddingBottom: '2px', marginBottom: '5px' }}>About Me</div>
+            <div style={{ color: '#374151', fontSize: '10px', lineHeight: 1.5 }}>{S.summary.slice(0, 80)}…</div>
+          </div>
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{ color: primary, fontSize: '10px', fontWeight: 700, paddingBottom: '2px', marginBottom: '5px' }}>Education</div>
+            <div style={{ fontSize: '10px', fontWeight: 600, color: '#1f2937' }}>{S.degree}</div>
+            <div style={{ fontSize: '10px', color: '#6b7280' }}>{S.school}</div>
           </div>
           <div>
-            <h1 className="text-white m-0 text-[28px] font-bold uppercase tracking-wide">Tulsi Das</h1>
-            <p className="text-white/90 mt-1.5 mb-0 text-base font-medium">Candidate Success Executive - Operations</p>
+            <div style={{ color: primary, fontSize: '10px', fontWeight: 700, paddingBottom: '2px', marginBottom: '5px' }}>Expertise</div>
+            {S.skills.slice(0, 3).map(s => (
+              <div key={s} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: '#374151', marginBottom: '3px' }}>
+                <span>{s}</span><span style={{ color: primary }}>●●●●○</span>
+              </div>
+            ))}
           </div>
         </div>
-        <div className="mt-4 flex flex-wrap gap-5 text-sm text-white/90">
-          <div className="flex items-center gap-1.5"><Phone size={16} />+91-799232354</div>
-          <div className="flex items-center gap-1.5"><Mail size={16} />tulasi@gmail.com</div>
-          <div className="flex items-center gap-1.5"><MapPin size={16} />Hyderabad</div>
-          <div className="flex items-center gap-1.5"><Linkedin size={16} />LinkedIn Profile</div>
+        {/* Main */}
+        <div style={{ padding: '12px' }}>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 700, paddingBottom: '2px', marginBottom: '8px' }}>Work Experience</div>
+          <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+          <ExpBlock color={primary} position="Product Manager" company="StartupXYZ" dates="2017–2020" bullet={S.bullets[1]} />
         </div>
       </div>
-      {/* Two Column Layout */}
-      <div className="grid grid-cols-[1fr_2fr] min-h-[200px]">
-        <div className="bg-gray-50 p-5 border-r border-gray-200">
-          <div className="mb-5">
-            <h2 className="text-[#4f87c7] text-sm mb-2 mt-0 font-semibold uppercase">About Me</h2>
-            <p className="text-gray-600 text-[13px] leading-relaxed m-0">
-              Dedicated professional with expertise in operations and customer success.
-            </p>
-          </div>
+    </div>
+  );
+};
+
+// ─── 3. CREATIVE ─────────────────────────────────────────────────────────────
+// PHP: colored full-bleed header + overflow:hidden circle decoration + profilePic
+//      accent left-border summary | uppercase section titles
+// Default color: orange → #f97316
+export const CreativeTemplatePreview: React.FC = () => {
+  const primary = '#f97316'; const accent = '#fff7ed';
+  return (
+    <div style={{ fontFamily: 'sans-serif', background: 'white', fontSize: '12px' }}>
+      {/* Full-bleed colored header */}
+      <div style={{ background: primary, padding: '18px', color: 'white', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: -16, right: -16, width: 70, height: 70, borderRadius: '50%', background: 'rgba(255,255,255,0.1)' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <ProfileCircle size={44} />
           <div>
-            <h2 className="text-[#4f87c7] text-sm mb-2 mt-0 font-semibold uppercase">Skills</h2>
-            <div className="flex flex-wrap gap-1.5">
-              {['Operations', 'CRM', 'Analytics'].map(skill => (
-                <span key={skill} className="bg-[#4f87c7]/10 text-[#4f87c7] px-2 py-1 rounded text-xs">{skill}</span>
-              ))}
-            </div>
+            <div style={{ fontSize: '17px', fontWeight: 800 }}>{S.name}</div>
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.85)', marginTop: '2px' }}>{S.title}</div>
           </div>
         </div>
-        <div className="p-5">
-          <h2 className="text-[#4f87c7] text-sm mb-3 mt-0 font-semibold uppercase">Experience</h2>
-          <div>
-            <div className="flex justify-between items-baseline mb-1">
-              <h3 className="text-gray-800 text-[15px] m-0 font-semibold">Success Executive</h3>
-              <span className="text-gray-500 text-xs">2022 - Present</span>
-            </div>
-            <p className="text-[#4f87c7] text-[13px] font-medium my-0.5">TechCorp • Hyderabad</p>
-            <p className="text-gray-600 text-[13px] m-0">• Managed client relationships and operations</p>
-          </div>
+        <div style={{ display: 'flex', gap: '12px', marginTop: '10px', fontSize: '10px', color: 'rgba(255,255,255,0.9)', flexWrap: 'wrap' }}>
+          <span>✉ {S.email}</span>
+          <span>📍 {S.location}</span>
         </div>
       </div>
-    </div>
-  );
-};
-
-// Executive Template Preview
-export const ExecutiveTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-white p-8 font-['Times_New_Roman',serif] shadow-md">
-      <div className="text-center border-b-2 border-gray-800 pb-5 mb-6">
-        <h1 className="text-gray-800 m-0 text-[32px] font-normal tracking-wide">WILLIAM THOMPSON</h1>
-        <p className="text-gray-600 mt-2 mb-0 text-lg font-medium tracking-widest uppercase">Chief Executive Officer</p>
-        <div className="flex justify-center flex-wrap gap-5 mt-4 text-[13px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={14} />william.t@corporation.com</span>
-          <span className="flex items-center gap-1.5"><Phone size={14} />+1 (555) 000-0001</span>
-          <span className="flex items-center gap-1.5"><MapPin size={14} />New York, NY</span>
+      {/* Body */}
+      <div style={{ padding: '16px' }}>
+        {/* Accent left-border summary */}
+        <div style={{ background: accent, borderLeft: `4px solid ${primary}`, borderRadius: '0 8px 8px 0', padding: '10px', marginBottom: '12px' }}>
+          <div style={{ color: '#4b5563', fontSize: '10px', lineHeight: 1.5 }}>{S.summary}</div>
         </div>
-      </div>
-      <div className="mb-5">
-        <h2 className="text-gray-800 text-lg mb-3 mt-0 font-semibold uppercase tracking-wide border-b border-gray-300 pb-1">Executive Summary</h2>
-        <p className="text-gray-600 leading-relaxed m-0 text-sm">
-          Visionary C-suite executive with 20+ years driving organizational transformation and revenue growth across Fortune 500 companies.
-        </p>
-      </div>
-      <div>
-        <h2 className="text-gray-800 text-lg mb-3 mt-0 font-semibold uppercase tracking-wide border-b border-gray-300 pb-1">Leadership Experience</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[15px] m-0 font-semibold">Chief Executive Officer</h3>
-            <span className="text-gray-500 text-xs font-medium">2018 - Present</span>
-          </div>
-          <p className="text-gray-700 my-0.5 text-sm font-medium">Global Industries Inc. • New York, NY</p>
-          <p className="text-gray-600 m-0 text-[13px]">• Drove 150% revenue growth through strategic acquisitions</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Bold Template Preview
-export const BoldTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-white p-6 rounded-xl font-['Arial',sans-serif] shadow-md">
-      <div className="mb-6">
-        <h1 className="text-gray-800 m-0 text-[28px] font-bold">ALEX RIVERA</h1>
-        <p className="text-red-500 mt-2 mb-0 text-lg font-bold uppercase tracking-wide">Full Stack Developer</p>
-        <div className="flex flex-wrap gap-4 mt-3 text-[13px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={14} />alex.r@techmail.com</span>
-          <span className="flex items-center gap-1.5"><Phone size={14} />+1 (555) 789-0123</span>
-          <span className="flex items-center gap-1.5"><MapPin size={14} />Austin, TX</span>
-        </div>
-      </div>
-      <div className="bg-red-50 p-4 rounded-lg mb-5">
-        <h2 className="text-red-700 text-base mb-2 mt-0 font-bold uppercase">About Me</h2>
-        <p className="text-gray-700 leading-relaxed m-0 text-sm">
-          Passionate full-stack developer with 6+ years building high-performance web applications.
-        </p>
-      </div>
-      <div>
-        <h2 className="text-red-500 text-base mb-3 mt-0 font-bold uppercase">Experience</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[15px] m-0 font-bold">Senior Developer</h3>
-            <span className="text-gray-500 text-xs font-semibold">2021 - Present</span>
-          </div>
-          <p className="text-red-500 my-0.5 text-[13px] font-semibold">TechStartup Inc. • Austin, TX</p>
-          <p className="text-gray-600 m-0 text-[13px]">• Built scalable microservices handling 1M+ daily requests</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Minimal Template Preview
-export const MinimalTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-white p-8 rounded-lg font-['Georgia',serif] border border-gray-200 shadow-md">
-      <div className="mb-8 pb-5 border-b border-gray-200">
-        <h1 className="text-gray-800 m-0 text-[26px] font-normal">Emily Chen</h1>
-        <p className="text-gray-500 mt-2 mb-0 text-base">UX Designer</p>
-        <div className="flex flex-wrap gap-4 mt-3 text-[13px] text-gray-400">
-          <span>emily.chen@design.co</span>
-          <span>•</span>
-          <span>San Francisco, CA</span>
-          <span>•</span>
-          <span>Portfolio</span>
-        </div>
-      </div>
-      <div className="mb-6">
-        <h2 className="text-gray-700 text-sm mb-2 mt-0 font-medium uppercase tracking-wider">About</h2>
-        <p className="text-gray-600 leading-relaxed m-0 text-sm">
-          Thoughtful designer focused on creating intuitive, accessible digital experiences.
-        </p>
-      </div>
-      <div>
-        <h2 className="text-gray-700 text-sm mb-3 mt-0 font-medium uppercase tracking-wider">Experience</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[15px] m-0 font-medium">Senior UX Designer</h3>
-            <span className="text-gray-400 text-xs">2020 - Present</span>
-          </div>
-          <p className="text-gray-500 my-0.5 text-[13px]">Design Studio</p>
-          <p className="text-gray-600 m-0 text-[13px]">Led design systems initiatives for enterprise clients.</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Elegant Template Preview
-export const ElegantTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-white p-6 font-['Georgia',serif] shadow-md">
-      
-      {/* Header Section with light blue background */}
-      <div className="text-center mb-6 p-5 bg-slate-100 rounded-xl border border-slate-200">
-        <h1 className="text-gray-800 m-0 text-[26px] font-normal tracking-wide uppercase">Sophia Williams</h1>
-        <div className="w-[60px] h-[2px] bg-indigo-500 mx-auto my-2.5" />
-        <p className="text-indigo-500 mt-2 mb-0 text-sm font-medium uppercase tracking-wide">Brand Strategist</p>
-        <div className="flex justify-center flex-wrap gap-4 mt-4 text-xs text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={12} />sophia@brand.co</span>
-          <span className="flex items-center gap-1.5"><Phone size={12} />+1 (555) 234-5678</span>
-          <span className="flex items-center gap-1.5"><MapPin size={12} />Los Angeles, CA</span>
-        </div>
-        <div className="flex justify-center gap-4 mt-2 text-xs text-gray-500">
-          <span className="flex items-center gap-1.5"><Linkedin size={12} />linkedin.com/in/sophia</span>
-        </div>
-      </div>
-      
-      {/* Expertise / Summary - Left aligned */}
-      <div className="mb-5">
-        <h2 className="text-indigo-500 text-sm mb-3 mt-0 font-medium uppercase tracking-wide flex items-center gap-2">
-          <Star size={14} />
-          Expertise
-        </h2>
-        <p className="text-gray-600 leading-relaxed m-0 text-sm italic">
-          Strategic thinker with 8+ years crafting brand narratives that resonate with audiences.
-        </p>
-      </div>
-      
-      {/* Experience - Left aligned */}
-      <div>
-        <h2 className="text-indigo-500 text-sm mb-3 mt-0 font-medium uppercase tracking-wide">Experience</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[15px] m-0 font-medium italic">Senior Brand Strategist</h3>
-            <span className="text-gray-500 text-xs">2019 - Present</span>
-          </div>
-          <p className="text-indigo-500 my-0.5 text-[13px] font-medium">Creative Agency • Los Angeles</p>
-          <p className="text-gray-600 m-0 text-[13px]">• Developed brand strategies for Fortune 500 clients</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Tech Template Preview
-export const TechTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-gradient-to-br from-cyan-50 to-sky-100 p-6 rounded-2xl font-['SF_Pro_Display',Arial,sans-serif] border border-cyan-500 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute -top-8 -right-8 w-28 h-28 bg-gradient-to-br from-cyan-500 to-teal-500 opacity-10 rounded-full" />
-      
-      <div className="relative">
-        {/* Status Badge */}
-        <div className="inline-flex items-center gap-2 bg-white px-4 py-2 rounded-full mb-3 shadow-sm">
-          <div className="w-2 h-2 bg-emerald-500 rounded-full" />
-          <span className="text-xs text-emerald-500 font-semibold">AVAILABLE FOR OPPORTUNITIES</span>
-        </div>
-        
-        <h1 className="text-gray-900 m-0 text-[28px] font-extrabold">David Kim</h1>
-        <p className="text-cyan-600 mt-1 mb-0 text-base font-bold">DevOps Engineer</p>
-        
-        <div className="flex flex-wrap gap-4 mt-3 text-[12px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={12} />david.kim@tech.io</span>
-          <span className="flex items-center gap-1.5"><MapPin size={12} />Seattle, WA</span>
-        </div>
-      </div>
-      
-      {/* Technical Profile */}
-      <div className="bg-white p-4 rounded-xl mt-4 mb-3 shadow-sm">
-        <h2 className="text-cyan-600 text-sm mb-2 mt-0 font-bold uppercase tracking-wide flex items-center gap-1.5">
-          <User size={14} />
-          Technical Profile
-        </h2>
-        <p className="text-gray-600 leading-relaxed m-0 text-[13px]">
-          Infrastructure specialist with expertise in cloud platforms, CI/CD, and container orchestration.
-        </p>
-      </div>
-      
-      {/* Tech Stack */}
-      <div className="bg-white p-4 rounded-xl mb-3 shadow-sm">
-        <h2 className="text-cyan-600 text-sm mb-2 mt-0 font-bold uppercase tracking-wide">Tech Stack</h2>
-        <div className="flex flex-wrap gap-2">
-          {['AWS', 'Kubernetes', 'Docker', 'Terraform', 'Python'].map(tech => (
-            <span key={tech} className="bg-cyan-50 text-cyan-700 px-2.5 py-1 rounded-full text-xs font-medium border border-cyan-200">{tech}</span>
-          ))}
-        </div>
-      </div>
-      
-      {/* Experience */}
-      <div className="bg-white p-4 rounded-xl shadow-sm">
-        <h2 className="text-cyan-600 text-sm mb-2 mt-0 font-bold uppercase tracking-wide">Engineering Experience</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[14px] m-0 font-semibold">Senior DevOps Engineer</h3>
-            <span className="text-gray-400 text-[11px] font-medium">2020 - Present</span>
-          </div>
-          <p className="text-cyan-600 my-0.5 text-[12px] font-medium">CloudTech Inc.</p>
-          <p className="text-gray-500 m-0 text-[12px]">• Reduced deployment time by 70% through automation</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Startup Template Preview
-export const StartupTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-white p-6 rounded-2xl font-['Arial',sans-serif] border border-orange-500 shadow-md relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute -top-5 -right-5 w-20 h-20 bg-gradient-to-br from-orange-500 to-orange-400 opacity-10 rounded-full" />
-      
-      <div className="relative">
-        {/* Header with profile picture */}
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h1 className="text-gray-800 m-0 text-[24px] font-extrabold uppercase">Michael Johnson</h1>
-            <p className="text-orange-500 mt-1 mb-0 text-base font-bold uppercase">Startup Founder & CEO</p>
-            <div className="flex flex-wrap gap-3 mt-3 text-[12px] text-gray-500">
-              <span className="flex items-center gap-1.5"><Mail size={12} />michael@startup.io</span>
-              <span className="flex items-center gap-1.5"><Phone size={12} />+1 (555) 123-4567</span>
-              <span className="flex items-center gap-1.5"><MapPin size={12} />San Francisco, CA</span>
-            </div>
-            <div className="flex gap-3 mt-1 text-[12px] text-gray-500">
-              <span className="flex items-center gap-1.5"><Linkedin size={12} />linkedin.com/in/mjohnson</span>
-            </div>
-          </div>
-          {/* Profile Picture Placeholder */}
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-orange-100 to-orange-50 border-2 border-orange-200 flex items-center justify-center text-orange-400 text-xs flex-shrink-0">
-            Photo
-          </div>
-        </div>
-        
-        {/* Mission Statement */}
-        <div className="bg-orange-50 p-4 rounded-lg border-l-4 border-orange-500 mb-4">
-          <h2 className="text-orange-600 text-sm mb-2 mt-0 font-bold flex items-center gap-1.5">
-            <Star size={14} />
-            Mission Statement
-          </h2>
-          <p className="text-gray-700 leading-relaxed m-0 text-[13px]">
-            Serial entrepreneur with 3 successful exits, passionate about building products that solve real problems.
-          </p>
-        </div>
-        
         {/* Experience */}
-        <div>
-          <h2 className="text-orange-500 text-sm mb-2 mt-0 font-bold">Ventures</h2>
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', marginBottom: '6px' }}>Experience</div>
+          <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+        </div>
+        {/* 2-col Education + Skills */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
           <div>
-            <div className="flex justify-between items-baseline mb-1">
-              <h3 className="text-gray-800 text-[14px] m-0 font-semibold">Founder & CEO</h3>
-              <span className="text-gray-400 text-[11px]">2021 - Present</span>
-            </div>
-            <p className="text-orange-500 my-0.5 text-[12px] font-medium">TechVenture Labs • San Francisco</p>
-            <p className="text-gray-600 m-0 text-[12px]">• Raised $5M Series A, grew team to 25 employees</p>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', marginBottom: '6px' }}>Education</div>
+            <EduBlock color={primary} degree={S.degree} school={S.school} dates="2012–2016" />
+          </div>
+          <div>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>Skills</div>
+            <div style={{ fontSize: '10px', fontWeight: 600, color: '#374151', marginBottom: '3px' }}>Technical</div>
+            <div>{S.skills.slice(0, 3).map(s => <Tag key={s} label={s} bg={accent} color={primary} />)}</div>
+            <div style={{ fontSize: '10px', fontWeight: 600, color: '#374151', margin: '4px 0 3px' }}>Soft Skills</div>
+            <div>{S.soft.slice(0, 2).map(s => <Tag key={s} label={s} bg="#f0fdf4" color="#166534" />)}</div>
           </div>
         </div>
       </div>
@@ -403,294 +214,587 @@ export const StartupTemplatePreview: React.FC = () => {
   );
 };
 
-// Consulting Template Preview
-export const ConsultingTemplatePreview: React.FC = () => {
+// ─── 4. EXECUTIVE ────────────────────────────────────────────────────────────
+// PHP: Times New Roman | centered header | border-bottom:3px double | pipe-separated contacts
+//      ALL-CAPS section titles | border-bottom:1px solid #d1d5db
+// Default color: gray → #6b7280
+export const ExecutiveTemplatePreview: React.FC = () => {
+  const text = '#1f2937'; const primary = '#6b7280';
   return (
-    <div className="bg-white p-6 font-['Helvetica',Arial,sans-serif] shadow-md">
-      {/* Header - Split layout */}
-      <div className="flex justify-between items-start mb-6 pb-5 border-b-2 border-gray-100">
-        <div>
-          <h1 className="text-gray-800 m-0 text-[26px] font-semibold">Jennifer Clark</h1>
-          <p className="text-teal-600 mt-1 mb-0 text-base font-semibold">Management Consultant</p>
-          <p className="text-gray-500 mt-1 mb-0 text-sm">Strategic Business Professional</p>
-        </div>
-        <div className="text-right text-[12px] text-gray-600 space-y-1">
-          <div className="flex items-center justify-end gap-1.5"><Mail size={12} />j.clark@consulting.com</div>
-          <div className="flex items-center justify-end gap-1.5"><Phone size={12} />+1 (555) 234-5678</div>
-          <div className="flex items-center justify-end gap-1.5"><MapPin size={12} />Boston, MA</div>
-          <div className="flex items-center justify-end gap-1.5"><Linkedin size={12} />linkedin.com/in/jclark</div>
+    <div style={{ fontFamily: "'Times New Roman', serif", background: 'white', padding: '20px', fontSize: '12px' }}>
+      {/* Centered header with double border */}
+      <div style={{ textAlign: 'center', paddingBottom: '14px', marginBottom: '16px' }}>
+        <div style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: text }}>{S.name}</div>
+        <div style={{ color: primary, fontSize: '11px', fontWeight: 600, letterSpacing: '1px', textTransform: 'uppercase', margin: '4px 0 8px' }}>{S.title}</div>
+        <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '8px', fontSize: '10px', color: '#4b5563' }}>
+          <span>{S.email}</span><span>|</span><span>{S.phone}</span><span>|</span><span>{S.location}</span>
         </div>
       </div>
-      
-      {/* Core Competencies */}
-      <div className="mb-5">
-        <h2 className="text-teal-600 text-sm mb-3 mt-0 font-semibold uppercase tracking-wide flex items-center gap-2">
-          <Star size={14} />
-          Core Competencies
-        </h2>
-        <p className="text-gray-700 leading-relaxed m-0 text-[13px] text-justify">
-          Strategic advisor with 12+ years at top-tier consulting firms, specializing in digital transformation and operational excellence.
-        </p>
+      {/* EXECUTIVE SUMMARY */}
+      <div style={{ marginBottom: '14px' }}>
+        <div style={{ color: text, fontSize: '11px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>EXECUTIVE SUMMARY</div>
+        <div style={{ color: '#374151', fontSize: '11px', lineHeight: 1.6, textAlign: 'justify' }}>{S.summary}</div>
       </div>
-      
+      {/* PROFESSIONAL EXPERIENCE */}
+      <div style={{ marginBottom: '14px' }}>
+        <div style={{ color: text, fontSize: '11px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>PROFESSIONAL EXPERIENCE</div>
+        <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+      </div>
+      {/* CORE COMPETENCIES */}
+      <div>
+        <div style={{ color: text, fontSize: '11px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>CORE COMPETENCIES</div>
+        <div>{[...S.skills, ...S.soft].map(s => <Tag key={s} label={s} bg="#f3f4f6" color="#374151" />)}</div>
+      </div>
+    </div>
+  );
+};
+
+// ─── 5. MINIMAL ───────────────────────────────────────────────────────────────
+// PHP: Georgia serif | border-bottom:1px header | dot-separated contacts (plain string)
+//      plain uppercase section titles (no border) | skills as plain comma text
+// Default color: green → #22c55e
+export const MinimalTemplatePreview: React.FC = () => {
+  const primary = '#22c55e'; const text = '#1f2937';
+  return (
+    <div style={{ fontFamily: 'Georgia, serif', background: 'white', padding: '20px', fontSize: '12px' }}>
+      {/* Header */}
+      <div style={{ borderBottom: '1px solid #e5e7eb', paddingBottom: '14px', marginBottom: '16px' }}>
+        <div style={{ fontSize: '22px', fontWeight: 700, color: text }}>{S.name}</div>
+        <div style={{ color: primary, fontSize: '12px', margin: '3px 0 8px' }}>{S.title}</div>
+        <div style={{ fontSize: '10px', color: '#6b7280' }}>{S.email} · {S.phone} · {S.location}</div>
+      </div>
+      {/* Summary — no heading, plain paragraph */}
+      <div style={{ color: '#374151', fontSize: '11px', lineHeight: 1.7, textAlign: 'justify', marginBottom: '14px' }}>{S.summary}</div>
       {/* Experience */}
+      <div style={{ marginBottom: '14px' }}>
+        <div style={{ color: text, fontSize: '11px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Experience</div>
+        <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+      </div>
+      {/* Skills as plain text */}
       <div>
-        <h2 className="text-teal-600 text-sm mb-3 mt-0 font-semibold uppercase tracking-wide">Professional Experience</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[14px] m-0 font-semibold">Principal Consultant</h3>
-            <span className="text-gray-400 text-[11px]">2019 - Present</span>
-          </div>
-          <p className="text-teal-600 my-0.5 text-[12px] font-medium">McKinsey & Company • Boston</p>
-          <p className="text-gray-600 m-0 text-[12px]">• Led $50M+ digital transformation initiatives</p>
+        <div style={{ color: text, fontSize: '11px', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginBottom: '6px' }}>Skills</div>
+        <div style={{ fontSize: '11px', color: '#374151', lineHeight: 1.8 }}>
+          <div><strong>Technical:</strong> {S.skills.join(', ')}</div>
+          <div><strong>Soft Skills:</strong> {S.soft.join(', ')}</div>
         </div>
       </div>
     </div>
   );
 };
 
-// Medical Template Preview
-export const MedicalTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-white p-6 font-['Arial',sans-serif] shadow-md border border-emerald-500 rounded-lg">
-      {/* Header - Centered with profile picture */}
-      <div className="text-center mb-5 pb-4 border-b border-gray-200">
-        {/* Profile Picture Placeholder */}
-        <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-50 border-2 border-emerald-200 mx-auto mb-3 flex items-center justify-center text-emerald-400 text-xs">
-          Photo
-        </div>
-        <h1 className="text-gray-800 m-0 text-[24px] font-bold">Dr. Sarah Mitchell</h1>
-        <p className="text-emerald-600 mt-1 mb-1 text-base font-semibold">Cardiologist, MD, FACC</p>
-        <p className="text-gray-500 text-sm m-0">Healthcare Excellence • Patient-Centered Care</p>
-        <div className="flex justify-center flex-wrap gap-4 mt-3 text-[12px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={12} />dr.mitchell@hospital.org</span>
-          <span className="flex items-center gap-1.5"><Phone size={12} />+1 (555) 123-4567</span>
-          <span className="flex items-center gap-1.5"><MapPin size={12} />Boston, MA</span>
-        </div>
-        <div className="flex justify-center gap-4 mt-1 text-[12px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Linkedin size={12} />linkedin.com/in/drmitchell</span>
-        </div>
-      </div>
-      
-      {/* Medical Expertise Box */}
-      <div className="bg-emerald-50 p-4 rounded-lg border border-emerald-100 mb-4">
-        <h2 className="text-emerald-600 text-sm mb-2 mt-0 font-bold flex items-center gap-1.5">
-          <User size={14} />
-          Medical Expertise
-        </h2>
-        <p className="text-gray-700 leading-relaxed m-0 text-[13px]">
-          Board-certified cardiologist with 15+ years of experience in interventional procedures and patient care excellence.
-        </p>
-      </div>
-      
-      {/* Experience */}
-      <div>
-        <h2 className="text-emerald-600 text-sm mb-2 mt-0 font-bold">Clinical Experience</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[14px] m-0 font-semibold">Chief of Cardiology</h3>
-            <span className="text-gray-400 text-[11px]">2018 - Present</span>
-          </div>
-          <p className="text-emerald-600 my-0.5 text-[12px] font-medium">Massachusetts General Hospital</p>
-          <p className="text-gray-600 m-0 text-[12px]">• Performed 500+ interventional procedures annually</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Finance Template Preview
-export const FinanceTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-white p-6 rounded-xl font-['Segoe_UI',Arial,sans-serif] border-2 border-violet-600 shadow-md relative">
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-violet-600 to-purple-500" />
-      <div className="mb-6 mt-2">
-        <h1 className="text-gray-800 m-0 text-[26px] font-bold">Robert Chen</h1>
-        <p className="text-violet-600 mt-2 mb-0 text-base font-semibold">Investment Banking Analyst</p>
-        <div className="flex flex-wrap gap-4 mt-3 text-[13px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={14} />r.chen@finance.com</span>
-          <span className="flex items-center gap-1.5"><MapPin size={14} />New York, NY</span>
-        </div>
-      </div>
-      <div className="mb-5">
-        <h2 className="text-violet-600 text-base mb-2 mt-0 font-semibold">Summary</h2>
-        <p className="text-gray-600 leading-relaxed m-0 text-sm">
-          Finance professional with expertise in M&A, valuation, and financial modeling.
-        </p>
-      </div>
-      <div>
-        <h2 className="text-violet-600 text-base mb-3 mt-0 font-semibold">Experience</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[15px] m-0 font-semibold">Senior Analyst</h3>
-            <span className="text-gray-500 text-xs">2020 - Present</span>
-          </div>
-          <p className="text-violet-600 my-0.5 text-[13px] font-medium">Goldman Sachs • New York</p>
-          <p className="text-gray-600 m-0 text-[13px]">• Executed $2B+ in M&A transactions</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Marketing Template Preview
-export const MarketingTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-white p-6 rounded-xl font-['Arial',sans-serif] border-l-[6px] border-pink-600 shadow-md">
-      <div className="mb-6">
-        <h1 className="text-gray-800 m-0 text-[26px] font-bold">Amanda Torres</h1>
-        <p className="text-pink-600 mt-2 mb-0 text-base font-semibold">Digital Marketing Director</p>
-        <div className="flex flex-wrap gap-4 mt-3 text-[13px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={14} />amanda@marketing.co</span>
-          <span className="flex items-center gap-1.5"><MapPin size={14} />Los Angeles, CA</span>
-        </div>
-      </div>
-      <div className="bg-pink-50 p-4 rounded-lg mb-5 border-l-4 border-pink-500">
-        <h2 className="text-pink-700 text-base mb-2 mt-0 font-semibold">Summary</h2>
-        <p className="text-gray-700 leading-relaxed m-0 text-sm">
-          Growth-focused marketer with 10+ years driving customer acquisition and brand awareness.
-        </p>
-      </div>
-      <div>
-        <h2 className="text-pink-600 text-base mb-3 mt-0 font-semibold">Experience</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[15px] m-0 font-semibold">VP of Marketing</h3>
-            <span className="text-gray-500 text-xs">2019 - Present</span>
-          </div>
-          <p className="text-pink-600 my-0.5 text-[13px] font-medium">BrandCo • Los Angeles</p>
-          <p className="text-gray-600 m-0 text-[13px]">• Grew social following from 10K to 500K+</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Data Template Preview
-export const DataTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-gradient-to-br from-sky-50 to-cyan-50 p-6 rounded-2xl font-['SF_Pro_Display',Arial,sans-serif] border border-cyan-500 relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-24 h-24 bg-cyan-500/10 rounded-full -translate-y-1/2 translate-x-1/2" />
-      <div className="relative mb-6">
-        <h1 className="text-gray-800 m-0 text-[26px] font-bold">Chris Park</h1>
-        <p className="text-cyan-600 mt-2 mb-0 text-base font-semibold">Data Scientist</p>
-        <div className="flex flex-wrap gap-4 mt-3 text-[13px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={14} />chris@data.io</span>
-          <span className="flex items-center gap-1.5"><MapPin size={14} />Seattle, WA</span>
-        </div>
-      </div>
-      <div className="mb-5">
-        <h2 className="text-cyan-600 text-base mb-2 mt-0 font-semibold">Expertise</h2>
-        <div className="flex flex-wrap gap-2">
-          {['Machine Learning', 'Python', 'TensorFlow', 'SQL'].map(skill => (
-            <span key={skill} className="bg-white text-cyan-700 px-2.5 py-1 rounded-full text-xs font-medium border border-cyan-200">{skill}</span>
-          ))}
-        </div>
-      </div>
-      <div>
-        <h2 className="text-cyan-600 text-base mb-3 mt-0 font-semibold">Experience</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[15px] m-0 font-semibold">Senior Data Scientist</h3>
-            <span className="text-gray-500 text-xs">2021 - Present</span>
-          </div>
-          <p className="text-cyan-600 my-0.5 text-[13px] font-medium">Amazon • Seattle</p>
-          <p className="text-gray-600 m-0 text-[13px]">• Built ML models improving recommendations by 35%</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Nonprofit Template Preview
-export const NonprofitTemplatePreview: React.FC = () => {
-  return (
-    <div className="bg-white p-8 font-['Helvetica_Neue',Arial,sans-serif] shadow-none max-w-full">
-      <div className="mb-8">
-        <h1 className="text-black m-0 text-[32px] font-medium">Maya Johnson</h1>
-        <p className="text-gray-600 mt-2 mb-0 text-lg">Nonprofit Executive Director</p>
-        <div className="flex flex-wrap gap-4 mt-4 text-sm text-gray-500">
-          <span>maya@nonprofit.org</span>
-          <span>•</span>
-          <span>Washington, DC</span>
-        </div>
-      </div>
-      <div className="mb-8">
-        <h2 className="text-black text-sm mb-4 mt-0 font-medium uppercase tracking-wide">Mission Statement</h2>
-        <p className="text-gray-700 leading-relaxed m-0 text-sm">
-          Dedicated leader with 15+ years advancing social equity through strategic program development.
-        </p>
-      </div>
-      <div>
-        <h2 className="text-black text-sm mb-4 mt-0 font-medium uppercase tracking-wide">Experience</h2>
-        <div className="mb-5">
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-black text-base m-0 font-medium">Executive Director</h3>
-            <span className="text-gray-500 text-xs">2018 - Present</span>
-          </div>
-          <p className="text-gray-700 my-0.5 text-sm">Community Impact Foundation</p>
-          <p className="text-gray-600 m-0 text-sm leading-relaxed">Grew annual budget from $2M to $8M while expanding programs to 50+ communities.</p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Academic Template Preview
+// ─── 6. ACADEMIC ─────────────────────────────────────────────────────────────
+// PHP: centered header on lightAccent bg | border-bottom:3px solid primary
+//      section headers with border-left:4px solid primary + padding-left
+//      section order: summary → education → experience → projects → skills
+// Default color: purple → #a855f7
 export const AcademicTemplatePreview: React.FC = () => {
+  const primary = '#a855f7'; const lightAccent = '#faf5ff'; const accent = '#f5f3ff';
   return (
-    <div className="bg-white p-8 rounded-lg font-['Times_New_Roman',serif] shadow-md">
-      <div className="text-center mb-8 pb-5 border-b border-gray-200">
-        <h1 className="text-gray-800 m-0 text-[28px] font-normal tracking-wide">Dr. Elizabeth Harper</h1>
-        <p className="text-violet-500 mt-2 mb-0 text-base font-medium">Associate Professor of Cognitive Psychology</p>
-        <p className="text-gray-500 mt-1.5 mb-0 text-sm italic">PhD, Harvard University • Research Fellow, MIT</p>
-        <div className="flex justify-center gap-5 mt-4 text-[13px] text-gray-500">
-          <span className="flex items-center gap-1.5"><Mail size={14} />e.harper@university.edu</span>
-          <span className="flex items-center gap-1.5">ORCID: 0000-0002-1825-0097</span>
+    <div style={{ fontFamily: 'sans-serif', background: 'white', fontSize: '12px' }}>
+      {/* Centered lightAccent header */}
+      <div style={{ textAlign: 'center', background: lightAccent, padding: '18px', marginBottom: '14px' }}>
+        <div style={{ fontSize: '18px', fontWeight: 700, color: '#1f2937' }}>{S.name}</div>
+        <div style={{ color: primary, fontSize: '11px', fontWeight: 600, margin: '3px 0 8px' }}>{S.title}</div>
+        <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '10px', fontSize: '10px', color: '#4b5563' }}>
+          <span>✉ {S.email}</span><span>📞 {S.phone}</span><span>📍 {S.location}</span>
         </div>
       </div>
-      <div className="mb-6">
-        <h2 className="text-violet-500 text-base mb-3 mt-0 font-semibold uppercase tracking-wide border-b border-gray-200 pb-1">Research Interests</h2>
-        <p className="text-gray-700 leading-relaxed m-0 text-sm text-justify">
-          Cognitive neuroscience of memory formation, computational models of learning, and neural mechanisms underlying decision-making processes.
-        </p>
-      </div>
-      <div className="mb-6">
-        <h2 className="text-violet-500 text-base mb-3 mt-0 font-semibold uppercase tracking-wide border-b border-gray-200 pb-1">Academic Positions</h2>
-        <div>
-          <div className="flex justify-between items-baseline mb-1">
-            <h3 className="text-gray-800 text-[15px] m-0 font-semibold italic">Associate Professor</h3>
-            <span className="text-gray-500 text-[13px] font-medium">2020 - Present</span>
-          </div>
-          <p className="text-violet-500 my-0.5 text-sm font-medium">Department of Psychology, Stanford University</p>
-          <p className="text-gray-600 m-0 text-[13px]">• Principal Investigator, $2.5M NIH grant on memory consolidation</p>
+      <div style={{ padding: '0 16px 16px' }}>
+        {/* Research Interests — left-border */}
+        <div style={{ marginBottom: '12px' }}>
+          <SHdrLeft title="Research Interests / Profile" color={primary} />
+          <div style={{ color: '#374151', fontSize: '10px', lineHeight: 1.6 }}>{S.summary}</div>
         </div>
-      </div>
-      <div className="text-[13px]">
+        {/* Education */}
+        <div style={{ marginBottom: '12px' }}>
+          <SHdrLeft title="Education" color={primary} />
+          <EduBlock color={primary} degree={S.degree} school={S.school} dates="2012–2016" />
+        </div>
+        {/* Professional Experience */}
+        <div style={{ marginBottom: '12px' }}>
+          <SHdrLeft title="Professional Experience" color={primary} />
+          <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+        </div>
+        {/* Skills & Expertise */}
         <div>
-          <h3 className="text-violet-500 text-sm mb-2 mt-0 font-semibold uppercase tracking-wide">Education</h3>
-          <p className="text-gray-600 m-0 leading-relaxed">PhD Psychology, Harvard (2015)<br/>MA Psychology, Yale (2011)</p>
+          <SHdrLeft title="Skills & Expertise" color={primary} />
+          <div>{[...S.skills, ...S.soft].map(s => <Tag key={s} label={s} bg={accent} color="#7e22ce" />)}</div>
         </div>
       </div>
     </div>
   );
 };
 
-export default {
-  ModernTemplatePreview,
-  CreativeTemplatePreview,
-  ProfessionalBlueTemplatePreview,
-  ExecutiveTemplatePreview,
-  BoldTemplatePreview,
-  MinimalTemplatePreview,
-  ElegantTemplatePreview,
-  TechTemplatePreview,
-  StartupTemplatePreview,
-  ConsultingTemplatePreview,
-  MedicalTemplatePreview,
-  FinanceTemplatePreview,
-  MarketingTemplatePreview,
-  DataTemplatePreview,
-  NonprofitTemplatePreview,
-  AcademicTemplatePreview
+// ─── 7. BOLD ─────────────────────────────────────────────────────────────────
+// PHP: colored full-bleed header | font-weight:900 uppercase h1 34px
+//      accent box with 2px solid border for summary
+//      section headers: border-bottom:3px solid, font-weight:900, uppercase
+//      2-col education+skills grid
+// Default color: red → #ef4444
+export const BoldTemplatePreview: React.FC = () => {
+  const primary = '#ef4444'; const accent = '#fef2f2';
+  return (
+    <div style={{ fontFamily: 'sans-serif', background: 'white', fontSize: '12px' }}>
+      {/* Full-bleed bold header */}
+      <div style={{ background: primary, padding: '20px', color: 'white' }}>
+        <div style={{ fontSize: '22px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px' }}>{S.name}</div>
+        <div style={{ fontSize: '13px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px', color: 'rgba(255,255,255,0.85)', margin: '3px 0 10px' }}>{S.title}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', fontSize: '10px', color: 'rgba(255,255,255,0.9)' }}>
+          <span>✉ {S.email}</span><span>📍 {S.location}</span>
+        </div>
+      </div>
+      {/* Body */}
+      <div style={{ padding: '16px' }}>
+        {/* Accent bordered summary box */}
+        <div style={{ background: accent, border: `2px solid ${primary}`, borderRadius: '4px', padding: '10px', marginBottom: '12px' }}>
+          <div style={{ color: '#4b5563', fontSize: '10px', lineHeight: 1.5 }}>{S.summary}</div>
+        </div>
+        {/* EXPERIENCE */}
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '7px' }}>EXPERIENCE</div>
+          <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+        </div>
+        {/* 2-col Education + Skills */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '7px' }}>EDUCATION</div>
+            <EduBlock color={primary} degree={S.degree} school={S.school} dates="2012–2016" />
+          </div>
+          <div>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '7px' }}>SKILLS</div>
+            <div>{S.skills.map(s => <Tag key={s} label={s} bg={accent} color={primary} />)}</div>
+            <div style={{ marginTop: '4px' }}>{S.soft.map(s => <Tag key={s} label={s} bg="#f3f4f6" color="#374151" />)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── 8. ELEGANT ──────────────────────────────────────────────────────────────
+// PHP: Palatino serif | centered header | 80px wide 2px decorative line above name
+//      border-bottom:2px solid primary | italic title | bullet-dot contacts
+//      italic summary centered | section titles centered with top+bottom 1px accent borders
+// Default color: indigo → #6366f1
+export const ElegantTemplatePreview: React.FC = () => {
+  const primary = '#6366f1'; const accent = '#eef2ff';
+  return (
+    <div style={{ fontFamily: 'Palatino, "Book Antiqua", Georgia, serif', background: 'white', padding: '20px', fontSize: '12px' }}>
+      {/* Centered header */}
+      <div style={{ textAlign: 'center', paddingBottom: '14px', marginBottom: '16px' }}>
+        <div style={{ display: 'inline-block', width: '60px', height: '2px', background: primary, marginBottom: '8px' }} />
+        <div style={{ fontSize: '20px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase', color: '#1f2937' }}>{S.name}</div>
+        <div style={{ color: primary, fontSize: '12px', fontStyle: 'italic', margin: '4px 0 10px' }}>{S.title}</div>
+        <div style={{ fontSize: '10px', color: '#6b7280' }}>{S.email}  •  {S.phone}  •  {S.location}</div>
+      </div>
+      {/* Italic centered summary */}
+      <div style={{ textAlign: 'center', marginBottom: '14px' }}>
+        <div style={{ color: '#374151', fontSize: '11px', lineHeight: 1.8, fontStyle: 'italic' }}>{S.summary}</div>
+      </div>
+      {/* Experience — centered title with top+bottom accent borders */}
+      <div style={{ marginBottom: '14px' }}>
+        <div style={{ color: primary, fontSize: '11px', fontWeight: 700, letterSpacing: '3px', textTransform: 'uppercase', textAlign: 'center', borderTop: `1px solid ${accent}`, padding: '4px 0', marginBottom: '8px' }}>Professional Experience</div>
+        <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+      </div>
+      {/* 2-col Education + Skills */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+        <div>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '7px' }}>Education</div>
+          <EduBlock color={primary} degree={S.degree} school={S.school} dates="2012–2016" />
+        </div>
+        <div>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '7px' }}>Skills</div>
+          <div>{S.skills.slice(0, 3).map(s => <Tag key={s} label={s} bg={accent} color="#4338ca" />)}</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── 9. TECH ─────────────────────────────────────────────────────────────────
+// PHP: dark bg #0f172a | Courier New | gradient header + profilePic + "Available for Opportunities" badge
+//      1fr 2fr grid | left sidebar #1e293b | dark tech-stack tags | experience in right col
+// Default color: cyan → #06b6d4
+export const TechTemplatePreview: React.FC = () => {
+  const primary = '#06b6d4'; const secondary = '#0891b2';
+  return (
+    <div style={{ fontFamily: "'Courier New', monospace", background: '#0f172a', color: '#e2e8f0', fontSize: '12px' }}>
+      {/* Gradient header */}
+      <div style={{ background: `linear-gradient(135deg,${primary} 0%,${secondary} 100%)`, padding: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <ProfileCircle size={44} />
+          <div>
+            <div style={{ fontSize: '16px', fontWeight: 700, color: 'white' }}>{S.name}</div>
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.85)', margin: '2px 0 6px' }}>{S.title}</div>
+            <span style={{ background: 'rgba(255,255,255,0.2)', color: 'white', padding: '2px 10px', borderRadius: '20px', fontSize: '9px', border: '1px solid rgba(255,255,255,0.3)' }}>Available for Opportunities</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', marginTop: '10px', fontSize: '10px', color: 'rgba(255,255,255,0.85)', flexWrap: 'wrap' }}>
+          <span>✉ {S.email}</span><span>📍 {S.location}</span>
+        </div>
+      </div>
+      {/* 1fr 2fr dark grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr' }}>
+        {/* Dark sidebar */}
+        <div style={{ background: '#1e293b', padding: '14px', borderRight: '1px solid #334155' }}>
+          <div style={{ color: primary, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>About</div>
+          <div style={{ color: '#94a3b8', fontSize: '10px', lineHeight: 1.5, marginBottom: '12px' }}>{S.summary.slice(0, 70)}…</div>
+          <div style={{ color: primary, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Tech Stack</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
+            {S.skills.map(s => (
+              <span key={s} style={{ background: '#0f172a', color: primary, padding: '2px 6px', borderRadius: '4px', fontSize: '9px', border: `1px solid ${secondary}` }}>{s}</span>
+            ))}
+          </div>
+        </div>
+        {/* Main dark area */}
+        <div style={{ padding: '14px' }}>
+          <div style={{ color: primary, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Experience</div>
+          <div style={{ marginBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#e2e8f0' }}>{S.position}</span>
+              <span style={{ fontSize: '10px', color: '#64748b' }}>{S.dates}</span>
+            </div>
+            <div style={{ color: primary, fontSize: '10px', margin: '2px 0' }}>{S.company}</div>
+            <ul style={{ margin: '4px 0 0 12px', padding: 0, color: '#94a3b8', fontSize: '10px' }}>
+              {S.bullets.map((b, i) => <li key={i} style={{ marginBottom: '2px' }}>{b}</li>)}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── 10. STARTUP ─────────────────────────────────────────────────────────────
+// PHP: border:3px solid primary box header | floating badge "⚡ Builder • Creator • Innovator"
+//      profilePic inside border box | accent summary box (rounded, no border)
+//      uppercase bold section headers (no border-bottom)
+// Default color: orange → #f97316
+export const StartupTemplatePreview: React.FC = () => {
+  const primary = '#f97316'; const accent = '#fff7ed';
+  return (
+    <div style={{ fontFamily: 'sans-serif', background: 'white', padding: '16px', fontSize: '12px' }}>
+      {/* Border box with floating badge */}
+      <div style={{ border: `3px solid ${primary}`, padding: '16px', marginBottom: '14px', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: -11, left: 16, background: primary, color: 'white', padding: '3px 10px', borderRadius: '12px', fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>⚡ Builder • Creator • Innovator</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <ProfileCircle size={44} border={primary} />
+          <div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: '#1f2937' }}>{S.name}</div>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 600, margin: '2px 0 8px' }}>{S.title}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '10px', color: '#4b5563' }}>
+              <span>✉ {S.email}</span><span>📍 {S.location}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* Rounded accent summary */}
+      <div style={{ background: accent, borderRadius: '8px', padding: '10px', marginBottom: '12px' }}>
+        <div style={{ color: '#374151', fontSize: '10px', lineHeight: 1.5 }}>{S.summary}</div>
+      </div>
+      {/* Experience */}
+      <div style={{ marginBottom: '12px' }}>
+        <div style={{ color: primary, fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Experience</div>
+        <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+      </div>
+      {/* 2-col Education + Skills */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+        <div>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Education</div>
+          <EduBlock color={primary} degree={S.degree} school={S.school} dates="2012–2016" />
+        </div>
+        <div>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Skills</div>
+          <div>{S.skills.slice(0, 3).map(s => <Tag key={s} label={s} bg={accent} color={primary} />)}</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── 11. CONSULTING ──────────────────────────────────────────────────────────
+// PHP: colored full-bleed header | 2-col contact grid in header
+//      inner padded body | section titles: border-bottom:2px solid primary
+//      "Executive Summary" | "Professional Experience" | "Core Competencies"
+// Default color: teal → #14b8a6
+export const ConsultingTemplatePreview: React.FC = () => {
+  const primary = '#14b8a6'; const accent = '#ccfbf1';
+  return (
+    <div style={{ fontFamily: 'sans-serif', background: 'white', fontSize: '12px' }}>
+      {/* Full-bleed colored header */}
+      <div style={{ background: primary, color: 'white', padding: '18px 20px' }}>
+        <div style={{ fontSize: '18px', fontWeight: 700 }}>{S.name}</div>
+        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.9)', margin: '3px 0 12px' }}>{S.title}</div>
+        {/* 2-col contact grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', fontSize: '10px', color: 'rgba(255,255,255,0.85)' }}>
+          <div>
+            <div style={{ marginBottom: '3px' }}>✉ {S.email}</div>
+            <div>📞 {S.phone}</div>
+          </div>
+          <div>
+            <div style={{ marginBottom: '3px' }}>📍 {S.location}</div>
+            <div>🔗 {S.linkedin}</div>
+          </div>
+        </div>
+      </div>
+      {/* Body */}
+      <div style={{ padding: '16px' }}>
+        {/* Executive Summary */}
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Executive Summary</div>
+          <div style={{ color: '#374151', fontSize: '10px', lineHeight: 1.6, textAlign: 'justify' }}>{S.summary}</div>
+        </div>
+        {/* Professional Experience */}
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Professional Experience</div>
+          <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+        </div>
+        {/* 2-col Education + Core Competencies */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Education</div>
+            <EduBlock color={primary} degree={S.degree} school={S.school} dates="2012–2016" />
+          </div>
+          <div>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Core Competencies</div>
+            <div>{S.skills.slice(0, 3).map(s => <Tag key={s} label={s} bg={accent} color="#0f766e" />)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── 12. MEDICAL ─────────────────────────────────────────────────────────────
+// PHP: centered header with ⚕️ emoji (28px) | border-bottom:3px solid primary
+//      "Dr. " prefix on name | section order: clinical profile → medical education → clinical experience → clinical skills → certifications
+//      section titles: border-bottom:2px solid primary
+// Default color: emerald → #10b981
+export const MedicalTemplatePreview: React.FC = () => {
+  const primary = '#10b981'; const accent = '#d1fae5';
+  return (
+    <div style={{ fontFamily: 'sans-serif', background: 'white', padding: '16px', fontSize: '12px' }}>
+      {/* Centered header with ⚕️ */}
+      <div style={{ textAlign: 'center', paddingBottom: '14px', marginBottom: '14px' }}>
+        <div style={{ fontSize: '22px', marginBottom: '5px' }}>⚕️</div>
+        <div style={{ fontSize: '18px', fontWeight: 700, color: '#1f2937' }}>Dr. {S.name}</div>
+        <div style={{ color: primary, fontSize: '11px', fontWeight: 600, margin: '3px 0 8px' }}>{S.title}</div>
+        <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '10px', fontSize: '10px', color: '#4b5563' }}>
+          <span>✉ {S.email}</span><span>📞 {S.phone}</span><span>📍 {S.location}</span>
+        </div>
+      </div>
+      {/* Clinical Profile */}
+      <div style={{ marginBottom: '12px' }}>
+        <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Clinical Profile</div>
+        <div style={{ color: '#374151', fontSize: '10px', lineHeight: 1.6, textAlign: 'justify' }}>{S.summary}</div>
+      </div>
+      {/* Medical Education */}
+      <div style={{ marginBottom: '12px' }}>
+        <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Medical Education</div>
+        <EduBlock color={primary} degree={S.degree} school={S.school} dates="2012–2016" />
+      </div>
+      {/* Clinical Experience */}
+      <div style={{ marginBottom: '12px' }}>
+        <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Clinical Experience</div>
+        <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+      </div>
+      {/* Clinical Skills */}
+      <div>
+        <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Clinical Skills</div>
+        <div>{S.skills.map(s => <Tag key={s} label={s} bg={accent} color="#065f46" />)}</div>
+      </div>
+    </div>
+  );
+};
+
+// ─── 13. FINANCE ─────────────────────────────────────────────────────────────
+// PHP: outer border:1px solid #d1d5db | colored full-bleed header with text-transform:uppercase
+//      letter-spacing:2px on name | ALL-CAPS section headers (letter-spacing:2px) with border-bottom:2px
+//      "EXECUTIVE PROFILE" | "PROFESSIONAL EXPERIENCE" | 2-col EDUCATION + KEY SKILLS grid
+// Default color: blue → #4f87c7
+export const FinanceTemplatePreview: React.FC = () => {
+  const primary = '#4f87c7'; const accent = '#dbeafe';
+  return (
+    <div style={{ fontFamily: 'sans-serif', background: 'white', fontSize: '12px', border: '1px solid #d1d5db' }}>
+      {/* Full-bleed uppercase header */}
+      <div style={{ background: primary, color: 'white', padding: '18px', textTransform: 'uppercase' }}>
+        <div style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '2px' }}>{S.name}</div>
+        <div style={{ fontSize: '10px', color: 'rgba(255,255,255,0.85)', letterSpacing: '2px', margin: '3px 0 10px' }}>{S.title}</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '10px', color: 'rgba(255,255,255,0.9)', textTransform: 'none' }}>
+          <span>✉ {S.email}</span><span>📞 {S.phone}</span><span>📍 {S.location}</span>
+        </div>
+      </div>
+      {/* Body */}
+      <div style={{ padding: '16px' }}>
+        {/* EXECUTIVE PROFILE */}
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ color: primary, fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>EXECUTIVE PROFILE</div>
+          <div style={{ color: '#374151', fontSize: '10px', lineHeight: 1.6, textAlign: 'justify' }}>{S.summary}</div>
+        </div>
+        {/* PROFESSIONAL EXPERIENCE */}
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ color: primary, fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>PROFESSIONAL EXPERIENCE</div>
+          <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+        </div>
+        {/* 2-col EDUCATION + KEY SKILLS */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <div style={{ color: primary, fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>EDUCATION</div>
+            <EduBlock color={primary} degree={S.degree} school={S.school} dates="2012–2016" />
+          </div>
+          <div>
+            <div style={{ color: primary, fontSize: '10px', fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '6px' }}>KEY SKILLS</div>
+            <div>{S.skills.slice(0, 3).map(s => <Tag key={s} label={s} bg={accent} color="#1e40af" />)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── 14. MARKETING ───────────────────────────────────────────────────────────
+// PHP: linear-gradient(135deg) centered header | profilePic | 📈 emoji before title
+//      accent rounded summary box (no border) | "Experience & Impact" | "Skills & Tools"
+//      "Campaigns & Projects"
+// Default color: orange → #f97316
+export const MarketingTemplatePreview: React.FC = () => {
+  const primary = '#f97316'; const secondary = '#ea580c'; const accent = '#fff7ed';
+  return (
+    <div style={{ fontFamily: 'sans-serif', background: 'white', fontSize: '12px' }}>
+      {/* Centered gradient header with profilePic */}
+      <div style={{ background: `linear-gradient(135deg,${primary} 0%,${secondary} 50%,${primary} 100%)`, padding: '20px', color: 'white', textAlign: 'center' }}>
+        <ProfileCircle size={50} />
+        <div style={{ fontSize: '18px', fontWeight: 800, margin: '8px 0 3px' }}>{S.name}</div>
+        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.9)', marginBottom: '10px' }}>📈 {S.title}</div>
+        <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '10px', fontSize: '10px', color: 'rgba(255,255,255,0.85)' }}>
+          <span>✉ {S.email}</span><span>📍 {S.location}</span>
+        </div>
+      </div>
+      {/* Body */}
+      <div style={{ padding: '16px' }}>
+        {/* Accent rounded summary */}
+        <div style={{ background: accent, borderRadius: '8px', padding: '10px', marginBottom: '12px' }}>
+          <div style={{ color: '#374151', fontSize: '10px', lineHeight: 1.5 }}>{S.summary}</div>
+        </div>
+        {/* Experience & Impact */}
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Experience & Impact</div>
+          <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+        </div>
+        {/* 2-col Education + Skills & Tools */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+          <div>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Education</div>
+            <EduBlock color={primary} degree={S.degree} school={S.school} dates="2012–2016" />
+          </div>
+          <div>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Skills & Tools</div>
+            <div>{S.skills.slice(0, 3).map(s => <Tag key={s} label={s} bg={accent} color={primary} />)}</div>
+            <div style={{ marginTop: '3px' }}>{S.soft.slice(0, 2).map(s => <Tag key={s} label={s} bg="#fef3c7" color="#92400e" />)}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── 15. DATA ────────────────────────────────────────────────────────────────
+// PHP: outer border:2px solid primary | colored full-bleed header + profilePic + 📊 emoji
+//      1fr 2fr grid | left sidebar on lightAccent bg, border-right:2px solid primary
+//      sidebar: Profile, Technical Skills (tags), Education
+//      right col: Experience, Data Projects, Certifications (uppercase hdrs with border-bottom)
+// Default color: violet → #a855f7
+export const DataTemplatePreview: React.FC = () => {
+  const primary = '#a855f7'; const accent = '#f5f3ff'; const lightAccent = '#faf5ff';
+  return (
+    <div style={{ fontFamily: 'sans-serif', background: 'white', fontSize: '12px', border: `2px solid ${primary}` }}>
+      {/* Full-bleed colored header */}
+      <div style={{ background: primary, color: 'white', padding: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <ProfileCircle size={44} />
+          <div>
+            <div style={{ fontSize: '16px', fontWeight: 700 }}>{S.name}</div>
+            <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.85)', margin: '2px 0 4px' }}>📊 {S.title}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', fontSize: '10px', color: 'rgba(255,255,255,0.85)' }}>
+              <span>✉ {S.email}</span><span>📍 {S.location}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* 1fr 2fr grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr' }}>
+        {/* Sidebar */}
+        <div style={{ background: lightAccent, padding: '12px', borderRight: `2px solid ${primary}` }}>
+          <div style={{ color: primary, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', marginBottom: '5px' }}>Profile</div>
+          <div style={{ color: '#374151', fontSize: '10px', lineHeight: 1.5, marginBottom: '10px' }}>{S.summary.slice(0, 70)}…</div>
+          <div style={{ color: primary, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', marginBottom: '5px' }}>Technical Skills</div>
+          <div style={{ marginBottom: '10px' }}>{S.skills.map(s => <Tag key={s} label={s} bg={accent} color="#7e22ce" />)}</div>
+          <div style={{ color: primary, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', marginBottom: '5px' }}>Education</div>
+          <div style={{ fontSize: '10px', fontWeight: 600, color: '#1f2937' }}>{S.degree}</div>
+          <div style={{ fontSize: '10px', color: '#6b7280' }}>{S.school}</div>
+        </div>
+        {/* Main */}
+        <div style={{ padding: '12px' }}>
+          <div style={{ color: primary, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', marginBottom: '7px' }}>Experience</div>
+          <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+          <div style={{ color: primary, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', margin: '10px 0 7px' }}>Data Projects</div>
+          <div style={{ fontSize: '11px', fontWeight: 600, color: '#1f2937', marginBottom: '2px' }}>Churn Prediction Model</div>
+          <div style={{ fontSize: '10px', color: '#4b5563' }}>Built ML pipeline reducing churn by 18%.</div>
+          <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '2px' }}><strong>Tech:</strong> Python, scikit-learn, Spark</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── 16. NONPROFIT ───────────────────────────────────────────────────────────
+// PHP: colored full-bleed centered header | 🤝 emoji (28px) | centered contacts
+//      accent left-border summary (border-left:4px solid primary, border-radius:0 8px 8px 0)
+//      "Service Experience" | "Community Projects" | "Impact & Recognition"
+// Default color: pink → #ec4899
+export const NonprofitTemplatePreview: React.FC = () => {
+  const primary = '#ec4899'; const accent = '#fdf2f8';
+  return (
+    <div style={{ fontFamily: 'sans-serif', background: 'white', fontSize: '12px' }}>
+      {/* Full-bleed centered colored header */}
+      <div style={{ background: primary, color: 'white', padding: '18px', textAlign: 'center' }}>
+        <div style={{ fontSize: '22px', marginBottom: '5px' }}>🤝</div>
+        <div style={{ fontSize: '18px', fontWeight: 700 }}>{S.name}</div>
+        <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.9)', margin: '3px 0 10px' }}>{S.title}</div>
+        <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '10px', fontSize: '10px', color: 'rgba(255,255,255,0.85)' }}>
+          <span>✉ {S.email}</span><span>📞 {S.phone}</span><span>📍 {S.location}</span>
+        </div>
+      </div>
+      {/* Body */}
+      <div style={{ padding: '16px' }}>
+        {/* Left-border accent summary */}
+        <div style={{ background: accent, borderLeft: `4px solid ${primary}`, borderRadius: '0 8px 8px 0', padding: '10px', marginBottom: '12px' }}>
+          <div style={{ color: '#374151', fontSize: '10px', lineHeight: 1.5 }}>{S.summary}</div>
+        </div>
+        {/* Service Experience */}
+        <div style={{ marginBottom: '12px' }}>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Service Experience</div>
+          <ExpBlock color={primary} position={S.position} company={S.company} dates={S.dates} bullet={S.bullets[0]} />
+        </div>
+        {/* 2-col Education + Skills */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+          <div>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Education</div>
+            <EduBlock color={primary} degree={S.degree} school={S.school} dates="2012–2016" />
+          </div>
+          <div>
+            <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Skills</div>
+            <div>{S.skills.slice(0, 3).map(s => <Tag key={s} label={s} bg={accent} color="#9d174d" />)}</div>
+            <div style={{ marginTop: '3px' }}>{S.soft.slice(0, 2).map(s => <Tag key={s} label={s} bg="#fdf2f8" color="#9d174d" />)}</div>
+          </div>
+        </div>
+        {/* Community Projects */}
+        <div>
+          <div style={{ color: primary, fontSize: '11px', fontWeight: 700, marginBottom: '6px' }}>Community Projects</div>
+          <div style={{ fontSize: '11px', fontWeight: 600, color: '#1f2937', marginBottom: '2px' }}>Food Security Initiative</div>
+          <div style={{ fontSize: '10px', color: '#4b5563' }}>Coordinated volunteer network serving 2,000+ families monthly.</div>
+        </div>
+      </div>
+    </div>
+  );
 };

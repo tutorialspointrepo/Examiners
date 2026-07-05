@@ -1786,7 +1786,7 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
             <div className="mt-4 p-4 bg-gray-50 rounded-lg">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">{selectedLecture.title}</h3>
+                  <h3 className="text-lg font-semibold text-gray-900" style={{ fontSize: '24px' }}>{selectedLecture.title}</h3>
                   <p className="text-sm text-gray-500 mt-1">Duration: {selectedLecture.duration}</p>
                 </div>
                 {videoCompleted && (
@@ -4173,8 +4173,35 @@ const CourseCurriculum: React.FC<CourseCurriculumProps> = ({
                   <p className="text-sm text-gray-500">Loading notes...</p>
                 </div>
               ) : selectedLecture?.textContent ? (
-                <div className="prose prose-sm max-w-none">
-                  <div dangerouslySetInnerHTML={{ __html: selectedLecture.textContent }} />
+                <div className="prose prose-sm max-w-none" style={{ isolation: 'isolate' }}>
+                  <iframe
+                    srcDoc={`<!DOCTYPE html><html><head><style>
+                      body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; color: #1f2937; overflow-y: auto; }
+                      img { max-width: 100%; height: auto; }
+                      h1, h2, h3, h4, h5, h6 { margin-top: 1em; margin-bottom: 0.5em; font-weight: 600; color: #111827; }
+                      h2 { font-size: 22px !important; text-align: left !important; }
+                      h3 { font-size: 24px !important; text-align: left !important; }
+                      .ttx-know { border: none !important; }
+                      p { margin: 0.5em 0; text-align: left !important; padding-left: 0 !important; }
+                      ul, ol { padding-left: 1.5em; }
+                      a { color: #2563eb; }
+                      pre { background: #f3f4f6; padding: 12px; border-radius: 6px; overflow-x: auto; }
+                      code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+                      table { border-collapse: collapse; width: 100%; }
+                      th, td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
+                      th { background: #f9fafb; font-weight: 600; }
+                      blockquote { border-left: 3px solid #d1d5db; padding-left: 1em; margin-left: 0; color: #6b7280; }
+                    </style></head><body>${selectedLecture.textContent}</body></html>`}
+                    style={{ width: '100%', border: 'none', minHeight: '200px' }}
+                    title="Lecture Notes"
+                    sandbox="allow-same-origin"
+                    onLoad={(e) => {
+                      const iframe = e.target as HTMLIFrameElement;
+                      if (iframe.contentDocument) {
+                        iframe.style.height = iframe.contentDocument.body.scrollHeight + 'px';
+                      }
+                    }}
+                  />
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-center">

@@ -1,127 +1,74 @@
-/**
- * List All Unique Tags in Problems Collection
- * Helps identify data issues before fixing
- * 
- * Usage: node list_all_tags.js
- */
 
+// list_all_tags.js
+// List all unique tags across all questions, grouped by college, with count
 const admin = require('firebase-admin');
-const FIREBASE_SERVICE_ACCOUNT = require('./serviceAccountKey.json');
-const FIREBASE_PROJECT_ID = 'examiners-app';
 
-// Initialize Firebase
-if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert(FIREBASE_SERVICE_ACCOUNT),
-    projectId: FIREBASE_PROJECT_ID
-  });
-}
+const serviceAccount = require('./serviceAccountKey.json');
+admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 
 async function listAllTags() {
-  console.log('========================================');
-  console.log('📋 Listing All Unique Tags');
-  console.log('========================================\n');
+  console.log('🔍 Fetching all questions to extract tags...\n');
 
-  const problemsSnapshot = await db.collection('problems').get();
-  console.log(`📊 Total problems: ${problemsSnapshot.size}\n`);
+  const questionsSnap = await db.collection('questionBank').get();
+  console.log(`📊 Total questions: ${questionsSnap.size}\n`);
 
-  // Collect all tags with counts and sample problem
-  const tagsMap = {};
+  // Global tags: tag → count
+  const globalTags = {};
+  // Per college: collegeId → { tag → count }
+  const collegeTags = {};
+  let questionsWithNoTags = 0;
+  let questionsWithTags = 0;
 
-  problemsSnapshot.forEach(doc => {
-    const data = doc.data();
-    const tags = data.tags || [];
+  questionsSnap.forEach(doc => {
+    const q = doc.data();
+    const collegeId = q.collegeId || q.board || '(unknown)';
+    const tags = q.tags || [];
 
-    tags.forEach(tag => {
-      if (!tag) return;
-      
-      if (!tagsMap[tag]) {
-        tagsMap[tag] = {
-          tag: tag,
-          count: 0,
-          sampleProblems: []
-        };
-      }
-      
-      tagsMap[tag].count++;
-      if (tagsMap[tag].sampleProblems.length < 3) {
-        tagsMap[tag].sampleProblems.push({
-          id: doc.id,
-          title: data.title
-        });
-      }
-    });
-  });
+    if (!collegeTags[collegeId]) collegeTags[collegeId] = {};
 
-  const allTags = Object.values(tagsMap).sort((a, b) => b.count - a.count);
-  
-  console.log(`📊 Total unique tags: ${allTags.length}\n`);
-
-  // Categorize tags
-  const normalTags = [];
-  const suspiciousTags = [];  // Long tags, likely problem descriptions
-  const lowCountTags = [];     // Tags with only 1-2 problems
-
-  allTags.forEach(t => {
-    if (t.tag.length > 40) {
-      suspiciousTags.push(t);
-    } else if (t.count <= 2) {
-      lowCountTags.push(t);
-    } else {
-      normalTags.push(t);
+    if (!Array.isArray(tags) || tags.length === 0) {
+      questionsWithNoTags++;
+      return;
     }
-  });
 
-  // Print normal tags
-  console.log('────────────────────────────────────────');
-  console.log(`✅ NORMAL TAGS (${normalTags.length}):`);
-  console.log('────────────────────────────────────────');
-  normalTags.forEach((t, i) => {
-    console.log(`${(i + 1).toString().padStart(2)}. ${t.tag.padEnd(35)} ${t.count} problems`);
-  });
-
-  // Print low count tags (potential typos/duplicates)
-  console.log('\n────────────────────────────────────────');
-  console.log(`⚠️  LOW COUNT TAGS - 1-2 problems (${lowCountTags.length}):`);
-  console.log('   (May be typos or should be merged)');
-  console.log('────────────────────────────────────────');
-  lowCountTags.forEach((t, i) => {
-    console.log(`${(i + 1).toString().padStart(2)}. "${t.tag}" (${t.count})`);
-    t.sampleProblems.forEach(p => {
-      console.log(`      → ${p.id}`);
+    questionsWithTags++;
+    tags.forEach(tag => {
+      const t = (tag || '').toString().trim();
+      if (!t) return;
+      globalTags[t] = (globalTags[t] || 0) + 1;
+      collegeTags[collegeId][t] = (collegeTags[collegeId][t] || 0) + 1;
     });
   });
 
-  // Print suspicious tags
-  if (suspiciousTags.length > 0) {
-    console.log('\n────────────────────────────────────────');
-    console.log(`❌ SUSPICIOUS TAGS - Too long (${suspiciousTags.length}):`);
-    console.log('   (Likely problem descriptions, not tags)');
-    console.log('────────────────────────────────────────');
-    suspiciousTags.forEach((t, i) => {
-      console.log(`${(i + 1).toString().padStart(2)}. "${t.tag.substring(0, 60)}${t.tag.length > 60 ? '...' : ''}" (${t.count})`);
-      t.sampleProblems.forEach(p => {
-        console.log(`      → ${p.id}`);
-      });
-    });
+  // Print per college
+  for (const [collegeId, tags] of Object.entries(collegeTags)) {
+    const sorted = Object.entries(tags).sort((a, b) => b[1] - a[1]);
+    if (sorted.length === 0) continue;
+
+    console.log(`\n═══════════════════════════════════════`);
+    console.log(`  📚 ${collegeId} — ${sorted.length} unique tags`);
+    console.log(`═══════════════════════════════════════`);
+    console.table(sorted.map(([tag, count]) => ({ Tag: tag, Questions: count })));
   }
 
-  // Summary
-  console.log('\n========================================');
-  console.log('📊 SUMMARY');
-  console.log('========================================');
-  console.log(`✅ Normal tags:     ${normalTags.length}`);
-  console.log(`⚠️  Low count tags: ${lowCountTags.length}`);
-  console.log(`❌ Suspicious tags: ${suspiciousTags.length}`);
-  console.log(`📊 Total unique:    ${allTags.length}`);
+  // Global summary
+  const globalSorted = Object.entries(globalTags).sort((a, b) => b[1] - a[1]);
+  console.log(`\n═══════════════════════════════════════`);
+  console.log(`  🌐 ALL TAGS (Global) — ${globalSorted.length} unique`);
+  console.log(`═══════════════════════════════════════`);
+  console.table(globalSorted.map(([tag, count]) => ({ Tag: tag, Questions: count })));
 
-  return { normalTags, lowCountTags, suspiciousTags };
+  console.log(`\n═══════════════════════════════════════`);
+  console.log(`  SUMMARY`);
+  console.log(`═══════════════════════════════════════`);
+  console.log(`  Total questions:       ${questionsSnap.size}`);
+  console.log(`  With tags:             ${questionsWithTags}`);
+  console.log(`  Without tags:          ${questionsWithNoTags}`);
+  console.log(`  Unique tags (global):  ${globalSorted.length}`);
+  console.log(`  Colleges:              ${Object.keys(collegeTags).join(', ')}`);
+
+  process.exit(0);
 }
 
-listAllTags()
-  .then(() => process.exit(0))
-  .catch(err => {
-    console.error('Error:', err);
-    process.exit(1);
-  });
+listAllTags().catch(console.error);

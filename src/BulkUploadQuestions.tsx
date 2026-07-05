@@ -11,7 +11,6 @@ import {
   QUESTION_TYPES,
   QUESTION_TYPE_LABELS,
   COMPLEXITY_LEVELS,
-  SPECIAL_IDS,
   UPLOAD_STEPS,
   NOTIFICATION_TYPES_UI,
   EXCEL_FILE_EXTENSIONS,
@@ -107,6 +106,7 @@ export default function BulkUploadQuestions({
   const [parsedQuestions, setParsedQuestions] = useState<QuestionRow[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [validCollegeIds, setValidCollegeIds] = useState<string[]>([]); // ✅ Valid college IDs from Firebase
   const [uploadResults, setUploadResults] = useState<{
     success: number;
     failed: number;
@@ -152,6 +152,23 @@ export default function BulkUploadQuestions({
     if (!isOpen) {
       setNotification({ type: NOTIFICATION_TYPES_UI.INFO, message: '', visible: false });
     }
+  }, [isOpen]);
+
+  // ✅ Load all valid college IDs for validation
+  useEffect(() => {
+    const loadValidCollegeIds = async () => {
+      try {
+        const colleges = await firebaseService.getAllColleges();
+        if (colleges && Array.isArray(colleges)) {
+          const ids = colleges.map((c: any) => c.collegeId || c.id).filter(Boolean);
+          console.log('🏫 Valid college IDs loaded for questions:', ids.length);
+          setValidCollegeIds(ids);
+        }
+      } catch (error) {
+        console.error('Error loading college IDs:', error);
+      }
+    };
+    if (isOpen) loadValidCollegeIds();
   }, [isOpen]);
 
   const downloadTemplate = () => {
@@ -939,7 +956,28 @@ export default function BulkUploadQuestions({
     
     const results = { success: 0, failed: 0, errors: [] as string[] };
     
+    // ─── DUPLICATE CHECK: Within batch ───
+    const batchTexts = new Map<string, number>(); // text -> first row
+    const batchDuplicateRows = new Set<number>();
+    parsedQuestions.forEach((q, i) => {
+      const text = (q.question_text || '').toString().trim().toLowerCase();
+      if (!text) return;
+      if (batchTexts.has(text)) {
+        batchDuplicateRows.add(i);
+        results.failed++;
+        results.errors.push(`Row ${i + EXCEL_ROW_OFFSET}: Duplicate of Row ${batchTexts.get(text)! + EXCEL_ROW_OFFSET} (same question text) — skipped`);
+      } else {
+        batchTexts.set(text, i);
+      }
+    });
+    
     for (let i = 0; i < parsedQuestions.length; i++) {
+      // Skip batch duplicates
+      if (batchDuplicateRows.has(i)) {
+        setUploadProgress(((i + 1) / parsedQuestions.length) * 100);
+        continue;
+      }
+      
       try {
         const question: QuestionRow = parsedQuestions[i];
         const rowLabel = `Row ${i + EXCEL_ROW_OFFSET}`;
@@ -1066,7 +1104,8 @@ export default function BulkUploadQuestions({
         let collegeId: string;
         
         if (isPublic) {
-          collegeId = SPECIAL_IDS.TUTORIALSPOINT;
+          // Public questions still need a valid college
+          collegeId = excelCollegeId || activeCollegeId;
         } else if (excelCollegeId) {
           // Validate permission: only superUser can upload for other colleges
           if (excelCollegeId !== activeCollegeId && !isSuperUser) {
@@ -1074,7 +1113,15 @@ export default function BulkUploadQuestions({
           }
           collegeId = excelCollegeId;
         } else {
-          collegeId = activeCollegeId || SPECIAL_IDS.TUTORIALSPOINT;
+          collegeId = activeCollegeId;
+        }
+
+        // ✅ Validate college_id exists in Firebase
+        if (!collegeId) {
+          throw new Error('college_id is required');
+        }
+        if (validCollegeIds.length > 0 && !validCollegeIds.includes(collegeId)) {
+          throw new Error(`Invalid college_id '${collegeId}'. Not a registered college`);
         }
         
         // Prepare input in CreateQuestionInput format

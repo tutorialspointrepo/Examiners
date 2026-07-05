@@ -258,6 +258,16 @@ const JobListing: React.FC<JobListingProps> = ({
         const previousPageCache = currentPage > 1 ? pageCache.get(currentPage - 1) : null;
         const startAfterDoc = previousPageCache?.lastDoc || null;
 
+        // If we have a cached version of this exact page, use it directly
+        const cachedPage = pageCache.get(currentPage);
+        if (cachedPage) {
+          setJobs(cachedPage.jobs);
+          setLastDoc(cachedPage.lastDoc);
+          setTotalJobs(prev => prev); // keep existing total
+          setIsLoading(false);
+          return;
+        }
+
         const result = await firebaseService.getJobsPaginated({
           category: selectedCategory || undefined,
           isRemote: selectedFilter === 'remote' ? true : undefined,
@@ -265,6 +275,8 @@ const JobListing: React.FC<JobListingProps> = ({
           orderBy: 'postedTimestamp',
           orderDirection: 'desc',
           startAfterDoc: startAfterDoc,
+          // When no cursor available (non-sequential jump), pass offset so service can skip records
+          offset: !startAfterDoc && currentPage > 1 ? (currentPage - 1) * jobsPerPage : undefined,
           searchQuery: debouncedSearchQuery.length > 0 ? debouncedSearchQuery : undefined,
         });
 
@@ -635,11 +647,12 @@ const JobListing: React.FC<JobListingProps> = ({
                   <div className="flex flex-wrap gap-1.5 mb-3">
                     {job.salary && (
                       <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold max-w-[200px]"
                         style={{ backgroundColor: '#dcfce7', color: '#166534' }}
+                        title={job.salary}
                       >
-                        <FontAwesomeIcon icon={faMoneyBill} style={{ fontSize: '9px' }} />
-                        {job.salary}
+                        <FontAwesomeIcon icon={faMoneyBill} style={{ fontSize: '9px', flexShrink: 0 }} />
+                        <span className="truncate">{job.salary}</span>
                       </span>
                     )}
                     {job.scheduleType && (
@@ -670,12 +683,12 @@ const JobListing: React.FC<JobListingProps> = ({
 
                   {/* Row 3: Via + Posted + Save + Apply */}
                   <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                    <div className="flex items-center gap-3">
-                      <span className="text-[11px] text-gray-400 flex items-center gap-1">
-                        <FontAwesomeIcon icon={faBuilding} style={{ fontSize: '9px' }} />
-                        {job.via?.replace('via ', '') || 'Direct'}
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <span className="text-[11px] text-gray-400 flex items-center gap-1 min-w-0 max-w-[60%]" title={job.via?.replace('via ', '') || 'Direct'}>
+                        <FontAwesomeIcon icon={faBuilding} style={{ fontSize: '9px', flexShrink: 0 }} />
+                        <span className="truncate">{job.via?.replace('via ', '') || 'Direct'}</span>
                       </span>
-                      <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                      <span className="text-[11px] text-gray-400 flex items-center gap-1 flex-shrink-0">
                         <FontAwesomeIcon icon={faClock} style={{ fontSize: '9px' }} />
                         {getTimeAgo(job.postedTimestamp)}
                       </span>

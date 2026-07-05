@@ -417,15 +417,18 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
    * Auto-submit all in_progress attempts when exam time expires
    * This runs as part of the LiveStats auto-refresh cycle
    */
-  // ✅ SERVER-SIDE FETCH: Single Cloud Function call replaces heavy client-side fetching
-  const fetchFromServer = async (page: number = 1, silent: boolean = false): Promise<boolean> => {
+  // ✅ CLIENT-SIDE FETCH: Direct Firestore queries with caching
+  const fetchFromServer = async (page: number = 1, silent: boolean = false, summaryOnly: boolean = false): Promise<boolean> => {
     try {
       const collegeId = exam.collegeId || userCollegeId;
       if (!collegeId) return false;
 
       if (!silent) setIsLoading(true);
 
-      const result = await firebaseService.getLiveExamStats(exam.id, collegeId, page, PAGE_SIZE);
+      const result = await firebaseService.getLiveExamStats(exam.id, collegeId, page, PAGE_SIZE, 'present', {
+        summaryOnly,
+        forceRefresh: !silent, // Force refresh on manual/initial load, use cache on silent refresh
+      });
 
       // Map server summary to state
       setServerSummary(result.summary);
@@ -545,6 +548,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
       setTimeout(() => setAutoSubmitStatus(null), 5000);
       
       // Reload student data to show updated statuses
+      firebaseService.clearLiveStatsCache();
       await fetchFromServer(currentPage, true);
       
     } catch (error) {
@@ -604,9 +608,12 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
         }
       }
 
-      // Silent refresh (no loading spinner)
-      console.log('🔄 Silent refresh...');
-      await fetchFromServer(currentPage, true);
+      // Silent refresh — summary stats + current page students only
+      console.log('🔄 Silent refresh (summary + current page)...');
+      // Force re-fetch data from Firestore
+      firebaseService.clearLiveStatsCache();
+      // Fetch summary stats (lightweight - no sub-collection reads)
+      await fetchFromServer(currentPage, true, false);
       setLastRefresh(new Date());
     }, AUTO_REFRESH_INTERVAL);
 
@@ -688,7 +695,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
   };
 
   return (
-    <div className="h-full flex bg-white">
+    <div className="h-full flex gap-3 p-3" style={{ background: '#eef1f6' }}>
       <style>{`
         .hide-scrollbar::-webkit-scrollbar {
           display: none;
@@ -699,7 +706,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
         }
       `}</style>
       {/* Left Panel - Stats Section */}
-      <div className="w-[45%] flex flex-col border-r border-gray-200">
+      <div className="flex-[45] flex flex-col rounded-2xl overflow-hidden" style={{ background: '#f8fafc' }}>
       {/* Header - Fixed at top */}
       <div className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-4">
         <div className="mb-4">
@@ -1164,7 +1171,7 @@ export default function LiveStats({ exam, brandTheme, onBack, userCollegeId }: L
       </div>
 
       {/* Right Panel - Students List */}
-      <div className="w-[55%] flex flex-col">
+      <div className="flex-[55] flex flex-col rounded-2xl overflow-hidden" style={{ background: '#f8fafc' }}>
         <div className="flex-shrink-0 bg-white border-b border-gray-200 px-6 py-4">
           {/* Header Row with Title and Close button */}
           <div className="flex items-center justify-between">
