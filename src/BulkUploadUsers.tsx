@@ -504,9 +504,31 @@ export default function BulkUploadUsers({
         if (cleaned.length !== 10 || !/^\d{10}$/.test(cleaned)) throw new Error(`Invalid phone: ${user.phone}`);
         const normalizedPhone = `+91${cleaned}`;
 
-        // Phone duplicate
-        const phoneExists = await firebaseService.checkUserExistsByPhone(normalizedPhone);
-        if (phoneExists) throw new Error('Phone number already exists');
+        // ✅ PROMOTION CHECK: existing student (same email) moving to a NEW academic year
+        let isPromotion = false;
+        if (user.email && userType === 'student') {
+          const emailCheck = user.email.trim().toLowerCase();
+          if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailCheck)) {
+            const existingUser = await firebaseService.getUserByEmail(emailCheck);
+            if (existingUser && existingUser.userType === 'student') {
+              const existingStartYear = parseInt(String(existingUser.academicYear || '').split('-')[0]);
+              const newStartYear = parseInt(academicYear.split('-')[0]);
+              if (!isNaN(existingStartYear) && !isNaN(newStartYear) && existingStartYear < newStartYear) {
+                isPromotion = true; // Existing year is previous → promote to new year
+              } else if (existingStartYear === newStartYear) {
+                throw new Error(`Already in academic year ${academicYear}`);
+              } else {
+                throw new Error('Email already exists');
+              }
+            }
+          }
+        }
+
+        // Phone duplicate (skipped for promotions — same person, phone untouched)
+        if (!isPromotion) {
+          const phoneExists = await firebaseService.checkUserExistsByPhone(normalizedPhone);
+          if (phoneExists) throw new Error('Phone number already exists');
+        }
 
         // Email format + duplicate
         if (user.email) {
@@ -514,8 +536,10 @@ export default function BulkUploadUsers({
           if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
             throw new Error(`Invalid email: ${user.email}`);
           }
-          const emailExists = await firebaseService.checkUserExistsByEmail(emailTrimmed);
-          if (emailExists) throw new Error('Email already exists');
+          if (!isPromotion) {
+            const emailExists = await firebaseService.checkUserExistsByEmail(emailTrimmed);
+            if (emailExists) throw new Error('Email already exists');
+          }
         }
 
         // Student validations
@@ -585,7 +609,7 @@ export default function BulkUploadUsers({
       // ═══════════════════════════════════════════════════════════
       // PHASE 1: VALIDATE ALL ROWS FIRST (no user creation here)
       // ═══════════════════════════════════════════════════════════
-      const validatedUsers: Array<{ index: number; user: any; userData: any }> = [];
+      const validatedUsers: Array<{ index: number; user: any; userData: any; promoteDocId?: string | null }> = [];
 
       for (let i = 0; i < parsedUsers.length; i++) {
         const user = parsedUsers[i];
@@ -649,21 +673,50 @@ export default function BulkUploadUsers({
             throw new Error(`Invalid email: ${user.email}`);
           }
 
-          // Check if user already exists (by phone or email)
-          const phoneExists = await firebaseService.checkUserExistsByPhone(normalizedPhone);
-          const emailExists = user.email ? await firebaseService.checkUserExistsByEmail(user.email) : false;
+          // ✅ PROMOTION CHECK: existing student (same email) moving to a NEW academic year
+          let promoteDocId: string | null = null;
+          if (user.email && userType === 'student') {
+            const emailCheck = user.email.trim().toLowerCase();
+            const existingUser = await firebaseService.getUserByEmail(emailCheck);
+            if (existingUser && existingUser.userType === 'student') {
+              const existingStartYear = parseInt(String(existingUser.academicYear || '').split('-')[0]);
+              const newStartYear = parseInt(academicYear.split('-')[0]);
+              if (!isNaN(existingStartYear) && !isNaN(newStartYear) && existingStartYear < newStartYear) {
+                promoteDocId = existingUser.userId; // Existing year is previous → promote
+              } else {
+                console.log(`⏭️  Skipped: ${user.full_name} - Already in ${existingUser.academicYear}`);
+                results.skipped++;
+                results.details.push({
+                  rowNumber,
+                  fullName: user.full_name,
+                  userType: user.user_type,
+                  status: 'skipped',
+                  reason: existingStartYear === newStartYear
+                    ? `Already in academic year ${academicYear}`
+                    : 'Email already exists'
+                });
+                continue;
+              }
+            }
+          }
 
-          if (phoneExists || emailExists) {
-            console.log(`⏭️  Skipped: ${user.full_name} - User already exists`);
-            results.skipped++;
-            results.details.push({
-              rowNumber,
-              fullName: user.full_name,
-              userType: user.user_type,
-              status: 'skipped',
-              reason: phoneExists ? 'Phone number already exists' : 'Email already exists'
-            });
-            continue;
+          // Check if user already exists (by phone or email) — skipped for promotions
+          if (!promoteDocId) {
+            const phoneExists = await firebaseService.checkUserExistsByPhone(normalizedPhone);
+            const emailExists = user.email ? await firebaseService.checkUserExistsByEmail(user.email) : false;
+
+            if (phoneExists || emailExists) {
+              console.log(`⏭️  Skipped: ${user.full_name} - User already exists`);
+              results.skipped++;
+              results.details.push({
+                rowNumber,
+                fullName: user.full_name,
+                userType: user.user_type,
+                status: 'skipped',
+                reason: phoneExists ? 'Phone number already exists' : 'Email already exists'
+              });
+              continue;
+            }
           }
 
           // ✅ Validate student class against college's valid classes
@@ -757,8 +810,8 @@ export default function BulkUploadUsers({
               : [];
           }
 
-          // ✅ Add to validated list (will be created in Phase 2)
-          validatedUsers.push({ index: i, user, userData });
+          // ✅ Add to validated list (will be created/promoted in Phase 2)
+          validatedUsers.push({ index: i, user, userData, promoteDocId });
 
         } catch (error: any) {
           console.error(`❌ Validation failed: ${user.full_name} - ${error.message}`);
@@ -777,22 +830,43 @@ export default function BulkUploadUsers({
       // PHASE 2: CREATE ONLY VALIDATED USERS
       // ═══════════════════════════════════════════════════════════
       for (let j = 0; j < validatedUsers.length; j++) {
-        const { index, user, userData } = validatedUsers[j];
+        const { index, user, userData, promoteDocId } = validatedUsers[j];
         const rowNumber = index + 1;
         const progress = 50 + Math.round(((j + 1) / validatedUsers.length) * 50); // 50-100% for creation
         setUploadProgress(progress);
 
         try {
-          await firebaseService.createBulkUser(userData);
+          if (promoteDocId) {
+            // ✅ PROMOTION: update existing student to new academic year
+            await firebaseService.promoteBulkStudent(promoteDocId, {
+              academicYear: userData.academicYear,
+              studentClass: userData.studentClass,
+              studentRoll: userData.studentRoll,
+              board: userData.board,
+              collegeId: userData.collegeId
+            });
 
-          console.log(`✅ Added: ${user.full_name}`);
-          results.success++;
-          results.details.push({
-            rowNumber,
-            fullName: user.full_name,
-            userType: user.user_type,
-            status: 'success'
-          });
+            console.log(`🎓 Promoted: ${user.full_name} → ${userData.studentClass} (${userData.academicYear})`);
+            results.success++;
+            results.details.push({
+              rowNumber,
+              fullName: user.full_name,
+              userType: user.user_type,
+              status: 'success',
+              reason: `Promoted to ${userData.studentClass} (${userData.academicYear})`
+            });
+          } else {
+            await firebaseService.createBulkUser(userData);
+
+            console.log(`✅ Added: ${user.full_name}`);
+            results.success++;
+            results.details.push({
+              rowNumber,
+              fullName: user.full_name,
+              userType: user.user_type,
+              status: 'success'
+            });
+          }
         } catch (error: any) {
           console.error(`❌ Creation failed: ${user.full_name} - ${error.message}`);
           results.failed++;

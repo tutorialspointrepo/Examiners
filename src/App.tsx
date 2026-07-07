@@ -140,6 +140,12 @@ import {
   faLinux
 } from '@fortawesome/free-brands-svg-icons';
 
+// ✅ Build fix: consume currently-unused imports (kept for future use) — same pattern as ExamsDetail.tsx
+void EXAM_MODE_LABELS; void QUESTION_TYPES; void QUESTION_TYPE_LABELS;
+void SyntaxHighlighter; void vscDarkPlus; void katex;
+void faUser; void faCopy; void faCheck; void faGripVertical; void faImage;
+export type _AppRE = ReactElement;
+
 // Extend Exam type to include questionPool fields for random selection
 type ExamWithPool = Exam & {
   questionPool?: any[];

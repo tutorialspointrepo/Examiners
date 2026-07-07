@@ -94,6 +94,9 @@ export default function UserList({
   const [users, setUsers] = useState<UserModel[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  // ✅ College-wide search: null = inactive (show class list), array = university-wide results
+  const [collegeSearchResults, setCollegeSearchResults] = useState<UserModel[] | null>(null);
+  const [isCollegeSearching, setIsCollegeSearching] = useState(false);
   const [filterRole, setFilterRole] = useState<typeof FILTER_VALUES.ALL | typeof USER_TYPES.STUDENT | typeof USER_TYPES.TEACHER | typeof USER_TYPES.ADMIN | typeof USER_TYPES.PRINCIPAL | typeof USER_TYPES.DEAN>(FILTER_VALUES.ALL);
   
   // Edit modal state
@@ -315,10 +318,36 @@ export default function UserList({
   // Filter logic
   const isAdministrativeView = selectedClass === '_administrative';
 
+  // ✅ Debounced COLLEGE-WIDE search (uses existing firebaseService.searchUsers)
+  useEffect(() => {
+    const term = searchQuery.trim();
+    if (!term || term.length < 2 || !activeCollegeId) {
+      setCollegeSearchResults(null); // back to class list
+      setIsCollegeSearching(false);
+      return;
+    }
+    setIsCollegeSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const results = await firebaseService.searchUsersInCollegeBackend(activeCollegeId, term, 100);
+        setCollegeSearchResults(results);
+      } catch (err) {
+        console.error('College-wide search failed:', err);
+        setCollegeSearchResults(null); // fall back to class list on error
+      } finally {
+        setIsCollegeSearching(false);
+      }
+    }, 400);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, activeCollegeId]);
+
   // Filter users by search, role, and status
-  const searchFilteredUsers = users.filter(user => {
-    // Search filter
-    const matchesSearch = !searchQuery || 
+  // ✅ When college-wide search is active, use its results (already matched by service incl. roll number)
+  const sourceUsers = collegeSearchResults !== null ? collegeSearchResults : users;
+  const searchFilteredUsers = sourceUsers.filter(user => {
+    // Search filter (skip local match for college-wide results — service already matched)
+    const matchesSearch = collegeSearchResults !== null || !searchQuery || 
       (user.fullName?.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (user.email?.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (user.phone?.includes(searchQuery));
@@ -893,9 +922,9 @@ export default function UserList({
                 <Users size={40} style={{ color: brandTheme.colors.primary }} />
               </div>
             </div>
-            <p className="text-gray-700 font-semibold text-lg mb-2">No users found</p>
+            <p className="text-gray-700 font-semibold text-lg mb-2">{isCollegeSearching ? 'Searching...' : 'No users found'}</p>
             <p className="text-sm text-gray-500">
-              {searchQuery ? 'Try adjusting your search' : 'No users in this class'}
+              {isCollegeSearching ? 'Searching across the university...' : searchQuery ? 'No match found in the entire university' : 'No users in this class'}
             </p>
           </div>
         ) : (

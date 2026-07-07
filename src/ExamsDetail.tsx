@@ -20,7 +20,7 @@ void faAward; void faBookOpen; void faCalendar; void faChartBar; void faCheck;
 void faChevronDown; void faCircleQuestion; void faClipboardList; void faClock;
 void faCopy; void faFileLines; void faGripVertical; void faImage; void faLayerGroup;
 void faStar; void faTrophy; void faUser; void faUserCheck; void faUsers; void faXmark;
-void ACTIVE_ITEMS; void EXAM_MODES; void QUESTION_TYPES; void QUESTION_TYPE_LABELS; void EXAM_MODE_LABELS; void katex; type _RE = ReactElement;
+void ACTIVE_ITEMS; void EXAM_MODES; void QUESTION_TYPES; void QUESTION_TYPE_LABELS; void EXAM_MODE_LABELS; void katex; export type _RE = ReactElement;
 
 export default function ExamsDetail({
   selectedExam, brandTheme, expandedQuestionId,
@@ -397,7 +397,7 @@ export default function ExamsDetail({
                   {selectedExam.questionPaperImages && selectedExam.questionPaperImages.length > 0 ? (
                       <div className="overflow-x-auto pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                       <div className="flex flex-nowrap space-x-3" style={{ minWidth: 'max-content' }}>
-                        {selectedExam.questionPaperImages.map((imageUrl, index) => (
+                        {selectedExam.questionPaperImages.map((imageUrl: string, index: number) => (
                           <div 
                             key={index} 
                             className="flex-shrink-0 relative group cursor-pointer"
@@ -748,7 +748,7 @@ export default function ExamsDetail({
                    <div 
                       className="space-y-4"
                     >
-                      {selectedExam.questionsList.map((question, index) => (
+                      {selectedExam.questionsList.map((question: any, index: number) => (
                         <div 
                           key={question.id} 
                           className="bg-white border border-gray-200 rounded-2xl p-5 hover:shadow-lg transition-all duration-200"

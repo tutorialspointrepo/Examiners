@@ -1401,7 +1401,7 @@ const QuestionBankCard = memo(function QuestionBankCard({ question, index, selec
                                   {starterCodes.map((sc: any) => (
                                     <button
                                       key={sc.language}
-                                      onClick={() => setSelectedStarterLang(prev => ({ ...prev, [question.id]: sc.language }))}
+                                      onClick={() => setSelectedStarterLang((prev: any) => ({ ...prev, [question.id]: sc.language }))}
                                       className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
                                         activeLang === sc.language
                                           ? 'bg-gray-800 text-white shadow-sm'
@@ -2540,7 +2540,7 @@ export default function CreateExamModal({ isOpen, onClose, onSave, existingExam,
         examData.attendance = attendance;
         examData.avProctoring = avProctoring;
         examData.completionPolicy = completionPolicy; // 'strict' | 'flexible' | 'window'
-        examData.attemptWindowDays = completionPolicy === 'window' ? attemptWindowDays : null;
+        (examData as any).attemptWindowDays = completionPolicy === 'window' ? attemptWindowDays : null;
         (examData as any).personalityAssessment = personalityAssessment;
         if (personalityAssessment && likertQuestions.length > 0) {
           (examData as any).likertQuestions = likertQuestions;

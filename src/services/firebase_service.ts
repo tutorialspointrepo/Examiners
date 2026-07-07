@@ -39,6 +39,8 @@ import {
   orderBy, 
   limit,
   startAfter,
+  startAt,
+  endAt,
   documentId,
   serverTimestamp,
   increment,
@@ -11051,6 +11053,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
   /**
    * Generate a 4-digit OTP
    */
+  // @ts-ignore
   private generateOTP(): string {
     return Math.floor(1000 + Math.random() * 9000).toString();
   }
@@ -11092,6 +11095,7 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
 /**
    * Send OTP via email (using contact@tutorialspoint.com)
    */
+  // @ts-ignore
   private async sendOTPEmail(toEmail: string, otp: string): Promise<boolean> {
     try {
       if (!this.functions) {
@@ -11384,6 +11388,71 @@ private parseExamFromFirestore(doc: DocumentSnapshot): ExamModel {
     } catch (error) {
       console.error('Error checking student roll:', error);
       return false; // Return false on error to allow the upload to proceed
+    }
+  }
+
+  /**
+   * ✅ NEW (Bulk Promotion): Promote existing student to new academic year
+   * Updates top-level academicYear, studentClass, studentRoll and appends to studentHistory.
+   * Preserves old year entry in studentHistory if it was missing (older docs).
+   */
+  async promoteBulkStudent(
+    docId: string,
+    promotion: {
+      academicYear: string;
+      studentClass: string;
+      studentRoll: string;
+      board: string;
+      collegeId: string;
+    }
+  ): Promise<void> {
+    try {
+      if (!this.firestore) throw new Error('Firestore not initialized');
+
+      const userRef = doc(this.firestore, COLLECTIONS.USERS, docId);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) throw new Error('User document not found');
+
+      const existing = userSnap.data();
+      const history: StudentHistoryEntry[] = Array.isArray(existing.studentHistory)
+        ? [...existing.studentHistory]
+        : [];
+
+      // Preserve current (old) year entry in history if missing (older docs may not have it)
+      if (existing.academicYear && !history.some(h => h.academicYear === existing.academicYear)) {
+        history.push({
+          academicYear: existing.academicYear,
+          className: existing.studentClass || '',
+          rollNumber: existing.studentRoll || '',
+          board: existing.board || '',
+          collegeId: existing.collegeId || ''
+        });
+      }
+
+      // Guard: don't double-promote if new year entry already exists
+      if (history.some(h => h.academicYear === promotion.academicYear)) {
+        throw new Error(`Student already has an entry for ${promotion.academicYear}`);
+      }
+
+      // Append new academic year entry
+      history.push({
+        academicYear: promotion.academicYear,
+        className: promotion.studentClass,
+        rollNumber: promotion.studentRoll,
+        board: promotion.board,
+        collegeId: promotion.collegeId
+      });
+
+      await updateDoc(userRef, {
+        academicYear: promotion.academicYear,
+        studentClass: promotion.studentClass,
+        studentRoll: promotion.studentRoll,
+        studentHistory: history,
+        updatedAt: serverTimestamp()
+      });
+    } catch (error: any) {
+      console.error('Error promoting student:', error);
+      throw new Error(`Failed to promote student: ${error.message}`);
     }
   }
 
@@ -12407,6 +12476,162 @@ const usersRef = collection(this.firestore, COLLECTIONS.USERS);
   } catch (error) {
     console.error('❌ Error searching users:', error);
     throw error;
+  }
+}
+
+/**
+ * ✅ NEW: TRUE BACKEND user search across a college (Firestore prefix queries).
+ * Searches fullName (case variants), email, studentRoll, phoneRaw via parallel
+ * range queries — scales to any college size (no fetch-all + client filter).
+ * Note: prefix matching only (Firestore has no 'contains').
+ */
+async searchUsersInCollegeBackend(
+  collegeId: string,
+  searchTerm: string,
+  maxResults: number = 50
+): Promise<UserModel[]> {
+  try {
+    if (!this.isInitialized() || !this.firestore) return [];
+    const term = searchTerm.trim();
+    if (!collegeId || !term) return [];
+
+    const usersRef = collection(this.firestore, COLLECTIONS.USERS);
+    const END = '\uf8ff';
+    const lower = term.toLowerCase();
+    const title = lower.replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+    const upper = term.toUpperCase();
+    // fullName is stored as-typed → try realistic case variants
+    const nameVariants = Array.from(new Set([term, title, lower, upper]));
+
+    const searches: Promise<any>[] = [];
+
+    for (const v of nameVariants) {
+      searches.push(getDocs(query(
+        usersRef,
+        where('collegeId', '==', collegeId),
+        orderBy('fullName'),
+        startAt(v),
+        endAt(v + END),
+        limit(maxResults)
+      )));
+    }
+
+    // email is stored lowercase
+    searches.push(getDocs(query(
+      usersRef,
+      where('collegeId', '==', collegeId),
+      orderBy('email'),
+      startAt(lower),
+      endAt(lower + END),
+      limit(maxResults)
+    )));
+
+    // studentRoll as-is
+    searches.push(getDocs(query(
+      usersRef,
+      where('collegeId', '==', collegeId),
+      orderBy('studentRoll'),
+      startAt(term),
+      endAt(term + END),
+      limit(maxResults)
+    )));
+
+    // phoneRaw (digits only, min 3 digits)
+    const digits = term.replace(/\D/g, '');
+    if (digits.length >= 3) {
+      searches.push(getDocs(query(
+        usersRef,
+        where('collegeId', '==', collegeId),
+        orderBy('phoneRaw'),
+        startAt(digits),
+        endAt(digits + END),
+        limit(maxResults)
+      )));
+    }
+
+    // allSettled: one missing index must not kill the whole search
+    const settled = await Promise.allSettled(searches);
+    const resultMap = new Map<string, UserModel>();
+    for (const s of settled) {
+      if (s.status === 'fulfilled') {
+        s.value.docs.forEach((d: any) => {
+          if (!resultMap.has(d.id)) {
+            resultMap.set(d.id, { userId: d.id, ...d.data() } as UserModel);
+          }
+        });
+      } else {
+        // Firestore error message contains the index-creation link if an index is missing
+        console.error('⚠️ Backend search sub-query failed (missing index?):', s.reason?.message || s.reason);
+      }
+    }
+
+    // ✅ FALLBACK: prefix queries found nothing (middle-word search like a surname,
+    // or composite indexes not created yet) → capped college scan with substring match.
+    // Uses NO orderBy → default __name__ ordering → no composite index required.
+    if (resultMap.size === 0) {
+      try {
+        const cleanTerm = lower.replace(/[\s\-\(\)]/g, '');
+        const SCAN_PAGE = 400;
+        const SCAN_CAP = 4000;
+        let cursor: DocumentSnapshot | null = null;
+        let scanned = 0;
+
+        while (scanned < SCAN_CAP) {
+          const scanQuery: any = cursor
+            ? query(usersRef, where('collegeId', '==', collegeId), startAfter(cursor), limit(SCAN_PAGE))
+            : query(usersRef, where('collegeId', '==', collegeId), limit(SCAN_PAGE));
+
+          const snap: any = await getDocs(scanQuery);
+          if (snap.empty) break;
+          scanned += snap.docs.length;
+
+          for (const d of snap.docs) {
+            const data: any = d.data();
+            const fullName = String(data.fullName || '').toLowerCase();
+            const email = String(data.email || '').toLowerCase();
+            const roll = String(data.studentRoll || '').toLowerCase();
+            const phone = String(data.phone || data.phoneRaw || '').replace(/[\s\-\(\)]/g, '');
+
+            if (
+              fullName.includes(lower) ||
+              email.includes(lower) ||
+              roll.includes(lower) ||
+              (cleanTerm.length >= 3 && phone.includes(cleanTerm))
+            ) {
+              if (!resultMap.has(d.id)) {
+                resultMap.set(d.id, { userId: d.id, ...data } as UserModel);
+              }
+              if (resultMap.size >= maxResults) break;
+            }
+          }
+
+          if (resultMap.size >= maxResults || snap.docs.length < SCAN_PAGE) break;
+          cursor = snap.docs[snap.docs.length - 1];
+        }
+      } catch (scanError: any) {
+        console.error('⚠️ Backend search scan fallback failed:', scanError?.message || scanError);
+      }
+    }
+
+    // Relevance sort (same style as searchUsers)
+    return Array.from(resultMap.values())
+      .sort((a, b) => {
+        const aName = String(a.fullName || '').toLowerCase();
+        const bName = String(b.fullName || '').toLowerCase();
+        const aExact = aName === lower;
+        const bExact = bName === lower;
+        const aStarts = aName.startsWith(lower);
+        const bStarts = bName.startsWith(lower);
+        if (aExact && !bExact) return -1;
+        if (!aExact && bExact) return 1;
+        if (aStarts && !bStarts) return -1;
+        if (!aStarts && bStarts) return 1;
+        return aName.localeCompare(bName);
+      })
+      .slice(0, maxResults);
+  } catch (error) {
+    console.error('❌ Error in backend user search:', error);
+    return [];
   }
 }
 
