@@ -4070,7 +4070,7 @@ export const sendWelcomeEmail = functions
       // SEND EMAIL
       // ============================================
       const mailOptions = {
-        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@email.tutorialspoint.com'}>`,
         to: email,
         subject: `Welcome to EXAMINERS - Your Account is Ready!`,
         html: emailHtml,
@@ -4205,7 +4205,7 @@ export const sendOTPEmail = functions
       // SEND EMAIL
       // ============================================
       const mailOptions = {
-        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@email.tutorialspoint.com'}>`,
         to: email,
         subject: 'EXAMINERS - Password Reset OTP',
         html: emailHtml,
@@ -4311,7 +4311,7 @@ export const sendPasswordResetOTP = functions
         </div>
       `;
       await transporter.sendMail({
-        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@email.tutorialspoint.com'}>`,
         to: email,
         subject: 'EXAMINERS - Password Reset OTP',
         html: emailHtml,
@@ -4868,7 +4868,7 @@ export const sendPasswordResetEmail = functions
 
       // Send email
       const mailOptions = {
-        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+        from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@email.tutorialspoint.com'}>`,
         to: email,
         subject: `🔒 Password Reset Request - EXAMINERS`,
         html: emailHtml,
@@ -6702,7 +6702,7 @@ export const createUser = functions
 </html>`;
 
                 await transporter.sendMail({
-                  from: `Tutorials Point <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+                  from: `Tutorials Point <${process.env.NOREPLY_EMAIL || 'noreply@email.tutorialspoint.com'}>`,
                   to: email.toLowerCase(),
                   subject: 'Verify your email – Resume Builder',
                   html: resumeVerifyHtml,
@@ -6730,7 +6730,7 @@ export const createUser = functions
                 });
 
                 await transporter.sendMail({
-                  from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+                  from: `EXAMINERS System <${process.env.NOREPLY_EMAIL || 'noreply@email.tutorialspoint.com'}>`,
                   to: email.toLowerCase(),
                   subject: `Welcome to EXAMINERS - Your Account is Ready!`,
                   html: emailHtml,
@@ -8687,7 +8687,7 @@ export const sendResumeVerificationEmail = functions
 </html>`;
 
       await transporter.sendMail({
-        from: `Tutorials Point <${process.env.NOREPLY_EMAIL || 'noreply@tutorialspoint.com'}>`,
+        from: `Tutorials Point <${process.env.NOREPLY_EMAIL || 'noreply@email.tutorialspoint.com'}>`,
         to: email.toLowerCase(),
         subject: 'Verify your email – Resume Builder',
         html: emailHtml,
